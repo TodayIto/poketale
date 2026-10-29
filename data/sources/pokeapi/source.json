@@ -1,0 +1,39 @@
+{
+  "repository": "https://github.com/PokeAPI/pokeapi",
+  "commit": "2bf639e5572812a67d2b94903fdcb9d095f5aeb2",
+  "files": [
+    "item_names.csv",
+    "move_names.csv",
+    "ability_names.csv",
+    "pokemon_species_names.csv",
+    "pokemon_form_names.csv",
+    "pokemon_forms.csv",
+    "pokemon.csv",
+    "pokemon_species.csv",
+    "machines.csv",
+    "item_flavor_text.ko.csv",
+    "pokemon_stats.csv"
+  ],
+  "sha256": {
+    "item_names.csv": "c4ad0b446e395c378d8ba75d6900f051cc9ebb99431d4000adeac35f492852f0",
+    "move_names.csv": "99e23ee38ea53d1473474d463b87651deac3cd4928750f8186feae66da45c147",
+    "ability_names.csv": "8acb80c42210f86ae747dc3347b060d69cd2574a9dbfaf74774ae632ca6348da",
+    "pokemon_species_names.csv": "820cde17074cdb1c2b0595c997fb8f998e773bd5da3bb525dec85703c86c5fd9",
+    "pokemon_form_names.csv": "f496066d02fab12c18d10cce0af2f748d09cb7e296ecc784cc8682f8c4da8625",
+    "pokemon_forms.csv": "99bf8f7ad4dc1f2e291357a090cef6a575623ec3cbf9030d0e33656e6e608ae2",
+    "pokemon.csv": "16c81c33188b0eac403aa2f759fcbe9e42c611f722d263f5b5a6a5bff9f8ce6b",
+    "pokemon_species.csv": "e66e2eeb25fd3836b0ebab6bf87bbf01960aa3c0555e2bac495fa8393c5e0c45",
+    "machines.csv": "f9df7faaf0a60896fa344abd2b639f83f79c2a24e1fd4bb3560ca7da76e9a6ad",
+    "item_flavor_text.ko.csv": "44a6091d05b63a1904c2924aedeb475b9a92e4a48987916ac01e5e5e50042fa3",
+    "pokemon_stats.csv": "fa2c44263a3706468682fefc3e0b3c4f5487fe9febed7d4ebcd6939c34b16aa8",
+    "LICENSE.md": "1c04595dc662981c20956ae4251dfa7b62b475c345eddf98bc9b904cb2373f2c"
+  },
+  "derived": {
+    "item_flavor_text.ko.csv": {
+      "from": "item_flavor_text.csv",
+      "sha256_of_source": "f85281c97e4a423fb6ae673a3d2cfab116ac2e7bb9fcdecfb43ac8b1e1fb8676",
+      "rule": "language_id=3 (한국어) 행 중 도구마다 version_group_id 가 가장 큰 한 줄만. 행 내용은 그대로 (원본 6MB 를 저장소에 넣지 않으려고)"
+    }
+  },
+  "normalization": "UTF-8, CRLF normalized to LF before hashing"
+}

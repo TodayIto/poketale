@@ -1,0 +1,18 @@
+{
+  "_source": "from pokerogue locales/ko @ 7d7da4a8 (AGPL-3.0-only); locales @ 485b48eb",
+  "battle.singleWildAppeared": "앗! 야생 {{pokemonName}}[[가]]\n튀어나왔다!",
+  "battle.pokemonCaught": "신난다~!\n{{pokemonName}}[[를]] 잡았다!",
+  "battle.pokemonBrokeFree": "안 돼!\n포켓몬이 볼에서 나와 버렸다!",
+  "battle.noPokeballTrainer": "트레이너가 볼을 튕겨 내 버렸다!\n남의 것에 손대면 도둑!",
+  "battle.noPokeballForce": "본 적 없는 힘이\n볼을 사용하지 못하게 한다.",
+  "battle.regainHealth": "{{pokemonName}}[[는]]\n체력을 회복했다!",
+  "battle.ppHealBerry": "{{pokemonNameWithAffix}}[[는]] {{berryName}}[[로]]\n{{moveName}}의 PP를 회복했다!",
+  "party-ui-handler.anyEffect": "써도 효과가 없다.",
+  "party-ui-handler.hasEnergy": "{{pokemonName}}[[는]]\n아직도 힘이 넘친다!",
+  "status-effect.poison.heal": "{{pokemonNameWithAffix}}의 독은\n말끔하게 해독됐다!",
+  "status-effect.toxic.heal": "{{pokemonNameWithAffix}}의 독은\n말끔하게 해독됐다!",
+  "status-effect.paralysis.heal": "{{pokemonNameWithAffix}}의\n몸저림이 풀렸다!",
+  "status-effect.sleep.heal": "{{pokemonNameWithAffix}}[[는]]\n눈을 떴다!",
+  "status-effect.freeze.heal": "{{pokemonNameWithAffix}}의\n얼음 상태가 나았다!",
+  "status-effect.burn.heal": "{{pokemonNameWithAffix}}의\n화상이 나았다!"
+}
