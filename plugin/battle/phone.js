@@ -8,8 +8,7 @@ export function isPhone(win = globalThis) {
   try { return !!win.matchMedia?.('(hover: none) and (pointer: coarse)').matches; } catch { return false; }
 }
 
-export const layoutOf = ({ phone = false, orientation = 'portrait' } = {}) =>
-  (!phone ? 'desktop' : orientation === 'landscape' ? 'landscape' : 'portrait');
+export const layoutOf = ({ phone = false } = {}) => (phone ? 'portrait' : 'desktop');
 
 const clamp = (value, [min, max]) => Math.min(max, Math.max(min, value));
 
@@ -91,6 +90,24 @@ export const PAD_BUTTONS = Object.freeze([['up', '위'], ['left', '왼쪽'], ['r
 const ARROW = '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 3.2 13.4 11H2.6z"/></svg>';
 const BACK_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.2 3.6 2.6 7.2l3.6 3.6M3 7.2h6.4a3.6 3.6 0 0 1 0 7.2H7.6" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
+export function choiceCursor(buttons, onBack = () => {}) {
+  let picked = 0;
+  function select(index, focus = true) {
+    picked = Math.max(0, Math.min(buttons.length - 1, index));
+    buttons.forEach((button, i) => {
+      if (i === picked) button.classList.add('pkb-picked'); else button.classList.remove('pkb-picked');
+    });
+    if (focus) buttons[picked]?.focus({ preventScroll: true });
+  }
+  buttons.forEach((button, i) => button.addEventListener('focus', () => select(i, false)));
+  return { select, press(key) {
+    if (key === 'b') return onBack();
+    if (key === 'a') return buttons[picked]?.click();
+    if (key === 'left' || key === 'up') select(picked - 1);
+    else if (key === 'right' || key === 'down') select(picked + 1);
+  } };
+}
+
 export function bindPress(button, fire) {
   const release = () => button.classList.remove('held');
   button.addEventListener('pointerdown', event => {
@@ -159,7 +176,7 @@ export const PHONE_CSS = `
   .poke-battle .pad button.held { transform:translateY(3px); box-shadow:0 1px 0 var(--navy-dark); }
   .poke-battle .pad .ab .a.held { box-shadow:0 1px 0 var(--red-dark); }
   /* Shows which leave-confirmation button the pad picked (arrows = move, A = press, B = keep playing) */
-  .poke-battle.pkb-portrait .confirm .row button:focus, .poke-battle.pkb-landscape .confirm .row button:focus { outline:3px solid #ffd35c; outline-offset:2px; }
+  .poke-battle.pkb-portrait .confirm .row button.pkb-picked, .poke-battle.pkb-landscape .confirm .row button.pkb-picked { outline:3px solid #ffd35c; outline-offset:2px; }
   /* Landscape: no strip, buttons in the empty space at both sides */
   .poke-battle.pkb-landscape { align-items:center; }
   .poke-battle.pkb-landscape .band { display:none; }

@@ -150,7 +150,7 @@ const LINE = 22;
 
 export const DIARY_CSS = [
   `.x-risu-pkb-log{display:block;margin:6px 0 2px;padding:0;max-width:470px;font-family:${FONT};font-weight:700;text-align:left;}`,
-  `.x-risu-pkb-logi{position:relative;display:inline-flex;align-items:center;justify-content:center;width:28px;height:25px;margin:0;padding:0;list-style:none;cursor:pointer;border:2px solid #315a77;border-radius:7px;background:#fff;box-shadow:0 2.5px 0 #23435f;color:#315a77;user-select:none;}`,
+  `.x-risu-pkb-logi{box-sizing:border-box;vertical-align:top;position:relative;display:inline-flex;align-items:center;justify-content:center;width:28px;height:25px;margin:0;padding:0;list-style:none;cursor:pointer;border:2px solid #315a77;border-radius:7px;background:#fff;box-shadow:0 2.5px 0 #23435f;color:#315a77;user-select:none;}`,
   `.x-risu-pkb-logi::-webkit-details-marker{display:none;}`,
   `.x-risu-pkb-logi::marker{content:"";}`,
   `.x-risu-pkb-logi:active{transform:translateY(1.5px);box-shadow:0 1px 0 #23435f;}`,
@@ -165,16 +165,21 @@ export const DIARY_CSS = [
   `.x-risu-pkb-pe{color:#c2303b;overflow-wrap:anywhere;}`,
   `.x-risu-pkb-paper:empty{min-height:${LINE + 9}px;}`,
 
-  `.x-risu-pkb-logrow{position:relative;display:block;max-width:470px;}`,
+  `.x-risu-pkb-logrow{position:relative;display:flow-root;max-width:470px;}`,
   `.x-risu-pkb-fgs:only-child:not(:empty){padding-top:31px;}`,
   `.x-risu-pkb-fgs:only-child .x-risu-pkb-fg{left:0;}`,
-  `.x-risu-pkb-btn.x-risu-pkb-fg{position:absolute;top:6px;left:34px;display:inline-flex;align-items:center;justify-content:center;width:28px;height:25px;margin:0;padding:0;border:2px solid #315a77;border-radius:7px;background:#fff;box-shadow:0 2.5px 0 #23435f;color:#315a77;cursor:pointer;}`,
+  `.x-risu-pkb-btn.x-risu-pkb-fg{box-sizing:border-box;vertical-align:top;position:absolute;top:6px;left:34px;display:inline-flex;align-items:center;justify-content:center;width:28px;height:25px;margin:0;padding:0;border:2px solid #315a77;border-radius:7px;background:#fff;box-shadow:0 2.5px 0 #23435f;color:#315a77;cursor:pointer;}`,
   `.x-risu-pkb-btn.x-risu-pkb-fg:hover{filter:none;background:#fff4f4;}`,
   `.x-risu-pkb-btn.x-risu-pkb-fg:active{transform:translateY(1.5px);box-shadow:0 1px 0 #23435f;}`,
   `.x-risu-pkb-btn.x-risu-pkb-fg svg{display:block;width:17px;height:17px;}`,
   `.x-risu-pkb-btn.x-risu-pkb-fg.x-risu-pkb-busy{cursor:default;background:#eef4f9;transform:none;box-shadow:0 2.5px 0 #23435f;}`,
   `.x-risu-pkb-fg.x-risu-pkb-busy svg{animation:x-risu-pkbforge 0.9s ease-in-out infinite;}`,
   `@keyframes x-risu-pkbforge{0%,100%{transform:rotate(0deg);} 50%{transform:rotate(-24deg);} }`,
+  `.x-risu-pkb-fgask{position:absolute;top:6px;left:68px;display:flex;align-items:center;gap:5px;width:max-content;max-width:calc(100% - 68px);min-height:25px;padding:2px 4px 2px 7px;box-sizing:border-box;border:1.5px solid #315a77;border-radius:7px;background:#fff;color:#23435f;font-family:${FONT};font-size:11px;line-height:1.3;box-shadow:0 2px 0 #23435f;animation:x-risu-pkbask .15s ease-out;}`,
+  `.x-risu-pkb-fgask>span{min-width:0;overflow-wrap:anywhere;}`,
+  `.x-risu-pkb-fgask .x-risu-pkb-fgok{display:inline-flex;flex:none;align-items:center;justify-content:center;width:23px;height:21px;padding:0;border:1.5px solid #315a77;border-radius:5px;background:#eef4f9;color:#23435f;font:700 14px/1 sans-serif;box-shadow:0 1px 0 #23435f;}`,
+  `.x-risu-pkb-fgs:only-child .x-risu-pkb-fgask{left:34px;max-width:calc(100% - 34px);}`,
+  `@keyframes x-risu-pkbask{from{opacity:0;transform:translateX(-4px);}to{opacity:1;transform:none;}}`,
   noteRule('.x-risu-pkb-fgnote', 'info'),
   `.x-risu-pkb-fgnote{display:block;box-sizing:border-box;max-width:470px;margin:5px 0 4px;font-size:11.5px;text-align:left;}`,
   `.x-risu-pkb-fgsub{display:block;font-size:10px;opacity:.85;}`,
@@ -195,6 +200,7 @@ export function renderDiary({ events = [], errors = [], forge = null } = {}) {
     + bad.map(e => `<div class="x-risu-pkb-pe">! ${esc(e)}</div>`).join('');
   const log = rows ? logHtml(rows, bad.length > 0) : '';
   if (!forge || forge.buttonsOff) return log ? `\n\n${log}\n\n` : '';
+  if (forge.pending) return '\n\n<div class="x-risu-pkb-logrow">' + log + '<div class="x-risu-pkb-fgs x-risu-pkbfi-{{chat_index}}"></div></div>\n\n';
   const slot = `<div class="x-risu-pkb-fgs x-risu-pkbf-${forge.key}">${renderForge(forge)}</div>`;
   return `\n\n<div class="x-risu-pkb-logrow">${log}{{#if {{equal::{{chat_index}}::${forge.at}}}}}${slot}{{/if}}</div>\n\n`;
 }
@@ -210,11 +216,12 @@ const FORGE_LABEL = '이 장면으로 배틀 만들기';
 export const FORGE_BUSY = '배틀을 만드는 중입니다.';
 export const FORGE_HOLD = '끝날 때까지 메시지를 보내거나 고치지 마십시오.';
 
-export function renderForge({ key, on = false, busy = false } = {}) {
+export function renderForge({ key, on = false, busy = false, ask = false } = {}) {
   if (!on && !busy) return '';
   const label = busy ? FORGE_BUSY : FORGE_LABEL;
   const button = `<button type="button" class="x-risu-pkb-btn x-risu-pkb-fg${busy ? ' x-risu-pkb-busy' : ''} x-risu-pkbk-${key} x-risu-pkba-forge x-risu-pkbi-{{chat_index}}"`
-    + ` title="${label}" aria-label="${label}"${busy ? ' disabled' : ''}>${ICON_SWORD}</button>`;
+    + ` title="${label}" aria-label="${label}" aria-expanded="${ask && !busy}"${busy ? ' disabled' : ''}>${ICON_SWORD}</button>`;
   const lines = busy ? `<div class="x-risu-pkb-fgnote">${esc(FORGE_BUSY)}<span class="x-risu-pkb-fgsub">${esc(FORGE_HOLD)}</span></div>` : '';
-  return button + lines;
+  const confirm = ask && !busy ? `<span class="x-risu-pkb-fgask" role="group" aria-label="배틀 생성 확인"><span>보조모델을 이용해 배틀을 생성합니다.</span><button type="button" class="x-risu-pkb-btn x-risu-pkb-fgok x-risu-pkbk-${key} x-risu-pkba-forgeok x-risu-pkbi-{{chat_index}}" title="배틀 생성 확인" aria-label="배틀 생성 확인">✓</button></span>` : '';
+  return button + confirm + lines;
 }

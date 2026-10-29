@@ -318,7 +318,7 @@ async function plainDisplay(text) {
   const last = await sharedPass();
   const pass = last && !last.has(text) && !last.grows(text) ? await sharedPass(text) : last;
   if (!isOn(pass)) return undefined;
-  const html = renderDiary({ forge: forgeSlot(pass, pass.at(text)) });
+  const html = renderDiary({ forge: forgeSlot(pass, pass.at(text), text) });
   return html ? withSheet(text.replace(/\s+$/, '') + html) : undefined;
 }
 
@@ -344,7 +344,7 @@ async function diaryHtml(text, pass, at) {
     const counts = t => { const meta = pass?.table?.meta?.[t.key]; return !meta?.blockKey || pass.survey.battles.get(meta.blockKey)?.committed !== 'discarded'; };
     const results = findTags(text).filter(counts).flatMap(t => resultEvents(pass?.table?.meta?.[t.key], pass?.table?.snaps?.[t.key]));
     const log = { events: [...results, ...(changes?.events ?? []), ...(own?.events ?? [])], errors: [...(changes?.errors ?? []), ...(own?.errors ?? [])] };
-    return renderDiary({ ...log, forge: forgeSlot(pass, at) });
+    return renderDiary({ ...log, forge: forgeSlot(pass, at, text) });
   } catch (error) {
     console.warn('[poke-battle] 메시지 로그를 만들지 못함', error);
     return '';
@@ -566,7 +566,13 @@ async function installSheet() {
   sheetReady = true;
 }
 
-async function bindButtons() {
+let bindingButtons = Promise.resolve();
+function bindButtons() {
+  const next = bindingButtons.then(bindButtonsNow);
+  bindingButtons = next.catch(() => {});
+  return next;
+}
+async function bindButtonsNow() {
   if (!doc) return;
   const list = await doc.querySelectorAll('.x-risu-pkb-btn:not(.x-risu-pkb-bound)');
   const n = await list.length();
@@ -658,14 +664,21 @@ async function drawNotice(press, pass) {
 }
 
 const forging = new Set();
+const forgeAsking = new Map();
 
 const forgeSlots = new Map();
 
-const forgeLook = (pass, key, at) => ({ on: at === forgeAt(pass.chat, { quiet: !quietIn(pass.id) }), busy: forging.has(`${pass.id}:${key}`) });
+const forgeLook = (pass, key, at) => {
+  const name = `${pass.id}:${key}`;
+  const on = at === forgeAt(pass.chat, { quiet: !quietIn(pass.id) });
+  const ask = on && forgeAsking.get(name) === pass.text;
+  if (!ask) forgeAsking.delete(name);
+  return { on, busy: forging.has(name), ask };
+};
 
-function forgeSlot(pass, at) {
+function forgeSlot(pass, at, text) {
   const message = pass?.chat.message?.[at];
-  if (!mayForge(message)) return null;
+  if (!mayForge(message)) return !pass.has(text) ? { pending: true, buttonsOff: doc === null } : null;
   const key = forgeKey(messageId(message, at));
   const view = { key, at, ...forgeLook(pass, key, at), buttonsOff: doc === null };
   forgeSlots.set(`${pass.id}:${key}`, { id: pass.id, key, html: renderForge(view) });
@@ -674,17 +687,33 @@ function forgeSlot(pass, at) {
 
 async function refreshForge(pass) {
   const index = new Map((pass.chat.message ?? []).map((m, i) => [forgeKey(messageId(m, i)), i]));
+  const bottom = forgeAt(pass.chat);
+  if (bottom >= 0) {
+    const key = forgeKey(messageId(pass.chat.message[bottom], bottom));
+    const name = `${pass.id}:${key}`;
+    if (!forgeSlots.has(name)) forgeSlots.set(name, { id: pass.id, key, html: null });
+  }
   for (const [name, slot] of forgeSlots) {
     const at = slot.id === pass.id ? index.get(slot.key) : undefined;
-    if (at === undefined) { forgeSlots.delete(name); continue; }
+    if (at === undefined) { forgeSlots.delete(name); forgeAsking.delete(name); continue; }
     const html = renderForge({ key: slot.key, ...forgeLook(pass, slot.key, at) });
     if (html === slot.html) continue;
     try {
-      const element = doc && await doc.querySelector(`.x-risu-pkbf-${slot.key}`);
-      if (element) await element.setInnerHTML(withIndex(html, at));
-      slot.html = html;
+      const element = doc && (await doc.querySelector(`.x-risu-pkbf-${slot.key}`) ?? await doc.querySelector(`.x-risu-pkbfi-${at}`));
+      if (element) { await element.setInnerHTML(withIndex(html, at)); slot.html = html; }
     } catch (error) { console.warn('[poke-battle] 칼 칸을 바꿔 끼우지 못함', error); }
   }
+}
+async function askForge(press, pass) {
+  const name = `${pass.id}:${press.key}`;
+  if (forging.has(name)) return;
+  try {
+    const asked = forgeRequest({ chat: pass.chat, key: press.key, quiet: !quietIn(pass.id), state: await pass.state(), sim, naming: naming() });
+    if (asked.why) throw failed(asked.why);
+    if (forgeAsking.has(name)) forgeAsking.delete(name); else forgeAsking.set(name, pass.text);
+    await refreshForge(pass);
+    await bindButtons();
+  } catch (error) { await showToast(doc, failureNote(WHAT.forge, error)); }
 }
 async function forgeBattle(press, pass) {
   const running = `${pass.id}:${press.key}`;
@@ -761,7 +790,13 @@ async function onButton(press) {
   }
   case 'discardok': return discardCard(press, pass);
   case 'restore': return restoreCard(press, pass);
-  case 'forge': return forgeBattle(press, pass);
+  case 'forge': return askForge(press, pass);
+  case 'forgeok': {
+    const name = `${pass.id}:${press.key}`;
+    if (forgeAsking.get(name) !== pass.text) return;
+    forgeAsking.delete(name);
+    return forgeBattle(press, pass);
+  }
   default: return undefined;
   }
 }
@@ -915,8 +950,7 @@ async function prepareBattle(press, mode, retryOf, owner) {
     setFollow(chat, key);
   }, { vars: true, missing: true });
   const app = await openBattleWindow({
-    fetchBytes: createFetchBytes(risuai), iron: settings.iron, orientation: settings.orientation,
-    onOrientation: orientation => keepSettings({ ...settings, orientation }),
+    fetchBytes: createFetchBytes(risuai), iron: settings.iron,
     onSpeed: speed => keepSettings({ ...settings, speed }),
     me,
 

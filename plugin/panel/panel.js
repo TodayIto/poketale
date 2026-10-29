@@ -232,10 +232,15 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
 
   await refresh({ force: true });
   const outside = await doc.addEventListener('pointerdown', async ({ clientX, clientY }) => {
-    if (stopped || !ui.open || busy || !now?.show) return;
+    if (stopped || !ui.open || busy || !now?.show || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
     try {
-      const r = await outer.getBoundingClientRect();
-      if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) await press({ t: 'fold' });
+      const horizontalTabs = await sheetBox.querySelector('.x-risu-pkbp-stabs');
+      const [sheet, tabs, horizontal] = await Promise.all([
+        sheetBox.getBoundingClientRect(), tabsBox.getBoundingClientRect(), horizontalTabs?.getBoundingClientRect(),
+      ]);
+      const areas = horizontal?.height > 0 ? [sheet] : [sheet, tabs];
+      const inside = areas.some(r => r.width > 0 && r.height > 0 && clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom);
+      if (!inside && !stopped && ui.open && !busy && now?.show) await press({ t: 'fold' });
     } catch (error) { console.warn('[poke-battle] 패널', error); }
   }, true);
   const unlisten = changes(() => { refresh(); });

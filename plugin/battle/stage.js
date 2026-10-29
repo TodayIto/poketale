@@ -45,6 +45,7 @@ export async function showFrame(show, { full = false } = {}) {
   const rect = full ? null : await measure().catch(() => null);
   await place(frame, rect);
   await show();
+  await frame.setStyle('z-index', '2000');
   if (!full) track(frame, rect);
 }
 

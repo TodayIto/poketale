@@ -5,7 +5,7 @@ import { createBattleSession, isWild } from './flow.js';
 import { mark, clearBattleMarks } from './marks.js';
 import { END_CSS, END_GUARD_MS, mountEndScreen, flyAway, shake, PLANE } from './end-screen.js';
 import { UI_VARS, CARD_FRAME, rowButtonsCss, crossIcon } from './ui-css.js';
-import { PHONE_CSS, isPhone, layoutOf, mountPhoneLayout } from './phone.js';
+import { PHONE_CSS, isPhone, layoutOf, mountPhoneLayout, choiceCursor } from './phone.js';
 import { ENTRY_CSS, mountEntry, backToChat, entryNamed, STAMP_SOUND } from './entry.js';
 import { entryPictures, entrySound } from './entry-art.js';
 import { PLAYER_NAME } from '../../story/state.mjs';
@@ -26,13 +26,10 @@ const ICON = {
 
   speed: speed => `<span class="mul">x${speed}</span>`,
 
-  turn: to => `<svg viewBox="0 0 16 16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${
-    to === 'landscape' ? '<rect x="1.4" y="6.6" width="9" height="7.6" rx="1.4"/>' : '<rect x="1.4" y="4.4" width="7.4" height="10.2" rx="1.4"/>'
-  }<path d="M6 1.8h6.4a1.4 1.4 0 0 1 1.4 1.4v5"/><path d="M12.2 6.4l1.6 1.8 1.6-1.8"/></g></svg>`,
+
 };
 
 // Orientation button label: what pressing it turns the layout to
-const TURN_LABEL = { landscape: '가로 화면으로', portrait: '세로 화면으로' };
 
 const SEND_NOTE_MS = 4000;
 
@@ -40,7 +37,7 @@ const humanError = error => failureLines(WHAT.open, error);
 
 export function mountBattle({ parent = document.body, fetchBytes, onClose = () => {}, spec, development = false, createView = createBattleView,
   bgm                                                                              , story,
-  iron = false, onCollapse, onRetry, viewOptions: extraViewOptions = {}, orientation = 'portrait', onOrientation, onSpeed, phone = isPhone(), me = { black: true, image: null } }) {
+  iron = false, onCollapse, onRetry, viewOptions: extraViewOptions = {}, onSpeed, phone = isPhone(), me = { black: true, image: null } }) {
   loadFont(SHEET_FONT).catch(error => console.warn('[poke-battle] 배틀 창 글꼴을 올리지 못함, 대체 글꼴로', error));
   const root = document.createElement('section');
   root.className = 'poke-battle';
@@ -110,7 +107,6 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
       <button class="close leave" type="button" aria-label="나가기" title="나가기">${ICON.leave}</button>
       <span class="savenote" role="status" hidden></span>
       <span class="grow"></span>
-      <button class="turn" type="button" hidden></button>
       <button class="speed" type="button" title="배속" hidden></button>
       <button class="send icon-host" type="button" aria-label="이야기로 보내기" title="이야기로 보내기" hidden>${ICON.send}</button>
       <button class="fold" type="button" aria-label="접기" title="접기" hidden>${ICON.fold}</button>
@@ -132,7 +128,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
   parent.append(root);
   const $ = selector => root.querySelector(selector);
   const screenBox = $('.screen'), stage = $('.stage'), oops = $('.oops'), confirmBox = $('.confirm'), sendNote = $('.sendnote');
-  const leaveButton = $('.band .leave'), sendButton = $('.band .send'), foldButton = $('.band .fold'), speedButton = $('.band .speed'), turnButton = $('.band .turn');
+  const leaveButton = $('.band .leave'), sendButton = $('.band .send'), foldButton = $('.band .fold'), speedButton = $('.band .speed');
   const saveNote = $('.band .savenote');
   let session, closed = false, started = false, paused = false;
 
@@ -152,23 +148,14 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
   let takeDown = () => {};
   function putLayout() {
     takeDown();
-    takeDown = mountPhoneLayout(root, layoutOf({ phone, orientation }), { press: key => padPress(key),
-      left: [leaveButton], right: [foldButton, sendButton, speedButton, turnButton], screen: screenBox, onScreen: [saveNote] });
-    const to = orientation === 'landscape' ? 'portrait' : 'landscape';
-    turnButton.innerHTML = ICON.turn(to);
-    turnButton.title = TURN_LABEL[to];
-    turnButton.setAttribute('aria-label', TURN_LABEL[to]);
+    takeDown = mountPhoneLayout(root, layoutOf({ phone }), { press: key => padPress(key),
+      left: [leaveButton], right: [foldButton, sendButton, speedButton], screen: screenBox, onScreen: [saveNote] });
   }
   putLayout();
 
   function padPress(key) {
     if (closed) return;
-    if (!confirmBox.hidden) {
-      const keep = confirmBox.querySelector('.keep'), quit = confirmBox.querySelector('.quit');
-      if (key === 'b') return hideConfirm();
-      if (key === 'a') return (document.activeElement === quit ? quit : keep).click();
-      return (document.activeElement === quit ? keep : quit).focus();
-    }
+    if (!confirmBox.hidden) return confirmCursor.press(key);
     if (mode === 'result' && endPress?.(key)) return;
     if (mode === 'running' || mode === 'result') session?.pressKey?.(key);
   }
@@ -180,7 +167,6 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     root.dataset.mode = mode;
     sendButton.hidden = !(mode === 'running' && story?.onSend);
     speedButton.hidden = mode !== 'running';
-    turnButton.hidden = !(phone && mode === 'running');
     foldButton.hidden = !((mode === 'running' && onCollapse) || mode === 'result');
   };
   setMode('preparing');
@@ -233,12 +219,13 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     confirmBox.hidden = true;
     stage.focus?.({ preventScroll: true });
   };
+  const confirmCursor = choiceCursor([confirmBox.querySelector('.keep'), confirmBox.querySelector('.quit')], hideConfirm);
   leaveButton.onclick = () => {
     if (mode === 'result' && endChoice && !saveFailed) return endChoice('confirm');
     if (mode !== 'running' || forfeitFailed) return close();
     confirmBox.querySelector('.what').textContent = iron ? '철인 모드라 패배로 기록됩니다.' : '이 배틀은 없던 일이 됩니다.';
     confirmBox.hidden = false;
-    confirmBox.querySelector('.keep').focus();
+    confirmCursor.select(0);
   };
   confirmBox.querySelector('.keep').onclick = hideConfirm;
 
@@ -252,7 +239,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
         forfeitFailed = true;
         confirmBox.querySelector('.what').textContent = failureText(WHAT.result, error);
         confirmBox.hidden = false;
-        confirmBox.querySelector('.quit').focus();
+        confirmCursor.select(1);
         return;
       }
     }
@@ -260,7 +247,8 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
   };
   confirmBox.addEventListener('keydown', e => {
     e.stopPropagation();
-    if (e.key === 'Escape') { e.preventDefault(); hideConfirm(); }
+    const key = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', Enter: 'a', ' ': 'a', z: 'a', Z: 'a', Escape: 'b', Backspace: 'b', x: 'b', X: 'b' }[e.key];
+    if (key) { e.preventDefault(); confirmCursor.press(key); }
   });
   confirmBox.addEventListener('pointerdown', e => { if (e.target === confirmBox) hideConfirm(); });
 
@@ -310,15 +298,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     stage.focus?.({ preventScroll: true });
   };
 
-  turnButton.onclick = () => {
-    orientation = orientation === 'landscape' ? 'portrait' : 'landscape';
-    putLayout();
-    stage.focus?.({ preventScroll: true });
-    Promise.resolve(onOrientation?.(orientation)).catch(error => {
-      console.error('[poke-battle] 화면 방향 저장 실패', error);
-      showNote(failureText(WHAT.orientation, error));
-    });
-  };
+
 
   foldButton.onclick = () => {
     if (mode === 'result') return saveFailed ? close() : endChoice?.('confirm');

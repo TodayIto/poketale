@@ -24,7 +24,6 @@ export const SEND_FORMATS = [['summary', '요약'], ['key', '핵심'], ['log', '
 
 const THEME_LABELS = { plugin: '기본', legacy: '레거시', default: 'PokeRogue' };
 export const THEMES = THEME_IDS.map(id => [id, THEME_LABELS[id]]);
-export const ORIENTATIONS = [['landscape', '가로'], ['portrait', '세로']];
 const DIFFICULTY_LABELS = { easy: '쉬움', normal: '보통', hard: '어려움', max: '최고' };
 export const DIFFICULTIES = DIFFICULTY_IDS.map(id => [id, DIFFICULTY_LABELS[id]]);
 
@@ -70,7 +69,6 @@ export const SETTING_TABS = [
     { key: 'myPicture', label: '내 그림', options: PICTURE_LOOKS, help: '배틀 준비 화면에 나옵니다.', look: true },
     { key: 'theme', label: '배틀 화면 색', options: THEMES, help: '배틀 화면 안의 창 색' },
     { key: 'quality', label: '화질', options: QUALITIES, help: '낮음은 절반 해상도로 그립니다.\n새로 여는 배틀부터 적용됩니다.' },
-    { key: 'orientation', label: '화면 방향', options: ORIENTATIONS, help: '휴대폰의 배틀 창 배치. PC에서는 바뀌지 않습니다.' },
   ] },
   { id: 'story', label: '이야기', rows: [
     { key: 'sendFormat', label: 'AI 전달 양식', options: SEND_FORMATS, help: SEND_FORMAT_NOTES },
@@ -114,7 +112,7 @@ export function normalizeSettings(raw) {
     sound: s.sound === true,
     sendFormat: pick(s.sendFormat, SEND_FORMATS, DEFAULT_SETTINGS.sendFormat),
     theme: pick(s.theme, THEMES, DEFAULT_SETTINGS.theme),
-    orientation: pick(s.orientation, ORIENTATIONS, DEFAULT_SETTINGS.orientation),
+    orientation: 'portrait',
     koNames: s.koNames !== false,
     autoSend: s.autoSend === true,
     difficulty: pick(s.difficulty, DIFFICULTIES, DEFAULT_SETTINGS.difficulty),

@@ -55,7 +55,7 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), show = a
       + `<div class="frame"><div class="screen"><div class="stage"></div><button type="button" class="leave" aria-label="닫기" title="닫기">${crossIcon(2.6)}</button></div></div>`;
     document.body.append(root);
     const press = key => { try { host.view?.pressKey?.(key); } catch {                     } };
-    const takeDown = mountPhoneLayout(root, layoutOf({ phone, orientation: settings().orientation }), { press, band: false });
+    const takeDown = mountPhoneLayout(root, layoutOf({ phone }), { press, band: false });
     const screen = root.querySelector('.screen');
     const host = { root, stage: root.querySelector('.stage'), view: null, loading: mountLoading(screen, { before: screen.querySelector('.leave') }),
       left: false, onLeave: null, remove() { takeDown(); root.remove(); } };
