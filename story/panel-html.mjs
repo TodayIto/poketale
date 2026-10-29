@@ -33,7 +33,7 @@ const CSS = [
   `${C}{position:fixed;right:0;top:84px;z-index:45;display:flex;align-items:flex-start;font-family:${FONT};font-weight:400;font-size:13px;line-height:1.35;color:#23435f;letter-spacing:0;text-align:left;`
 
     + `transform:translateX(calc(100% - 44px));transition:transform .2s ease-out;}`,
-  `${C}${C}-open{transform:none;}`,
+  `${C}${C}-open{transform:none;z-index:1100;}`,
   `${C}${C}-gone{display:none;}`,
   `${C}${C}-low{top:280px;}`,
   `${C} *{box-sizing:border-box;}`,
