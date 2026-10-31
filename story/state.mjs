@@ -5,15 +5,19 @@ import { engineMember } from '../engine/input.mjs';
 import { BAG_ITEMS, isBall } from '../engine/bag.mjs';
 import { ppUpCount } from '../engine/pp.mjs';
 import { DEFAULT_FORMAT, formatRules } from '../engine/rules.mjs';
-import { HYPER_TRAIN_LEVEL } from './items.mjs';
+import { HYPER_TRAIN_LEVEL, expShareOn } from './items.mjs';
+import { say } from './screen-text.mjs';
+import { isCustomItem, itemId, customInfo, addCustomItem, tidyCustomItems } from './custom-items.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, OT_NAME_MAX, BOX_NAME_MAX, PLAYER_NAME } from './rules.mjs';
 import { bossBgm, personalName } from './named.mjs';
 import { outcomeOf } from './outcome.mjs';
 import { opponentPicture } from './trainer-look.mjs';
 import { readStored, isRecord } from './stored.mjs';
+import { ruleError } from './failure.mjs';
 import { surveyBattles } from './chat.mjs';
 import { SAVE_VAR } from './save.mjs';
 import { QUEUE_VAR, runAction } from './acts.mjs';
+import { IMPORT_VAR, readImports, applyImport, importPlace } from './import.mjs';
 
 export const TABLE_VAR = '$pkb_states';
 
@@ -32,9 +36,9 @@ const CAVE_BIOMES = new Set(['cave', 'ice_cave']);
 
 export { toID };
 
-// Deep copy of state (only JSON-stored values)
 export const clone = value => JSON.parse(JSON.stringify(value));
-const fail = message => { throw new Error(message); };
+
+const fail = (rule, values) => { throw ruleError(`state.${rule}`, values); };
 
 export function emptyState() {
   return { v: 1, party: [], box: [], bag: {}, money: 0, dex: { seen: [], caught: [] }, trainers: {} };
@@ -94,13 +98,14 @@ function foldList(folds, chat) {
   return list;
 }
 
+// Name of one change block in a message: message index + which change block in that message (heldChanges)
 export const changeAt = (index, n) => `${index}:${n}`;
 
 export function heldChanges(chat, table = readTable(chat)) {
   return surveyBattles(chat, table).held;
 }
 
-export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR];
+export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR];
 
 export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const table = readTable(chat);
@@ -122,7 +127,16 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   };
 
   const heldIn = i => (held.size ? findBlocks(parts[i]).filter(b => b.kind === 'change').map((_, n) => n).filter(n => held.has(changeAt(i, n))).join(',') : '');
-  const keyOf = i => `${messageId(messages[i], i)}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}`;
+
+  const imports = new Map();
+  for (const imp of readImports(chat).imports) {
+    const at = importPlace(messages, imp);
+    imports.set(at, [...imports.get(at) ?? [], imp]);
+  }
+  const importsAt = i => imports.get(i) ?? [];
+  const applyImportsAt = (i, start) => importsAt(i).reduce((cur, imp) => applyImport(cur, imp, ctx), start);
+  const importKey = i => [...(i === 0 ? importsAt(-1) : []), ...importsAt(i)].map(imp => hashKey(JSON.stringify(imp))).join(',');
+  const keyOf = i => `${messageId(messages[i], i)}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}`;
   let from = 0;
   while (from <= last && from < folds.length && folds[from].key === keyOf(from)) from++;
   if (from <= last) folds.length = from;
@@ -130,7 +144,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   for (const fold of folds.slice(0, from)) {
     for (const [key, set] of Object.entries(fold.fills)) if (!Object.hasOwn(table.fills, key)) { table.fills[key] = set; changed = true; }
   }
-  let state = from ? folds[from - 1].after : emptyState();
+  let state = from ? folds[from - 1].after : applyImportsAt(-1, emptyState());
 
   const seen = new Set(parts.slice(0, from).flatMap(text => findTags(text).map(t => t.key)).filter(used));
   const reflected = new Set([...seen].flatMap(key => reflectedBy(table, key)));
@@ -165,10 +179,10 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       if (Object.keys(table.fills).length !== before) changed = true;
       ops.forEach((_, j) => { const key = `${name}:${event.key}:${j}`; if (Object.hasOwn(table.fills, key)) fills[key] = table.fills[key]; });
     }
+    state = applyImportsAt(i, state);
     if (keep) folds.push({ key: keyOf(i), after: state, fills });
   }
 
-  // The remembered state is never modified - the returned one is a copy
   const counted = new Set(parts.slice(0, last + 1).flatMap(text => findTags(text).map(t => t.key)).filter(used));
   return { state: keep ? clone(state) : state, table, changed, counted, reflected: new Set([...counted].flatMap(key => reflectedBy(table, key))) };
 }
@@ -184,27 +198,35 @@ export const isReflected = (action, reflected, counted) => reflected.has(action.
 
 export function applyOps(state, ops, ctx, fillKeyPrefix, table, { trace = false } = {}) {
   let next = clone(state);
-  const errors = [];
+  const errors = [], notes = [];
   const steps = [];
   (ops ?? []).forEach((op, i) => {
     const fillKey = `${fillKeyPrefix ?? 'local'}:${i}`;
     const attempt = clone(next);
     const fill = { known: table?.fills?.[fillKey] ?? null, made: null };
-    let error = null;
+    let error = null, errorNotes = [];
     try {
       applyOp(attempt, op, ctx, fillKey, fill);
+      tidyCustomItems(attempt);
     } catch (e) {
       error = e.message;
+      errorNotes = e.notes ?? [];
       errors.push(error);
+      notes.push(...errorNotes);
     }
     const before = next;
     if (!error) {
       next = attempt;
       if (fill.made && table) (table.fills ??= {})[fillKey] = fill.made;
     }
-    if (trace) steps.push({ op, before, after: next, error });
+    if (trace) steps.push({ op, before, after: next, error, notes: errorNotes });
   });
-  return trace ? { state: next, errors, steps } : { state: next, errors };
+  return trace ? { state: next, errors, notes, steps } : { state: next, errors, notes };
+}
+
+function takeCustom(state, id, op, named = true) {
+  if (op.custom) addCustomItem(state, id, op.custom);
+  if (named && isCustomItem(id) && !customInfo(state, id)) fail('itemNoName');
 }
 
 function applyOp(state, op, ctx, fillKey, fill) {
@@ -214,12 +236,14 @@ function applyOp(state, op, ctx, fillKey, fill) {
       let set = fill.known;
       if (!set || toID(set.species) !== toID(op.set.species)) set = fill.made = fillSet(ctx, op.set, rngFor(sim, fillKey));
       const mon = newMon(ctx, clone(set), uniqueUid(state, `m${hashKey(fillKey)}`));
+      takeCustom(state, mon.set.item, op, false);
       if (op.set.hpPercent !== undefined) mon.hp = hpFromPercent(sim, mon.set, op.set.hpPercent, false, ctx.formatid);
       if (op.set.status) mon.status = op.set.status;
       if (mon.hp === 0) mon.status = 'fnt';
 
       if (op.ot) mon.ot = String(op.ot).trim().slice(0, OT_NAME_MAX);
 
+      // A full party sends it to the box
       (op.to === 'box' || state.party.length >= PARTY_MAX ? state.box : state.party).push(mon);
       markDex(state, sim, mon.set.species, true);
       return;
@@ -227,30 +251,31 @@ function applyOp(state, op, ctx, fillKey, fill) {
     case 'level': {
       const { list, index, mon } = findMon(state, op.ref, sim);
       const delta = op.to !== undefined ? op.to - mon.set.level : op.delta;
-      if (!Number.isInteger(delta) || delta <= 0) fail(`${monLabel(mon)}: 레벨은 올리기만 됩니다 (지금 Lv${mon.set.level})`);
-      if (mon.set.level >= MAX_LEVEL) fail(`${monLabel(mon)}: 이미 Lv${MAX_LEVEL}`);
+      if (!Number.isInteger(delta) || delta <= 0) fail('levelUpOnly', { mon: monLabel(mon), level: mon.set.level });
+      if (mon.set.level >= MAX_LEVEL) fail('maxLevel', { mon: monLabel(mon), max: MAX_LEVEL });
 
       list[index] = op.candy ? levelUpOutside(mon, delta, ctx, null, { effort: false }) : levelUpOutside(mon, delta, ctx, rngFor(sim, fillKey));
       return;
     }
     case 'heal': {
-      const targets = op.ref === 'all' ? state.party : [findMon(state, op.ref, sim).mon];
-      for (const mon of targets) heal(sim, mon, op, ctx.formatid);
+      if (op.ref === 'all') return healParty(state, ctx, op);
+      heal(sim, findMon(state, op.ref, sim).mon, op, ctx.formatid);
       return;
     }
     case 'swap': {
 
       const a = findMon(state, op.a, sim), b = findMon(state, op.b, sim);
-      if (a.mon.uid === b.mon.uid) fail(`${monLabel(a.mon)}: 같은 포켓몬끼리는 바꿀 수 없습니다`);
+      if (a.mon.uid === b.mon.uid) fail('swapSame', { mon: monLabel(a.mon) });
       a.list[a.index] = b.mon;
       b.list[b.index] = a.mon;
       return;
     }
     case 'item': {
-      const id = toID(op.item);
-      if (!id) fail('도구 이름이 없습니다');
+      const id = itemId(op.item);
+      if (!id) fail('itemNoName');
+      takeCustom(state, id, op, op.delta > 0);
 
-      if (op.fromBag && (state.bag[id] ?? 0) + op.delta < 0) fail('가방에 그 도구가 없습니다.');
+      if (op.fromBag && (state.bag[id] ?? 0) + op.delta < 0) fail('notInBag');
       const count = Math.max(0, (state.bag[id] ?? 0) + op.delta);
       if (count) state.bag[id] = count; else delete state.bag[id];
       return;
@@ -262,14 +287,14 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'deposit': {
       const { list, index, mon } = findMon(state, op.ref, sim);
-      if (list !== state.party) fail(`${monLabel(mon)}: 이미 박스에 있습니다`);
+      if (list !== state.party) fail('inBox', { mon: monLabel(mon) });
       state.box.push(...list.splice(index, 1));
       return;
     }
     case 'withdraw': {
       const { list, index, mon } = findMon(state, op.ref, sim, { boxFirst: true });
-      if (list !== state.box) fail(`${monLabel(mon)}: 이미 파티에 있습니다`);
-      if (state.party.length >= PARTY_MAX) fail(`파티가 가득 찼습니다 (${PARTY_MAX}마리) — ${monLabel(mon)}을(를) 꺼낼 수 없습니다`);
+      if (list !== state.box) fail('inParty', { mon: monLabel(mon) });
+      if (state.party.length >= PARTY_MAX) fail('partyFull', { max: PARTY_MAX, mon: monLabel(mon) });
       state.party.push(...list.splice(index, 1));
       return;
     }
@@ -279,10 +304,11 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'hold': {
       const { mon } = findMon(state, op.ref, sim);
-      const item = op.item ? toID(op.item) : '';
+      const item = op.item ? itemId(op.item) : '';
+      takeCustom(state, item, op);
       if (op.fromBag) {
 
-        if (item && !(state.bag[item] > 0)) fail(`가방에 ${item} 이(가) 없습니다`);
+        if (item && !(state.bag[item] > 0)) fail('itemNotInBag', { item });
         if (item) { state.bag[item] -= 1; if (!state.bag[item]) delete state.bag[item]; }
         if (mon.set.item) state.bag[mon.set.item] = (state.bag[mon.set.item] ?? 0) + 1;
       }
@@ -298,10 +324,9 @@ function applyOp(state, op, ctx, fillKey, fill) {
     case 'teach': {
       const { mon } = findMon(state, op.ref, sim);
       const move = sim.Dex.moves.get(op.move);
-      if (!move.exists) fail(`모르는 기술 "${op.move}"`);
-      if (mon.set.moves.includes(move.id)) fail(`${monLabel(mon)}: 이미 ${move.name}을(를) 압니다`);
+      if (!move.exists) fail('unknownMove', { move: op.move });
+      if (mon.set.moves.includes(move.id)) fail('knowsMove', { mon: monLabel(mon), move: move.name });
       if (!op.forget) {
-
         if (mon.set.moves.length < MAX_MOVES) {
           mon.set.moves.push(move.id);
           mon.pending.moves = mon.pending.moves.filter(m => m !== move.id);
@@ -310,7 +335,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
         return;
       }
       const at = mon.set.moves.indexOf(toID(op.forget));
-      if (at < 0) fail(`${monLabel(mon)}: 잊을 기술 "${op.forget}"을(를) 모릅니다`);
+      if (at < 0) fail('forgetUnknown', { mon: monLabel(mon), move: op.forget });
       forgetMove(mon, mon.set.moves[at]);
       mon.set.moves[at] = move.id;
       mon.pending.moves = mon.pending.moves.filter(m => m !== move.id);
@@ -326,17 +351,17 @@ function applyOp(state, op, ctx, fillKey, fill) {
 
       const { mon } = findMon(state, op.ref, sim);
       const move = sim.Dex.moves.get(op.move);
-      if (!move.exists) fail(`모르는 기술 "${op.move}"`);
+      if (!move.exists) fail('unknownMove', { move: op.move });
       mon.pending.moves = mon.pending.moves.filter(m => m !== move.id);
       if (!op.skip) {
-        if (mon.set.moves.includes(move.id)) fail(`${monLabel(mon)}: 이미 ${move.name}을(를) 압니다`);
+        if (mon.set.moves.includes(move.id)) fail('knowsMove', { mon: monLabel(mon), move: move.name });
         if (op.forget) {
           const at = mon.set.moves.indexOf(toID(op.forget));
-          if (at < 0) fail(`${monLabel(mon)}: 잊을 기술 "${op.forget}"을(를) 모릅니다`);
+          if (at < 0) fail('forgetUnknown', { mon: monLabel(mon), move: op.forget });
           forgetMove(mon, mon.set.moves[at]);
           mon.set.moves[at] = move.id;
         } else {
-          if (mon.set.moves.length >= MAX_MOVES) fail(`${monLabel(mon)}: 기술이 이미 ${MAX_MOVES}개입니다 — 잊을 기술이 필요합니다`);
+          if (mon.set.moves.length >= MAX_MOVES) fail('movesFull', { mon: monLabel(mon), max: MAX_MOVES });
           mon.set.moves.push(move.id);
         }
       }
@@ -354,7 +379,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
 
       const { mon } = findMon(state, op.ref, sim);
       const ids = op.move ? [toID(op.move)] : [...mon.set.moves];
-      if (op.move && !mon.set.moves.includes(ids[0])) fail(`${monLabel(mon)}: "${op.move}" 기술을 모릅니다`);
+      if (op.move && !mon.set.moves.includes(ids[0])) fail('moveNotKnown', { mon: monLabel(mon), move: op.move });
       for (const id of ids) {
         const { pp: now, maxpp: max } = movePp(sim, mon, id, ctx.formatid);
         const next = op.amount === 'full' ? max : Math.min(max, now + Math.max(0, Number(op.amount) || 0));
@@ -366,11 +391,11 @@ function applyOp(state, op, ctx, fillKey, fill) {
 
       const { mon } = findMon(state, op.ref, sim);
       const id = toID(op.move);
-      if (!mon.set.moves.includes(id)) fail(`${monLabel(mon)}: "${op.move}" 기술을 모릅니다`);
+      if (!mon.set.moves.includes(id)) fail('moveNotKnown', { mon: monLabel(mon), move: op.move });
       const move = sim.Dex.moves.get(id);
       const from = ppUpsOf(mon, id);
       const to = ppUpCount(move, from + Math.max(0, Math.trunc(Number(op.amount) || 0)));
-      if (to <= from) fail(`${monLabel(mon)}: ${move.name}의 PP는 더 올릴 수 없습니다`);
+      if (to <= from) fail('ppMax', { mon: monLabel(mon), move: move.name });
       const { pp: now, maxpp: oldMax } = movePp(sim, mon, id, ctx.formatid);
       (mon.ppUps ??= {})[id] = to;
       const max = maxPp(sim, id, to, ctx.formatid);
@@ -382,12 +407,12 @@ function applyOp(state, op, ctx, fillKey, fill) {
 
       const { mon } = findMon(state, op.ref, sim);
       const stat = String(op.stat ?? '');
-      if (!STATS.includes(stat)) fail(`모르는 능력치 "${op.stat}"`);
+      if (!STATS.includes(stat)) fail('unknownStat', { stat: op.stat });
       const evs = mon.set.evs ??= {};
       for (const s of STATS) evs[s] ??= 0;
       const total = STATS.reduce((sum, s) => sum + evs[s], 0);
       const gain = Math.min(Math.max(0, Math.trunc(Number(op.amount) || 0)), EV_STAT_MAX - evs[stat], EV_TOTAL_MAX - total);
-      if (gain <= 0) fail(`${monLabel(mon)}: 기초포인트를 더 올릴 수 없습니다`);
+      if (gain <= 0) fail('evsMax', { mon: monLabel(mon) });
       const oldMax = maxHp(sim, mon.set, ctx.formatid);
       evs[stat] += gain;
       keepHpGain(sim, mon, oldMax, ctx.formatid);
@@ -397,10 +422,10 @@ function applyOp(state, op, ctx, fillKey, fill) {
 
       const { list, index, mon } = findMon(state, op.ref, sim);
       const growth = growthOf(ctx, mon.set.species);
-      if (!growth) fail(`${monLabel(mon)}: 경험치 표가 없습니다`);
-      if (mon.set.level >= MAX_LEVEL) fail(`${monLabel(mon)}: 이미 Lv${MAX_LEVEL}`);
+      if (!growth) fail('noGrowth', { mon: monLabel(mon) });
+      if (mon.set.level >= MAX_LEVEL) fail('maxLevel', { mon: monLabel(mon), max: MAX_LEVEL });
       const amount = Math.trunc(Number(op.amount) || 0);
-      if (amount <= 0) fail(`${monLabel(mon)}: 경험치는 올리기만 됩니다`);
+      if (amount <= 0) fail('expUpOnly', { mon: monLabel(mon) });
       const low = expForLevel(growth, mon.set.level);
       const exp = Math.min(expForLevel(growth, MAX_LEVEL), Math.max(low, mon.exp ?? low) + amount);
       let to = mon.set.level;
@@ -414,8 +439,8 @@ function applyOp(state, op, ctx, fillKey, fill) {
       const { mon } = findMon(state, op.ref, sim);
       const species = sim.Dex.species.get(mon.set.species);
       const ability = Object.values(species.abilities).find(a => toID(a) === toID(op.ability));
-      if (!ability) fail(`${monLabel(mon)}: "${op.ability}" 특성을 가질 수 없습니다`);
-      if (toID(ability) === toID(mon.set.ability)) fail(`${monLabel(mon)}: 이미 ${ability} 특성입니다`);
+      if (!ability) fail('abilityNot', { mon: monLabel(mon), ability: op.ability });
+      if (toID(ability) === toID(mon.set.ability)) fail('abilitySame', { mon: monLabel(mon), ability });
       mon.set.ability = ability;
       return;
     }
@@ -423,8 +448,8 @@ function applyOp(state, op, ctx, fillKey, fill) {
 
       const { mon } = findMon(state, op.ref, sim);
       const nature = sim.Dex.natures.get(op.nature);
-      if (!nature.exists) fail(`모르는 성격 "${op.nature}"`);
-      if (nature.name === mon.set.nature) fail(`${monLabel(mon)}: 이미 ${nature.name} 성격의 능력치입니다`);
+      if (!nature.exists) fail('unknownNature', { nature: op.nature });
+      if (nature.name === mon.set.nature) fail('natureSame', { mon: monLabel(mon), nature: nature.name });
       const original = mon.natureOrig ?? mon.set.nature;
       mon.set.nature = nature.name;
       if (nature.name === original) delete mon.natureOrig; else mon.natureOrig = original;
@@ -433,12 +458,12 @@ function applyOp(state, op, ctx, fillKey, fill) {
     case 'hypertrain': {
 
       const { mon } = findMon(state, op.ref, sim);
-      if (mon.set.level < HYPER_TRAIN_LEVEL) fail(`${monLabel(mon)}: 대단한 특훈은 Lv${HYPER_TRAIN_LEVEL}부터 할 수 있습니다`);
+      if (mon.set.level < HYPER_TRAIN_LEVEL) fail('hyperLevel', { mon: monLabel(mon), level: HYPER_TRAIN_LEVEL });
       const stats = op.stats === 'all' ? STATS : [].concat(op.stats ?? []);
-      if (!stats.length || stats.some(s => !STATS.includes(s))) fail(`모르는 능력치 "${op.stats}"`);
+      if (!stats.length || stats.some(s => !STATS.includes(s))) fail('unknownStat', { stat: op.stats });
       const ivs = mon.set.ivs ??= {};
       const raise = stats.filter(s => (ivs[s] ?? MAX_IV) < MAX_IV);
-      if (!raise.length) fail(`${monLabel(mon)}: 이미 개체값이 최고입니다`);
+      if (!raise.length) fail('ivsMax', { mon: monLabel(mon) });
       const oldMax = maxHp(sim, mon.set, ctx.formatid);
       mon.hyper ??= {};
       for (const s of raise) { mon.hyper[s] = ivs[s]; ivs[s] = MAX_IV; }
@@ -447,9 +472,8 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'boxname': {
 
-      // Box name (tapping the "Box 1" label renames it). Empty name = default name
       const index = Number(op.box);
-      if (!Number.isInteger(index) || index < 0 || index >= BOX_NAME_SLOTS) fail(`박스 번호가 맞지 않습니다 (${op.box})`);
+      if (!Number.isInteger(index) || index < 0 || index >= BOX_NAME_SLOTS) fail('boxNumber', { box: op.box });
       const names = [...(state.boxNames ?? [])];
       while (names.length <= index) names.push('');
       names[index] = String(op.name ?? '').trim().slice(0, BOX_NAME_MAX);
@@ -458,7 +482,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       return;
     }
   }
-  fail(`모르는 변경 "${op?.op}"`);
+  fail('unknownOp', { op: op?.op });
 }
 
 function keepHpGain(sim, mon, oldMax, formatid) {
@@ -468,6 +492,7 @@ function keepHpGain(sim, mon, oldMax, formatid) {
   if (mon.hp >= max) mon.hp = null;
 }
 
+// When the queue (moves to learn, evolution) is empty, the n in "level up up-arrow n" goes to 0 as well
 function settlePending(mon) {
   if (!mon.pending.moves.length && !mon.pending.evolve) mon.pending.levels = 0;
 }
@@ -496,11 +521,15 @@ function ppUpsFromSlots(moves, previous) {
   return entries.length ? Object.fromEntries(entries) : null;
 }
 
+export function healParty(state, ctx, op = {}) {
+  for (const mon of state.party) heal(ctx.sim, mon, op, ctx.formatid);
+}
+
 function heal(sim, mon, { hpPercent, hpAdd, statusOnly, revive }, formatid) {
   const fainted = mon.hp === 0;
   if (hpAdd !== undefined) {
 
-    if (fainted) fail(`${monLabel(mon)}: 기절해 있습니다`);
+    if (fainted) fail('fainted', { mon: monLabel(mon) });
     const max = maxHp(sim, mon.set, formatid);
     const hp = Math.min(max, (mon.hp ?? max) + Math.max(0, Number(hpAdd) || 0));
     mon.hp = hp >= max ? null : hp;
@@ -518,7 +547,6 @@ function heal(sim, mon, { hpPercent, hpAdd, statusOnly, revive }, formatid) {
   }
   if (hpPercent !== undefined) {
 
-    // A fainted Pokemon only gets up with "revive"
     if (!fainted) mon.hp = hpFromPercent(sim, mon.set, hpPercent, true, formatid);
     return;
   }
@@ -531,24 +559,24 @@ function heal(sim, mon, { hpPercent, hpAdd, statusOnly, revive }, formatid) {
 export function fillSet({ sim, levelUp }, teamSet, rng) {
   const { hpPercent, status, ...set } = clone(teamSet);
   const species = sim.Dex.species.get(set.species);
-  if (!species.exists) fail(`모르는 포켓몬 "${set.species}"`);
+  if (!species.exists) fail('unknownSpecies', { species: set.species });
   set.species = species.name;
-  if (!Number.isInteger(set.level) || set.level < 1 || set.level > MAX_LEVEL) fail(`${species.name}: 레벨은 1~${MAX_LEVEL} (${set.level})`);
-  if (status !== undefined && !STATUS_IDS.has(status)) fail(`${species.name}: 모르는 상태이상 "${status}"`);
+  if (!Number.isInteger(set.level) || set.level < 1 || set.level > MAX_LEVEL) fail('levelRange', { species: species.name, max: MAX_LEVEL, level: set.level });
+  if (status !== undefined && !STATUS_IDS.has(status)) fail('unknownStatus', { species: species.name, status });
   if (set.moves?.length) {
     set.moves = set.moves.map(m => {
       const move = sim.Dex.moves.get(m);
-      if (!move.exists) fail(`${species.name}: 모르는 기술 "${m}"`);
+      if (!move.exists) fail('speciesUnknownMove', { species: species.name, move: m });
       return move.id;
     });
   }
   const full = completeSet(sim.Dex, set, rng, { levelUp, label: species.name });
-  full.item = full.item ? toID(full.item) : '';
+  full.item = full.item ? itemId(full.item) : '';
   full.name = full.name ?? '';
   return full;
 }
 
-function newMon(ctx, set, uid) {
+export function newMon(ctx, set, uid) {
   const growth = growthOf(ctx, set.species);
   return {
     uid, set, hp: null, status: '', pp: {},
@@ -567,6 +595,7 @@ export function levelUpOutside(mon, delta, ctx, rng, { effort } = {}) {
   if (to <= from) return next;
   const growth = growthOf(ctx, set.species);
 
+  // Exp: kept as is within the new level, clamped into its range
   if (growth) {
     const low = expForLevel(growth, to);
     const high = to < MAX_LEVEL ? expForLevel(growth, to + 1) - 1 : low;
@@ -624,7 +653,7 @@ function evolve(ctx, mon, target) {
   const { sim, levelUp } = ctx;
   const from = sim.Dex.species.get(mon.set.species);
   const to = sim.Dex.species.get(target);
-  if (!to.exists) fail(`모르는 포켓몬 "${target}"`);
+  if (!to.exists) fail('unknownSpecies', { species: target });
   mon.set.ability = sameSlotAbility(from, mon.set.ability, to);
   mon.set.species = to.name;
   mon.pending.evolve = null;
@@ -660,7 +689,6 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
       return slot.pp < slot.maxpp ? [[id, slot.pp]] : [];
     }));
 
-    // PP Up counts: 0 for moves newly learned in battle; those of forgotten moves are dropped
     const ppUps = ppUpsFromSlots(mon.set.moves.map(id => slots.get(id) ?? { id }), mon.ppUps);
     if (ppUps) mon.ppUps = ppUps; else delete mon.ppUps;
     mon.hp = member.fainted || member.hp <= 0 ? 0 : member.hp >= member.maxhp ? null : member.hp;
@@ -713,6 +741,7 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
     if (ppUps) mon.ppUps = ppUps;
     if (caught.ball) mon.ball = caught.ball;
 
+    // The actual box slot is decided here: last
     (caught.toBox || state.party.length >= PARTY_MAX ? state.box : state.party).push(mon);
     markDex(state, sim, set.species, true);
   }
@@ -762,20 +791,22 @@ export function storyEndTrainer(battle, outcome, team = null) {
   return { who, trainer: { name: battle.name, personal: personalName(battle), outcome, team: team ?? battle.team.map(({ species, level }) => ({ species, level })) } };
 }
 
-export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, player } = {}) {
-  if (!state.party.length) fail('파티에 포켓몬이 없습니다');
-  if (!state.party.some(m => m.hp !== 0)) fail('싸울 수 있는 포켓몬이 없습니다');
+export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, player, expShare } = {}) {
+  if (!state.party.length) fail('noParty');
+  if (!state.party.some(m => m.hp !== 0)) fail('allFainted');
   const { sim } = ctx;
   const place = battle.place || 'plains';
   const { sprite, silhouette } = opponentPicture(battle, picture);
   const bgm = bossBgm({ wild: battle.wild, boss: battle.boss, sprite, name: battle.name, trainerClass: battle.trainerClass });
 
-  const p1 = state.party.map(engineMember);
+  const p1 = state.party.map(mon => engineMember(mon, state.customItems));
 
   const past = pairPast(sim, battle.team, trainersOf(state)[trainerKey(battle)]?.team ?? []);
   const p2 = battle.team.map((teamSet, i) => {
     const { hpPercent, status, ppUps, ...blockSet } = clone(teamSet);
     const set = past[i] ? continuePast(sim, blockSet, past[i]) : blockSet;
+
+    if (isCustomItem(set.item)) set.item = '';
     const member = { uid: `foe-${i + 1}`, set };
     if (ppUps) member.ppUps = ppUps;
     if (hpPercent !== undefined) member.hpPercent = hpPercent;
@@ -788,7 +819,7 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
     p1: { name: ctx.playerName || PLAYER_NAME, team: p1,
 
       ...(player ? { trainerSprite: player.gender } : {}), ...(player?.silhouette ? { trainerSilhouette: true } : {}) },
-    p2: { name: battle.name || (battle.wild ? '야생' : '상대'), team: p2,
+    p2: { name: battle.name || say(ctx.lang, battle.wild ? 'spec.wild' : 'spec.foe'), team: p2,
 
       ...(sprite ? { trainerSprite: sprite } : {}), ...(silhouette ? { trainerSilhouette: true } : {}) },
 
@@ -800,6 +831,7 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
     },
     wild: !!battle.wild,
     boss: !battle.wild && !!battle.boss,
+    ...(expShareOn(expShare, state.bag) ? {} : { expShare: false }),
     teraOrb: (state.bag.teraorb ?? 0) > 0,
     biome: place,
   };
@@ -837,21 +869,21 @@ export function findMon(state, ref, sim, { boxFirst = false } = {}) {
       const index = list.findIndex(m => m.uid === ref.uid);
       if (index >= 0) return { list, index, mon: list[index] };
     }
-    fail('그 포켓몬이 이제 없습니다');
+    fail('monGone');
   }
   if (ref && Number.isInteger(ref.box)) {
 
     const mon = state.box[ref.box - 1];
-    if (!mon) fail(`박스 ${ref.box}번째 포켓몬이 없습니다`);
+    if (!mon) fail('noBoxMon', { n: ref.box });
     return { list: state.box, index: ref.box - 1, mon };
   }
   if (ref && Number.isInteger(ref.slot)) {
     const mon = state.party[ref.slot - 1];
-    if (!mon) fail(`파티 ${ref.slot}번째 포켓몬이 없습니다`);
+    if (!mon) fail('noPartyMon', { n: ref.slot });
     return { list: state.party, index: ref.slot - 1, mon };
   }
   const name = String(ref?.name ?? '').trim();
-  if (!name) fail('어느 포켓몬인지 없습니다');
+  if (!name) fail('noWho');
   const lists = boxFirst ? [state.box, state.party] : [state.party, state.box];
   const key = name.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
   for (const list of lists) {
@@ -867,7 +899,7 @@ export function findMon(state, ref, sim, { boxFirst = false } = {}) {
       if (index >= 0) return { list, index, mon: list[index] };
     }
   }
-  fail(`"${name}" 포켓몬을 찾을 수 없습니다`);
+  fail('notFound', { name });
 }
 
 export function rngFor(sim, text) {
@@ -877,7 +909,7 @@ export function rngFor(sim, text) {
   return new sim.PRNG(seed);
 }
 
-function uniqueUid(state, base) {
+export function uniqueUid(state, base) {
   const used = new Set([...state.party, ...state.box].map(m => m.uid));
   let uid = base;
   for (let n = 2; used.has(uid); n++) uid = `${base}-${n}`;
@@ -896,13 +928,13 @@ export function hpPercentOf(sim, mon, formatid) {
   return Math.max(1, Math.min(100, Math.round(mon.hp / maxHp(sim, mon.set, formatid) * 100)));
 }
 
-function hpFromPercent(sim, set, percent, keepAlive = false, formatid) {
+export function hpFromPercent(sim, set, percent, keepAlive = false, formatid) {
   if (percent >= 100) return null;
   const hp = Math.round(maxHp(sim, set, formatid) * percent / 100);
   return percent > 0 || keepAlive ? Math.max(1, hp) : hp;
 }
 
-function markDex(state, sim, species, caught) {
+export function markDex(state, sim, species, caught) {
   const id = sim.Dex.species.get(species).id;
   if (!id) return;
   if (!state.dex.seen.includes(id)) state.dex.seen.push(id);

@@ -1,8 +1,8 @@
 // from pokerogue src/phases/evolution-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/evolution-scene-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/end-evolution-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
-// from pokerogue src/animations.ts (doSpiralUpward , doArcDownward , doCycle , doCircleInward , doSpray) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// from pokerogue src/animations.ts (doSpiralUpward; doArcDownward; doCycle; doCircleInward; doSpray) @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { placeSprite } from './sprites/placement.js';
 import { tween, delay } from './lifetime.js';
@@ -18,6 +18,7 @@ const sin = (index, amplitude) => amplitude * Math.sin(index * (Math.PI / 128));
 const cos = (index, amplitude) => amplitude * Math.cos(index * (Math.PI / 128));
 const randInt = range => (range <= 1 ? 0 : Math.floor(Math.random() * range));
 
+// Center of default_bg 320x132 (evolutionBaseBg.displayWidth/2, displayHeight/2)
 const CX = 160, CY = 66;
 
 export class EvolutionScene {
@@ -77,6 +78,7 @@ export class EvolutionScene {
     } catch { return null; }
   }
 
+  get cancelable() { return !!this.canCancel && !this.cancelled; }
   async evolve(to, { canCancel = true } = {}) {
     const s = this.scene;
     if (!this.container) throw new Error('Call startEvolution first');

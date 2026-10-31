@@ -1,5 +1,8 @@
 import { esc, FONT } from './card.mjs';
-import { statusName, PARTY_MAX, BOX_SIZE } from './panel.mjs';
+import { statusShort, PARTY_MAX, BOX_SIZE } from './panel.mjs';
+import { say } from './screen-text.mjs';
+import { moneyText } from './diary.mjs';
+import { COMPAT_TABS } from './compat.mjs';
 
 const SPRITE = (id, shiny) => `https://play.pokemonshowdown.com/sprites/gen5${shiny ? '-shiny' : ''}/${encodeURIComponent(id)}.png`;
 
@@ -8,6 +11,7 @@ const SD_ITEMS = 'https://play.pokemonshowdown.com/sprites/itemicons-sheet.png';
 
 export const ICON = {
 
+  // Poke Ball for the party tab; box and bag icons
   party: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#fff" stroke="#23435f" stroke-width="2"/>'
     + '<path d="M2 12a10 10 0 0 1 20 0z" fill="#e84d4d" stroke="#23435f" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="#fff" stroke="#23435f" stroke-width="2"/></svg>',
   box: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v9.3a1.7 1.7 0 0 1-1.7 1.7H5.7A1.7 1.7 0 0 1 4 19.3z" fill="#d6e6f2" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
@@ -18,38 +22,52 @@ export const ICON = {
     + '<path d="M4.6 12h14.8" stroke="currentColor" stroke-width="2"/><rect x="10" y="10.2" width="4" height="4" rx="1" fill="#fff" stroke="currentColor" stroke-width="1.7"/>'
     + '<path d="M8 16.4v2.4M16 16.4v2.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
 
-  // Back to battle (only when there is a folded battle - the fourth tab)
   resume: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+
+  aux: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.2A2.2 2.2 0 0 1 5.2 6h9.6A2.2 2.2 0 0 1 17 8.2v6.6a2.2 2.2 0 0 1-2.2 2.2H9.6L6 20.2V17h-.8A2.2 2.2 0 0 1 3 14.8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
+    + '<circle cx="7.4" cy="11.5" r="1.1" fill="currentColor"/><circle cx="10" cy="11.5" r="1.1" fill="currentColor"/><circle cx="12.6" cy="11.5" r="1.1" fill="currentColor"/>'
+    + '<path d="M19.4 1.8l.9 2.5 2.5.9-2.5.9-.9 2.5-.9-2.5-2.5-.9 2.5-.9z" fill="currentColor"/></svg>',
   fold: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   prev: '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M11 2.5v11L3.5 8z"/></svg>',
   next: '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M5 2.5v11L12.5 8z"/></svg>',
-};
-const TAB_LABEL = { party: '파티', box: '박스', bag: '가방' };
 
+  add: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
+
+  heal: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13.6L2.7 8.4A3.1 3.1 0 0 1 8 4.3a3.1 3.1 0 0 1 5.3 4.1z" fill="currentColor"/></svg>',
+};
+const tabLabel = (tab, lang) => esc(say(lang, `panel.tab.${tab}`));
+
+// Tab colours: party red; box blue; bag yellow
 export const TAB_COLOR = { party: '#d8434d', box: '#3d7196', bag: '#c98a1d' };
 
 const C = '.x-risu-pkbp';
+
+const TAB_TOP = 110, TAB_W = 40, TAB_H = 44, TAB_H_PHONE = 38, TAB_GAP = 7, RESUME_GAP = 6, GROUP_GAP = 14, FOLD_PEEK = 44;
 const CSS = [
   `${C}{position:fixed;right:0;top:84px;z-index:45;display:flex;align-items:flex-start;font-family:${FONT};font-weight:400;font-size:13px;line-height:1.35;color:#23435f;letter-spacing:0;text-align:left;`
 
-    + `transform:translateX(calc(100% - 44px));transition:transform .2s ease-out;}`,
+    + `transform:translateX(calc(100% - ${FOLD_PEEK}px));transition:transform .2s ease-out;}`,
   `${C}${C}-open{transform:none;z-index:1100;}`,
   `${C}${C}-gone{display:none;}`,
-  `${C}${C}-low{top:280px;}`,
+  `${C}${C}-low{top:${TAB_TOP - 10}px;}`,
   `${C} *{box-sizing:border-box;}`,
   `:where(${C}) button{font:inherit;margin:0;color:#1d3347;}`,
   `${C} button:focus{outline:none;} ${C} button:focus-visible{outline:2px solid #ffcf4a;outline-offset:1px;}`,
 
-  // Tabs: filled tabs with a navy border. When open the current tab joins the sheet
   `${C}-tabs{display:flex;flex-direction:column;gap:7px;padding-top:10px;position:relative;z-index:2;}`,
-  `${C}-tab{position:relative;display:flex;align-items:center;justify-content:center;width:40px;height:44px;padding:0;border:2.5px solid #23435f;border-right:0;border-radius:9px 0 0 9px;`
+  `${C}-tab{position:relative;display:flex;align-items:center;justify-content:center;width:${TAB_W}px;height:${TAB_H}px;padding:0;border:2.5px solid #23435f;border-right:0;border-radius:9px 0 0 9px;`
     + `color:#23435f;box-shadow:-2px 3px 0 #1a3247;cursor:pointer;}`,
   ...Object.entries(TAB_COLOR).map(([tab, color]) => `${C}-t${tab}{background:${color};}`),
   `${C}-tresume{margin-top:6px;background:#23435f;}`,
+
+  `${C}-taux{background:#c3cfd8;color:#6f8494;border-color:#7d93a4;box-shadow:-2px 3px 0 #8fa3b3;}`,
+  `${C}-taux${C}-on{background:#d8434d;color:#fff;border-color:#23435f;box-shadow:-2px 3px 0 #1a3247;}`,
+  `${C}-lit{position:absolute;top:4px;left:4px;width:7px;height:7px;border-radius:50%;background:#ffe36b;box-shadow:0 0 0 1.5px #8e2835,0 0 6px 2px rgba(255,227,107,.85);}`,
   `${C}-tab svg{display:block;width:24px;height:24px;}`,
   `${C}-tab:active{transform:translateY(2px);box-shadow:-2px 1px 0 #1a3247;}`,
   `${C}-open ${C}-tab${C}-cur{width:46px;margin-right:-2.5px;}`,
 
+  // Task alert mark: a yellow "!"
   `${C}-bang{position:absolute;top:-7px;left:-6px;padding:0 4px;border:1.5px solid #c09a2c;border-radius:8px;background:#ffd84a;color:#6b4a00;font:10px/1.4 sans-serif;}`,
 
   `${C}-sheet{position:relative;z-index:1;visibility:hidden;pointer-events:none;transition:visibility 0s .2s;}`,
@@ -92,6 +110,15 @@ const CSS = [
   `${C}-stpar{background:#c9a512;} ${C}-stbrn{background:#d8602b;} ${C}-stslp{background:#7d8a96;} ${C}-stfrz{background:#4aa6cf;} ${C}-stpsn,${C}-sttox{background:#9b4fb0;}`,
   `${C}-stfnt{background:#7f8b95;}`,
   `${C}-held{display:inline-block;width:8px;height:8px;border-radius:50%;background:#e9b24c;box-shadow:inset 0 0 0 1.5px #a5741c;}`,
+
+  `${C}-emo{font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif;font-style:normal;line-height:1;}`,
+  `${C}-heldemo{font-size:10px;}`,
+
+  `${C}-add{display:flex;flex:none;height:22px;padding:2px;border:0;border-radius:6px;background:repeating-linear-gradient(-45deg,#1b1b1b 0 4px,#ffcc00 4px 8px);cursor:pointer;}`,
+  `${C}-add>span{display:flex;align-items:center;gap:2px;padding:0 6px 0 4px;border-radius:4px;background:#ffd52e;color:#111;font-size:11px;font-weight:700;line-height:1;white-space:nowrap;}`,
+  `${C}-add svg{display:block;width:10px;height:10px;}`,
+  `${C}-add${C}-off{background:repeating-linear-gradient(-45deg,#9aa4ab 0 4px,#e3e7ea 4px 8px);cursor:default;}`,
+  `${C}-add${C}-off>span{background:#eef1f3;color:#97a3ac;}`,
   `${C}-exp{display:block;height:3px;margin-top:1px;border-radius:2px;background:#d4dfe7;overflow:hidden;}`,
   `${C}-exp span{display:block;height:100%;background:#4aa3e8;}`,
 
@@ -121,9 +148,21 @@ const CSS = [
   `${C}-icpr span{position:absolute;display:block;background-image:url("${PR_ITEMS}");background-repeat:no-repeat;image-rendering:pixelated;}`,
   `${C}-icsd{display:block;width:24px;height:24px;background-image:url("${SD_ITEMS}");background-repeat:no-repeat;image-rendering:pixelated;}`,
   `${C}-icdot{display:block;width:14px;height:14px;margin:5px;border-radius:50%;background:#e9b24c;box-shadow:inset 0 0 0 2px #a5741c;}`,
+  `${C}-icem{display:flex;align-items:center;justify-content:center;font-size:19px;}`,
   `${C}-itn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}`,
   `${C}-itc{flex:none;font-size:12px;color:#3d5a70;}`,
   `${C}-none{padding:16px 6px;text-align:center;color:#8193a1;font-size:12.5px;}`,
+
+  `${C}-offer{position:absolute;top:10px;right:100%;width:208px;margin-right:8px;padding:8px 10px 7px;border:2.5px solid #23435f;border-radius:10px;`
+    + `background:linear-gradient(160deg,#ffffff,#eef5fa);box-shadow:-3px 4px 0 #1a3247;font-size:12.5px;color:#14304a;}`,
+  `${C}-open ${C}-offer{display:none;}`,
+  `${C}-offb{display:flex;justify-content:flex-end;gap:6px;margin-top:6px;}`,
+  `${C}-offb button{padding:4px 9px 3px;border:2px solid #789db7;border-radius:7px;background:#fff;color:#23435f;font-size:12px;box-shadow:0 2px 0 #466c87;cursor:pointer;}`,
+  `${C}-offb ${C}-offy{border-color:#8e2835;background:#d8434d;color:#fff;box-shadow:0 2px 0 #8e2835;}`,
+  `${C}-offb button:active{transform:translateY(1.5px);box-shadow:none;}`,
+  `${C}-bring{display:block;width:100%;margin:0 0 9px;padding:9px 10px 8px;border:2px solid #d8434d;border-radius:10px;background:#fff;color:#14304a;font-size:13px;`
+    + `text-align:center;box-shadow:0 3px 0 #8e2835;cursor:pointer;}`,
+  `${C}-bring:active{transform:translateY(1.5px);box-shadow:0 1px 0 #8e2835;}`,
 
   `${C}-win{flex:none;margin:0 9px 10px;padding:7px 10px 6px;border:2.5px solid #23435f;border-radius:9px;background:#fff;box-shadow:0 3px 0 #1a3247;}`,
   `${C}-wt{white-space:pre-line;font-size:13px;color:#14304a;line-height:1.45;}`,
@@ -136,8 +175,14 @@ const CSS = [
   `${C}-opt${C}-off:hover{background:transparent;}`,
   `${C}-opt${C}-off:hover::before{display:none;}`,
 
+  // Toss count: left-arrow, x n, right-arrow, with how many are in the bag
+  `${C}-cnt{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:6px;}`,
+  `${C}-cntn{min-width:56px;padding:2px 8px;border:2px solid #789db7;border-radius:7px;background:#f4f9fc;color:#14304a;font-size:15px;text-align:center;}`,
+  `${C}-cntof{font-size:11px;color:#5d7486;}`,
+
   `@media (max-width:640px){`
     + `${C},${C}${C}-open{top:38%;transform:none;}`
+    + `${C}${C}-low{top:${TAB_TOP - 10}px;}`
     + `${C}-tab{width:38px;height:38px;} ${C}-tab svg{width:22px;height:22px;}`
     + `${C}-tabs{transition:opacity .2s;} ${C}-open ${C}-tabs{visibility:hidden;opacity:0;}`
     + `${C}-sheet{position:fixed;left:0;right:0;bottom:0;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .2s ease-in,visibility 0s .2s;}`
@@ -153,6 +198,23 @@ const CSS = [
   `@media (prefers-reduced-motion:reduce){${C},${C}-sheet,${C}-tabs{transition:none !important;}}`,
 ].join(' ');
 
+const BOT_BUTTON_H = 46;
+
+export const belowTabs = (count, resume, h) => TAB_TOP + count * h + (count - 1) * TAB_GAP + (resume ? RESUME_GAP : 0) + GROUP_GAP;
+
+export function compatTabsCss(count, resume, open = false) {
+  const X = name => `.x-risu-${COMPAT_TABS[name]}`;
+  const guide = `${X('button')}:not(${X('storageButton')}):not(${X('settingsButton')})`, settings = `${X('button')}${X('settingsButton')}`;
+  const tops = h => { const first = belowTabs(count, resume, h); return [first, first + BOT_BUTTON_H + TAB_GAP]; };
+  const [desk1, desk2] = tops(TAB_H), [phone1, phone2] = tops(TAB_H_PHONE);
+  return [
+    `${X('storageButton')},${X('storagePanel')}{display:none !important;}`,
+    `${guide}{top:${desk1}px !important;} ${settings}{top:${desk2}px !important;}`,
+    `@media (max-width:640px){${guide}{top:${phone1}px !important;} ${settings}{top:${phone2}px !important;}}`,
+    open ? `${X('button')}{visibility:hidden !important;}` : '',
+  ].filter(Boolean).join(' ');
+}
+
 const TABS_CLASS = 'x-risu-pkbp-tabs', SHEET_CLASS = 'x-risu-pkbp-sheet';
 
 export const PANEL_STATES = Object.freeze({ open: 'x-risu-pkbp-open', locked: 'x-risu-pkbp-locked', gone: 'x-risu-pkbp-gone', low: 'x-risu-pkbp-low' });
@@ -161,35 +223,47 @@ const shell = (tabs, sheet, states = []) => `<div><style>${CSS}</style><div clas
 
 export const panelShell = () => shell('', '', [PANEL_STATES.gone]);
 
-export function renderPanel(model) {
+export function renderPanel(model, { compat = false, aux = null } = {}) {
+  const { lang } = model;
+  const t = key => esc(say(lang, key));
   const hits = [];
   const hit = desc => { hits.push(desc); return `x-risu-pkbp-hit x-risu-pkbp-h${hits.length - 1}`; };
   const cls = (...list) => list.filter(Boolean).join(' ');
   const tabButtons = () => ['party', 'box', 'bag'].map(tab => {
     const cur = model.open && model.tab === tab;
-    return `<button type="button" class="${cls('x-risu-pkbp-tab', `x-risu-pkbp-t${tab}`, cur && 'x-risu-pkbp-cur', hit({ t: 'tab', tab }))}" aria-label="${TAB_LABEL[tab]}" title="${TAB_LABEL[tab]}">`
+    return `<button type="button" class="${cls('x-risu-pkbp-tab', `x-risu-pkbp-t${tab}`, cur && 'x-risu-pkbp-cur', hit({ t: 'tab', tab }))}" aria-label="${tabLabel(tab, lang)}" title="${tabLabel(tab, lang)}">`
       + `${ICON[tab]}${model.alerts[tab] ? '<span class="x-risu-pkbp-bang">!</span>' : ''}</button>`;
   }).join('');
+  const sideTabs = tabButtons();
   const resume = model.resume
-    ? `<button type="button" class="${cls('x-risu-pkbp-tab', 'x-risu-pkbp-tresume', hit({ t: 'resume' }))}" aria-label="배틀로 돌아가기" title="배틀로 돌아가기">${ICON.resume}</button>` : '';
-  const tabs = tabButtons() + resume;
+    ? `<button type="button" class="${cls('x-risu-pkbp-tab', 'x-risu-pkbp-tresume', hit({ t: 'resume' }))}" aria-label="${t('panel.resume')}" title="${t('panel.resume')}">${ICON.resume}</button>` : '';
+  const auxLabel = t(aux?.on ? 'panel.auxOn' : 'panel.auxOff');
+  const auxTab = model.resume && aux
+    ? `<button type="button" class="${cls('x-risu-pkbp-tab', 'x-risu-pkbp-taux', aux.on && 'x-risu-pkbp-on', hit({ t: 'aux' }))}" aria-pressed="${aux.on}" aria-label="${auxLabel}" title="${auxLabel}">`
+      + `${ICON.aux}${aux.on ? '<span class="x-risu-pkbp-lit"></span>' : ''}</button>` : '';
+  const count = 3 + (resume ? 1 : 0) + (auxTab ? 1 : 0);
+
+  const note = model.offer?.note
+    ? `<div class="x-risu-pkbp-offer" role="dialog" aria-label="${t('panel.offer.ask')}"><div>${t('panel.offer.ask')}</div><div class="x-risu-pkbp-offb">`
+      + `<button type="button" class="${cls('x-risu-pkbp-offn', hit({ t: 'later' }))}">${t('panel.offer.later')}</button>`
+      + `<button type="button" class="${cls('x-risu-pkbp-offy', hit({ t: 'offer', asked: true }))}">${t('panel.offer.yes')}</button></div></div>` : '';
+  const tabs = sideTabs + resume + auxTab + note + (compat ? `<style>${compatTabsCss(count, !!model.resume, !!model.open)}</style>` : '');
   const out = [];
   if (model.open) {
 
-    // Horizontal tabs above the sheet on phones (hidden by CSS in wide windows)
     out.push(`<div class="x-risu-pkbp-stabs">${tabButtons()}</div>`);
     const right = model.tab === 'party' ? `${model.party.filter(Boolean).length}/${PARTY_MAX}`
       : model.tab === 'box' ? `${model.box.cells.filter(Boolean).length}/${BOX_SIZE}` : '';
     out.push('<div class="x-risu-pkbp-board">');
-    out.push(`<div class="x-risu-pkbp-hd" style="border-bottom-color:${TAB_COLOR[model.tab]}">${ICON[model.tab]}${TAB_LABEL[model.tab]}`
-      + `<span class="x-risu-pkbp-hdr">${esc(right)}</span>`
-      + `<button type="button" class="${cls('x-risu-pkbp-fold', hit({ t: 'fold' }))}" aria-label="접기" title="접기">${ICON.fold}</button></div>`);
+    out.push(`<div class="x-risu-pkbp-hd" style="border-bottom-color:${TAB_COLOR[model.tab]}">${ICON[model.tab]}${tabLabel(model.tab, lang)}`
+      + `<span class="x-risu-pkbp-hdr">${esc(right)}</span>${model.heal !== null && model.tab === 'party' ? healButton(model, hit) : ''}${model.add ? addButton(model, hit) : ''}`
+      + `<button type="button" class="${cls('x-risu-pkbp-fold', hit({ t: 'fold' }))}" aria-label="${t('panel.fold')}" title="${t('panel.fold')}">${ICON.fold}</button></div>`);
     out.push('<div class="x-risu-pkbp-bd">');
     if (model.tab === 'party') out.push(partyHtml(model, hit));
     else if (model.tab === 'box') out.push(boxHtml(model, hit));
     else out.push(bagHtml(model, hit));
     out.push('</div>');
-    if (model.window) out.push(windowHtml(model.window, hit));
+    if (model.window) out.push(windowHtml(model.window, hit, lang));
     out.push('</div>');
   }
   const sheet = out.join('');
@@ -197,14 +271,40 @@ export function renderPanel(model) {
   return { tabs, sheet, open: !!model.open, locked: !!model.locked, html: shell(tabs, sheet, states), hits };
 }
 
+function addButton(model, hit) {
+  const { lang } = model;
+  const label = esc(say(lang, 'panel.debugAdd', { what: say(lang, `panel.add.${model.tab}`) }));
+  const debug = esc(say(lang, 'panel.pill.add'));
+  return model.add[model.tab]
+    ? `<button type="button" class="x-risu-pkbp-add ${hit({ t: 'add', where: model.tab })}" aria-label="${label}" title="${label}"><span>${ICON.add}${debug}</span></button>`
+    : `<span class="x-risu-pkbp-add x-risu-pkbp-off" aria-disabled="true" title="${label}"><span>${ICON.add}${debug}</span></span>`;
+}
+
+function healButton(model, hit) {
+  const { lang } = model;
+  const label = esc(say(lang, 'panel.debugAdd', { what: say(lang, 'panel.debugHeal') }));
+  const debug = esc(say(lang, 'panel.pill.heal'));
+  return model.heal
+    ? `<button type="button" class="x-risu-pkbp-add ${hit({ t: 'heal' })}" aria-label="${label}" title="${label}"><span>${ICON.heal}${debug}</span></button>`
+    : `<span class="x-risu-pkbp-add x-risu-pkbp-off" aria-disabled="true" title="${label}"><span>${ICON.heal}${debug}</span></span>`;
+}
+
+// Held item mark in a party slot: a custom item's emoji, else a small dot. Its name on hover
+const heldMark = (held, lang) => {
+  const title = esc(say(lang, 'panel.held', { item: held.name }));
+  return held.emoji ? `<span class="x-risu-pkbp-emo x-risu-pkbp-heldemo" title="${title}">${esc(held.emoji)}</span>` : `<span class="x-risu-pkbp-held" title="${title}"></span>`;
+};
+
 const genderMark = g => (g === 'M' ? '<span class="x-risu-pkbp-g x-risu-pkbp-gm">♂</span>' : g === 'F' ? '<span class="x-risu-pkbp-g x-risu-pkbp-gf">♀</span>' : '');
 
 function partyHtml(model, hit) {
+  const { lang } = model;
+  const t = key => esc(say(lang, key));
   const cells = model.party.map((slot, i) => {
-    if (!slot) return '<div class="x-risu-pkbp-cell"><div class="x-risu-pkbp-empty">빈 칸</div></div>';
+    if (!slot) return `<div class="x-risu-pkbp-cell"><div class="x-risu-pkbp-empty">${t('panel.empty')}</div></div>`;
     const picked = model.picked === slot.uid;
-    const status = slot.fainted ? '<span class="x-risu-pkbp-st x-risu-pkbp-stfnt">기절</span>'
-      : slot.status ? `<span class="x-risu-pkbp-st x-risu-pkbp-st${slot.status}">${statusName(slot.status)}</span>` : '';
+    const status = slot.fainted ? `<span class="x-risu-pkbp-st x-risu-pkbp-stfnt">${t('panel.fainted')}</span>`
+      : slot.status ? `<span class="x-risu-pkbp-st x-risu-pkbp-st${slot.status}">${esc(statusShort(slot.status, lang))}</span>` : '';
     const width = slot.maxhp ? Math.round(slot.hp / slot.maxhp * 1000) / 10 : 0;
     const slotHtml = `<button type="button" class="x-risu-pkbp-slot${i === 0 ? ' x-risu-pkbp-lead' : ''}${slot.fainted ? ' x-risu-pkbp-fnt' : ''}${picked ? ' x-risu-pkbp-picked' : ''} ${hit({ t: 'slot', where: 'party', uid: slot.uid })}">`
       + `<span class="x-risu-pkbp-pic"><img src="${esc(SPRITE(slot.spriteId, slot.shiny))}" alt="" loading="lazy"></span>`
@@ -212,23 +312,26 @@ function partyHtml(model, hit) {
       + `<span class="x-risu-pkbp-nm"><span class="x-risu-pkbp-nmt">${esc(slot.name)}</span>${genderMark(slot.gender)}</span>`
       + `<span class="x-risu-pkbp-hpbar"><span class="x-risu-pkbp-hpfill x-risu-pkbp-hp${slot.hpClass}" style="width:${width}%"></span></span>`
       + `<span class="x-risu-pkbp-r"><span>${slot.hp}/${slot.maxhp}${status}</span>`
-      + `<span>Lv${slot.level}${slot.item ? '<span class="x-risu-pkbp-held" title="지닌 도구"></span>' : ''}</span></span>`
+      + `<span>Lv${slot.level}${slot.held ? heldMark(slot.held, lang) : ''}</span></span>`
       + (slot.exp === null ? '' : `<span class="x-risu-pkbp-exp"><span style="width:${Math.round(slot.exp * 1000) / 10}%"></span></span>`)
       + '</span></button>';
 
     const badge = slot.badge ? (model.locked
       ? `<span class="x-risu-pkbp-badge x-risu-pkbp-off">▲${slot.badge}</span>`
-      : `<button type="button" class="x-risu-pkbp-badge ${hit({ t: 'badge', uid: slot.uid })}" aria-label="레벨업 마무리" title="레벨업 마무리">▲${slot.badge}</button>`) : '';
+      : `<button type="button" class="x-risu-pkbp-badge ${hit({ t: 'badge', uid: slot.uid })}" aria-label="${t('panel.levelUp')}" title="${t('panel.levelUp')}">▲${slot.badge}</button>`) : '';
     return `<div class="x-risu-pkbp-cell">${slotHtml}${badge}</div>`;
   });
-  return `<div class="x-risu-pkbp-party">${cells.join('')}</div>`;
+
+  const bring = model.offer?.button ? `<button type="button" class="x-risu-pkbp-bring ${hit({ t: 'offer' })}">${t('panel.offer.button')}</button>` : '';
+  return `${bring}<div class="x-risu-pkbp-party">${cells.join('')}</div>`;
 }
 
 function boxHtml(model, hit) {
-  const { box } = model;
-  const nav = d => `<button type="button" class="x-risu-pkbp-nav ${hit({ t: 'boxnav', d })}" aria-label="${d < 0 ? '이전 박스' : '다음 박스'}">${d < 0 ? ICON.prev : ICON.next}</button>`;
+  const { box, lang } = model;
+  const t = key => esc(say(lang, key));
+  const nav = d => `<button type="button" class="x-risu-pkbp-nav ${hit({ t: 'boxnav', d })}" aria-label="${t(d < 0 ? 'panel.boxPrev' : 'panel.boxNext')}">${d < 0 ? ICON.prev : ICON.next}</button>`;
 
-  const name = () => `<button type="button" class="x-risu-pkbp-boxname ${hit({ t: 'boxname' })}" title="이름 바꾸기">${esc(box.name)}</button>`;
+  const name = () => `<button type="button" class="x-risu-pkbp-boxname ${hit({ t: 'boxname' })}" title="${t('panel.rename')}">${esc(box.name)}</button>`;
   const head = `<div class="x-risu-pkbp-boxhd">${nav(-1)}${name()}${nav(1)}</div>`;
   const cells = box.cells.map(slot => (slot
     ? `<button type="button" class="x-risu-pkbp-bc${slot.fainted ? ' x-risu-pkbp-fnt' : ''}${model.picked === slot.uid ? ' x-risu-pkbp-picked' : ''} ${hit({ t: 'slot', where: 'box', uid: slot.uid })}" title="${esc(`${slot.name} Lv${slot.level}`)}">`
@@ -238,6 +341,7 @@ function boxHtml(model, hit) {
 }
 
 function iconHtml(icon) {
+  if (icon?.emoji) return `<span class="x-risu-pkbp-ic x-risu-pkbp-icem x-risu-pkbp-emo">${esc(icon.emoji)}</span>`;
   if (icon?.sheet === 'pokerogue') {
     return `<span class="x-risu-pkbp-ic"><span class="x-risu-pkbp-icpr"><span style="left:${icon.ox}px;top:${icon.oy}px;width:${icon.w}px;height:${icon.h}px;background-position:-${icon.x}px -${icon.y}px"></span></span></span>`;
   }
@@ -248,11 +352,11 @@ function iconHtml(icon) {
 }
 
 function bagHtml(model, hit) {
-  const { bag } = model;
+  const { bag, lang } = model;
   const out = [];
 
-  if (bag.money !== null) out.push(`<div class="x-risu-pkbp-money"><span>소지금</span><b>${Number(bag.money).toLocaleString('ko-KR')}원</b></div>`);
-  if (!bag.groups.length) out.push('<div class="x-risu-pkbp-none">가방이 비어 있다</div>');
+  if (bag.money !== null) out.push(`<div class="x-risu-pkbp-money"><span>${esc(say(lang, 'panel.money'))}</span><b>${esc(moneyText(Number(bag.money).toLocaleString(lang), lang))}</b></div>`);
+  if (!bag.groups.length) out.push(`<div class="x-risu-pkbp-none">${esc(say(lang, 'panel.bagEmpty'))}</div>`);
   for (const group of bag.groups) {
     out.push(`<div class="x-risu-pkbp-grp">${esc(group.label)}</div>`);
     for (const item of group.items) {
@@ -263,10 +367,16 @@ function bagHtml(model, hit) {
   return out.join('');
 }
 
-function windowHtml(win, hit) {
+function windowHtml(win, hit, lang) {
   const options = (win.options ?? []).map(o => (o.disabled
     ? `<button type="button" class="x-risu-pkbp-opt x-risu-pkbp-off" aria-disabled="true">${esc(o.label)}</button>`
     : `<button type="button" class="x-risu-pkbp-opt ${hit(o.hit)}">${esc(o.label)}</button>`));
   return `<div class="x-risu-pkbp-win${win.error ? ' x-risu-pkbp-err' : ''}"><div class="x-risu-pkbp-wt">${esc(win.text)}</div>`
+    + (win.count ? countHtml(win.count, hit, lang) : '')
     + (options.length ? `<div class="x-risu-pkbp-opts">${options.join('')}</div>` : '') + '</div>';
+}
+
+function countHtml({ n, max }, hit, lang) {
+  const step = d => `<button type="button" class="x-risu-pkbp-nav ${hit({ t: 'count', d })}" aria-label="${esc(say(lang, d < 0 ? 'panel.less' : 'panel.more'))}">${d < 0 ? ICON.prev : ICON.next}</button>`;
+  return `<div class="x-risu-pkbp-cnt">${step(-1)}<span class="x-risu-pkbp-cntn">×${n}</span>${step(1)}<span class="x-risu-pkbp-cntof">${esc(say(lang, 'panel.inBag', { n: max }))}</span></div>`;
 }

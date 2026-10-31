@@ -21,6 +21,7 @@ function bitsOf(key) {
 }
 
 const MAX_FORME_HOPS = 4;
+
 export function canLearnTm(sim, species, id) {
   const n = tmNumber(id);
   if (!n || n > data.tms.length) return false;
@@ -35,4 +36,9 @@ export function canLearnTm(sim, species, id) {
     s = parent;
   }
   return false;
+}
+
+export function learnableTms(sim, species) {
+  return data.tms.map((move, i) => ({ n: i + 1, item: `tm${String(i + 1).padStart(3, '0')}`, move }))
+    .filter(tm => tm.move && canLearnTm(sim, species, tm.item));
 }

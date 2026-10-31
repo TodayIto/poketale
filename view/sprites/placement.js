@@ -1,14 +1,30 @@
 // All coordinates are in the 320 x 180 field, before its 6x render scale.
+import { teamOf, infoLayout, fieldPositions } from '../positions.js';
+
 export const MESSAGE_TOP = 132;
 export const INFO_RECTS = Object.freeze({
   enemy: { left: 10, top: 23.5, right: 140, bottom: 54.5 },
   player: { left: 180, top: 87, right: 310, bottom: 129 },
 });
+
+export function infoRect(double, position) {
+  const r = INFO_RECTS[teamOf(position)], { dx, dy } = infoLayout(double, position);
+  return { left: r.left + dx, top: r.top + dy, right: r.right + dx, bottom: r.bottom + dy };
+}
+
+export function onInfoBox(scene, x, y) {
+  return fieldPositions(scene.double).some(position => {
+    if (!scene.info?.[position]?.container?.visible) return false;
+    const r = infoRect(scene.double, position);
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  });
+}
 export const SPRITE_SLOTS = Object.freeze({
   player: { x: 106, bottom: 148, region: { left: 4, top: 58, right: 176, bottom: 130 } },
   enemy: { x: 236, bottom: 84, region: { left: 144, top: 4, right: 316, bottom: 84 } },
 });
 
+// Half-open bounds: right/bottom are one pixel beyond the last opaque pixel.
 export function rgbaBounds(data, width, height) {
   let left = width, top = height, right = 0, bottom = 0;
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {

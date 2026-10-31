@@ -1,30 +1,28 @@
 import { installBag, checkBagItem, chooseBagItem, BAG_ITEMS, isBall } from '../engine/bag.mjs';
 import { BALLS } from '../engine/capture.mjs';
 import catchRates from '../data/catch-rates.json' with { type: 'json' };
-import phrases from './text-bag-ko.json' with { type: 'json' };
-import { interpolate } from './text.js';
-import { ownTemplate } from './own-text.js';
+import ko from './text-bag-ko.json' with { type: 'json' };
+import en from './text-bag-en.json' with { type: 'json' };
+import { phrase } from './text.js';
 import { displayName } from '../engine/mon.mjs';
+import { DEFAULT_LANG } from './lang.js';
 
-export function bagText(key, values = {}) {
-  const template = ownTemplate(key) ?? (key !== '_source' && Object.hasOwn(phrases, key) ? phrases[key] : undefined);
-  if (template === undefined) throw new Error(`Unknown bag text key: ${key}`);
-  return interpolate(template, values);
-}
+const PHRASES = { ko, en };
+export const bagText = (key, values = {}, lang = DEFAULT_LANG) => phrase(PHRASES, key, values, lang, 'bag text');
 
 export const POCKETS = [
 
-  { id: 'heal', name: '회복', items: ['potion', 'superpotion', 'hyperpotion', 'maxpotion', 'fullrestore', 'revive', 'maxrevive',
+  { id: 'heal', items: ['potion', 'superpotion', 'hyperpotion', 'maxpotion', 'fullrestore', 'revive', 'maxrevive',
     'freshwater', 'sodapop', 'lemonade', 'moomoomilk', 'sweetheart', 'energypowder', 'energyroot', 'revivalherb', 'ether', 'maxether', 'elixir', 'maxelixir'] },
-  { id: 'status', name: '상태', items: ['antidote', 'burnheal', 'iceheal', 'awakening', 'paralyzeheal', 'fullheal', 'healpowder',
+  { id: 'status', items: ['antidote', 'burnheal', 'iceheal', 'awakening', 'paralyzeheal', 'fullheal', 'healpowder',
     'lavacookie', 'oldgateau', 'casteliacone', 'lumiosegalette', 'shaloursable', 'ragecandybar', 'bigmalasada', 'pewtercrunchies'] },
-  { id: 'battle', name: '배틀', items: ['xattack', 'xdefense', 'xspatk', 'xspdef', 'xspeed', 'xaccuracy', 'direhit'] },
-  { id: 'ball', name: '볼', items: Object.keys(BALLS) },
+  { id: 'battle', items: ['xattack', 'xdefense', 'xspatk', 'xspdef', 'xspeed', 'xaccuracy', 'direhit'] },
+  { id: 'ball', items: Object.keys(BALLS) },
 ];
 
 export const pokemonName = (names, pokemon) => displayName(pokemon.battle.dex, names, pokemon.species.name, pokemon.name);
 
-export function createBag({ sim, battle, names, spec, wild }) {
+export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG }) {
   if (!spec) return null;
   const { items = {}, ...options } = spec;
   const counts = new Map();
@@ -38,11 +36,11 @@ export function createBag({ sim, battle, names, spec, wild }) {
   const reason = (check, pokemon) => {
     if (check.ok) return {};
     switch (check.reason) {
-    case 'notfainted': return { blocked: bagText('party-ui-handler.hasEnergy', { pokemonName: pokemonName(names, pokemon) }) };
-    case 'semiinvulnerable': return { blocked: bagText('own.ballNoTarget') };
-    case 'norate': case 'nofoe': return { blocked: bagText('battle.noPokeballForce') };
+    case 'notfainted': return { blocked: bagText('party-ui-handler.hasEnergy', { pokemonName: pokemonName(names, pokemon) }, lang) };
+    case 'semiinvulnerable': return { blocked: bagText('own.ballNoTarget', {}, lang) };
+    case 'norate': case 'nofoe': return { blocked: bagText('battle.noPokeballForce', {}, lang) };
 
-    default: return { blocked: bagText('party-ui-handler.anyEffect') };
+    default: return { blocked: bagText('party-ui-handler.anyEffect', {}, lang) };
     }
   };
 
@@ -70,9 +68,9 @@ export function createBag({ sim, battle, names, spec, wild }) {
       const probe = checkBagItem(battle, { item: 'potion', target: side.active[0]?.m.uid });
       const locked = !probe.ok && ['ended', 'notyourturn', 'locked'].includes(probe.reason);
       return {
-        pockets: POCKETS.map(pocket => ({ id: pocket.id, name: pocket.name,
+        pockets: POCKETS.map(pocket => ({ id: pocket.id, name: bagText(`own.pocket.${pocket.id}`, {}, lang),
           items: pocket.items.filter(id => counts.get(id) > 0).map(itemView) })),
-        ...(locked ? { blocked: bagText('own.bagLocked') } : {}),
+        ...(locked ? { blocked: bagText('own.bagLocked', {}, lang) } : {}),
       };
     },
 

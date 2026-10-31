@@ -5,16 +5,18 @@ import { newMovePp } from '../engine/pp.mjs';
 import { summaryView } from './summary.js';
 import { createLearnSteps, learnMoveOption, loadExpText } from './steps-exp.js';
 import { PLAYER_NAME } from '../story/rules.mjs';
+import { DEFAULT_LANG } from './lang.js';
 import { DEFAULT_FORMAT } from '../engine/rules.mjs';
 
 const OUTSIDE_SEED = [1, 2, 3, 4];
+const langOf = ctx => ctx.lang ?? DEFAULT_LANG;
 
 function readOutside(ctx, mon, read) {
   const { sim } = ctx;
   if (!mon?.set?.species) throw new TypeError('Story mon with set is required');
   const fainted = mon.hp === 0 || mon.status === 'fnt';
 
-  const member = { ...engineMember(mon), uid: mon.uid ?? 'outside' };
+  const member = { ...engineMember(mon, ctx.customItems), uid: mon.uid ?? 'outside' };
   if (fainted) Object.assign(member, { hp: 1, status: '' });
   const foe = { uid: 'outside-foe', set: structuredClone(mon.set) };
   const spec = {
@@ -42,25 +44,25 @@ function monViewOf(ctx, { battle, pokemon, fainted }, mon, species) {
 }
 
 // Current move slots (LearnMoveOption[])
-const moveOptions = (ctx, { battle, pokemon }) => pokemon.baseMoveSlots.map(slot => learnMoveOption(battle, ctx.names, slot.id, slot.pp, slot.maxpp));
+const moveOptions = (ctx, { battle, pokemon }) => pokemon.baseMoveSlots.map(slot => learnMoveOption(battle, ctx.names, slot.id, slot.pp, slot.maxpp, langOf(ctx)));
 
 function newMoveOption(ctx, battle, move) {
   const pp = newMovePp(battle, move);
-  return learnMoveOption(battle, ctx.names, move.id, pp, pp);
+  return learnMoveOption(battle, ctx.names, move.id, pp, pp, langOf(ctx));
 }
 
 export function outsideSummarySlot(ctx, mon) {
   return readOutside(ctx, mon, made => {
     const { battle, pokemon, fainted, options } = made;
     const entry = battle.sides[0].getRequestData().pokemon[0];
-    const summary = summaryView(battle, ctx.names, entry, pokemon, options);
+    const summary = summaryView(battle, ctx.names, entry, pokemon, options, langOf(ctx));
     if (fainted) summary.stats = { ...summary.stats, hp: 0 };
     return { ...monViewOf(ctx, made, mon), active: false, fainted, summary };
   });
 }
 
 export async function showOutsideSummary({ view, ctx, mon, onRename }) {
-  await loadExpText();
+  await loadExpText(langOf(ctx));
   const slot = outsideSummarySlot(ctx, mon);
   await view.prepareOutside({ mons: [slot] });
   let nickname = null;
@@ -84,7 +86,7 @@ export function outsidePartyViews(ctx, party, mon) {
 }
 
 export async function learnMoveOutside({ view, ctx, mon, move: moveId, party }) {
-  await loadExpText();
+  await loadExpText(langOf(ctx));
   const plan = readOutside(ctx, mon, made => {
     const { battle, pokemon } = made;
     const move = battle.dex.moves.get(moveId);
@@ -97,14 +99,14 @@ export async function learnMoveOutside({ view, ctx, mon, move: moveId, party }) 
   await view.prepareOutside({ mons: [plan.shown] });
   await view.startPartyScene({ party: backdrop.views, cursor: backdrop.cursor });
   try {
-    return await learnOne({ view, ...plan, inEvolution: false });
+    return await learnOne({ view, lang: langOf(ctx), ...plan, inEvolution: false });
   } finally {
     await view.endPartyScene();
   }
 }
 
-async function learnOne({ view, shown, moves, newMove, inEvolution }) {
-  const { learned, learnFlow } = createLearnSteps(view);
+async function learnOne({ view, lang, shown, moves, newMove, inEvolution }) {
+  const { learned, learnFlow } = createLearnSteps(view, lang);
   if (moves.length < 4) {
     await learned(shown.name, newMove.name, inEvolution);
     moves.push(newMove);
@@ -119,7 +121,7 @@ async function learnOne({ view, shown, moves, newMove, inEvolution }) {
 }
 
 export async function evolveOutside({ view, ctx, mon, into, learn = [] }) {
-  await loadExpText();
+  await loadExpText(langOf(ctx));
   const plan = readOutside(ctx, mon, made => {
     const { battle } = made;
     const to = battle.dex.species.get(into);
@@ -127,7 +129,7 @@ export async function evolveOutside({ view, ctx, mon, into, learn = [] }) {
     const newMoves = learn.map(id => battle.dex.moves.get(id)).filter(move => move.exists).map(move => newMoveOption(ctx, battle, move));
     return { from: monViewOf(ctx, made, mon), target: monViewOf(ctx, made, mon, to.name), dexNumber: to.num, moves: moveOptions(ctx, made), newMoves };
   });
-  const { say, sayTimed } = createLearnSteps(view);
+  const { say, sayTimed } = createLearnSteps(view, langOf(ctx));
   const { from, target, moves } = plan;
   await view.prepareOutside({ mons: [from, target] });
   await view.startEvolution(from);
@@ -144,7 +146,7 @@ export async function evolveOutside({ view, ctx, mon, into, learn = [] }) {
     const learned = [];
     for (const newMove of plan.newMoves) {
       if (moves.some(m => m.id === newMove.id)) continue;
-      learned.push({ move: newMove.id, ...await learnOne({ view, shown, moves, newMove, inEvolution: true }) });
+      learned.push({ move: newMove.id, ...await learnOne({ view, lang: langOf(ctx), shown, moves, newMove, inEvolution: true }) });
     }
     return { evolved: true, learned };
   } finally {

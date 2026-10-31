@@ -1,17 +1,14 @@
-import { names } from '../names/index.js';
+import { namesIn } from '../names/index.js';
 import { PARTY_MAX } from './rules.mjs';
 import { WHAT, failureText } from './failure.mjs';
+import { say } from './screen-text.mjs';
 
-const BIOME_KO = {
-  town: '마을', plains: '평야', grass: '풀숲', tallGrass: '높은 풀숲', metropolis: '대도시', forest: '숲', sea: '바다', swamp: '늪지',
-  beach: '해변', lake: '호수', seabed: '해저', mountain: '산', badlands: '악지', cave: '동굴', desert: '사막', iceCave: '얼음 동굴',
-  meadow: '목초지', powerPlant: '발전소', volcano: '화산', graveyard: '묘지', dojo: '도장', factory: '공장', ruins: '고대 유적',
-  wasteland: '황무지', abyss: '심연', space: '우주', constructionSite: '공사장', jungle: '정글', fairyCave: '페어리 동굴', temple: '사원',
-  slum: '슬럼', snowyForest: '눈덮인 숲', island: '섬', laboratory: '연구소', end: '???',
-};
+const BIOMES = ['town', 'plains', 'grass', 'tallGrass', 'metropolis', 'forest', 'sea', 'swamp', 'beach', 'lake', 'seabed', 'mountain', 'badlands',
+  'cave', 'desert', 'iceCave', 'meadow', 'powerPlant', 'volcano', 'graveyard', 'dojo', 'factory', 'ruins', 'wasteland', 'abyss', 'space',
+  'constructionSite', 'jungle', 'fairyCave', 'temple', 'slum', 'snowyForest', 'island', 'laboratory', 'end'];
 const keyOf = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const PLACE = Object.fromEntries(Object.entries(BIOME_KO).map(([k, v]) => [keyOf(k), v]));
-const TIME_KO = { day: '낮', night: '밤' };
+const PLACE = Object.fromEntries(BIOMES.map(k => [keyOf(k), k]));
+const TIMES = new Set(['day', 'night']);
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '{': '&#123;', '}': '&#125;' };
 
@@ -20,22 +17,24 @@ export const esc = value => String(value ?? '').replace(/[&<>"'{}]/g, c => ESC[c
 const safeKey = key => String(key ?? '').toLowerCase().replace(/[^a-z0-9]/g, '') || 'none';
 const safeUrl = url => (typeof url === 'string' && /^(https?:\/\/|data:image\/)/i.test(url.trim()) ? url.trim() : '');
 
-export function placeName(place) {
+export function placeName(place, lang) {
   if (place == null || place === '') return '';
-  return PLACE[keyOf(place)] ?? String(place);
+  const biome = PLACE[keyOf(place)];
+  return biome ? say(lang, `place.${biome}`) : String(place);
 }
-const timeName = time => TIME_KO[time] ?? (time ? String(time) : '');
-const speciesName = species => names.species(species);
-const subLine = spec => [placeName(spec.place), timeName(spec.time)].filter(Boolean).join(' · ');
+const timeName = (time, lang) => (TIMES.has(time) ? say(lang, `time.${time}`) : time ? String(time) : '');
 
-export function battleTitle(spec, { level = true } = {}) {
-  if (!spec) return '배틀';
+const speciesName = (species, lang) => namesIn(lang).species(species);
+const subLine = (spec, lang) => [placeName(spec.place, lang), timeName(spec.time, lang)].filter(Boolean).join(' · ');
+
+export function battleTitle(spec, lang, { level = true } = {}) {
+  if (!spec) return say(lang, 'card.title.battle');
   if (spec.wild) {
     const mon = spec.team?.[0];
-    if (!mon) return '야생 포켓몬';
-    return `야생 ${speciesName(mon.species)}${level && mon.level ? ` Lv${mon.level}` : ''}`;
+    if (!mon) return say(lang, 'card.title.wildNone');
+    return `${say(lang, 'card.title.wild', { species: speciesName(mon.species, lang) })}${level && mon.level ? ` Lv${mon.level}` : ''}`;
   }
-  return spec.name || spec.trainerClass || '트레이너';
+  return spec.name || spec.trainerClass || say(lang, 'card.title.trainer');
 }
 
 const LOOKS = {
@@ -47,16 +46,13 @@ const LOOKS = {
   error: ['#d8434d', '#8e2835'],
 };
 
-const BAND = { trainer: '승부를 걸어왔다!', wild: '야생 포켓몬이 나타났다!', progress: '배틀 중', done: '배틀 결과', locked: '다른 배틀 중' };
-const OUTCOME = {
-  win: { label: '승리', cls: 'win' },
-  lose: { label: '패배', cls: 'lose' },
-  forfeit: { label: '항복', cls: 'gray' },
-  run: { label: '도망', cls: 'gray' },
-  capture: { label: '포획', cls: 'cap' },
-  stop: { label: '중단', cls: 'gray' },
-};
-const STATUS_KO = { ready: '대기', locked: '잠김', progress: '배틀 중' };
+const band = (look, lang) => say(lang, `card.band.${look}`);
+
+// Result stamp colour per outcome (label: screen text card.outcome.<outcome>); stop = ended by the story
+const OUTCOME_CLS = { win: 'win', lose: 'lose', forfeit: 'gray', run: 'gray', capture: 'cap', stop: 'gray' };
+
+const outcomeLabel = (outcome, lang) => say(lang, `card.outcome.${Object.hasOwn(OUTCOME_CLS, outcome) ? outcome : 'end'}`);
+const STATUSES = new Set(['ready', 'locked', 'progress']);
 
 export const FONT = '"PkbPixel","Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif';
 
@@ -70,7 +66,6 @@ export const NOTE_LOOK = Object.freeze({
 });
 const noteColours = ({ edge, drop, fill, ink }) => `border-color:${edge};box-shadow:0 3px 0 ${drop};background:linear-gradient(145deg,#ffffff,${fill});color:${ink};`;
 
-// CSS rule for a line that is always of one kind. selector = the line
 export const noteRule = (selector, kind) => `${selector}{${NOTE_SHAPE}${noteColours(NOTE_LOOK[kind])}}`;
 
 export const noteLooks = at => [
@@ -125,13 +120,13 @@ export const CARD_CSS = [
   `.x-risu-pkb-row{display:flex;align-items:center;gap:4px;}`,
   `.x-risu-pkb-lbl{flex:none;width:26px;font-size:11px;color:#5d7486;}`,
 
+  // Result stamp (lower part of the face, -14 deg, small)
   `.x-risu-pkb-stamp{position:absolute;left:50%;bottom:7px;z-index:1;padding:1px 6px;border:2.5px solid currentColor;border-radius:6px;font-size:13px;line-height:1.3;white-space:nowrap;background:rgba(255,255,255,.85);transform:translateX(-50%) rotate(-14deg);}`,
   `.x-risu-pkb-stwin{color:#c8302b;border-color:#d8a12a;}`,
   `.x-risu-pkb-stlose{color:#3e5468;}`,
   `.x-risu-pkb-stgray{color:#6b7a86;border-color:#8a97a2;}`,
   `.x-risu-pkb-stcap{color:#2f7a4c;}`,
 
-  // Right button column (fixed width - buttons line up across consecutive cards in the chat)
   `.x-risu-pkb-act{flex:none;width:150px;display:flex;flex-direction:column;gap:7px;}`,
   `.x-risu-pkb-btn{position:relative;display:flex;align-items:center;justify-content:center;gap:5px;width:100%;margin:0;padding:8px 8px 7px;border:2px solid #922837;border-radius:9px;background:#e84d4d;color:#fff;font-family:inherit;font-weight:400;font-size:13px;line-height:1.25;letter-spacing:0;white-space:nowrap;box-shadow:0 3px 0 #922837;cursor:pointer;}`,
   `.x-risu-pkb-btn:hover{filter:brightness(1.05);}`,
@@ -213,16 +208,16 @@ function faceBox({ url, rect = null, sheet = null, trainer = false, black = fals
   return `<div class="x-risu-pkb-face"><div class="${cls}">${inner}</div>${stamp}</div>`;
 }
 
-function opponentFace(view, opts = {}) {
+function opponentFace(view, lang, opts = {}) {
   const spec = view.spec;
   if (!spec) return faceBox({ ...opts });
   if (spec.wild) {
     const species = opts.species ?? spec.team?.[0]?.species;
-    return faceBox({ url: species ? callUrl(view, species) : '', alt: species ? speciesName(species) : '', ...opts });
+    return faceBox({ url: species ? callUrl(view, species) : '', alt: species ? speciesName(species, lang) : '', ...opts });
   }
-  if (opts.species) return faceBox({ url: callUrl(view, opts.species), alt: speciesName(opts.species), ...opts });
+  if (opts.species) return faceBox({ url: callUrl(view, opts.species), alt: speciesName(opts.species, lang), ...opts });
   return faceBox({ url: view.faces?.trainerUrl, rect: view.faces?.trainerRect, sheet: view.faces?.trainerSheet, trainer: true, black: !!view.faces?.trainerSilhouette,
-    gender: spec.gender, alt: spec.name ?? '', ...opts });
+    gender: view.faces?.trainerGender ?? null, alt: spec.name ?? '', ...opts });
 }
 function callUrl(view, species) {
   try { return view.faces?.speciesUrl?.(species) ?? ''; } catch { return ''; }
@@ -245,32 +240,33 @@ function btn(key, action, inner, { cls = '', label = '' } = {}) {
     + `${label ? ` aria-label="${esc(label)}" title="${esc(label)}"` : ''}>${inner}</button>`;
 }
 
-function header(left, right = '', discardKey = null) {
+function header(lang, left, right = '', discardKey = null) {
   return `<div class="x-risu-pkb-hd"><span class="x-risu-pkb-pb"></span><span>${esc(left)}</span>`
     + (right ? `<span class="x-risu-pkb-hdr">${esc(right)}</span>` : '')
-    + (discardKey != null ? btn(discardKey, 'discard', ICON_X, { cls: 'x-risu-pkb-x', label: '이 배틀 카드 버리기' }) : '') + '</div>';
+    + (discardKey != null ? btn(discardKey, 'discard', ICON_X, { cls: 'x-risu-pkb-x', label: say(lang, 'card.discardLabel') }) : '') + '</div>';
 }
 
-function titleRow(spec) {
+function titleRow(spec, lang) {
   let badge = '';
   if (spec && !spec.wild) {
-    if (spec.boss) badge = '<span class="x-risu-pkb-badge">보스</span>';
+    if (spec.boss) badge = `<span class="x-risu-pkb-badge">${esc(say(lang, 'card.boss'))}</span>`;
     else if (spec.trainerClass && !String(spec.name ?? '').includes(spec.trainerClass)) {
       badge = `<span class="x-risu-pkb-badge x-risu-pkb-badgecls">${esc(spec.trainerClass)}</span>`;
     }
   }
-  return `<div class="x-risu-pkb-title"><span class="x-risu-pkb-name">${esc(battleTitle(spec))}</span>${badge}</div>`;
+  return `<div class="x-risu-pkb-title"><span class="x-risu-pkb-name">${esc(battleTitle(spec, lang))}</span>${badge}</div>`;
 }
-const subRow = spec => {
-  const sub = spec ? subLine(spec) : '';
+const subRow = (spec, lang) => {
+  const sub = spec ? subLine(spec, lang) : '';
   return sub ? `<div class="x-risu-pkb-sub">${esc(sub)}</div>` : '';
 };
 
+// Ball row = number of opponent Pokemon (no opponent Pokemon list). Wild battles have no ball row
 const teamBalls = spec => (spec.wild ? '' : `<div class="x-risu-pkb-balls">${balls((spec.team ?? []).map(() => 'ok'))}</div>`);
 
-function errorBox(errors) {
-  const items = errors.map(e => `<div>· ${esc(e)}</div>`).join('');
-  return `<div class="x-risu-pkb-err"><div class="x-risu-pkb-errh">배틀을 열 수 없습니다</div>${items}</div>`;
+function errorBox(errors, lang) {
+  const items = (errors.length ? errors : [say(lang, 'card.unreadBlock')]).map(e => `<div>· ${esc(e)}</div>`).join('');
+  return `<div class="x-risu-pkb-err"><div class="x-risu-pkb-errh">${esc(say(lang, 'card.cannotOpen'))}</div>${items}</div>`;
 }
 
 const wrapCard = (state, look, inner, key = null) => `\n\n<div class="x-risu-pkb-card x-risu-pkb-s-${state}${key != null ? ` x-risu-pkbc-${safeKey(key)}` : ''}">`
@@ -279,118 +275,118 @@ const tailBox = (key, inner) => `<div class="x-risu-pkb-tail x-risu-pkbt-${safeK
 
 const note = n => (n ? `<div class="x-risu-pkb-note x-risu-pkb-note-${n.kind}">${esc(n.text).replaceAll('\n', '<br>')}</div>` : '');
 
-// The line under a card whose buttons cannot work on this screen (view.buttonsOff)
-const BUTTONS_OFF = failureText(WHAT.buttons, 'noMainScreen');
+const buttonsOff = lang => failureText(WHAT.buttons, 'noMainScreen', lang);
 
-export function renderCardTail(view) {
+export function renderCardTail(view, lang) {
+  const t = key => esc(say(lang, key));
   const key = view?.key;
   const status = view?.status ?? 'ready';
   const errors = (view?.errors ?? []).filter(e => e != null && e !== '').map(String);
-  if (!view?.spec || errors.length) return errorBox(errors.length ? errors : ['배틀 내용을 읽지 못했습니다']);
+  if (!view?.spec || errors.length) return errorBox(errors, lang);
   let act = '';
   let buttons = status !== 'done';
   if (status === 'progress') {
-    act = `<div class="x-risu-pkb-duo">${btn(key, 'resume', '배틀로 돌아가기')}`
-      + `${btn(key, 'send', ICON_PLANE, { cls: 'x-risu-pkb-plane', label: '이야기로 보내기' })}</div>`;
+    act = `<div class="x-risu-pkb-duo">${btn(key, 'resume', t('card.resume'))}`
+      + `${btn(key, 'send', ICON_PLANE, { cls: 'x-risu-pkb-plane', label: say(lang, 'card.send') })}</div>`;
   } else if (status === 'done') {
 
     const r = view.result ?? {};
     if (view.latest && !r.storyEnded) {
       const send = !view.sent && view.canSend !== false, retry = !view.iron && view.canRetry !== false && view.canUndo !== false;
-      act = (view.sent ? '<span class="x-risu-pkb-sent">✓ 보냄</span>' : send ? btn(key, 'send', `<span>이야기로 보내기</span>${ICON_PLANE}`, { label: '이야기로 보내기' }) : '')
-        + (retry ? btn(key, 'retry', '↻ 다시 하기', { cls: 'x-risu-pkb-sec' }) : '');
+      act = (view.sent ? `<span class="x-risu-pkb-sent">✓ ${t('card.sent')}</span>` : send ? btn(key, 'send', `<span>${t('card.send')}</span>${ICON_PLANE}`, { label: say(lang, 'card.send') }) : '')
+        + (retry ? btn(key, 'retry', `↻ ${t('card.retry')}`, { cls: 'x-risu-pkb-sec' }) : '');
       buttons = send || retry;
     }
   } else if (status === 'locked') {
-    act = '<div class="x-risu-pkb-lock">진행 중인 배틀이 끝난 뒤에 열 수 있습니다</div>';
+    act = `<div class="x-risu-pkb-lock">${t('card.lockedNote')}</div>`;
   } else {
-    act = btn(key, 'open', '전투 들어가기');
+    act = btn(key, 'open', t('card.open'));
   }
 
+  // Popup over the card: discard? (red x); retry? (retry on a card whose story continued after the result)
   const ask = view.ask === 'discard'
-    ? '<div class="x-risu-pkb-pop"><div class="x-risu-pkb-dlg"><div class="x-risu-pkb-ask">이 배틀 카드를 버릴까요?</div>'
-      + (status === 'progress' ? `<div class="x-risu-pkb-warn">${view.iron ? '철인 모드라 패배로 기록됩니다' : '진행 중이던 배틀도 지워집니다'}</div>` : '')
-      + `<div class="x-risu-pkb-duo">${btn(key, 'discardno', '그만두기', { cls: 'x-risu-pkb-sec' })}${btn(key, 'discardok', '버리기')}</div></div></div>`
+    ? `<div class="x-risu-pkb-pop"><div class="x-risu-pkb-dlg"><div class="x-risu-pkb-ask">${t('card.discardAsk')}</div>`
+      + (status === 'progress' ? `<div class="x-risu-pkb-warn">${t(view.iron ? 'card.discardIron' : 'card.discardProgress')}</div>` : '')
+      + `<div class="x-risu-pkb-duo">${btn(key, 'discardno', t('card.cancel'), { cls: 'x-risu-pkb-sec' })}${btn(key, 'discardok', t('card.discard'))}</div></div></div>`
     : view.ask === 'retry'
-      ? '<div class="x-risu-pkb-pop"><div class="x-risu-pkb-dlg"><div class="x-risu-pkb-ask">다시 할까요?</div>'
-        + '<div class="x-risu-pkb-warn">이 배틀 뒤로 이어진 이야기가 있습니다. 지난 결과는 지워지고, 새 결과는 맨 아래 메시지에 붙습니다.</div>'
-        + `<div class="x-risu-pkb-duo">${btn(key, 'retryno', '그만두기', { cls: 'x-risu-pkb-sec' })}${btn(key, 'retryok', '다시 하기')}</div></div></div>`
+      ? `<div class="x-risu-pkb-pop"><div class="x-risu-pkb-dlg"><div class="x-risu-pkb-ask">${t('card.retryAsk')}</div>`
+        + `<div class="x-risu-pkb-warn">${t('card.retryWarn')}</div>`
+        + `<div class="x-risu-pkb-duo">${btn(key, 'retryno', t('card.cancel'), { cls: 'x-risu-pkb-sec' })}${btn(key, 'retryok', t('card.retry'))}</div></div></div>`
       : '';
-  return (act ? `<div class="x-risu-pkb-act">${act}</div>` : '') + note(view.notice ?? (buttons && view.buttonsOff ? { text: BUTTONS_OFF, kind: 'error' } : null)) + ask;
+  return (act ? `<div class="x-risu-pkb-act">${act}</div>` : '') + note(view.notice ?? (buttons && view.buttonsOff ? { text: buttonsOff(lang), kind: 'error' } : null)) + ask;
 }
 
-export function renderBattleCard(view) {
+export function renderBattleCard(view, lang) {
   const spec = view?.spec ?? null;
   const errors = (view?.errors ?? []).filter(e => e != null && e !== '').map(String);
   const status = view?.status ?? 'ready';
   const key = view?.key;
 
   if (!spec) {
-    return wrapCard('error', 'error', header('배틀 블록 오류')
-      + `<div class="x-risu-pkb-bd">${errorBox(errors.length ? errors : ['배틀 내용을 읽지 못했습니다'])}</div>`);
+    return wrapCard('error', 'error', header(lang, say(lang, 'card.blockError'))
+      + `<div class="x-risu-pkb-bd">${errorBox(errors, lang)}</div>`);
   }
-  if (status === 'discarded') return renderDiscarded(view);
+  if (status === 'discarded') return renderDiscarded(view, lang);
 
   const discard = errors.length || view.canUndo === false ? null : key;
   let look, head, face, info;
   if (status === 'progress') {
 
-    // In progress (folded): face and name + 6+6 ball rows (no turn count or place)
     const p = view.progress ?? {};
     look = 'progress';
-    head = header(BAND.progress, '', discard);
-    face = opponentFace(view);
-    info = titleRow(spec) + `<div class="x-risu-pkb-rows"><div class="x-risu-pkb-row"><span class="x-risu-pkb-lbl">나</span>${balls(p.mine)}</div>`
-      + `<div class="x-risu-pkb-row"><span class="x-risu-pkb-lbl">상대</span>${balls(p.theirs)}</div></div>`;
+    head = header(lang, band('progress', lang), '', discard);
+    face = opponentFace(view, lang);
+    info = titleRow(spec, lang) + `<div class="x-risu-pkb-rows"><div class="x-risu-pkb-row"><span class="x-risu-pkb-lbl">${esc(say(lang, 'card.mine'))}</span>${balls(p.mine)}</div>`
+      + `<div class="x-risu-pkb-row"><span class="x-risu-pkb-lbl">${esc(say(lang, 'card.theirs'))}</span>${balls(p.theirs)}</div></div>`;
   } else if (status === 'done') {
 
     const r = view.result ?? {};
-    const o = OUTCOME[r.outcome] ?? { label: '끝', cls: 'gray' };
-    const stamp = `<span class="x-risu-pkb-stamp x-risu-pkb-st${o.cls}">${o.label}</span>`;
+    const stamp = `<span class="x-risu-pkb-stamp x-risu-pkb-st${OUTCOME_CLS[r.outcome] ?? 'gray'}">${esc(outcomeLabel(r.outcome, lang))}</span>`;
     const species = spec.wild ? (r.faceSpecies ?? spec.team?.[0]?.species) : undefined;
     look = 'done';
-    head = header(BAND.done, !r.storyEnded && r.turns ? `${r.turns}턴` : '');
-    face = opponentFace(view, { stamp, species });
-    info = titleRow(spec) + subRow(spec) + (r.storyEnded ? '<span class="x-risu-pkb-ended">이야기로 끝남</span>' : '');
+    head = header(lang, band('done', lang), !r.storyEnded && r.turns ? say(lang, 'card.turn', { n: r.turns }) : '');
+    face = opponentFace(view, lang, { stamp, species });
+    info = titleRow(spec, lang) + subRow(spec, lang) + (r.storyEnded ? `<span class="x-risu-pkb-ended">${esc(say(lang, 'card.storyEnded'))}</span>` : '');
   } else if (status === 'locked') {
 
     look = 'locked';
-    head = header(BAND.locked, '', discard);
-    face = opponentFace(view, { dim: true });
-    info = titleRow(spec) + subRow(spec) + teamBalls(spec);
+    head = header(lang, band('locked', lang), '', discard);
+    face = opponentFace(view, lang, { dim: true });
+    info = titleRow(spec, lang) + subRow(spec, lang) + teamBalls(spec);
   } else {
     look = spec.wild ? 'wild' : 'trainer';
-    head = header(BAND[look], '', discard);
-    face = opponentFace(view);
-    info = titleRow(spec) + subRow(spec) + teamBalls(spec);
+    head = header(lang, band(look, lang), '', discard);
+    face = opponentFace(view, lang);
+    info = titleRow(spec, lang) + subRow(spec, lang) + teamBalls(spec);
   }
-  const body = `<div class="x-risu-pkb-bd">${face}<div class="x-risu-pkb-info">${info}</div>${tailBox(key, renderCardTail({ ...view, status, errors }))}</div>`;
+  const body = `<div class="x-risu-pkb-bd">${face}<div class="x-risu-pkb-info">${info}</div>${tailBox(key, renderCardTail({ ...view, status, errors }, lang))}</div>`;
   return wrapCard(status, look, head + body, key);
 }
 
 const ONE_LINE = `display:flex;align-items:center;gap:8px;box-sizing:border-box;max-width:470px;margin:6px 0 10px;padding:3px 6px 3px 10px;border-radius:0 7px 7px 0;font-family:${FONT};font-weight:400;font-size:12.5px;line-height:1.5;text-align:left;overflow-wrap:anywhere;`;
 
-export function renderDiscarded(view) {
+export function renderDiscarded(view, lang) {
+  const restoreLabel = esc(say(lang, 'card.restore'));
 
   const style = `${ONE_LINE}border-left:4px solid #a3adb5;background:#eef0f2;color:#87929b;${view?.notice ? 'flex-wrap:wrap;' : ''}`;
   const restore = 'flex:none;margin-left:auto;width:24px;height:22px;padding:0;border:1.5px solid #8a97a2;border-radius:6px;background:#fff;color:#5f6b75;font:700 14px/1 sans-serif;box-shadow:0 1.5px 0 #8a97a2;cursor:pointer;';
-  return `\n\n<div class="x-risu-pkb-col x-risu-pkb-gone x-risu-pkbc-${safeKey(view?.key)}" style="${esc(style)}"><span>⚔︎ ${esc(battleTitle(view?.spec ?? null))}</span>`
+  return `\n\n<div class="x-risu-pkb-col x-risu-pkb-gone x-risu-pkbc-${safeKey(view?.key)}" style="${esc(style)}"><span>⚔︎ ${esc(battleTitle(view?.spec ?? null, lang))}</span>`
 
-    + (view?.canUndo === false ? '' : `<button type="button" class="x-risu-pkb-btn x-risu-pkbk-${safeKey(view?.key)} x-risu-pkba-restore x-risu-pkbi-{{chat_index}}" style="${esc(restore)}" aria-label="되살리기" title="되살리기">↺</button>`)
+    + (view?.canUndo === false ? '' : `<button type="button" class="x-risu-pkb-btn x-risu-pkbk-${safeKey(view?.key)} x-risu-pkba-restore x-risu-pkbi-{{chat_index}}" style="${esc(restore)}" aria-label="${restoreLabel}" title="${restoreLabel}">↺</button>`)
     + note(view?.notice) + '</div>\n\n';
 }
 
-export function renderCollapsed(view) {
+export function renderCollapsed(view, lang) {
   const spec = view?.spec ?? null;
-  if (spec && view.status === 'discarded') return renderDiscarded(view);
-  const parts = [battleTitle(spec)];
+  if (spec && view.status === 'discarded') return renderDiscarded(view, lang);
+  const parts = [battleTitle(spec, lang)];
   const errors = (view?.errors ?? []).filter(Boolean);
-  if (!spec || errors.length) parts.push('오류');
+  if (!spec || errors.length) parts.push(say(lang, 'card.status.error'));
   else if (view.status === 'done') {
     const r = view.result ?? {};
-    parts.push(OUTCOME[r.outcome]?.label ?? '끝');
-    if (r.storyEnded) parts.push('이야기로 끝남');
-  } else parts.push(STATUS_KO[view.status] ?? '대기');
+    parts.push(outcomeLabel(r.outcome, lang));
+    if (r.storyEnded) parts.push(say(lang, 'card.storyEnded'));
+  } else parts.push(say(lang, `card.status.${STATUSES.has(view.status) ? view.status : 'ready'}`));
   const style = `display:block;box-sizing:border-box;max-width:470px;margin:6px 0 10px;padding:3px 10px;border-left:4px solid #d8434d;border-radius:0 7px 7px 0;background:#eef3f7;color:#315a77;font-family:${FONT};font-weight:400;font-size:12.5px;line-height:1.5;text-align:left;overflow-wrap:anywhere;`;
   return `\n\n<div class="x-risu-pkb-col" style="${esc(style)}">⚔︎ ${esc(parts.join(' · '))}</div>\n\n`;
 }
@@ -411,13 +407,14 @@ export const CHIP_CSS = [
   `.x-risu-pkb-chips{color:#5b768b;}`,
 ].join(' ');
 
-export function renderStoryChip(infos) {
+export function renderStoryChip(infos, lang) {
   const list = (infos ?? []).filter(Boolean);
   const vs = list.map(i => i.vs).filter(Boolean).at(-1) ?? '';
   const spans = list.map(i => i.turns).filter(Boolean);
   const from = spans.length ? Math.min(...spans.map(s => s[0])) : null, to = spans.length ? Math.max(...spans.map(s => s[1])) : null;
   const result = list.map(i => i.result).filter(Boolean).at(-1);
-  const parts = ['배틀 이야기', vs, from === null ? '' : from === to ? `${from}턴` : `${from}~${to}턴`, OUTCOME[result]?.label ?? ''].filter(Boolean);
+  const turns = from === null ? '' : from === to ? say(lang, 'chip.turn', { n: from }) : say(lang, 'chip.turns', { from, to });
+  const parts = [say(lang, 'chip.story'), vs, turns, Object.hasOwn(OUTCOME_CLS, result) ? outcomeLabel(result, lang) : ''].filter(Boolean);
   const [head, ...rest] = parts;
   return `\n\n<span class="x-risu-pkb-chip"><span class="x-risu-pkb-chipi">${ICON_PLANE}</span>`
     + `<span class="x-risu-pkb-chipt">${esc(head)}${rest.map(p => `<span class="x-risu-pkb-chips"> · </span>${esc(p)}`).join('')}</span></span>\n\n`;

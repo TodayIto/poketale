@@ -1,14 +1,16 @@
 import { installRun, checkRun, chooseRun, checkForfeit, forfeit } from '../engine/run.mjs';
 import { pokemonName } from './bag.js';
-
-export const FORFEIT_QUESTION = '정말로 도망칠까요?';
-export const FORFEIT_NOTE = '패배로 기록됩니다';
+import { text as baseText, ownText, nameWithAffix } from './text.js';
+import { sideOf } from './read.js';
+import { DEFAULT_LANG } from './lang.js';
 
 // Lines this module's steps handle (director/steps.js dispatch table)
 export const RUN_KINDS = ['-story-run', '-story-forfeit'];
 
-export function createRun({ sim, battle, names, text, wild }) {
+export function createRun({ sim, battle, names, wild, lang = DEFAULT_LANG }) {
   installRun(sim, battle, { wild });
+  const text = (key, values) => baseText(key, values, lang);
+  const affix = nameWithAffix(lang, wild);
 
   function blockedText(check) {
     if (check.reason === 'trainer') return text('battle.noEscapeTrainer');
@@ -16,7 +18,7 @@ export function createRun({ sim, battle, names, text, wild }) {
     if (check.reason === 'trapped' && trap?.source && (trap.effect === 'move' || trap.effect === 'ability')) {
 
       return text('battle.noEscapePokemon', {
-        pokemonName: pokemonName(names, trap.source),
+        pokemonName: affix(pokemonName(names, trap.source), trap.source.side === battle.sides[0] ? 'player' : 'enemy'),
         moveName: trap.effect === 'move' ? names.move(trap.id) : names.ability(trap.id),
         escapeVerb: text('battle.escapeVerbFlee'),
       });
@@ -30,7 +32,9 @@ export function createRun({ sim, battle, names, text, wild }) {
       const check = checkRun(battle);
       if (check.ok) return {};
 
-      if (check.reason === 'trainer' && checkForfeit(battle).ok) return { confirm: { text: FORFEIT_QUESTION, note: FORFEIT_NOTE } };
+      if (check.reason === 'trainer' && checkForfeit(battle).ok) {
+        return { confirm: { text: ownText('own.forfeitQuestion', {}, lang), note: ownText('own.forfeitNote', {}, lang) } };
+      }
       return { blocked: blockedText(check) };
     },
 
@@ -44,12 +48,14 @@ export function createRun({ sim, battle, names, text, wild }) {
     },
     owns: choice => typeof choice === 'object' && (choice?.run === true || choice?.forfeit === true),
 
+    // A forfeit ends immediately - the director does not ask the foe (director/index.js)
     ends: choice => typeof choice === 'object' && choice?.forfeit === true,
     commit: choice => (choice?.forfeit ? forfeit(battle) : chooseRun(battle)).ok,
 
     steps({ view, ledger }) {
       const say = (key, values, options = {}) => view.message(text(key, values), options);
-      const nameOf = ident => ledger.get(ident).name;
+      const plainName = ident => ledger.get(ident).name;
+      const nameOf = ident => affix(plainName(ident), sideOf(ident));
       let ran = false;
       return {
         escaped: () => ran,
@@ -62,7 +68,7 @@ export function createRun({ sim, battle, names, text, wild }) {
 
             const leaving = Promise.resolve(view.runAway()).then(() => null, error => ({ error }));
             if (String(kw.from ?? '') === 'ability: Run Away') {
-              await view.showAbility('player', nameOf(a[0]), names.ability('runaway'));
+              await view.showAbility('player', plainName(a[0]), names.ability('runaway'));
               await view.hideAbility();
             }
 

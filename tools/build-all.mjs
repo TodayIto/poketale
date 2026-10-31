@@ -18,6 +18,7 @@ const steps = [
   "tools/build-bag-data.mjs",
   "tools/extract-exp-text.mjs",
   "tools/extract-summary-text.mjs",
+  "tools/extract-view-text.mjs",
   "tools/build-story-names.mjs",
   "tools/build-items-outside.mjs",
   "tools/build-named-trainers.mjs",

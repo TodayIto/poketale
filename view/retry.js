@@ -5,9 +5,6 @@ export class LoadError extends Error { name = 'LoadError'; }
 // Our own time limit passed - not retried
 export class TimeoutError extends LoadError { name = 'TimeoutError'; }
 
-export const OPEN_FAILED = '화면을 열지 못했습니다.\n다시 시도해 주십시오.';
-export const LOAD_FAILED = '그림을 불러오지 못했습니다.\n다시 시도해 주십시오.';
-
 export function failureKind(error) {
   if (error instanceof TimeoutError) return 'timeout';
   const status = error?.status;

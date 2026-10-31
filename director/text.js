@@ -1,4 +1,11 @@
-import phrases from './text-ko.json' with { type: 'json' };
+import { teamOf } from './read.js';
+import ko from './text-ko.json' with { type: 'json' };
+import en from './text-en.json' with { type: 'json' };
+import { checkLang, DEFAULT_LANG, LANGS } from './lang.js';
+import { ownTemplate } from './own-text.js';
+
+const RULES = { ko: { particles: true, affix: false }, en: { particles: false, affix: true } };
+const BASE = { ko, en };
 
 const pairs = [['은', '는'], ['이', '가'], ['을', '를'], ['으로', '로'], ['과', '와'], ['이랑', '랑']];
 
@@ -26,11 +33,12 @@ export function postposition(word, particle) {
   return particle;
 }
 
-export function interpolate(template, values = {}) {
+export function interpolate(template, values = {}, lang = DEFAULT_LANG) {
   const expanded = template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
     if (values[key] === undefined) throw new Error(`Missing text value: ${key}`);
     return String(values[key]);
   });
+  if (!RULES[checkLang(lang)].particles) return expanded;
   let previous = 0;
   return expanded.replace(/\[\[(은|는|이|가|을|를|으로|로|과|와|이랑|랑)\]\]/g, (match, particle, offset) => {
     const result = postposition(expanded.slice(previous, offset), particle);
@@ -39,9 +47,27 @@ export function interpolate(template, values = {}) {
   });
 }
 
-export function text(key, values) {
-  if (!Object.hasOwn(phrases, key) || key === '_source') throw new Error(`Unknown text key: ${key}`);
-  return interpolate(phrases[key], values);
+export function phrase(tables, key, values, lang = DEFAULT_LANG, what = 'text') {
+  const table = tables[checkLang(lang)];
+  const template = ownTemplate(key, lang) ?? (key !== '_source' && Object.hasOwn(table, key) ? table[key] : undefined);
+  if (template === undefined) throw new Error(`Unknown ${what} key: ${key}`);
+  return interpolate(template, values, lang);
+}
+
+const NO_TABLE = Object.fromEntries(LANGS.map(lang => [lang, {}]));
+
+// Own sentence only (director/own-text.js)
+export const ownText = (key, values, lang = DEFAULT_LANG) => phrase(NO_TABLE, key, values, lang, 'own text');
+
+export function text(key, values, lang = DEFAULT_LANG) {
+  const table = BASE[checkLang(lang)];
+  if (!Object.hasOwn(table, key) || key === '_source') throw new Error(`Unknown text key: ${key}`);
+  return interpolate(table[key], values, lang);
+}
+
+export function nameWithAffix(lang = DEFAULT_LANG, wild = false) {
+  if (!RULES[checkLang(lang)].affix) return name => name;
+  return (name, position) => (teamOf(position) === 'enemy' && name !== undefined ? text(wild ? 'battle.wildPokemonWithAffix' : 'battle.foePokemonWithAffix', { pokemonName: name }, lang) : name);
 }
 
 export const statusNames = { par: 'paralysis', brn: 'burn', psn: 'poison', tox: 'toxic', slp: 'sleep', frz: 'freeze' };

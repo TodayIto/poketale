@@ -11,24 +11,23 @@ const attrText = value => String(value ?? '').replace(/[&"<>]/g, c => ATTR_ESC[c
 const attrValue = value => value.replace(/&(amp|quot|lt|gt);/g, (_, n) => ({ amp: '&', quot: '"', lt: '<', gt: '>' })[n]);
 
 export function wrapOoc(text, info = {}) {
-  const attrs = [['vs', info.vs], ['turns', info.turns ? info.turns.join('-') : ''], ['result', info.result], ['mark', info.mark]]
+  const attrs = [['battle', info.battle], ['turns', info.turns ? info.turns.join('-') : ''], ['result', info.result], ['mark', info.mark], ['form', info.form]]
     .filter(([, v]) => v).map(([k, v]) => ` ${k}="${attrText(v)}"`).join('');
   return `<pkb-story${attrs}>${text}</pkb-story>`;
 }
 
-// The plugin's OOC spans in a text: [{ start, end, inner, info: { vs, turns, result, mark } }]
 export function findOocs(text) {
   return [...String(text ?? '').matchAll(STORY_RE)].map(m => {
     const info = Object.fromEntries([...m[1].matchAll(/([a-z]+)="([^"]*)"/g)].map(a => [a[1], attrValue(a[2])]));
     const turns = /^(\d+)-(\d+)$/.exec(info.turns ?? '');
     return { start: m.index, end: m.index + m[0].length, inner: m[2],
-      info: { vs: info.vs ?? '', turns: turns ? [Number(turns[1]), Number(turns[2])] : null, result: info.result ?? '', mark: info.mark ?? '' } };
+      info: { battle: info.battle ?? '', vs: info.vs ?? '', turns: turns ? [Number(turns[1]), Number(turns[2])] : null, result: info.result ?? '', mark: info.mark ?? '', ...(info.form ? { form: info.form } : {}) } };
   });
 }
 
+// Strips only our OOC tags from a text (the text that goes to the AI)
 export const unwrapOocs = text => String(text ?? '').replace(STORY_RE, (_, __, inner) => inner);
 
-// Takes our OOCs out of a text, tag and all (what they say is for the story AI)
 export const dropOocs = text => String(text ?? '').replace(STORY_RE, '');
 
 export const LAST_VAR = '$pkb_last';
@@ -54,6 +53,7 @@ export function surveyBattles(chat, table = readTable(chat)) {
   const messages = chat?.message ?? [];
   const spot = (index, start) => index * 1e6 + start;
 
+  // Marks on block messages (open, discarded), and per key its openedAt marks and its last result tag
   const open = new Set(), discarded = new Set(), openedAt = new Map(), lastResult = new Map();
   messages.forEach((message, index) => {
     const text = message?.data ?? '';
@@ -191,7 +191,6 @@ export function withMark(text, key, kind = null) {
   return kind ? out + markText(kind, key) : out;
 }
 
-// Removes all marks of those kinds from the text, whatever their key
 function dropKinds(text, kinds) {
   let out = String(text ?? '');
   for (const mark of findMarks(out).reverse()) if (kinds.includes(mark.kind)) out = out.slice(0, mark.start) + out.slice(mark.end);
@@ -213,6 +212,7 @@ export function setFollow(chat, key = null) {
   return changed;
 }
 
+// Whether the chat has any follow mark (here, moved)
 export const hasFollowMarks = chat => (chat?.message ?? []).some(m => findMarks(m?.data ?? '').some(mark => mark.kind === MARK.here || mark.kind === MARK.moved));
 
 export function findBlockMessage(chat, key) {

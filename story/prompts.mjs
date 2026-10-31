@@ -2,6 +2,7 @@ import { createNamer } from './ai-names.mjs';
 import { outcomeOf } from './outcome.mjs';
 import { STATS } from '../engine/mon.mjs';
 import { keyLines, summaryLine, turnSpan } from './narrate.mjs';
+import { customText } from './custom-items.mjs';
 
 export const OUTCOME_EN = { win: 'Win', lose: 'Loss', forfeit: 'Forfeit (loss)', run: 'Ran away', capture: 'Caught', stop: 'Stopped' };
 
@@ -10,8 +11,8 @@ export const outcomeText = outcome => OUTCOME_EN[outcome] ?? outcome;
 const speciesOf = battle => battle?.team?.[0]?.species ?? 'Pokémon';
 const trainerOf = battle => battle?.name || battle?.trainerClass || 'Trainer';
 
-export function resultLine({ outcome, battle, caught = null, evolutions = [], korean = true, en = null }) {
-  const namer = createNamer({ korean, en });
+export function resultLine({ outcome, battle, caught = null, evolutions = [], lang = 'ko', en = null }) {
+  const namer = createNamer({ lang, en });
   const mon = battle?.team?.[0];
   const opponent = battle?.wild ? `Wild ${namer.species(speciesOf(battle))}${mon?.level ? ` Lv${mon.level}` : ''}` : trainerOf(battle);
   const parts = [`Opponent: ${opponent}`, `Outcome: ${outcomeText(outcome)}`];
@@ -25,8 +26,8 @@ export const RESULT_LINE_RE = /\[Battle (?:Result \||result:)[^\]\n]*\]/;
 
 const turnsText = span => (span.fromTurn === span.toTurn ? `turn ${span.fromTurn}` : `turns ${span.fromTurn}–${span.toTurn}`);
 
-export function storyOoc(format, { battle, result = null, ended = false, first = true, read, screen = [], korean = true, en = null }) {
-  const namer = createNamer({ korean, en });
+export function storyOoc(format, { battle, result = null, ended = false, first = true, read, screen = [], lang = 'ko', en = null }) {
+  const namer = createNamer({ lang, en });
   const opponent = battle?.wild ? `the wild ${namer.species(speciesOf(battle))}` : trainerOf(battle);
   const summary = format === 'summary';
   const span = turnSpan(read);
@@ -58,8 +59,10 @@ export const USER = '{{user}}';
 const STAT_EN = { hp: 'HP', atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe: 'Spe' };
 const signed = n => `${n > 0 ? '+' : ''}${n}`;
 
-export function logLine(event, namer = createNamer({ korean: false })) {
+export function logLine(event, namer = createNamer({ lang: 'en' })) {
   const monEn = w => (w?.name ? w.name : w?.species ? namer.species(w.species) : w?.ref ?? 'Pokémon');
+
+  const itemEn = id => customText(event, id) ?? namer.items(id);
   const effectEn = e => {
     if (e.kind === 'heal') {
       if (e.revivedAll) return 'revived all fainted';
@@ -93,7 +96,7 @@ export function logLine(event, namer = createNamer({ korean: false })) {
       if (a?.party && b?.party) return `${USER} swapped party #${a.party} and #${b.party}`;
       return `${USER} swapped ${monEn(event.a)} ${a?.party ? '(party)' : '(box)'} with ${monEn(event.b)} ${b?.party ? '(party)' : '(box)'}`;
     }
-    case 'hold': return event.item ? `${USER} gave ${namer.items(event.item)} to ${monEn(event.who)}` : `${USER} took ${namer.items(event.prev)} from ${monEn(event.who)}`;
+    case 'hold': return event.item ? `${USER} gave ${itemEn(event.item)} to ${monEn(event.who)}` : `${USER} took ${itemEn(event.prev)} from ${monEn(event.who)}`;
     case 'deposit': return `${USER} moved ${monEn(event.who)} to the box`;
     case 'withdraw': return `${USER} moved ${monEn(event.who)} to the party`;
     case 'release': return `${USER} released ${monEn(event.who)}`;
@@ -111,14 +114,14 @@ export function logLine(event, namer = createNamer({ korean: false })) {
       return `${monEn(event.who)} healed${effect ? `: ${effect}` : ''}`;
     }
     case 'evs': case 'exp': case 'ability': case 'nature': case 'hypertrain': case 'ppup': return `${monEn(event.who)}: ${effectEn(event)}`;
-    case 'item': return `${namer.items(event.item)} ${signed(event.delta)}`;
+    case 'item': return `${itemEn(event.item)} ${signed(event.delta)}`;
     case 'add': return `${USER} got ${namer.species(event.who?.species)} Lv${event.level}${event.box ? ', sent to storage' : ''}`;
     default: return null;
   }
 }
 
-export function pkbLog(events, { korean = true, en = null } = {}) {
-  const namer = createNamer({ korean, en });
+export function pkbLog(events, { lang = 'ko', en = null } = {}) {
+  const namer = createNamer({ lang, en });
   const parts = (events ?? []).map(e => logLine(e, namer)).filter(Boolean);
   if (!parts.length) return '';
   return `<pkb-log>${parts.join('. ')}.</pkb-log>`;

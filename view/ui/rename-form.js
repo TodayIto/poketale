@@ -2,14 +2,14 @@
 // from pokerogue src/ui/handlers/form-modal-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/modal-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/text.ts (TOOLTIP_CONTENT, SETTINGS_LABEL, addTextInputObject) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { addWindow, WINDOW_VARIANT_IMAGES } from './window.js';
 import { themeColors } from './theme.js';
 import { styledText, FONT_FAMILY } from './text.js';
 import { playSelect } from './keys.js';
 
-const TEXT = { title: '포켓몬의 닉네임은?', label: '닉네임', rename: '닉네임 바꾸기', cancel: '취소' };
+const TEXT = Object.freeze({ title: 'menu.renamePokemon', label: 'menu.nickname', rename: 'menu.rename', cancel: 'menu.cancel' });
 const MAX_LENGTH = 20;
 
 const WIDTH = 160, HEIGHT = 20 + 26 + 28, MARGIN = [0, 0, 48, 0];
@@ -40,15 +40,15 @@ export class RenameForm {
     const c = this.container = s.add.container((320 - (WIDTH + (right - left))) / 2, (-180 - (HEIGHT + (bottom - top))) / 2);
 
     c.add(s.add.rectangle(-c.x, -180 - c.y, 320, 180, 0, 0).setOrigin(0).setInteractive());
-    c.add([addWindow(s, 0, 0, WIDTH, HEIGHT), formText(s, WIDTH / 2, 4, TEXT.title, 'SETTINGS_LABEL').setOrigin(0.5, 0)]);
+    c.add([addWindow(s, 0, 0, WIDTH, HEIGHT), formText(s, WIDTH / 2, 4, s.words(TEXT.title), 'SETTINGS_LABEL').setOrigin(0.5, 0)]);
 
-    const label = formText(s, 10, 31, TEXT.label, 'TOOLTIP_CONTENT');
+    const label = formText(s, 10, 31, s.words(TEXT.label), 'TOOLTIP_CONTENT');
     const labelWidth = label.width ?? label.displayWidth * 6;
     const inputWidth = labelWidth < 320 ? 80 : 80 - (labelWidth - 320) / 5.5;
     this.field = { x: 70 + (80 - inputWidth) + 4, y: 28 - 2, width: (inputWidth * 5.5) / 6, height: 116 / 6 };
     c.add([label, addWindow(s, 70 + (80 - inputWidth), 28, inputWidth, 16, 'xthin')]);
 
-    const buttons = [TEXT.rename, TEXT.cancel].map((str, i) => {
+    const buttons = [s.words(TEXT.rename), s.words(TEXT.cancel)].map((str, i) => {
       const text = formText(s, 0, 8, str, 'TOOLTIP_CONTENT').setOrigin(0.5, 0.5);
       const bg = addWindow(s, 0, 0, text.displayWidth + 8, 16, 'thin').setOrigin(0.5, 0);
       bg.setInteractive({ useHandCursor: true });
@@ -85,7 +85,7 @@ export class RenameForm {
     if (!doc?.createElement) return null;
     const input = doc.createElement('input');
     input.type = 'text'; input.maxLength = MAX_LENGTH; input.value = name; input.spellcheck = false;
-    input.setAttribute('autocomplete', 'off'); input.setAttribute('aria-label', TEXT.label);
+    input.setAttribute('autocomplete', 'off'); input.setAttribute('aria-label', s.words(TEXT.label));
     const [color] = themeColors(s, 'WINDOW') ?? ['#f8f8f8'];
     Object.assign(input.style, { position: 'fixed', margin: '0', padding: '0', border: '0', outline: 'none', background: 'transparent',
       color, fontFamily: FONT_FAMILY, zIndex: '1', boxSizing: 'border-box' });

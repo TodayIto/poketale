@@ -1,7 +1,8 @@
-// from pokerogue locales/ko/*.json @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// from pokerogue locales/{ko,en}/*.json @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { readFile, writeFile } from 'node:fs/promises';
+import { LANGS } from '../director/lang.js';
 
 const PR = new URL('../vendor/pokerogue/', import.meta.url);
 const load = async path => JSON.parse(await readFile(new URL(path, PR), 'utf8'));
@@ -13,16 +14,20 @@ const keys = {
   'party-ui-handler': ['anyEffect', 'hasEnergy'],
   'status-effect': ['poison.heal', 'toxic.heal', 'paralysis.heal', 'sleep.heal', 'freeze.heal', 'burn.heal'],
 };
-const text = { _source: 'from pokerogue locales/ko @ 7d7da4a8 (AGPL-3.0-only); locales @ 485b48eb' };
-for (const [file, selected] of Object.entries(keys)) {
-  const source = await load(`locales/ko/${file}.json`);
-  for (const key of selected) {
-    const value = key.split('.').reduce((object, part) => object?.[part], source);
-    if (typeof value !== 'string') throw new Error(`Missing locale key: ${file}.${key}`);
-    text[`${file}.${key}`] = value;
+const counts = [];
+for (const lang of LANGS) {
+  const text = { _source: `from pokerogue locales/${lang} @ 7d7da4a8 (AGPL-3.0-only); locales @ 485b48eb` };
+  for (const [file, selected] of Object.entries(keys)) {
+    const source = await load(`locales/${lang}/${file}.json`);
+    for (const key of selected) {
+      const value = key.split('.').reduce((object, part) => object?.[part], source);
+      if (typeof value !== 'string') throw new Error(`Missing locale key: ${lang}/${file}.${key}`);
+      text[`${file}.${key}`] = value;
+    }
   }
+  await writeFile(new URL(`../director/text-bag-${lang}.json`, import.meta.url), JSON.stringify(text, null, 2) + '\n');
+  counts.push(`${Object.keys(text).length - 1}개 -> director/text-bag-${lang}.json`);
 }
-await writeFile(new URL('../director/text-bag-ko.json', import.meta.url), JSON.stringify(text, null, 2) + '\n');
 
 const ITEM_FRAMES = {
   potion: 'potion', superpotion: 'super_potion', hyperpotion: 'hyper_potion', maxpotion: 'max_potion', fullrestore: 'full_restore',
@@ -42,7 +47,7 @@ const ITEM_FRAMES = {
   linkingcord: 'linking_cord', everstone: 'everstone', sacredash: 'sacred_ash',
   repel: 'repel', superrepel: 'super_repel', maxrepel: 'max_repel', nugget: 'nugget', bignugget: 'big_nugget', relicgold: 'relic_gold',
   bigmushroom: 'big_mushroom',
-  teraorb: 'tera_orb',
+  teraorb: 'tera_orb', expshare: 'exp_share',
 
   lonelymint: 'mint_atk', adamantmint: 'mint_atk', naughtymint: 'mint_atk', bravemint: 'mint_atk',
   boldmint: 'mint_def', impishmint: 'mint_def', laxmint: 'mint_def', relaxedmint: 'mint_def',
@@ -70,4 +75,4 @@ const out = {
   pb_particles: particles,
 };
 await writeFile(new URL('../data/bag-icons.json', import.meta.url), JSON.stringify(out) + '\n');
-console.log(`가방 문구 ${Object.keys(text).length - 1}개 -> director/text-bag-ko.json, 도구 아이콘 ${Object.keys(frames).length}개 -> data/bag-icons.json`);
+console.log(`가방 문구 ${counts.join(', ')}, 도구 아이콘 ${Object.keys(frames).length}개 -> data/bag-icons.json`);

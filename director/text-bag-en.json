@@ -1,0 +1,18 @@
+{
+  "_source": "from pokerogue locales/en @ 7d7da4a8 (AGPL-3.0-only); locales @ 485b48eb",
+  "battle.singleWildAppeared": "A wild {{pokemonName}} appeared!",
+  "battle.pokemonCaught": "Gotcha!\n{{pokemonName}} was caught!",
+  "battle.pokemonBrokeFree": "Oh no!\nThe Pokémon broke free!",
+  "battle.noPokeballTrainer": "The Trainer blocked your Poké Ball!\nDon’t be a thief!",
+  "battle.noPokeballForce": "An unseen force prevents\nthe use of Poké Balls!",
+  "battle.regainHealth": "{{pokemonName}} regained\nhealth!",
+  "battle.ppHealBerry": "{{pokemonNameWithAffix}} restored PP to its move {{moveName}}\nusing its {{berryName}}!",
+  "party-ui-handler.anyEffect": "It won’t have any effect.",
+  "party-ui-handler.hasEnergy": "{{pokemonName}} still has energy\nto battle!",
+  "status-effect.poison.heal": "{{pokemonNameWithAffix}} was\ncured of its poison!",
+  "status-effect.toxic.heal": "{{pokemonNameWithAffix}} was\ncured of its poison!",
+  "status-effect.paralysis.heal": "{{pokemonNameWithAffix}} was\nhealed of paralysis!",
+  "status-effect.sleep.heal": "{{pokemonNameWithAffix}} woke up!",
+  "status-effect.freeze.heal": "{{pokemonNameWithAffix}} was\ndefrosted!",
+  "status-effect.burn.heal": "{{pokemonNameWithAffix}} was\nhealed of its burn!"
+}

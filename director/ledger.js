@@ -1,6 +1,6 @@
 import { monView } from './mon.js';
 import { parseHealth } from './parse.js';
-import { sideOf, isIdent, identName, uidOf } from './read.js';
+import { sideOf, positionOf, fieldPositions, isIdent, identName, uidOf } from './read.js';
 import { pokemonName } from './bag.js';
 import { toID } from '../engine/mon.mjs';
 
@@ -12,13 +12,14 @@ const SEMI_INVULNERABLE = new Set(['fly', 'bounce', 'dig', 'dive', 'phantomforce
 
 export function createLedger({ battle, names }) {
   const pokemon = new Map();
-  const field = { player: null, enemy: null };
+  const field = Object.fromEntries(fieldPositions(battle).map(position => [position, null]));
 
   for (const [i, side] of ['player', 'enemy'].entries()) {
     for (const p of battle.sides[i]?.pokemon ?? []) {
       pokemon.set(p.m.uid, { uid: p.m.uid, side, speciesId: p.species.id, spriteId: p.species.spriteid, name: pokemonName(names, p),
         level: p.level, gender: p.gender || '', shiny: !!p.set.shiny, hp: p.hp, maxhp: p.maxhp, status: p.fainted ? '' : p.status || '',
-        ball: p.pokeball, boosts: {}, substitute: false, semiInvulnerable: null, disabled: null, fainted: !!p.fainted });
+        ball: p.pokeball, boosts: {}, substitute: false, semiInvulnerable: null, disabled: null, fainted: !!p.fainted,
+        ...(p.m.partner ? { partner: p.m.partner } : {}) });
     }
   }
   let current = null;
@@ -65,7 +66,7 @@ export function createLedger({ battle, names }) {
     const result = { ...event, before };
     switch (kind) {
     case 'switch': case 'drag': {
-      const side = entry.side, previous = atField(side);
+      const side = positionOf(a[0]), previous = atField(side);
       result.previous = copy(previous);
 
       const passed = previous && previous !== entry && ['copyvolatile', 'shedtail'].includes(event.cause) ? copy(previous) : null;
@@ -80,6 +81,7 @@ export function createLedger({ battle, names }) {
     }
     case 'replace': {
 
+      // Illusion broken: the real look of the same Pokemon (uid). The engine does not attach HP
       const health = a[2] ?? `${entry.hp}/${entry.maxhp}${entry.status ? ` ${entry.status}` : ''}`;
       Object.assign(entry, monView(battle, names, a[0], a[1], health, entry.maxhp));
       break;
@@ -95,7 +97,14 @@ export function createLedger({ battle, names }) {
     }
     case '-setboost': setBoost(entry, a[1], Number(a[2])); break;
     case '-clearboost': entry.boosts = {}; break;
-    case '-clearallboost': for (const side of ['player', 'enemy']) if (atField(side)) atField(side).boosts = {}; break;
+    case '-clearallboost': for (const side of Object.keys(field)) if (atField(side)) atField(side).boosts = {}; break;
+    case 'swap': {
+
+      const from = positionOf(a[0]), to = positionOf(a[0].replace(/^(p\d)[a-z]/, (_, side) => side + 'abc'[Number(a[1])]));
+      [field[from], field[to]] = [field[to], field[from]];
+      result.positions = [from, to];
+      break;
+    }
     case '-clearnegativeboost': for (const stat of BOOSTS) if (entry.boosts[stat] < 0) delete entry.boosts[stat]; break;
     case '-clearpositiveboost': for (const stat of BOOSTS) if (entry.boosts[stat] > 0) delete entry.boosts[stat]; break;
     case '-invertboost': for (const stat of BOOSTS) if (entry.boosts[stat]) entry.boosts[stat] = -entry.boosts[stat]; break;
@@ -148,9 +157,11 @@ export function createLedger({ battle, names }) {
 
     atField,
 
-    onField: ident => isIdent(ident) && field[sideOf(ident)] === get(ident).uid,
+    // Whether ident's Pokemon is on the field now (false when benched)
+    onField: ident => isIdent(ident) && Object.values(field).includes(get(ident).uid),
 
-    // Ledger -> view MonView
+    positionOfUid: uid => Object.keys(field).find(position => field[position] === uid) ?? null,
+
     view: entry => Object.fromEntries(VIEW_KEYS.filter(key => entry[key] !== undefined).map(key => [key, entry[key]])),
   };
 }

@@ -1,9 +1,15 @@
-import phrases from './text-summary-ko.json' with { type: 'json' };
+import ko from './text-summary-ko.json' with { type: 'json' };
+import en from './text-summary-en.json' with { type: 'json' };
 import { learnMoveOption } from './steps-exp.js';
+import { ownText } from './text.js';
+import { checkLang, DEFAULT_LANG } from './lang.js';
+
+const PHRASES = { ko, en };
 import { expForLevel } from '../engine/exp.mjs';
 import { MAX_LEVEL, NON_HP_STATS } from '../engine/mon.mjs';
 
-export function summaryView(battle, names, entry, pokemon, options = {}) {
+export function summaryView(battle, names, entry, pokemon, options = {}, lang = DEFAULT_LANG) {
+  const phrases = PHRASES[checkLang(lang)];
   const species = pokemon.baseSpecies;
   const nature = battle.dex.natures.get(pokemon.set.nature ?? '');
   const ability = battle.dex.abilities.get(entry.baseAbility ?? pokemon.baseAbility);
@@ -14,9 +20,11 @@ export function summaryView(battle, names, entry, pokemon, options = {}) {
     trainer: pokemon.m?.ot || pokemon.side.name,
     ability: { name: names.ability(ability.id), description: phrases[`ability.${ability.id}`] ?? '' },
 
+    item: pokemon.item ? names.item(pokemon.item) : pokemon.m?.heldCustom ?? null,
+
     stats: { hp: pokemon.hp, maxhp: pokemon.maxhp, ...Object.fromEntries(NON_HP_STATS.map(s => [s, entry.stats?.[s] ?? pokemon.baseStoredStats[s]])) },
     friendship: pokemon.happiness,
-    moves: pokemon.baseMoveSlots.map(slot => learnMoveOption(battle, names, slot.id, slot.pp, slot.maxpp)),
+    moves: pokemon.baseMoveSlots.map(slot => learnMoveOption(battle, names, slot.id, slot.pp, slot.maxpp, lang)),
   };
   if (nature.exists) {
 
@@ -24,7 +32,8 @@ export function summaryView(battle, names, entry, pokemon, options = {}) {
     const shown = original.exists && original.id !== nature.id ? original : nature;
     summary.nature = { name: phrases[`nature.${shown.id}`] ?? shown.name, text: phrases[`natureFragment.${shown.id}`] ?? '{{nature}}',
       ...(nature.plus ? { plus: nature.plus, minus: nature.minus } : {}) };
-    if (shown !== nature) summary.nature.mint = mintNote(names.item(`${nature.id}mint`));
+
+    if (shown !== nature) summary.nature.mint = ownText('own.mintNote', { itemName: names.item(`${nature.id}mint`) }, lang);
   }
 
   if (!battle.dex.currentMod.startsWith('champions')) summary.ivs = { hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31, ...pokemon.set.ivs };
@@ -35,8 +44,6 @@ export function summaryView(battle, names, entry, pokemon, options = {}) {
   if (exp) summary.exp = exp;
   return summary;
 }
-
-const mintNote = mintName => `${mintName}의 효과를 받고 있다.`;
 
 function expInfo(battle, pokemon, table) {
   const row = table?.species?.[battle.dex.species.get(pokemon.set.species).num];

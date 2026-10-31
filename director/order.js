@@ -14,18 +14,22 @@ export const isSurvive = ({ kind, args: a, kwArgs: kw }) =>
 const isDamage = ({ kind, args: a, kwArgs: kw }) => (kind === '-damage' && !kw.from)
   || ((kind === '-activate' || kind === '-end') && /substitute/i.test(a[1] ?? ''));
 
+// First-arg Pokemon of a line (uid)
 const actorOf = e => (isIdent(e.args[0]) ? uidOf(e, e.args[0]) : null);
 
 export function openingOrder(events) {
   if (!events.some(e => e.kind === 'start')) return events;
   const end = events.findIndex(e => e.kind === 'turn');
   const head = end < 0 ? events.length : end;
-  const first = side => events.findIndex((e, i) => i < head && e.kind === 'switch' && isIdent(e.args[0]) && sideOf(e.args[0]) === side);
-  const player = first('player'), enemy = first('enemy');
-  if (player < 0 || enemy < 0 || enemy < player) return events;
-  const ordered = events.slice();
-  const [enemySwitch] = ordered.splice(enemy, 1);
-  ordered.splice(player, 0, enemySwitch);
+  const opening = side => events.filter((e, i) => i < head && e.kind === 'switch' && isIdent(e.args[0]) && sideOf(e.args[0]) === side);
+  const player = opening('player'), enemy = opening('enemy');
+  if (enemy.length > 1) {
+    enemy[0].joinedBy = enemy.slice(1);
+    for (const e of enemy.slice(1)) e.joins = enemy[0];
+  }
+  if (!player.length || !enemy.length || events.indexOf(enemy[0]) < events.indexOf(player[0])) return events;
+  const ordered = events.filter(e => !enemy.includes(e));
+  ordered.splice(ordered.indexOf(player[0]), 0, ...enemy);
   return ordered;
 }
 
@@ -70,7 +74,6 @@ function orderSegment(segment) {
   const head = segment[0]?.kind === 'move' ? segment[0] : null;
   if (head) for (const e of segment.slice(1)) e.move = head;
 
-  // Find hits: from that target's effectiveness/crit/endure lines to that target's damage line
   const hits = [];
   let open = null;
   segment.forEach((e, i) => {

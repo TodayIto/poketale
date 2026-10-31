@@ -1,3 +1,5 @@
+import { say } from '../../story/screen-text.mjs';
+
 export const PHONE_SIZES = Object.freeze({ tap: Object.freeze([44, 60]), tapShare: 0.1, bandRoom: 4, sideRoom: 20, pad: 210, minScreen: 160, bandSpan: 6,
   cell: Object.freeze([40, 80]), lift: Object.freeze([16, 56]), liftShare: 0.05, edge: Object.freeze([14, 64]), edgeShare: 0.06 });
 
@@ -47,7 +49,7 @@ function followPhoneLayout(root, layout, { band = true, sizes = PHONE_SIZES } = 
   };
 }
 
-export function mountPhoneLayout(root, layout, { press, band = true, left = [], right = [], screen = null, onScreen = [] }) {
+export function mountPhoneLayout(root, layout, { press, lang, band = true, left = [], right = [], screen = null, onScreen = [] }) {
   const undo = [];
   root.classList.add(`pkb-${layout}`);
   undo.push(() => root.classList.remove(`pkb-${layout}`));
@@ -58,7 +60,7 @@ export function mountPhoneLayout(root, layout, { press, band = true, left = [], 
     undo.push(() => mark.replaceWith(element));
   };
   if (layout === 'portrait') {
-    const pad = mountPad(root, press);
+    const pad = mountPad(root, press, lang);
     undo.push(() => pad.remove());
   }
   if (layout === 'landscape') {
@@ -68,8 +70,8 @@ export function mountPhoneLayout(root, layout, { press, band = true, left = [], 
     root.append(rightColumn);
     undo.push(() => { leftColumn.remove(); rightColumn.remove(); });
     for (const item of left) move(item, leftColumn);
-    const back = Object.assign(document.createElement('button'), { type: 'button', className: 'back', innerHTML: BACK_ICON, title: '뒤로', tabIndex: -1 });
-    back.setAttribute('aria-label', '뒤로');
+    const back = Object.assign(document.createElement('button'), { type: 'button', className: 'back', innerHTML: BACK_ICON, title: say(lang, 'window.back'), tabIndex: -1 });
+    back.setAttribute('aria-label', say(lang, 'window.back'));
     bindPress(back, () => press('b'));
     leftColumn.append(Object.assign(document.createElement('span'), { className: 'grow' }), back);
     for (const item of right) move(item, rightColumn);
@@ -85,10 +87,10 @@ export function mountPhoneLayout(root, layout, { press, band = true, left = [], 
   return () => { for (const step of undo.reverse()) step(); };
 }
 
-export const PAD_BUTTONS = Object.freeze([['up', '위'], ['left', '왼쪽'], ['right', '오른쪽'], ['down', '아래'], ['b', 'B'], ['a', 'A']]);
+export const PAD_BUTTONS = Object.freeze(['up', 'left', 'right', 'down', 'b', 'a'].map(key => [key, `pad.${key}`]));
 
 const ARROW = '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 3.2 13.4 11H2.6z"/></svg>';
-const BACK_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.2 3.6 2.6 7.2l3.6 3.6M3 7.2h6.4a3.6 3.6 0 0 1 0 7.2H7.6" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+export const BACK_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.2 3.6 2.6 7.2l3.6 3.6M3 7.2h6.4a3.6 3.6 0 0 1 0 7.2H7.6" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 export function choiceCursor(buttons, onBack = () => {}) {
   let picked = 0;
@@ -122,13 +124,12 @@ export function bindPress(button, fire) {
   button.addEventListener('contextmenu', event => event.preventDefault());
 }
 
-function mountPad(parent, press) {
+function mountPad(parent, press, lang) {
   const pad = document.createElement('div');
   pad.className = 'pad';
-  pad.innerHTML = `<div class="dpad">${PAD_BUTTONS.slice(0, 4).map(([key, label]) =>
-    `<button type="button" tabindex="-1" class="${key}" data-key="${key}" aria-label="${label}">${ARROW}</button>`).join('')}<span class="hub"></span></div>
-    <div class="ab">${PAD_BUTTONS.slice(4).map(([key, label]) =>
-    `<button type="button" tabindex="-1" class="${key}" data-key="${key}" aria-label="${label}">${label}</button>`).join('')}</div>`;
+  const button = ([key, label], face) => `<button type="button" tabindex="-1" class="${key}" data-key="${key}" aria-label="${say(lang, label)}">${face ?? say(lang, label)}</button>`;
+  pad.innerHTML = `<div class="dpad">${PAD_BUTTONS.slice(0, 4).map(entry => button(entry, ARROW)).join('')}<span class="hub"></span></div>
+    <div class="ab">${PAD_BUTTONS.slice(4).map(entry => button(entry)).join('')}</div>`;
   for (const button of pad.querySelectorAll('button')) bindPress(button, () => press(button.dataset.key));
   parent.append(pad);
   return pad;

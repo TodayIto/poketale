@@ -1,16 +1,17 @@
 import { BAG_ITEMS } from '../engine/bag.mjs';
-import { statusNames } from './text.js';
+import { statusNames, nameWithAffix } from './text.js';
+import { DEFAULT_LANG } from './lang.js';
 import { bagText } from './bag.js';
 import { sideOf } from './read.js';
 import { toID } from '../engine/mon.mjs';
 
 const BY_NAME = new Map(Object.entries(BAG_ITEMS).map(([id, item]) => [`item: ${item.name}`, id]));
 
-// Lines this module handles (steps.js dispatch table). Plus -heal,-curestatus from bag items (usesBagItem)
+// Lines this module handles (steps.js dispatch table). Plus -heal/-curestatus from bag items (usesBagItem)
 export const BAG_KINDS = ['-story-item', '-story-pp', '-story-ball'];
 
-export function createBagSteps({ battle, view, names, ledger, bag }) {
-  const say = (key, values, options = {}) => view.message(bagText(key, values), options);
+export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAULT_LANG, affix = nameWithAffix(lang) }) {
+  const say = (key, values, options = {}) => view.message(bagText(key, values, lang), options);
 
   let using = null, captured = null;
 
@@ -35,7 +36,7 @@ export function createBagSteps({ battle, view, names, ledger, bag }) {
       // One line per restored move - text only once (PP values reach the move menu with the next request)
       if (!using || using.ppShown) return;
       using.ppShown = true;
-      const values = { pokemonNameWithAffix: using.name, itemName: names.item(using.item) };
+      const values = { pokemonNameWithAffix: affix(using.name, 'player'), itemName: names.item(using.item) };
       if (BAG_ITEMS[using.item]?.oneMove) await say('battle.ppHealBerry', { ...values, berryName: values.itemName, moveName: names.move(toID(a[2])) });
       else await say('own.ppRestoredAll', values);
       return;
@@ -79,9 +80,9 @@ export function createBagSteps({ battle, view, names, ledger, bag }) {
     case '-curestatus': {
       const status = statusNames[a[1]], name = ledger.get(a[0]).name;
 
-      if (!ledger.onField(a[0])) { if (status) await say(`status-effect.${status}.heal`, { pokemonNameWithAffix: name }); return; }
+      if (!ledger.onField(a[0])) { if (status) await say(`status-effect.${status}.heal`, { pokemonNameWithAffix: affix(name, 'player') }); return; }
       await view.setStatus(sideOf(a[0]), '');
-      await say(`own.cureFromItem.${a[1] === 'tox' ? 'psn' : a[1]}`, { pokemonNameWithAffix: name, pokemonName: name, itemName: names.item(BY_NAME.get(String(kw.from))) });
+      await say(`own.cureFromItem.${a[1] === 'tox' ? 'psn' : a[1]}`, { pokemonNameWithAffix: affix(name, 'player'), pokemonName: affix(name, 'player'), itemName: names.item(BY_NAME.get(String(kw.from))) });
       return;
     }
     }

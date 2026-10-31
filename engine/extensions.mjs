@@ -16,7 +16,7 @@ export const EXTENSIONS = [
 
 	{ name: 'initial-state', at: 'create', install: (sim, battle, { spec }) => installInitialState(sim, battle, spec), keys: [], copy: 'keep' },
 
-	{ name: 'start-form', at: 'players', install: recordStartForms, keys: [], copy: 'keep' },
+	{ name: 'start-form', at: 'players', install: (sim, battle, { sets }) => recordStartForms(battle, sets), keys: [], copy: 'keep' },
 
 	{ name: 'exp', at: 'players', install: (sim, battle, { spec, options }) => { if (options.exp) attachExperience(sim, battle, spec, options); },
 		keys: ['events'], copy: 'strip', fields: ['evolutions', 'learnQueue'], result: experienceResult },

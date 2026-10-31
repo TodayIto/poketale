@@ -5,7 +5,7 @@ const result = await buildBattle();
 const code = `//@name poke_battle
 //@display-name PokéTale
 //@api 3.0
-//@version 0.0.1
+//@version 0.0.2
 //@update-url https://raw.githubusercontent.com/TodayIto/poketale/main/dist/poke-battle.js
 ` + result.code;
 mkdirSync('dist', { recursive: true });

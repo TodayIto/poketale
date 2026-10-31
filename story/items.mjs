@@ -70,7 +70,13 @@ export const OUTSIDE_ITEMS = {
 	honey: field('Honey'), pokedoll: field('Poké Doll'), fluffytail: field('Fluffy Tail'),
 
 	teraorb: { name: 'Tera Orb', kind: 'key' },
+
+	expshare: { name: 'Exp. Share', kind: 'key' },
 };
+
+export const EXP_SHARE_MODES = ['always', 'item'];
+
+export const expShareOn = (mode, bag) => mode !== 'item' || (bag?.expshare ?? 0) > 0;
 
 export const tmId = number => `tm${String(number).padStart(3, '0')}`;
 export const isTm = id => /^tm\d{3}$/.test(String(id ?? ''));

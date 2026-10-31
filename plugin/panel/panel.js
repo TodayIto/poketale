@@ -1,13 +1,15 @@
 import { panelModel, reduce, initialUi, levelUpPlan, levelUpAction, evolutionMoves, stoneAction, teachAction, actions, boxName,
   pendingCount } from '../../story/panel.mjs';
 import { renderPanel, panelShell, PANEL_STATES } from '../../story/panel-html.mjs';
-import { UNREADABLE } from '../../story/stored.mjs';
+import { unreadableLine } from '../../story/stored.mjs';
 import { WHAT, failureText } from '../../story/failure.mjs';
 import { CHAT_SCREEN } from '../battle/stage.js';
+import { statusMoney } from '../../story/compat.mjs';
 
 const clone = value => JSON.parse(JSON.stringify(value));
 
-export async function startPanel({ doc, read, queueAction, screens, changes = () => () => {}, resume = async () => {} }) {
+export async function startPanel({ doc, read, queueAction, screens, changes = () => () => {}, resume = async () => {}, toggleAux = async () => null, debugAdd = async () => {}, debugEdit = async () => {}, debugHeal = async () => {},
+  quickImport = async () => {}, importLater = async () => {} }) {
   const body = await doc.querySelector('body');
   if (!body) return null;
   const root = await doc.createElement('div');
@@ -44,7 +46,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     const battle = cur?.battle ?? { key: null, phase: null };
     const chatScreen = !!(await doc.querySelector(CHAT_SCREEN));
 
-    const sig = JSON.stringify([cur?.key ?? null, !!cur?.on, battle.phase, chatScreen, !!cur?.compat]);
+    const sig = JSON.stringify([cur?.key ?? null, cur?.lang ?? null, !!cur?.on, battle.phase, chatScreen, !!cur?.compat, !!cur?.debug, cur?.aux?.on ?? null, cur?.offer ?? null]);
     if (!force && sig === lastSig) return;
     if ((cur?.id ?? null) !== chatId) {
       if (chatId !== undefined) ui = { ...initialUi(), open: ui.open };
@@ -52,10 +54,14 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     }
 
     now = cur?.on && chatScreen
-      ? { target: cur.target, chat: cur.chat, state: cur.state, locked: !!battle.key, show: true, ctx: cur.ctx, unreadable: !!cur.unreadable } : null;
+      ? { target: cur.target, chat: cur.chat, lang: cur.lang, state: cur.state, locked: !!battle.key, show: true, ctx: cur.ctx, unreadable: !!cur.unreadable, debug: !!cur.debug, offer: cur.offer ?? null } : null;
 
     if (now) now.resume = battle.phase === 'folded' || battle.phase === 'parked';
-    if (now) now.low = !!cur.compat;
+    if (now) now.aux = cur.aux ?? null;
+    if (now) {
+      now.low = !!cur.compat;
+      now.money = cur.compat ? statusMoney(cur.chat) : undefined;
+    }
     await draw();
     lastSig = sig;
   }
@@ -90,10 +96,14 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
   }
   async function drawNow() {
     if (stopped) return;
-    if (!now?.show) return setStates([PANEL_STATES.gone]);
+    if (!now?.show) {
 
-    const shownUi = now.unreadable && !ui.message ? { ...ui, message: { text: UNREADABLE, error: true } } : ui;
-    const view = renderPanel(panelModel({ state: now.state, ctx: now.ctx, locked: now.locked, resume: now.resume, ui: shownUi }));
+      if (shown.tabs) { await tabsBox.setInnerHTML(''); shown.tabs = ''; }
+      return setStates([PANEL_STATES.gone]);
+    }
+
+    const shownUi = now.unreadable && !ui.message ? { ...ui, message: { text: unreadableLine(now.lang), error: true } } : ui;
+    const view = renderPanel(panelModel({ state: now.state, ctx: now.ctx, lang: now.lang, locked: now.locked, resume: now.resume, debug: now.debug, offer: now.offer, ui: shownUi, money: now.money }), { compat: now.low, aux: now.aux });
     const states = [view.open && PANEL_STATES.open, view.locked && PANEL_STATES.locked, now.low && PANEL_STATES.low].filter(Boolean);
 
     if (view.open && view.sheet !== shown.sheet) { await fill(sheetBox, view.sheet, view.hits); shown.sheet = view.sheet; }
@@ -104,7 +114,13 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
 
   async function press(hit) {
     if (busy || !now) return;
-    const env = { state: now.state, ctx: now.ctx, locked: now.locked };
+    if (hit.t === 'aux') {
+      busy = true;
+      try { await toggleAux(); } finally { busy = false; }
+      missed = false;
+      return void await refresh({ force: true });
+    }
+    const env = { state: now.state, ctx: now.ctx, lang: now.lang, locked: now.locked, debug: now.debug };
     const { ui: next, effect } = reduce(ui, hit, env);
     const opening = !ui.open && next.open;
     ui = next;
@@ -116,7 +132,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     busy = true;
     try {
       await draw();
-      await run(effect, now.target);
+      await run(effect, now.target, now.lang);
     } finally {
       busy = false;
       await draw().catch(() => {});
@@ -127,29 +143,29 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
   const say = (text, error = false) => { ui = { ...ui, message: text ? { text, error } : null }; };
   const findMon = uid => now?.state.party.find(m => m.uid === uid) ?? now?.state.box.find(m => m.uid === uid) ?? null;
 
-  async function queue(action, after, target) {
+  async function queue(action, after, target, lang) {
     try {
       await queueAction(action, target);
       say(after ?? null);
       return true;
     } catch (error) {
       if (!error?.why) console.warn('[poke-battle] 패널 행동', error);
-      say(failureText(WHAT.action, error), true);
+      say(failureText(WHAT.action, error, lang), true);
       return false;
     } finally {
       await refresh({ force: true });
     }
   }
 
-  async function run(effect, target) {
+  async function run(effect, target, lang) {
     try {
       switch (effect.kind) {
         case 'resume': return await resume();
         case 'queue': {
-          const ok = await queue(effect.action, effect.after, target);
+          const ok = await queue(effect.action, effect.after, target, lang);
 
           const mon = ok && effect.followLevelUp ? findMon(effect.followLevelUp) : null;
-          if (mon && pendingCount(mon) && !now?.locked) await levelUp(mon.uid, target);
+          if (mon && pendingCount(mon) && !now?.locked) await levelUp(mon.uid, target, lang);
           return;
         }
         case 'summary': {
@@ -159,17 +175,17 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
           const onRename = async name => {
             try { await queueAction(actions.nickname(mon, name), target); return true; } catch (error) { console.warn('[poke-battle] 별명', error); return false; }
           };
-          await screens.session(open => open.summary(mon, onRename));
+          await screens.session(open => open.summary(mon, onRename, now?.state.customItems));
           return void await refresh({ force: true });
         }
-        case 'levelup': return void await levelUp(effect.uid, target);
+        case 'levelup': return void await levelUp(effect.uid, target, lang);
         case 'evolveItem': {
           const mon = findMon(effect.uid);
           if (!mon) return;
           const learn = evolutionMoves(now.ctx, mon, effect.into);
           const result = await screens.session(open => open.evolution(mon, effect.into, learn));
           const action = stoneAction(mon, effect.item, { into: effect.into, ...result }, { consumeHeld: !!effect.consumeHeld });
-          if (action) await queue(action, undefined, target);
+          if (action) await queue(action, undefined, target, lang);
           else await refresh({ force: true });
           return;
         }
@@ -181,26 +197,49 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
           const party = now.state.party;
           const result = await screens.session(open => open.learnMove(mon, effect.move, party));
           const action = teachAction(mon, effect.item, effect.move, result);
-          if (action) await queue(action, undefined, target);
+          if (action) await queue(action, undefined, target, lang);
           else await refresh({ force: true });
           return;
         }
+        case 'debugAdd': {
+          await debugAdd(effect.where, target);
+          return void await refresh({ force: true });
+        }
+        case 'debugEdit': {
+          await debugEdit(effect.uid, target);
+          return void await refresh({ force: true });
+        }
+        case 'debugHeal': {
+          try {
+            await debugHeal(target);
+            say(effect.after);
+          } catch (error) { say(failureText(WHAT.debugHeal, error, lang), true); }
+          return void await refresh({ force: true });
+        }
+        case 'quickImport': {
+          await quickImport(target, { asked: effect.asked });
+          return void await refresh({ force: true });
+        }
+        case 'importLater': {
+          await importLater(target);
+          return void await refresh({ force: true });
+        }
         case 'renameBox': {
-          const name = await screens.renameBox(boxName(now.state, effect.box));
+          const name = await screens.renameBox(boxName(now.state, effect.box, lang));
           if (name === null) return void await refresh({ force: true });
-          await queue(actions.boxName(effect.box, name), undefined, target);
+          await queue(actions.boxName(effect.box, name), undefined, target, lang);
           return;
         }
         default: return;
       }
     } catch (error) {
       console.warn('[poke-battle] 패널', error);
-      say(failureText(WHAT.screen, error), true);
+      say(failureText(WHAT.screen, error, lang), true);
       await refresh({ force: true }).catch(() => {});
     }
   }
 
-  async function levelUp(uid, target) {
+  async function levelUp(uid, target, lang) {
     const start = findMon(uid);
     if (!start || now.locked || !pendingCount(start)) return;
     const plan = levelUpPlan(start);
@@ -225,7 +264,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
       });
     } finally {
       const action = levelUpAction(start, done);
-      if (action) await queue(action, undefined, target);
+      if (action) await queue(action, undefined, target, lang);
       else await refresh({ force: true });
     }
   }

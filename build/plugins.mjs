@@ -7,6 +7,8 @@ import { build } from 'esbuild';
 import { showdownBrowser } from './showdown.mjs';
 import { fieldAtlasesModule } from './field-atlases.mjs';
 import { expTextBase64 } from '../director/text-exp-source.js';
+import { LANGS } from '../director/lang.js';
+import { langPath, langAtlasKey } from '../view/lang-images.js';
 export { showdownBrowser };
 
 export const PR_ASSETS = 'vendor/pokerogue/assets';
@@ -61,7 +63,7 @@ function legacyUi() {
 	const walk = rel => {
 		for (const entry of readdirSync(`${LEGACY_UI_DIR}/${rel}`, { withFileTypes: true })) {
 			const path = rel ? `${rel}/${entry.name}` : entry.name;
-			if (entry.isDirectory()) { if (!/^text_images\/(?!ko$)[^/]+$/.test(path)) walk(path); }
+			if (entry.isDirectory()) { if (!/^text_images\/[^/]+$/.test(path) || LANGS.includes(entry.name)) walk(path); }
 			else if (entry.name.endsWith('.png')) out.push(path);
 		}
 	};
@@ -132,6 +134,9 @@ function viewPlugin({ pokemonAtlases }) {
 					files[path] = path + '.json';
 				}
 			}
+
+			// Text image atlases of the other languages (view/lang-images.js)
+			for (const [key, path] of Object.entries(files)) for (const lang of LANGS) if (langPath(path, lang) !== path) files[langAtlasKey(key, lang)] = langPath(path, lang);
 			const atlases = Object.fromEntries(Object.entries(files).map(([key, path]) => [key, JSON.parse(readFileSync(`${PR_ASSETS}/${path}`, 'utf8'))]));
 
 			return { contents: `export const VIEW_ATLASES = ${JSON.stringify(atlases)};\n${pokemonIconsModule()}`
@@ -208,9 +213,10 @@ export const embeddedExpText = {
 	setup(b) {
 		b.onResolve({ filter: /^\.\/text-exp-source\.js$/ }, () => ({ path: 'text-exp', namespace: 'embedded-exp-text' }));
 		b.onLoad({ filter: /.*/, namespace: 'embedded-exp-text' }, () => ({
-			contents: `export function expTextBase64() { return ${JSON.stringify(expTextBase64())}; }`,
+			contents: `const TEXT = ${JSON.stringify(Object.fromEntries(LANGS.map(lang => [lang, expTextBase64(lang)])))};\n`
+				+ 'export function expTextBase64(lang) { return TEXT[lang]; }',
 			loader: 'js',
-			watchFiles: [fileURLToPath(new URL('../director/text-exp-ko.json', import.meta.url))],
+			watchFiles: LANGS.map(lang => fileURLToPath(new URL(`../director/text-exp-${lang}.json`, import.meta.url))),
 		}));
 	},
 };

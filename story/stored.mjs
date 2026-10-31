@@ -1,6 +1,6 @@
 import { WHAT, failureText } from './failure.mjs';
 
-export const UNREADABLE = failureText(WHAT.record, 'unreadable');
+export const unreadableLine = lang => failureText(WHAT.record, 'unreadable', lang);
 
 export const isUnreadable = status => status === 'corrupt' || status === 'unsupported';
 

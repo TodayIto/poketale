@@ -25,9 +25,10 @@ export function entry(kind, value) {
   return record ? Object.freeze(record) : null;
 }
 
-function lookup(kind, value) {
+function lookup(kind, value, lang = 'ko') {
   const { id, fallback } = input(value);
   const record = entry(kind, value);
+  if (lang === 'en') return record?.en ?? fallback;
   if (record?.ko) return record.ko;
   const en = record?.en ?? fallback;
   const key = `${kind}:${id}`;
@@ -38,12 +39,17 @@ function lookup(kind, value) {
 export function getWarnings() { return [...warnings.values()]; }
 export function clearWarnings() { warnings.clear(); }
 
-export const names = Object.freeze({
-  species: value => lookup('species', value),
-  moves: value => lookup('moves', value),
-  abilities: value => lookup('abilities', value),
-  items: value => lookup('items', value),
-  entry, getWarnings, clearWarnings,
-});
+export function namesIn(lang) {
+  if (lang !== 'ko' && lang !== 'en') throw new TypeError(`Unknown name language: ${lang}`);
+  return Object.freeze({
+    species: value => lookup('species', value, lang),
+    moves: value => lookup('moves', value, lang),
+    abilities: value => lookup('abilities', value, lang),
+    items: value => lookup('items', value, lang),
+    entry, getWarnings, clearWarnings,
+  });
+}
+
+export const names = namesIn('ko');
 
 export default names;

@@ -1,3 +1,5 @@
+import { say } from '../../story/screen-text.mjs';
+
 export const SLOW_MS = 3000;
 
 const CSS = `
@@ -13,11 +15,11 @@ const CSS = `
   @keyframes pkb-loading-spin { to { transform:rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .pkb-loading .ball { animation-duration:3s; } }`;
 
-export function mountLoading(parent, { before = null, page = false, hidden = false } = {}) {
+export function mountLoading(parent, { before = null, page = false, hidden = false, lang }) {
   const element = document.createElement('div');
   element.className = ['pkb-loading', page && 'page'].filter(Boolean).join(' ');
   element.setAttribute('role', 'status');
-  element.innerHTML = `<style>${CSS}</style><div class="ball"></div><p>불러오는 중</p>`;
+  element.innerHTML = `<style>${CSS}</style><div class="ball"></div><p>${say(lang, 'window.loading')}</p>`;
   parent.insertBefore(element, before);
   let slow = null;
   const hide = () => { element.hidden = true; clearTimeout(slow); slow = null; };

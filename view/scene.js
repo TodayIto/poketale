@@ -5,7 +5,7 @@
 // from pokerogue src/phases/switch-summon-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/faint-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/damage-anim-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 import Phaser from 'phaser';
 import { Assets, prefetchImages } from './assets.js';
 import { BattleAudio } from './audio.js';
@@ -31,7 +31,9 @@ import { loadStatStage } from './anims/stat-stage.js';
 import { LoadError } from './retry.js';
 import { installGameSpeed } from './game-speed.js';
 import { fitCamera } from './quality.js';
+import { viewWords } from './words.js';
 import BAG_ICONS from '../data/bag-icons.json' with { type: 'json' };
+import { fieldPositions, checkPosition, isPlayerSide, infoLayout } from './positions.js';
 
 const COMMON_ANIMS = ['burn', 'confusion', 'frozen', 'health-up', 'paralysis', 'poison', 'sleep', 'use-item'];
 
@@ -41,7 +43,8 @@ export class BattleScene extends Phaser.Scene {
 
   constructor(options, life, ready, fail = error => { throw error; }) {
     super('BattleView'); this.options = options; this.life = life; this.ready = ready; this.fail = fail;
-    this.pokemon = {}; this.info = {}; this.biomeObjects = [];
+    this.words = viewWords(options.lang);
+    this.pokemon = {}; this.info = {}; this.biomeObjects = []; this.double = false;
     this.summonCount = { player: 0, enemy: 0 };
     this.prefetched = prefetchImages(options);
   }
@@ -71,11 +74,12 @@ export class BattleScene extends Phaser.Scene {
     this.encounter = new BattleEncounter(this);
     this.stopTapBack = installTapBack(this);
   }
-  async prepare({ mons, moves = [], biome, biomeProps, enemyTrainer, enemyBlack, playerTrainer, playerBlack }) {
+  async prepare({ mons, moves = [], biome, biomeProps, enemyTrainer, enemyBlack, playerTrainer, playerBlack, double = false }) {
+    this.double = !!double;
 
     const arena = biomeKey(biome) ?? DEFAULT_BIOME;
     if (biome != null && !biomeKey(biome)) this.assets.diagnostics.push({ unknownBiome: String(biome) });
-    await Promise.all([this.assets.preload(mons, arena), loadFont(this.assets.base), this.audio.preload(mons), this.effects.preload(), this.tera.preload(), this.levels.preload(),
+    await Promise.all([this.assets.preload(mons, arena, this.double), loadFont(this.assets.base), this.audio.preload(mons), this.effects.preload(), this.tera.preload(), this.levels.preload(),
       this.encounter.preload({ enemyTrainer, enemyBlack, playerTrainer, playerBlack }),
       this.assets.image('pb_particles', 'images/effects/pb_particles.png', BAG_ICONS.pb_particles)]);
     this.life.check();
@@ -102,27 +106,35 @@ export class BattleScene extends Phaser.Scene {
     Promise.all([this.levels.evolution.load(),
       ...this.mons.filter(mon => mon.side !== 'enemy').map(mon => this.assets.mon(mon, false))]).catch(() => {});
   }
+
+  // Positions of this battle: 'player', 'enemy' (+ 'player2', 'enemy2' in a double battle)
+  get positions() { return fieldPositions(this.double); }
+
+  // Info box for a position (double layout: small player box, right-slot offset)
+  makeInfo(side) { return new BattleInfo(this, isPlayerSide(side), infoLayout(this.double, side)); }
   async summon(side, mon, { fromBall = true, ball } = {}) {
     this.requireReady();
-    const asset = await this.assets.mon(mon, side === 'player');
+    checkPosition(this.double, side);
+    const player = isPlayerSide(side);
+    const asset = await this.assets.mon(mon, player);
     this.life.check();
     this.pokemon[side]?.destroy(); this.info[side]?.destroy();
     const pokemon = this.pokemon[side] = new PokemonSprite(this, side, mon, asset);
-    this.summonCount[side]++;
-    const info = this.info[side] = new BattleInfo(this, side === 'player');
+    this.summonCount[side] = (this.summonCount[side] ?? 0) + 1;
+    const info = this.info[side] = this.makeInfo(side);
     info.init(mon);
     this.audio.startBattleMusic();
-    const player = side === 'player';
     if (fromBall && player) await this.encounter?.throwFromPlayer();
 
     const key = ballFrame(ball);
     if (fromBall) {
       const ball = this.add.sprite(player ? 36 : 248, player ? 80 : 44, 'pb', key).setOrigin(0.5, 0.625);
       this.field.add(ball);
+      const [, fy] = pokemon.getFieldPositionOffset();
       await Promise.all([
         tween(this, { targets: ball, duration: 650, x: pokemon.placement.x }),
         (async () => {
-          await tween(this, { targets: ball, duration: 150, ease: 'Cubic.easeOut', y: player ? 70 : 34 });
+          await tween(this, { targets: ball, duration: 150, ease: 'Cubic.easeOut', y: (player ? 70 : 34) + fy });
           await tween(this, { targets: ball, duration: 500, ease: 'Cubic.easeIn', angle: 1440, y: pokemon.placement.y });
         })(),
       ]);
@@ -144,25 +156,45 @@ export class BattleScene extends Phaser.Scene {
     })()]);
   }
 
-  async restore({ player, enemy, stages = {}, substitute = {}, hidden = {}, trainer = false } = {}) {
+  async restore({ stages = {}, substitute = {}, hidden = {}, trainer = false, ...mons } = {}) {
     this.requireReady();
-    const sides = Object.entries({ player, enemy }).filter(([, mon]) => mon);
-    const [assets] = await Promise.all([Promise.all(sides.map(([side, mon]) => this.assets.mon(mon, side === 'player'))),
+    for (const side of Object.keys(mons)) checkPosition(this.double, side);
+    const sides = this.positions.map(side => [side, mons[side]]).filter(([, mon]) => mon);
+    const [assets] = await Promise.all([Promise.all(sides.map(([side, mon]) => this.assets.mon(mon, isPlayerSide(side)))),
       trainer ? this.encounter.restoreTrainer() : null]);
     this.life.check();
     sides.forEach(([side, mon], i) => {
       this.pokemon[side]?.destroy(); this.info[side]?.destroy();
       const pokemon = this.pokemon[side] = new PokemonSprite(this, side, mon, assets[i]);
-      this.summonCount[side]++;
+      this.summonCount[side] = (this.summonCount[side] ?? 0) + 1;
       pokemon.container.setVisible(true).setScale(pokemon.getSpriteScale());
       pokemon.playAnim();
-      const info = this.info[side] = new BattleInfo(this, side === 'player');
+      const info = this.info[side] = this.makeInfo(side);
       info.init(mon); info.container.setVisible(true);
       if (stages[side]) this.effects.setStatStages(side, stages[side]);
       if (substitute[side]) this.effects.placeSubstitute(side);
       if (hidden[side]) this.effects.setHidden(side, true);
     });
     this.audio.startBattleMusic();
+  }
+
+  async swap(a, b) {
+    this.requireReady();
+    checkPosition(this.double, a); checkPosition(this.double, b);
+    if (a === b || isPlayerSide(a) !== isPlayerSide(b)) throw new Error(`Cannot swap ${a} and ${b}`);
+    const moving = [[a, b], [b, a]].filter(([from]) => this.pokemon[from]);
+    const slides = moving.map(([from, to]) => {
+      const p = this.pokemon[from], [dx, dy] = p.moveTo(to), doll = this.effects.subs[from]?.sprite;
+      return tween(this, { targets: [p.container, doll].filter(Boolean), x: `+=${dx}`, y: `+=${dy}`, duration: 500 });
+    });
+    for (const map of [this.pokemon, this.info, this.summonCount]) [map[a], map[b]] = [map[b], map[a]];
+    this.effects.swap(a, b);
+    for (const side of [a, b]) {
+      if (!this.pokemon[side]) { delete this.pokemon[side]; delete this.info[side]; continue; }
+      this.info[side]?.place(infoLayout(this.double, side));
+      this.pokemon[side].keepDrawOrder();
+    }
+    await Promise.all(slides);
   }
   async recall(side) {
     const p = this.requireMon(side);
@@ -220,7 +252,7 @@ export class BattleScene extends Phaser.Scene {
   chooseSwitch(options) { this.requireReady(); return this.party.choose(options); }
   async end({ outcome, caught = false, text: said }) {
 
-    const label = said ?? { win: '배틀에서 이겼다!', lose: '배틀에서 졌다…', tie: '무승부!' }[outcome];
+    const label = said ?? (['win', 'lose', 'tie'].includes(outcome) ? this.words(`own.${outcome}`) : undefined);
     if (said !== undefined && !['win', 'lose', 'tie', 'run'].includes(outcome)) throw new Error(`Invalid outcome: ${outcome}`);
     if (!label && outcome !== 'run') throw new Error(`Invalid outcome: ${outcome}`);
     this.warmUpAfter();
@@ -237,6 +269,7 @@ export class BattleScene extends Phaser.Scene {
     return this.messages.waitForInput();
   }
 
+  // After returning from the evolution screen, shows the ending text + down-arrow again (not awaited)
   showEnd() {
     if (!this.ending) throw new Error('Call end before showEnd');
     this.messages.bg.setVisible(true); this.messages.container.setVisible(true);
@@ -245,7 +278,7 @@ export class BattleScene extends Phaser.Scene {
   }
   requireReady() { if (!this.messages) throw new Error('Call preload before rendering'); }
   requireMon(side) {
-    if (!['player', 'enemy'].includes(side)) throw new Error(`Invalid side: ${side}`);
+    checkPosition(this.double, side);
     const p = this.pokemon[side];
     if (!p) throw new Error(`No Pokemon on ${side}`);
     return p;

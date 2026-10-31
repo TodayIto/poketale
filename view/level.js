@@ -1,13 +1,14 @@
 // from pokerogue src/phases/exp-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/show-party-exp-bar-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/level-up-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { EXP_IMAGES, EXP_SOUNDS, PartyExpBar, setLevelDisplay } from './ui/exp-bar.js';
 import { MAX_LEVEL } from '../engine/mon.mjs';
 import { LevelUpStats } from './ui/level-up.js';
 import { ConfirmMenu, LearnMoveSummary, LEARN_MOVE_IMAGES } from './ui/learn-move.js';
 import { EvolutionScene } from './evolution.js';
+import { isPlayerSide } from './positions.js';
 
 const FANFARE = 'se/level_up_fanfare.wav';
 
@@ -27,7 +28,7 @@ export class BattleLevel {
     ]);
   }
   playerInfo(side) {
-    if (side !== 'player') throw new Error(`Experience is shown on the player side only: ${side}`);
+    if (!isPlayerSide(side)) throw new Error(`Experience is shown on the player side only: ${side}`);
     this.scene.requireMon(side);
     return this.scene.info[side];
   }

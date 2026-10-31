@@ -20,6 +20,40 @@ const source = read('src/data/trainers/trainer-config.ts');
 const starts = [...source.matchAll(/^ {2}\[TrainerType\.([A-Z0-9_]+)\]: new TrainerConfig/gm)];
 if (starts.length < 200) throw new Error(`trainer-config.ts 설정을 ${starts.length}개만 찾음 — 원본 모양이 바뀌었나`);
 const candidates = [];
+
+function callArgs(body, method) {
+	const at = body.indexOf(`.${method}(`);
+	if (at < 0) return null;
+	const args = [];
+	let depth = 0, quote = null, from = at + method.length + 2;
+	for (let i = from; i < body.length; i++) {
+		const c = body[i];
+		if (quote) { if (c === '\\') i++; else if (c === quote) quote = null; continue; }
+		if (c === '"' || c === "'" || c === '`') quote = c;
+		else if ('([{'.includes(c)) depth++;
+		else if (')]}'.includes(c) && depth) depth--;
+		else if ((c === ',' || c === ')') && !depth) {
+			args.push(body.slice(from, i).trim());
+			from = i + 1;
+			if (c === ')') return args.filter(Boolean);
+		}
+	}
+	throw new Error(`${method}( 인수를 못 읽음`);
+}
+const TITLE_KEYS = new Set(Object.keys(json('locales/en/trainer-titles.json')));
+
+function configGender(body) {
+	const flag = arg => (arg === 'true' ? 'M' : arg === 'false' ? 'F' : null);
+	for (const [method, at, fallback] of [['initForGymLeader', 1], ['initForEliteFour', 1], ['initForChampion', 0], ['initForStatTrainer', 0, 'false']]) {
+		const args = callArgs(body, method);
+		if (args) return flag(args[at] ?? fallback);
+	}
+	const title = callArgs(body, 'initForEvilTeamAdmin')?.[0]?.match(/^"([^"]+)"$/)?.[1];
+	if (!title) return null;
+	const key = camel(title.replace(/_/g, ' '));
+	if (key.endsWith('Female')) return 'F';
+	return TITLE_KEYS.has(`${key}Female`) ? 'M' : null;
+}
 for (const [i, start] of starts.entries()) {
 	const body = source.slice(start.index, starts[i + 1]?.index ?? source.length);
 	if (!PERSON_INIT.test(body)) continue;
@@ -30,9 +64,10 @@ for (const [i, start] of starts.entries()) {
 	const own = !named || camel(named) === camel(type.replace(/_/g, ' '));
 
 	const music = body.match(/\.setMixedBattleBgm\("([^"]+)"\)/)?.[1] ?? null;
+	const gender = configGender(body);
 	const list = genders
-		? [{ sprite: `${type}_m`, key }, { sprite: `${type}_f`, key: genders[1] === 'Ivy' ? 'rivalFemale' : genders[1] ? camel(genders[1]) : key }]
-		: [{ sprite: type, key }];
+		? [{ sprite: `${type}_m`, key, gender: 'M' }, { sprite: `${type}_f`, key: genders[1] === 'Ivy' ? 'rivalFemale' : genders[1] ? camel(genders[1]) : key, gender: 'F' }]
+		: [{ sprite: type, key, gender }];
 	for (const item of list) if (sprites.has(item.sprite) && trainerNames.ko[item.key] && trainerNames.en[item.key]) candidates.push({ ...item, own, music });
 }
 
@@ -59,15 +94,16 @@ const showdownOf = sprite => (Object.hasOwn(SHOWDOWN_PICK, sprite) ? SHOWDOWN_PI
 
 const bgmFiles = new Set(readdirSync(new URL('assets/audio/bgm/', PR), { recursive: true }).map(f => f.replaceAll('\\', '/').replace(/\.mp3$/, '')));
 
-const people = {}, names = {}, showdown = {}, music = {};
+const people = {}, names = {}, showdown = {}, music = {}, gender = {}, sourceGender = {};
 const put = (name, sprite) => {
 	const k = norm(name);
 	if (!k) return;
 	if (names[k] && names[k] !== sprite) throw new Error(`"${name}" 이 ${names[k]} 와 ${sprite} 둘에 걸림`);
 	names[k] = sprite;
 };
-for (const { sprite, key, music: song } of [...byKey.values()].sort((a, b) => a.sprite.localeCompare(b.sprite))) {
+for (const { sprite, key, music: song, gender: known } of [...byKey.values()].sort((a, b) => a.sprite.localeCompare(b.sprite))) {
 	people[sprite] = LANGS.map(lang => trainerNames[lang][key]);
+	if (known) sourceGender[sprite] = known;
 	const face = showdownOf(sprite);
 	if (face) showdown[sprite] = face;
 	if (song && song !== 'battle_trainer') {
@@ -129,9 +165,26 @@ for (const sprite of Object.keys(people).filter(sprite => !showdown[sprite])) {
   sheet[sprite] = [x, y, w, h, size.w, size.h, at[0] + x - first.frame.x, at[1] + y - first.frame.y, W, H];
 }
 
+const GENDER_BY_HAND = {
+	archie: 'M', atticus: 'M', colress: 'M', cyrus: 'M', eri: 'F', faba: 'M', ghetsis: 'M', giacomo: 'M', guzma: 'M', lusamine: 'F', lysandre: 'M',
+	maxie: 'M', mela: 'F', oleana: 'F', ortega: 'M', penny: 'F', plumeria: 'F', rose: 'M', vicky: 'F', victor: 'M', victoria: 'F', vito: 'M', vivi: 'F',
+	zinzolin: 'M', 'showdown:dawn': 'F', 'showdown:sonia': 'F', 'showdown:hop': 'M', 'showdown:lillie': 'F', 'showdown:gladion': 'M',
+	'showdown:arven-v': 'M', 'showdown:silver': 'M',
+};
+for (const [sprite, value] of Object.entries(GENDER_BY_HAND)) {
+	if (!people[sprite]) throw new Error(`손으로 적은 성별의 ${sprite} 가 인물 표에 없음`);
+	if (sourceGender[sprite]) throw new Error(`${sprite} 성별은 원본에 있음 — 손 목록에서 뺄 것`);
+	if (!['M', 'F'].includes(value)) throw new Error(`${sprite} 성별 ${value}`);
+}
+for (const sprite of Object.keys(people)) {
+	const value = sourceGender[sprite] ?? GENDER_BY_HAND[sprite];
+	if (value) gender[sprite] = value;
+}
+
 const rocketBgm = candidates.find(item => item.sprite === 'rocket_boss_giovanni_1')?.music;
 if (!rocketBgm || !bgmFiles.has(rocketBgm)) throw new Error(`로켓단 보스 곡을 못 찾음: ${rocketBgm}`);
 
+// A class name equal to a character name would make stripping erase that name - stop if they overlap
 for (const k of classes) if (names[k]) throw new Error(`직업 이름 "${k}" 이 인물 ${names[k]} 이름과 같음`);
 
 const output = new URL('../data/named-trainers.json', import.meta.url);
@@ -161,7 +214,7 @@ await Promise.all(Array.from({ length: 8 }, async () => {
   }
 }));
 const orderedBounds = Object.fromEntries(faceIds.map(id => [id, faceBounds[id]]));
-const table = { faceBounds: orderedBounds, people, names, titles: [...titles].sort(), showdown, music, sheet, rocketBgm, classes: [...classes].sort() };
+const table = { faceBounds: orderedBounds, people, names, titles: [...titles].sort(), showdown, music, sheet, gender, rocketBgm, classes: [...classes].sort() };
 const text = JSON.stringify(table) + '\n';
 writeFileSync(new URL('../data/named-trainers.json', import.meta.url), text);
 console.log(`data/named-trainers.json: 인물 ${Object.keys(people).length}명, 이름 ${Object.keys(names).length}, 직함 낱말 ${titles.size}, ` +
@@ -170,3 +223,5 @@ if (dropped.length) console.log(`  같은 이름이라 뺀 그림: ${dropped.joi
 const noFace = Object.keys(people).filter(sprite => !showdown[sprite]), noSong = Object.keys(people).filter(sprite => !music[sprite]);
 console.log(`  Showdown 그림 없음 (카드는 PokeRogue 첫 장면): ${noFace.join(', ')} · 로켓단 보스 곡 ${rocketBgm}`);
 console.log(`  인물 곡 없음 (공통 보스 곡): ${noSong.join(', ')}`);
+const noGender = Object.keys(people).filter(sprite => !gender[sprite]);
+console.log(`  성별: 원본 ${Object.keys(sourceGender).length}, 손 목록 ${Object.keys(GENDER_BY_HAND).length}, 모름 ${noGender.length}${noGender.length ? ` (${noGender.join(', ')})` : ''}`);

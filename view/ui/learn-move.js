@@ -3,7 +3,7 @@
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (SummaryUiMode.LEARN_MOVE, Page.MOVES) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/text.ts (SUMMARY*, WINDOW*, colours) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/ui.ts (fadeOut/fadeIn transition) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { addWindow } from './window.js';
 import { placeSprite } from '../sprites/placement.js';
@@ -26,8 +26,8 @@ export const LEARN_MOVE_IMAGES = {
   summary_moves_overlay_pp: 'images/ui/text_images/ko/summary/summary_moves_overlay_pp_ko.png',
 };
 
-export const TEXT = { yes: '예', no: '아니오', pokemonInfo: '스테이터스', status: '상태 이상', powerAccuracyCategory: '위력\n명중\n분류', lv: '',
-  cancel: '그만둔다' };
+export const TEXT = Object.freeze({ yes: 'menu.yes', no: 'menu.no', pokemonInfo: 'pokemon-summary.pokemonInfo', status: 'pokemon-summary.status',
+  powerAccuracyCategory: 'pokemon-summary.powerAccuracyCategory', cancel: 'pokemon-summary.cancel' });
 
 export async function fadeSwap(scene, swap) {
   const overlay = scene.add.rectangle(0, -180, 320, 180, 0).setOrigin(0).setAlpha(0);
@@ -46,7 +46,7 @@ export class ConfirmMenu {
   choose() {
     if (this.finish) throw new Error('Confirm menu already open');
     const s = this.scene;
-    const options = [TEXT.yes, TEXT.no];
+    const options = [s.words(TEXT.yes), s.words(TEXT.no)];
 
     const text = styledText(s, 0, 0, options.join('\n'), 'WINDOW', { lineSpacing: 12 }).setOrigin(0);
     const width = text.displayWidth + 23, height = (options.length + 1) * 16 - 2;
@@ -110,7 +110,7 @@ export class LearnMoveSummary {
     s.ui.add(c);
     c.add(s.add.image(0, 0, 'summary_bg').setOrigin(0, 1));
     c.add(s.add.image(81, -180 + 16, 'summary_tabs_3').setOrigin(0, 1));
-    c.add(styledText(s, 4, -165, TEXT.pokemonInfo, 'SUMMARY_HEADER').setOrigin(0, 1));
+    c.add(styledText(s, 4, -165, s.words(TEXT.pokemonInfo), 'SUMMARY_HEADER').setOrigin(0, 1));
     c.add(s.add.image(6, -151, 'summary_dexnb_label').setOrigin(0, 1));
     c.add(styledText(s, 41, -149, String(mon.dexNumber ?? 0).padStart(4, '0'), 'SUMMARY_DEX_NUM').setOrigin(1, 1));
 
@@ -122,12 +122,12 @@ export class LearnMoveSummary {
     c.add(sprite);
     const name = styledText(s, 6, -53, mon.name, 'SUMMARY').setOrigin(0, 0);
     c.add([name, s.add.sprite(6, -19, 'pb', 'pb').setOrigin(0, 1),
-      styledText(s, 24, -17, `${TEXT.lv}${mon.level}`, 'SUMMARY_ALT').setOrigin(0, 1)]);
+      styledText(s, 24, -17, String(mon.level), 'SUMMARY_ALT').setOrigin(0, 1)]);
     if (GENDER_COLORS[mon.gender]) c.add(styledText(s, 96, -17, genderSymbol(mon.gender), mon.gender === 'M' ? 'SUMMARY_BLUE' : 'SUMMARY_PINK').setOrigin(0, 1));
 
     if (STATUS_FRAMES[mon.status]) {
       const status = s.add.container(-106, -16);
-      status.add([s.add.image(0, 0, 'summary_status').setOrigin(0), styledText(s, 3, 0, TEXT.status, 'SUMMARY').setOrigin(0),
+      status.add([s.add.image(0, 0, 'summary_status').setOrigin(0), styledText(s, 3, 0, s.words(TEXT.status), 'SUMMARY').setOrigin(0),
         s.add.sprite(91, 4, 'statuses', STATUS_FRAMES[mon.status]).setOrigin(0.5, 0)]);
       c.add(status);
       s.tweens.add({ targets: status, x: 0, duration: 250, ease: 'Sine.easeOut' });
@@ -181,7 +181,7 @@ export function buildMoveEffect(s, x = 106) {
   const accuracy = styledText(s, 99, 43, '0', 'WINDOW_ALT').setOrigin(1, 1);
   const category = s.add.sprite(99, 57, 'categories', 'physical').setOrigin(1, 1);
   container.add([s.add.image(0, 0, 'summary_moves_effect').setOrigin(0), s.add.image(7, 7, 'summary_moves_effect_title').setOrigin(0, 0.5),
-    styledText(s, 8, 13, TEXT.powerAccuracyCategory, 'SUMMARY', { lineSpacing: 9 }).setOrigin(0), power, accuracy, category]);
+    styledText(s, 8, 13, s.words(TEXT.powerAccuracyCategory), 'SUMMARY', { lineSpacing: 9 }).setOrigin(0), power, accuracy, category]);
   return { container, power, accuracy, category };
 }
 
@@ -200,7 +200,7 @@ export function buildMovesPage(s, page, { moves, newMove = null }) {
   const extra = s.add.container(0, 64).setVisible(!!newMove);
   extra.add(s.add.image(-2, 1, 'summary_moves_overlay_row').setOrigin(0, 1));
   if (newMove) extra.add(row(0, newMove, 'SUMMARY_PINK'));
-  else extra.add(styledText(s, 35, 0, TEXT.cancel, 'SUMMARY').setOrigin(0, 1));
+  else extra.add(styledText(s, 35, 0, s.words(TEXT.cancel), 'SUMMARY').setOrigin(0, 1));
   list.add(extra);
   for (let m = 0; m < 4; m++) list.add(row(16 * m, moves[m], 'SUMMARY'));
   const description = styledText(s, 1, 84, '', 'WINDOW_ALT', { wordWrap: { width: 1224 } });

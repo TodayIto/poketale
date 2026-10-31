@@ -109,8 +109,8 @@ export const showdownBrowser = {
         const formats = readFileSync(join(dist, 'config/formats.js'), 'utf8');
         const selected = [...formats.matchAll(/\n  \{\n[\s\S]*?\n  \},?/g)]
           .map(m => m[0].trim().replace(/,$/, ''))
-          .filter(s => /name: "\[Gen 9(?: Champions)?\] Custom Game"/.test(s));
-        if (selected.length !== 2) throw new Error('Expected two upstream singles custom games');
+          .filter(s => /name: "\[Gen 9(?: Champions)?\] (?:Doubles )?Custom Game"/.test(s));
+        if (selected.length !== 4) throw new Error('Expected the upstream singles and doubles custom games (Gen 9, Gen 9 Champions)');
         patch(/    let customFormats;[\s\S]*?    let section = "";/,
           `    const Formats = [${selected.join(',')}];\n    let section = "";`);
       } else if (file === 'dex-text.js') {

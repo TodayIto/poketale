@@ -8,6 +8,13 @@ export const CHAMPIONS_FORMAT = 'gen9championscustomgame@@@!Team Preview,Level C
 
 export const DEFAULT_FORMAT = MAINLINE_FORMAT;
 
+export function doublesFormat(format) {
+	const [id, rules] = String(format).split('@@@');
+	const doubles = id.replace(/^gen9(champions)?customgame$/, 'gen9$1doublescustomgame');
+	if (doubles === id) throw new Error(`No double-battle format for ${format}`);
+	return rules === undefined ? doubles : `${doubles}@@@${rules}`;
+}
+
 export const EV_STAT_MAX = 252, EV_TOTAL_MAX = 510;
 
 export const NO_EVS = Object.freeze(Object.fromEntries(STATS.map(s => [s, 0])));

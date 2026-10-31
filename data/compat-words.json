@@ -1,0 +1,68 @@
+{
+  "_note": "호환 봇 파티 줄의 Condition 낱말 (한국어·영어·일본어) → 상태 id ('' = 상태 없음, fnt = 기절). shiny = 이로치를 뜻하는 낱말 (Condition 은 자유 낱말 칸이라 그 봇이 이로치도 여기에 적음). 그 밖의 낱말은 조용히 넘김. 읽기만 하고 화면에 그리지 않는 낱말이라 글꼴 조각이 읽는 코드 밖에 둔다. 쓰는 곳: story/import.mjs COMPAT_FORMAT",
+  "conditions": {
+    "": [
+      "정상",
+      "Normal",
+      "正常"
+    ],
+    "par": [
+      "마비",
+      "Paralyzed",
+      "Paralysis",
+      "まひ",
+      "麻痺"
+    ],
+    "brn": [
+      "화상",
+      "Burned",
+      "Burn",
+      "やけど",
+      "火傷"
+    ],
+    "slp": [
+      "잠듦",
+      "잠듬",
+      "수면",
+      "Asleep",
+      "Sleep",
+      "ねむり",
+      "眠り"
+    ],
+    "frz": [
+      "얼음",
+      "Frozen",
+      "Freeze",
+      "こおり",
+      "氷"
+    ],
+    "psn": [
+      "독",
+      "Poisoned",
+      "Poison",
+      "どく",
+      "毒"
+    ],
+    "tox": [
+      "맹독",
+      "Badly Poisoned",
+      "Toxic",
+      "もうどく",
+      "猛毒"
+    ],
+    "fnt": [
+      "기절",
+      "Fainted",
+      "Faint",
+      "ひんし",
+      "瀕死"
+    ]
+  },
+  "shiny": [
+    "색이 다른 포켓몬",
+    "색이 다름",
+    "이로치",
+    "Shiny",
+    "色違い"
+  ]
+}

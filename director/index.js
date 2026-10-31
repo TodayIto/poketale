@@ -2,8 +2,9 @@ import { createStoryBattle, extractResult } from '../engine/core.mjs';
 import { createProtocolReader } from './parse.js';
 import { createSteps } from './steps.js';
 import { arrange } from './order.js';
-import { text as defaultText } from './text.js';
-import { simpleAI, isReviving } from './simple-ai.js';
+import { text, ownText, nameWithAffix } from './text.js';
+import { checkLang, DEFAULT_LANG } from './lang.js';
+import { simpleAI, isReviving, lockedTurn } from './simple-ai.js';
 import { monView } from './mon.js';
 import { gimmickOptions, gimmickSuffix } from './steps-mega.js';
 import { createBag } from './bag.js';
@@ -16,8 +17,9 @@ import { moveMenuInfo } from './move-info.js';
 import { replaceMove } from '../engine/exp.mjs';
 import { chooseEnemyItem } from '../engine/bag.mjs';
 import { commitChoice } from '../ai/commit.js';
+import { chooseDouble } from './double.js';
 
-export function partySlots(battle, names, text, request, { trapped = false, reviving = false, options } = {}) {
+export function partySlots(battle, names, lang, request, { trapped = false, reviving = false, options } = {}) {
   const side = battle.sides[0];
   return request.side.pokemon.map((pokemon, i) => {
 
@@ -25,11 +27,13 @@ export function partySlots(battle, names, text, request, { trapped = false, revi
     const slot = { ...mon, active: !!pokemon.active, fainted: / fnt$/.test(pokemon.condition) };
 
     // Slot menu "check summary" -> summary screen values (not shown in the menu without an engine Pokemon)
-    if (side.pokemon[i]) slot.summary = summaryView(battle, names, pokemon, side.pokemon[i], options);
+    if (side.pokemon[i]) slot.summary = summaryView(battle, names, pokemon, side.pokemon[i], options, lang);
 
-    if (reviving) { if (!slot.fainted) slot.blocked = text('party-ui-handler.hasEnergy', { pokemonName: mon.name }); }
-    else if (slot.fainted) slot.blocked = text('party-ui-handler.noEnergy', { pokemonName: mon.name });
-    else if (trapped && !slot.active) slot.blocked = text('battle.noEscapeSwitch');
+    if (side.pokemon[i]?.m.partner) return { ...slot, partner: side.pokemon[i].m.partner, blocked: ownText('own.partnerPokemon', {}, lang) };
+
+    if (reviving) { if (!slot.fainted) slot.blocked = text('party-ui-handler.hasEnergy', { pokemonName: mon.name }, lang); }
+    else if (slot.fainted) slot.blocked = text('party-ui-handler.noEnergy', { pokemonName: mon.name }, lang);
+    else if (trapped && !slot.active) slot.blocked = text('battle.noEscapeSwitch', {}, lang);
     return slot;
   });
 }
@@ -54,25 +58,24 @@ const DENIED = {
   choiceband: 'battle.canOnlyUseMove', choicescarf: 'battle.canOnlyUseMove', choicespecs: 'battle.canOnlyUseMove',
   gorillatactics: 'battle.canOnlyUseMove',
 };
-export function moveDeniedText(battle, names, option) {
-  const pokemon = battle.sides[0].active[0];
+export function moveDeniedText(battle, names, option, lang = DEFAULT_LANG, pokemon = battle.sides[0].active[0]) {
   const name = pokemon ? pokemonName(names, pokemon) : '';
   const moveName = names.move(option.id);
-  if ((option.pp ?? 1) <= 0) return effectText('battle.moveNoPp');
+  if ((option.pp ?? 1) <= 0) return effectText('battle.moveNoPp', {}, lang);
   const source = battle.dex.toID(option.disabledSource || pokemon?.moveSlots.find(slot => slot.id === option.id)?.disabledSource || '');
   const key = DENIED[source] ?? 'battle.moveCannotBeSelected';
 
   const locked = source === 'gorillatactics' ? pokemon?.abilityState?.choiceLock : pokemon?.volatiles?.choicelock?.move;
   const values = { pokemonName: name, pokemonNameWithAffix: name, moveName: key === 'battle.canOnlyUseMove' && locked ? names.move(locked) : moveName };
-  return effectText(key, values).trimEnd();
+  return effectText(key, values, lang).trimEnd();
 }
 
-export function hiddenTrapText(battle, names, text) {
+export function hiddenTrapText(battle, names, lang = DEFAULT_LANG, wild = false) {
   const trapper = battle.sides[1].active.find(foe => foe && !foe.fainted && foe.hp && battle.dex.abilities.get(foe.ability).onFoeTrapPokemon
     && foe.hasAbility(foe.ability));
-  if (!trapper) return text('battle.noEscapeSwitch');
-  const name = pokemonName(names, trapper);
-  return effectText('ability-trigger.arenaTrap', { pokemonNameWithAffix: name, pokemonName: name, abilityName: names.ability(trapper.ability) });
+  if (!trapper) return text('battle.noEscapeSwitch', {}, lang);
+  const name = nameWithAffix(lang, wild)(pokemonName(names, trapper), 'enemy');
+  return effectText('ability-trigger.arenaTrap', { pokemonNameWithAffix: name, pokemonName: name, abilityName: names.ability(trapper.ability) }, lang);
 }
 
 export const SNAPSHOT_VERSION = 1;
@@ -86,7 +89,7 @@ function hashText(text) {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-function fingerprint(battle) {
+export function fingerprint(battle) {
   const parts = [battle.format.id];
   for (const side of battle.sides) {
     for (const p of side.pokemon) {
@@ -100,7 +103,9 @@ function fingerprint(battle) {
   return hashText(JSON.stringify(parts));
 }
 
-const stateCheck = battle => hashText(battle.log.filter(line => !line.startsWith('|t:|')).join('\n'));
+export const stateCheck = battle => hashText(battle.log.filter(line => !line.startsWith('|t:|')).join('\n'));
+
+export const battlePoint = battle => ({ turn: battle.turn, check: stateCheck(battle) });
 
 function seedText(seed) {
   const text = Array.isArray(seed) ? seed.join(',') : String(seed ?? '');
@@ -113,15 +118,15 @@ export function rerollSnapshot(snapshot, seed) {
   return { ...structuredClone(snapshot), reseeds: [...(snapshot.reseeds ?? []), { at: snapshot.inputs.length, seed: seedText(seed) }] };
 }
 
-function buildEngine(sim, spec, options, names, text) {
+export function buildEngine(sim, spec, options, names, lang) {
   const battle = createStoryBattle(sim, spec, options);
   try {
     const wild = isWild(spec);
 
-    const bag = createBag({ sim, battle, names, spec: spec.bag, wild });
+    const bag = createBag({ sim, battle, names, spec: spec.bag, wild, lang });
 
     // Command menu "Run" (engine/run.mjs). In a trainer battle, a forfeit confirmation
-    const run = createRun({ sim, battle, names, text, wild });
+    const run = createRun({ sim, battle, names, wild, lang });
     return { battle, wild, bag, run };
   } catch (error) {
     battle.destroy();
@@ -129,7 +134,7 @@ function buildEngine(sim, spec, options, names, text) {
   }
 }
 
-function replaySnapshot(battle, from, fp, input) {
+export function replaySnapshot(battle, from, fp, input) {
   if (from.fp !== undefined && from.fp !== fp) throw unresumable('규칙·자료가 저장할 때와 다름');
 
   const reseeds = from.reseeds ?? [];
@@ -144,7 +149,7 @@ function replaySnapshot(battle, from, fp, input) {
 
 export function snapshotResult(sim, snapshot, options = {}) {
   checkSnapshot(snapshot);
-  const { battle, bag, run } = buildEngine(sim, snapshot.spec, options, null, defaultText);
+  const { battle, bag, run } = buildEngine(sim, snapshot.spec, options, null, DEFAULT_LANG);
   try {
     replaySnapshot(battle, snapshot, fingerprint(battle), entry => applyInput({ battle, bag, run }, entry));
     return extractResult(sim, battle);
@@ -153,7 +158,29 @@ export function snapshotResult(sim, snapshot, options = {}) {
   }
 }
 
-function applyInput({ battle, bag, run }, input) {
+export async function snapshotLines(sim, snapshot, { lang = DEFAULT_LANG, names, options = {} } = {}) {
+  checkSnapshot(snapshot);
+  checkLang(lang);
+  await loadExpText(lang);
+  const { battle, wild, bag, run } = buildEngine(sim, snapshot.spec, options, names, lang);
+  try {
+    replaySnapshot(battle, snapshot, fingerprint(battle), entry => applyInput({ battle, bag, run }, entry));
+    const lines = [], marks = {};
+    const view = new Proxy({}, { get: (_, key) => (key === 'then' ? undefined
+      : key === 'message' ? async message => { if (typeof message === 'string') lines.push(message.replace(/\n/g, ' ')); } : async () => undefined) });
+    const step = createSteps({ battle, view, names, warn: () => {}, bag, options, run, mode: { silent: true }, wild, lang, onInput: () => {} });
+    for (const item of arrange(createProtocolReader().read(battle.log, battle.storyLogMeta))) {
+      await step(item);
+      if (item.kind === 'turn') marks[Number(item.args[0])] = lines.length;
+    }
+    await step.flush();
+    return { lines, marks };
+  } finally {
+    battle.destroy();
+  }
+}
+
+export function applyInput({ battle, bag, run }, input) {
   const [who, choice] = input;
   if (who === 'p1') return run.owns(choice) ? run.commit(choice) : bag?.owns(choice) ? bag.commit(choice) : battle.choose('p1', choice);
 
@@ -165,9 +192,12 @@ function applyInput({ battle, bag, run }, input) {
 function filledSpec(battle, spec) {
   const copy = JSON.parse(JSON.stringify(spec));
   copy.seed = battle.prngSeed;
-  for (const [i, key] of ['p1', 'p2'].entries()) {
+
+  for (const [i, key, offset] of [[0, 'p1', 0], [1, 'p2', 0], ...(copy.partner ? [[0, 'partner', copy.p1.team.length]] : [])]) {
     copy[key].team = copy[key].team.map((member, j) => {
-      const set = JSON.parse(JSON.stringify(battle.sides[i].team[j]));
+      const set = JSON.parse(JSON.stringify(battle.sides[i].team[offset + j]));
+
+      Object.assign(set, battle.sides[i].pokemon.find(p => p.set === battle.sides[i].team[offset + j]).m.start);
 
       set.shiny = !!set.shiny;
       return { ...member, set };
@@ -182,7 +212,7 @@ export function restartSpec(from, seed) {
   return { ...structuredClone(spec), seed: seedText(seed) };
 }
 
-function checkSnapshot(from) {
+export function checkSnapshot(from) {
   if (!from || typeof from !== 'object' || from.v !== SNAPSHOT_VERSION || !from.spec || !Array.isArray(from.inputs)) {
     throw unresumable(`판 ${from?.v ?? '없음'}, 지금 ${SNAPSHOT_VERSION}`);
   }
@@ -194,21 +224,22 @@ function checkSnapshot(from) {
 
 export const isWild = spec => !!(spec?.wild ?? spec?.bag?.wild);
 
+// Stand-in view used while re-reading past logs on resume: every presentation finishes immediately
 export const silentView = new Proxy({}, { get: (_, key) => (key === 'then' ? undefined : async () => undefined) });
 
-export async function runBattle({ sim, spec, options = {}, view, names, text = defaultText, enemyAI = simpleAI,
-  warnings = [], development = true, from, onTurn, onBattle, replayView = silentView }) {
+export async function runBattle({ sim, spec, options = {}, view, names, lang = DEFAULT_LANG, enemyAI = simpleAI,
+  warnings = [], development = true, from, onTurn, onBattle, replayView = silentView, commands = null }) {
+  checkLang(lang);
   if (from) { checkSnapshot(from); spec = from.spec; }
   for (const side of [spec.p1, spec.p2]) {
     if (!side.team.length || side.team.length > 6) throw new Error('Each side needs 1–6 Pokemon (singles)');
   }
 
-  await loadExpText();
-  const { battle, wild, bag, run } = buildEngine(sim, spec, options, names, text);
+  await loadExpText(lang);
+  const { battle, wild, bag, run } = buildEngine(sim, spec, options, names, lang);
 
   try {
 
-    // Snapshot: initial state + input log (SNAPSHOT_VERSION above)
     const baseSpec = from ? from.spec : filledSpec(battle, spec);
     const fp = fingerprint(battle);
     const inputs = [];
@@ -219,6 +250,7 @@ export async function runBattle({ sim, spec, options = {}, view, names, text = d
       enemyAI.loadState?.(battle, from.ai);
     }
     let latest = null, final = null;
+    let asking = false;
     let shown = 0;
     const takeSnapshot = () => ({ v: SNAPSHOT_VERSION, spec: baseSpec, inputs: structuredClone(inputs),
       ai: enemyAI.saveState?.(battle) ?? null, turn: battle.turn, fp, check: stateCheck(battle),
@@ -228,6 +260,8 @@ export async function runBattle({ sim, spec, options = {}, view, names, text = d
       progress: () => final ?? { turn: battle.turn, ended: battle.ended, log: [...battle.log], result: extractResult(sim, battle), shown },
 
       snapshot: () => latest,
+
+      position: () => (asking ? { point: battlePoint(battle), snapshot: takeSnapshot() } : null),
     });
     const battleOptions = options;
 
@@ -240,28 +274,32 @@ export async function runBattle({ sim, spec, options = {}, view, names, text = d
       if (development) console.warn(`[director] Unhandled protocol: ${kind}`);
     };
     async function choosePlayer(request) {
+
+      if (battle.activePerHalf > 1) {
+        return chooseDouble({ battle, view, names, lang, run, gimmicks, switchChoice, moveDeniedText,
+          partySlots: (req, extra) => partySlots(battle, names, lang, req, { ...extra, options: battleOptions }) }, request);
+      }
       if (request.forceSwitch) {
 
         const reviving = isReviving(request);
-        const party = partySlots(battle, names, text, request, { reviving, options: battleOptions });
+        const party = partySlots(battle, names, lang, request, { reviving, options: battleOptions });
         return switchChoice(await view.chooseSwitch({ party, forced: true, ...(reviving ? { revive: true } : {}) }), party, { reviving });
       }
       const options = request.active?.[0]?.moves;
       if (!options?.length) throw new Error('No player move request');
 
-      if (options.length === 1 && options[0].pp === undefined && request.active[0].trapped && options[0].id !== 'struggle') return 'move 1';
+      // A locked turn: no menu (showing it would stall - with no pp the view blocks that slot as "no PP")
+      if (lockedTurn(request.active[0])) return 'move 1';
       const moves = options.map(option => ({
-        id: option.id, name: names.move(option.id), type: battle.dex.moves.get(option.id).type,
-        category: battle.dex.moves.get(option.id).category,
+        id: option.id, name: names.move(option.id),
 
         pp: option.pp, maxpp: option.maxpp, disabled: !!option.disabled,
 
-        ...(option.disabled || (option.pp ?? 1) <= 0 ? { blocked: moveDeniedText(battle, names, option) } : {}),
+        ...(option.disabled || (option.pp ?? 1) <= 0 ? { blocked: moveDeniedText(battle, names, option, lang) } : {}),
 
-        // Power, accuracy and effectiveness hints for the move menu
-        ...moveMenuInfo(battle, option.id, battle.sides[1].active[0]),
+        ...moveMenuInfo(battle, option.id, battle.sides[0].active[0], battle.sides[1].active[0]),
       }));
-      const party = partySlots(battle, names, text, request, { trapped: !!request.active[0].trapped, options: battleOptions });
+      const party = partySlots(battle, names, lang, request, { trapped: !!request.active[0].trapped, options: battleOptions });
 
       const choice = await view.chooseAction({ moves, canSwitch: true, party, ...gimmickOptions(request, gimmicks), ...(bag ? { bag: bag.menu() } : {}), run: run.menu() });
       if (choice?.kind === 'switch') return switchChoice(choice, party);
@@ -277,7 +315,7 @@ export async function runBattle({ sim, spec, options = {}, view, names, text = d
     const mode = { silent: !!from };
     let current = from ? replayView : view;
     const stepView = new Proxy({}, { get: (_, key) => current[key] });
-    const step = createSteps({ battle, view: stepView, names, text, warn, bag, options, run, mode, wild,
+    const step = createSteps({ battle, view: stepView, names, warn, bag, options, run, mode, wild, lang,
       onInput: entry => inputs.push(structuredClone(entry)) });
     let turns = 0;
     if (from) {
@@ -304,6 +342,7 @@ export async function runBattle({ sim, spec, options = {}, view, names, text = d
       await step.flush();
       if (battle.ended) {
 
+        // The single final result. After the evolution screens modify it, progress() publishes this same object
         const result = { ...extractResult(sim, battle), log: [...battle.log] };
 
         try { await step.afterBattle(result); }
@@ -327,9 +366,15 @@ export async function runBattle({ sim, spec, options = {}, view, names, text = d
           catch (error) { if (development) console.warn('[director] onTurn failed', error); }
         }
       }
-      const playerChoice = request?.wait ? undefined : await choosePlayer(request ?? {});
+      const planned = request && !request.wait ? commands?.take(battlePoint(battle)) : null;
+      if (planned) {
+        for (const entry of planned.inputs) if (!input(entry)) throw new Error(`Engine rejected planned input: ${JSON.stringify(entry)}`);
+        enemyAI.loadState?.(battle, planned.ai);
+        continue;
+      }
+      asking = !request?.wait;
+      const playerChoice = request?.wait ? undefined : await choosePlayer(request ?? {}).finally(() => { asking = false; });
 
-      // Forfeit: ends at once (the foe is not asked)
       if (playerChoice && run.ends(playerChoice)) {
         if (!input(['p1', playerChoice])) throw new Error('Engine rejected forfeit');
         continue;
@@ -340,16 +385,18 @@ export async function runBattle({ sim, spec, options = {}, view, names, text = d
 
       if (playerChoice && !input(['p1', playerChoice])) {
 
-        const retry = battle.sides[0].activeRequest?.active?.[0];
-        if (typeof playerChoice === 'string' && playerChoice.startsWith('switch') && retry?.trapped) {
-          await view.message(hiddenTrapText(battle, names, text), { wait: true });
+        const parts = typeof playerChoice === 'string' ? playerChoice.split(', ') : [];
+        const retried = battle.sides[0].activeRequest?.active ?? [];
+        const trapped = parts.findIndex((part, i) => part.startsWith('switch') && retried[i]?.trapped);
+        if (trapped >= 0) {
+          await view.message(hiddenTrapText(battle, names, lang, wild), { wait: true });
           continue;
         }
 
-        const move = /^move (\d+)/.exec(typeof playerChoice === 'string' ? playerChoice : '');
-        const option = move && retry?.moves?.[move[1] - 1];
-        if (option?.disabled) {
-          await view.message(moveDeniedText(battle, names, option), { wait: true });
+        const blocked = parts.map((part, i) => ({ i, option: retried[i]?.moves?.[(/^move (\d+)/.exec(part)?.[1] ?? 0) - 1] }))
+          .find(({ option }) => option?.disabled);
+        if (blocked) {
+          await view.message(moveDeniedText(battle, names, blocked.option, lang, battle.sides[0].active[blocked.i]), { wait: true });
           continue;
         }
         throw new Error(`Engine rejected player choice: ${playerChoice}`);

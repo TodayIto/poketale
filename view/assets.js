@@ -8,6 +8,8 @@ import { biomeImages, biomeKey, DEFAULT_BIOME } from './arena.js';
 import { fieldAtlases, atlasJson } from './field-atlases.js';
 import { withRetry, timeLimit, LoadError, TimeoutError } from './retry.js';
 import { checkTheme, usesLegacyArt, artPalette, recolorPixels } from './ui/theme.js';
+import { langPath, langAtlasKey } from './lang-images.js';
+import { isPlayerSide } from './positions.js';
 
 export const DEFAULT_ASSET_BASE = 'https://raw.githubusercontent.com/pagefaultgames/pokerogue-assets/37789817134f881da0a038af21991ccc93a66372/';
 export const UI_IMAGES = {
@@ -26,6 +28,11 @@ export const UI_IMAGES = {
   party_slot_overlay_hp: 'images/ui/text_images/ko/party_ui/party_slot_overlay_hp_ko.png',
   shiny_star_small: 'images/ui/shiny_small.png',
 };
+
+export const DOUBLE_IMAGES = {
+  pbinfo_player_mini: 'images/ui/pbinfo_player_mini.png', pbinfo_player_mini_stats: 'images/ui/pbinfo_player_mini_stats.png',
+  party_bg_double: 'images/ui/party_bg_double.png',
+};
 const PR_SPECIES = { pikachu: '25', gyarados: '130' };
 
 export const SHOWDOWN_TIMEOUT_MS = 20000;
@@ -36,13 +43,13 @@ export function themedPath(theme, path, legacy = LEGACY_UI) {
   return legacy.includes(rest) ? `images/ui/legacy/${rest}` : path;
 }
 
-export function prefetchImages({ assetBase = DEFAULT_ASSET_BASE, theme, biome }) {
+export function prefetchImages({ assetBase = DEFAULT_ASSET_BASE, theme, biome, lang }) {
   const base = assetBase.endsWith('/') ? assetBase : assetBase + '/', themed = checkTheme(theme);
   const arena = biomeKey(biome) ?? DEFAULT_BIOME;
   return [...Object.values(UI_IMAGES), ...biomeImages(arena).map(([key]) => `images/arenas/${key}.png`)].map(path => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.src = base + themedPath(themed, path);
+    img.src = base + themedPath(themed, langPath(path, lang));
     return img;
   });
 }
@@ -59,10 +66,11 @@ function recolored(img, palette) {
 }
 
 export class Assets {
-  constructor(scene, life, { fetchBytes, assetBase = DEFAULT_ASSET_BASE, spriteSource = 'showdown-ani', theme }) {
+  constructor(scene, life, { fetchBytes, assetBase = DEFAULT_ASSET_BASE, spriteSource = 'showdown-ani', theme, lang }) {
     if (!['showdown-ani', 'pokerogue'].includes(spriteSource)) throw new Error(`Unknown spriteSource: ${spriteSource}`);
     this.scene = scene; this.life = life;
     this.theme = checkTheme(theme);
+    this.lang = lang;
 
     this.fetchBytes = url => withRetry(() => timeLimit(fetchBytes(url), SHOWDOWN_TIMEOUT_MS,
       `Showdown timeout ${SHOWDOWN_TIMEOUT_MS / 1000}s: ${url}`, life.signal), { signal: life.signal });
@@ -86,11 +94,13 @@ export class Assets {
       img.src = src;
     });
   }
-  image(key, path, atlas = VIEW_ATLASES[key]) {
+  image(key, path, atlas = VIEW_ATLASES[langAtlasKey(key, this.lang)] ?? VIEW_ATLASES[key]) {
     if (this.scene.textures.exists(key)) return Promise.resolve();
 
-    const themed = themedPath(this.theme, path), palette = artPalette(this.theme, path);
-    if (themed !== path) { path = themed; atlas = VIEW_LEGACY_ATLASES[key] ?? atlas; }
+    const palette = artPalette(this.theme, path);
+    path = langPath(path, this.lang);
+    const themed = themedPath(this.theme, path);
+    if (themed !== path) { path = themed; atlas = VIEW_LEGACY_ATLASES[langAtlasKey(key, this.lang)] ?? VIEW_LEGACY_ATLASES[key] ?? atlas; }
     if (!this.pending.has(key)) {
       const promise = this.loadImage(this.url(path)).then(loaded => {
         this.life.check();
@@ -148,13 +158,13 @@ export class Assets {
     return { key, frame };
   }
 
-  async preload(mons, biome) {
+  async preload(mons, biome, double = false) {
     if (!/^[a-z0-9_]+$/.test(biome)) throw new Error(`Invalid biome: ${biome}`);
     await Promise.all([
-      ...Object.entries(UI_IMAGES).map(([key, path]) => this.image(key, path)),
+      ...Object.entries({ ...UI_IMAGES, ...(double ? DOUBLE_IMAGES : {}) }).map(([key, path]) => this.image(key, path)),
 
       ...biomeImages(biome).map(async ([key, animated]) => this.image(key, `images/arenas/${key}.png`, animated ? atlasJson((await fieldAtlases()).arenas[key]) : null)),
-      ...mons.flatMap(mon => [...(mon.side ? [mon.side === 'player'] : [true, false]).map(back => this.mon(mon, back)), this.icon(mon)]),
+      ...mons.flatMap(mon => [...(mon.side ? [isPlayerSide(mon.side)] : [true, false]).map(back => this.mon(mon, back)), this.icon(mon)]),
     ]);
     this.life.check();
   }

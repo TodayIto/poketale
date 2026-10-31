@@ -1,7 +1,7 @@
 // from pokerogue src/ui/text.ts (getTextColor isLegacyTheme branch) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/ui-theme.ts (addWindow borders, legacy images) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/scene-base.ts (loadImage: images/ui -> images/ui/legacy) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 export const THEMES = Object.freeze(['plugin', 'legacy', 'default']);
 export const DEFAULT_THEME = 'plugin';
@@ -60,7 +60,7 @@ const PLUGIN_ART = [
   }],
 
   // HP windows (HP bar pixels #ffffff, #4a425a stay)
-  [['pbinfo_player.png', 'pbinfo_player_stats.png', 'pbinfo_enemy_mini.png', 'pbinfo_enemy_mini_stats.png'], {
+  [['pbinfo_player.png', 'pbinfo_player_stats.png', 'pbinfo_enemy_mini.png', 'pbinfo_enemy_mini_stats.png', 'pbinfo_player_mini.png', 'pbinfo_player_mini_stats.png'], {
     '#ffffde': WHITE, '#ded6b5': SKY2, '#d6cebd': SHADE, '#c6bd73': LINE, '#7b9484': LINE2, '#526b63': BORDER, '#526b5a': BORDER,
     '#395242': NAVY, '#213900': NAVY,
   }],
@@ -78,7 +78,7 @@ const PLUGIN_ART = [
   [['cursor.png', 'cursor_tera.png'], { '#484848': CURSOR, '#d0d0c8': SHADE }],
   [['prompt.png'], { '#e00808': ACCENT, '#606060': SHADE }],
 
-  [['party_bg.png'], {
+  [['party_bg.png', 'party_bg_double.png'], {
     '#e0e888': WHITE, '#c8d078': SKY, '#b0b058': SKY2, '#889828': LINE2, '#605800': BORDER, '#484860': NAVY,
   }],
   [['party_slot.png', 'party_slot_main.png'], { '#484860': NAVY }],

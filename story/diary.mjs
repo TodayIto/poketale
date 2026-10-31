@@ -1,8 +1,10 @@
-import { names } from '../names/index.js';
 import { esc, FONT, noteRule } from './card.mjs';
+import { say } from './screen-text.mjs';
+import { checkLang } from '../director/lang.js';
 import { STATS } from '../engine/mon.mjs';
 import { BOX_SIZE } from './rules.mjs';
 import storyNames from '../data/story-names.json' with { type: 'json' };
+import { customText } from './custom-items.mjs';
 
 const LETTER_BATCHIM = { L: 'l', R: 'l', M: true, N: true };
 function batchim(word) {
@@ -28,37 +30,58 @@ export function josa(word, pair) {
   return `${word}${has ? a : b}`;
 }
 
-const sp = species => names.species(species);
-const item = id => names.items(id);
-const move = id => names.moves(id);
-const mon = who => (who?.name ? who.name : who?.species ? sp(who.species) : who?.ref ?? '포켓몬');
+// In Korean the word with its particle (josa), in a language without particles the word as is
+export const withParticle = (lang, word, pair) => (lang === 'ko' ? josa(word, pair) : word);
 
-// Korean stat names (official spelling) - shared by the diary and the panel
-export const STAT_NAME = Object.freeze({ hp: 'HP', atk: '공격', def: '방어', spa: '특수공격', spd: '특수방어', spe: '스피드' });
-const stats = list => (list?.length === STATS.length ? '모든 능력' : (list ?? []).map(s => STAT_NAME[s] ?? s).join('·'));
+const quoted = (lang, name, [a, b]) => (lang === 'ko' ? `"${name}"${batchim(name) === true ? a : b}` : `"${name}"`);
+
+export const statName = (stat, lang) => (STAT_KEYS.has(stat) ? say(lang, `stat.${stat}`) : stat);
+const STAT_KEYS = new Set([...STATS, 'accuracy']);
+
+// Words joined into one list in lang (A/B / A, B)
+export const listOf = (words, lang) => words.join(say(lang, 'diary.listSep'));
+const statList = (list, lang) => (list?.length === STATS.length ? say(lang, 'diary.allStats') : listOf((list ?? []).map(s => statName(s, lang)), lang));
 
 const NATURE_KO = Object.fromEntries(Object.entries(storyNames.natures).filter(([k]) => /[가-힣]/.test(k)).map(([ko, en]) => [en, ko]));
 
-export const natureName = nature => NATURE_KO[nature] ?? nature;
+export const natureName = (nature, lang) => (checkLang(lang) === 'ko' ? NATURE_KO[nature] ?? nature : nature);
 
-function effectKo(event) {
+export const moneyText = (amount, lang) => say(lang, 'money', { n: amount });
+const count = (n, lang) => Number(n).toLocaleString(lang);
+
+function nameKit(lang, names) {
+  const sp = species => names.species(species);
+  return {
+    sp,
+
+    item: (id, event) => customText(event, id) ?? names.item(id),
+    move: id => names.move(id),
+    ability: id => names.ability(id),
+    mon: who => (who?.name ? who.name : who?.species ? sp(who.species) : who?.ref ?? say(lang, 'diary.mon')),
+
+    p: (word, pair) => withParticle(lang, word, pair),
+  };
+}
+
+function effectLine(event, lang, k) {
+  const t = (key, values) => say(lang, key, values);
   if (event.kind === 'heal') {
-    if (event.revivedAll) return '기절한 포켓몬이 모두 깨어남';
-    if (event.revived) return '기절에서 깨어남';
-    if (event.cured) return '상태이상 나음';
+    if (event.revivedAll) return t('diary.fx.revivedAll');
+    if (event.revived) return t('diary.fx.revived');
+    if (event.cured) return t('diary.fx.cured');
     if (event.hpFrom != null && event.hpTo != null && event.hpFrom !== event.hpTo) return `HP ${event.hpFrom}% → ${event.hpTo}%`;
     return '';
   }
   if (event.kind === 'level') return `Lv${event.from} → ${event.to}`;
-  if (event.kind === 'evolve') return `${josa(sp(event.species), '으로/로')} 진화`;
-  if (event.kind === 'teach') return `${move(event.move)} 배움`;
+  if (event.kind === 'evolve') return t('diary.fx.evolve', { species: k.p(k.sp(event.species), '으로/로') });
+  if (event.kind === 'teach') return t('diary.fx.teach', { move: k.move(event.move) });
 
-  if (event.kind === 'evs') return `${STAT_NAME[event.stat] ?? event.stat} 기초포인트 +${event.to - event.from}`;
-  if (event.kind === 'exp') return `경험치 +${Number(event.amount).toLocaleString('ko-KR')}${event.to > event.from ? `, Lv${event.from} → ${event.to}` : ''}`;
-  if (event.kind === 'ability') return `특성 ${names.abilities(event.from)} → ${names.abilities(event.to)}`;
-  if (event.kind === 'nature') return `능력치는 ${natureName(event.nature)} 성격처럼`;
-  if (event.kind === 'hypertrain') return `대단한 특훈 — ${stats(event.stats)}`;
-  if (event.kind === 'ppup') return `${move(event.move)} 최대 PP ${event.from ?? '?'} → ${event.to ?? '?'}`;
+  if (event.kind === 'evs') return t('diary.fx.evs', { stat: statName(event.stat, lang), n: event.to - event.from });
+  if (event.kind === 'exp') return `${t('diary.fx.exp', { n: count(event.amount, lang) })}${event.to > event.from ? `, Lv${event.from} → ${event.to}` : ''}`;
+  if (event.kind === 'ability') return t('diary.fx.ability', { from: k.ability(event.from), to: k.ability(event.to) });
+  if (event.kind === 'nature') return t('diary.fx.nature', { nature: natureName(event.nature, lang) });
+  if (event.kind === 'hypertrain') return t('diary.fx.hyper', { stats: statList(event.stats, lang) });
+  if (event.kind === 'ppup') return t('diary.fx.ppUp', { move: k.move(event.move), from: event.from ?? '?', to: event.to ?? '?' });
   return '';
 }
 
@@ -66,55 +89,67 @@ export const boxOf = (state, position) => {
   const index = Math.floor(position / BOX_SIZE);
   return { n: index + 1, name: state?.boxNames?.[index] || '' };
 };
-const boxSent = box => (box?.n ? ` — ${josa(box.name ? `"${box.name}"` : `박스 ${box.n}`, '으로/로')} 보냈다` : box ? ' — 박스로 보냈다' : '');
 
-// One event -> one diary line (e.g. received 2 Potions, Pikachu Lv13 -> 15)
-export function diaryLine(event) {
-  const who = mon(event?.who);
+// Default name of box n (from 1) in lang
+export const boxLabel = (n, lang) => say(lang, 'box.default', { n });
+const boxSent = (box, lang) => (box?.n
+  ? say(lang, 'diary.toBox', { box: withParticle(lang, box.name ? `"${box.name}"` : boxLabel(box.n, lang), '으로/로') })
+  : box ? say(lang, 'diary.toAnyBox') : '');
+
+export function diaryLine(event, lang, names) {
+  const t = (key, values) => say(lang, key, values);
+  const k = nameKit(lang, names);
+  const { p, item, move } = k;
+  const who = k.mon(event?.who);
   switch (event?.kind) {
-    case 'battle': return battleLine(event);
+    case 'battle': return battleLine(event, lang, k);
+    case 'line': return event.text;
     case 'add': {
-      const name = event.who?.name ? `${event.who.name}(${sp(event.who.species)})` : sp(event.who?.species);
-      return `${josa(`${name} Lv${event.level}`, '을/를')} 받았다${boxSent(event.box)}`;
+      const name = event.who?.name ? t('diary.nicknamed', { name: event.who.name, species: k.sp(event.who.species) }) : k.sp(event.who?.species);
+      return t('diary.add', { mon: p(`${name} Lv${event.level}`, '을/를'), box: boxSent(event.box, lang) });
     }
     case 'level': return `${who} Lv${event.from ?? '?'} → ${event.to ?? (event.delta ? `+${event.delta}` : '?')}`;
     case 'heal': {
-      if (event.all) return event.revivedAll ? '기절한 포켓몬이 모두 깨어났다' : '파티가 모두 기운을 되찾았다';
-      if (event.revived) return `${josa(who, '이/가')} 기절에서 깨어났다`;
-      if (event.cured) return `${who}의 상태이상이 나았다`;
+      if (event.all) return t(event.revivedAll ? 'diary.revivedAll' : 'diary.healAll');
+      if (event.revived) return t('diary.revived', { who: p(who, '이/가') });
+      if (event.cured) return t('diary.cured', { who });
       if (event.hpFrom != null && event.hpTo != null) return `${who} HP ${event.hpFrom}% → ${event.hpTo}%`;
-      return `${josa(who, '이/가')} 회복했다`;
+      return t('diary.healed', { who: p(who, '이/가') });
     }
-    case 'item': return event.delta > 0 ? `${item(event.item)} ${event.delta}개를 받았다` : `${item(event.item)} ${-event.delta}개를 잃었다`;
+    case 'item': return event.delta > 0 ? t('diary.itemGot', { item: item(event.item, event), n: event.delta })
+      : t(event.toss ? 'diary.itemTossed' : 'diary.itemLost', { item: item(event.item, event), n: -event.delta });
     case 'use': {
-      const effect = (event.effects ?? []).map(effectKo).filter(Boolean).join(', ');
-      return `${event.who ? `${who}에게 ` : ''}${josa(item(event.item), '을/를')} 썼다${effect ? ` (${effect})` : ''}`;
+      const effect = (event.effects ?? []).map(e => effectLine(e, lang, k)).filter(Boolean).join(', ');
+      const used = event.who ? t('diary.useOn', { who, item: p(item(event.item), '을/를') }) : t('diary.use', { item: p(item(event.item), '을/를') });
+      return `${used}${effect ? ` (${effect})` : ''}`;
     }
     case 'swap': {
       const [a, b] = event.at ?? [];
-      if (a?.party && b?.party) return `${josa(mon(event.a), '과/와')} ${mon(event.b)}의 순서를 바꿨다`;
-      return `${josa(mon(event.a), '과/와')} ${josa(mon(event.b), '을/를')} 맞바꿨다 (파티 ↔ 박스)`;
+      if (a?.party && b?.party) return t('diary.order', { a: p(k.mon(event.a), '과/와'), b: k.mon(event.b) });
+      return t('diary.swapBox', { a: p(k.mon(event.a), '과/와'), b: p(k.mon(event.b), '을/를') });
     }
-    case 'release': return `${josa(who, '을/를')} 놓아주었다`;
-    case 'deposit': return `${josa(who, '을/를')} 박스에 맡겼다`;
-    case 'withdraw': return `${josa(who, '을/를')} 박스에서 데려왔다`;
-    case 'nickname': return `${sp(event.who?.species) || who}에게 "${event.name}"${batchim(event.name) === true ? '이라는' : '라는'} 별명을 지어 주었다`;
+    case 'release': return t('diary.release', { who: p(who, '을/를') });
+    case 'deposit': return t('diary.deposit', { who: p(who, '을/를') });
+    case 'withdraw': return t('diary.withdraw', { who: p(who, '을/를') });
+    case 'nickname': return t('diary.nickname', { species: k.sp(event.who?.species) || who, name: quoted(lang, event.name, ['이라는', '라는']) });
     case 'hold':
-      if (event.item) return `${who}에게 ${josa(item(event.item), '을/를')} 지니게 했다`;
-      return event.prev ? `${who}의 ${josa(item(event.prev), '을/를')} 뺐다` : `${who}의 도구를 뺐다`;
-    case 'evolve': return `${josa(who, '이/가')} ${josa(sp(event.species), '으로/로')} 진화했다`;
+      if (event.item) return t('diary.give', { who, item: p(item(event.item, event), '을/를') });
+      return event.prev ? t('diary.take', { who, item: p(item(event.prev, event), '을/를') }) : t('diary.takeAny', { who });
+    case 'evolve': return t('diary.evolve', { who: p(who, '이/가'), species: p(k.sp(event.species), '으로/로') });
     case 'teach':
-      if (event.forget) return `${josa(who, '이/가')} ${josa(move(event.forget), '을/를')} 잊고 ${josa(move(event.move), '을/를')} 배웠다`;
-      return event.learned ? `${josa(who, '이/가')} ${josa(move(event.move), '을/를')} 배웠다`
-        : `${josa(who, '은/는')} 이제 ${josa(move(event.move), '을/를')} 배울 수 있다`;
+      if (event.forget) return t('diary.forgetLearn', { who: p(who, '이/가'), old: p(move(event.forget), '을/를'), move: p(move(event.move), '을/를') });
+      return event.learned ? t('diary.learned', { who: p(who, '이/가'), move: p(move(event.move), '을/를') })
+        : t('diary.canLearn', { who: p(who, '은/는'), move: p(move(event.move), '을/를') });
 
-    case 'skipmove': return `${josa(who, '은/는')} ${josa(move(event.move), '을/를')} 배우지 않았다`;
-    case 'noevolve': return `${who}의 진화를 멈췄다`;
-    case 'pp': return `${who}의 PP를 회복했다`;
-    case 'boxname': return event.name ? `박스 ${event.box + 1}의 이름을 "${event.name}"${batchim(event.name) === true ? '으로' : '로'} 바꿨다` : `박스 ${event.box + 1}의 이름을 되돌렸다`;
-    case 'money': return event.delta > 0 ? `${event.delta}원을 받았다` : `${-event.delta}원을 썼다`;
+    case 'skipmove': return t('diary.skipMove', { who: p(who, '은/는'), move: p(move(event.move), '을/를') });
+    case 'noevolve': return t('diary.noEvolve', { who });
+    case 'pp': return t('diary.pp', { who });
+    case 'boxname': return event.name ? t('diary.boxName', { box: boxLabel(event.box + 1, lang), name: quoted(lang, event.name, ['으로', '로']) })
+      : t('diary.boxNameReset', { box: boxLabel(event.box + 1, lang) });
+    case 'money': return event.delta > 0 ? t('diary.moneyGot', { money: p(moneyText(event.delta, lang), '을/를') })
+      : t('diary.moneySpent', { money: p(moneyText(-event.delta, lang), '을/를') });
 
-    case 'evs': case 'exp': case 'ability': case 'nature': case 'hypertrain': case 'ppup': return `${who}: ${effectKo(event)}`;
+    case 'evs': case 'exp': case 'ability': case 'nature': case 'hypertrain': case 'ppup': return `${who}: ${effectLine(event, lang, k)}`;
     default: return event?.op ? `(${event.op})` : null;
   }
 }
@@ -122,22 +157,24 @@ export function diaryLine(event) {
 export function resultEvents(meta, state = null) {
   if (!meta?.outcome) return [];
   const caught = meta.caught ?? null;
-  const events = [{ kind: 'battle', outcome: meta.outcome, title: meta.title ?? '', caught, box: caught?.storage ? boxOf(state, caught.storage - 1) : null }];
+
+  const wild = meta.wild ?? String(meta.title ?? '').startsWith('야생');
+  const events = [{ kind: 'battle', outcome: meta.outcome, title: meta.title ?? '', wild, caught, box: caught?.storage ? boxOf(state, caught.storage - 1) : null }];
   for (const e of meta.evolved ?? []) events.push({ kind: 'evolve', who: { species: e.from, name: '' }, species: e.to });
   return events;
 }
 
-function battleLine(event) {
-  const title = event.title || '상대';
-  const wild = title.startsWith('야생');
+function battleLine(event, lang, k) {
+  const t = (key, values) => say(lang, key, values);
+  const title = event.title || t('diary.foe');
   switch (event.outcome) {
-    case 'win': return wild ? `${josa(title, '을/를')} 쓰러뜨렸다` : `${title}에게 이겼다`;
-    case 'lose': return `${title}에게 졌다`;
-    case 'forfeit': return `${title}에게 항복했다`;
-    case 'run': return `${title}에게서 도망쳤다`;
+    case 'win': return event.wild ? t('diary.beatWild', { title: k.p(title, '을/를') }) : t('diary.beat', { title });
+    case 'lose': return t('diary.lost', { title });
+    case 'forfeit': return t('diary.forfeit', { title });
+    case 'run': return t('diary.ran', { title });
     case 'capture': {
-      const mon = event.caught?.species ? sp(event.caught.species) : title.replace(/^야생\s*/, '');
-      return `${josa(mon, '을/를')} 잡았다${boxSent(event.box)}`;
+      const mon = event.caught?.species ? k.sp(event.caught.species) : title.replace(/^야생\s*/, '');
+      return t('diary.caught', { mon: k.p(mon, '을/를'), box: boxSent(event.box, lang) });
     }
     default: return null;
   }
@@ -185,43 +222,71 @@ export const DIARY_CSS = [
   `.x-risu-pkb-fgsub{display:block;font-size:10px;opacity:.85;}`,
 ].join(' ');
 
-function logHtml(rows, bad) {
+// The notebook icon and its paper (closed). rows = the lines' HTML, bad = whether some could not be applied
+function logHtml(rows, bad, lang) {
   const bang = bad ? '<span class="x-risu-pkb-bang">!</span>' : '';
-  const label = bad ? '기록 (반영 못 한 줄 있음)' : '기록';
+  const label = esc(say(lang, bad ? 'diary.logBad' : 'diary.log'));
   return `<details class="x-risu-pkb-log${bad ? ' x-risu-pkb-logbad' : ''}">`
     + `<summary class="x-risu-pkb-logi" title="${label}" aria-label="${label}">${ICON_BOOK}${bang}</summary>`
     + `<div class="x-risu-pkb-paper">${rows}</div></details>`;
 }
 
-export function renderDiary({ events = [], errors = [], forge = null } = {}) {
-  const lines = events.map(diaryLine).filter(Boolean);
+export function renderDiary({ events = [], errors = [], forge = null }, lang, names) {
+  const lines = events.map(e => diaryLine(e, lang, names)).filter(Boolean);
   const bad = errors.filter(e => e != null && e !== '').map(String);
   const rows = lines.map(l => `<div class="x-risu-pkb-pl">${esc(l)}</div>`).join('')
     + bad.map(e => `<div class="x-risu-pkb-pe">! ${esc(e)}</div>`).join('');
-  const log = rows ? logHtml(rows, bad.length > 0) : '';
+  const log = rows ? logHtml(rows, bad.length > 0, lang) : '';
   if (!forge || forge.buttonsOff) return log ? `\n\n${log}\n\n` : '';
   if (forge.pending) return '\n\n<div class="x-risu-pkb-logrow">' + log + '<div class="x-risu-pkb-fgs x-risu-pkbfi-{{chat_index}}"></div></div>\n\n';
-  const slot = `<div class="x-risu-pkb-fgs x-risu-pkbf-${forge.key}">${renderForge(forge)}</div>`;
+  const slot = `<div class="x-risu-pkb-fgs x-risu-pkbf-${forge.key}">${renderForge(forge, lang)}</div>`;
   return `\n\n<div class="x-risu-pkb-logrow">${log}{{#if {{equal::{{chat_index}}::${forge.at}}}}}${slot}{{/if}}</div>\n\n`;
 }
 
-// Whether a message has log lines (renderDiary draws the log)
-export const hasLog = ({ events = [], errors = [] } = {}) => events.some(e => diaryLine(e)) || errors.some(e => e != null && e !== '');
+const COMMAND_WHY = new Set(['noMove', 'noPp', 'disabled', 'noSwitch', 'trapped', 'noItem', 'cantUse', 'cantRun']);
+
+function commandWords(c, lang, names) {
+  if (!c) return '';
+  const t = (key, values) => say(lang, key, values);
+  const k = nameKit(lang, names);
+  const target = to => (to?.slot ? t('diary.cmd.slot', { n: to.slot }) : to?.species ? k.sp(to.species) : to?.name ?? '');
+  if (c.kind === 'move') {
+    const move = c.move ? k.move(c.move) : c.raw ?? '';
+    return c.gimmick ? t(`diary.cmd.${c.gimmick}`, { move }) : move;
+  }
+  if (c.kind === 'switch') return t('diary.cmd.switch', { target: target(c.target) });
+  if (c.kind === 'item') {
+    const item = c.item ? k.item(c.item) : t('diary.cmd.anyItem');
+    return c.target ? t('diary.cmd.itemOn', { item, target: target(c.target) }) : item;
+  }
+  if (c.kind === 'run') return t('diary.cmd.run');
+  return '';
+}
+
+export function commandLines(turns, results, lang, names) {
+  const out = { plain: [], errors: [] };
+  turns.forEach((turn, i) => {
+    const result = results?.[i];
+    if (result?.state !== 'done' && result?.state !== 'rejected') return;
+    const me = commandWords(turn.me, lang, names);
+    const line = turn.foe ? say(lang, 'diary.cmd.lineFoe', { me, foe: commandWords(turn.foe, lang, names) }) : say(lang, 'diary.cmd.line', { me });
+    if (result.state === 'done') out.plain.push(line);
+    else out.errors.push(say(lang, 'diary.cmd.rejected', { line, why: say(lang, `diary.cmd.why.${COMMAND_WHY.has(result.reason) ? result.reason : 'other'}`) }));
+  });
+  return out;
+}
 
 const ICON_SWORD = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M15.6 2.4 14.9 5.2 7.6 12.5 5.5 10.4 12.8 3.1z" fill="#e3ebf2" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>'
   + '<path d="M4.3 9.5 8.5 13.7" stroke="#d8434d" stroke-width="2.1" stroke-linecap="round"/><path d="M6.3 11.7 3.3 14.7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
   + '<circle cx="2.7" cy="15.3" r="1.2" fill="currentColor"/></svg>';
-const FORGE_LABEL = '이 장면으로 배틀 만들기';
 
-export const FORGE_BUSY = '배틀을 만드는 중입니다.';
-export const FORGE_HOLD = '끝날 때까지 메시지를 보내거나 고치지 마십시오.';
-
-export function renderForge({ key, on = false, busy = false, ask = false } = {}) {
+export function renderForge({ key, on = false, busy = false, ask = false }, lang) {
   if (!on && !busy) return '';
-  const label = busy ? FORGE_BUSY : FORGE_LABEL;
+  const t = name => esc(say(lang, name));
+  const label = t(busy ? 'forge.busy' : 'forge.label');
   const button = `<button type="button" class="x-risu-pkb-btn x-risu-pkb-fg${busy ? ' x-risu-pkb-busy' : ''} x-risu-pkbk-${key} x-risu-pkba-forge x-risu-pkbi-{{chat_index}}"`
     + ` title="${label}" aria-label="${label}" aria-expanded="${ask && !busy}"${busy ? ' disabled' : ''}>${ICON_SWORD}</button>`;
-  const lines = busy ? `<div class="x-risu-pkb-fgnote">${esc(FORGE_BUSY)}<span class="x-risu-pkb-fgsub">${esc(FORGE_HOLD)}</span></div>` : '';
-  const confirm = ask && !busy ? `<span class="x-risu-pkb-fgask" role="group" aria-label="배틀 생성 확인"><span>보조모델을 이용해 배틀을 생성합니다.</span><button type="button" class="x-risu-pkb-btn x-risu-pkb-fgok x-risu-pkbk-${key} x-risu-pkba-forgeok x-risu-pkbi-{{chat_index}}" title="배틀 생성 확인" aria-label="배틀 생성 확인">✓</button></span>` : '';
+  const lines = busy ? `<div class="x-risu-pkb-fgnote">${t('forge.busy')}<span class="x-risu-pkb-fgsub">${t('forge.hold')}</span></div>` : '';
+  const confirm = ask && !busy ? `<span class="x-risu-pkb-fgask" role="group" aria-label="${t('forge.confirm')}"><span>${t('forge.ask')}</span><button type="button" class="x-risu-pkb-btn x-risu-pkb-fgok x-risu-pkbk-${key} x-risu-pkba-forgeok x-risu-pkbi-{{chat_index}}" title="${t('forge.confirm')}" aria-label="${t('forge.confirm')}">✓</button></span>` : '';
   return button + confirm + lines;
 }

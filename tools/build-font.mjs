@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { transformSync } from 'esbuild';
+import { LANGS } from '../director/lang.js';
 
 export const SOURCE = 'vendor/pokerogue/assets/fonts/pokemon-emerald-pro.ttf';
 export const OUT = 'data/fonts/emerald-ko.woff2';
@@ -16,9 +17,9 @@ const NAME_JSON = [
 	'data/items-outside.json', 'data/named-trainers.json', 'data/story-names.json',
 ];
 
-// Text tables shown in the battle window (every string value in the JSON)
 const TEXT_JSON = [
-	'director/text-ko.json', 'director/text-bag-ko.json', 'director/text-effects-ko.json', 'director/text-exp-ko.json', 'director/text-summary-ko.json',
+	...LANGS.flatMap(lang => ['text', 'text-bag', 'text-effects', 'text-exp', 'text-summary'].map(name => `director/${name}-${lang}.json`)),
+	...LANGS.map(lang => `view/text-${lang}.json`),
 	...NAME_JSON,
 ];
 
@@ -46,6 +47,7 @@ function collect(json, code, extra = '') {
 // Characters the battle font subset must contain (code points, ascending)
 export const fontText = () => collect(TEXT_JSON, textCode(), phaserTestString());
 
+// Characters the Galmuri11 subset must contain (code points, ascending)
 export const galmuriText = () => collect(NAME_JSON, galmuriCode());
 
 function phaserTestString() {
@@ -138,8 +140,9 @@ function subset({ source, out, manifest: file, text, options, about, family = nu
 	}
 	mkdirSync('data/fonts', { recursive: true });
 
+	const noMirror = python(['-c', 'from fontTools.subset import Options; print(hasattr(Options(), "bidi_closure"))']).trim() === 'True' ? ['--no-bidi-closure'] : [];
 	python(['-m', 'fontTools.subset', source, `--unicodes=${cmap}`, '--flavor=woff2', `--output-file=${out}`,
-		...options, '--name-IDs=*', '--name-languages=*']);
+		...options, ...noMirror, '--name-IDs=*', '--name-languages=*']);
 
 	if (family) python(['-c', 'import sys; from fontTools.ttLib import TTFont; f = TTFont(sys.argv[1]); fam = sys.argv[2]; '
 		+ 'new = {1: fam, 3: fam + "-Regular", 4: fam, 6: fam + "-Regular", 16: fam, 21: fam}; '

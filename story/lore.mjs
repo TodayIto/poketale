@@ -3,6 +3,8 @@ import { hpPercentOf, trainersOf } from './state.mjs';
 import { createNamer } from './ai-names.mjs';
 import { outcomeText } from './prompts.mjs';
 import { COMPAT_VAR } from './compat.mjs';
+import { customText } from './custom-items.mjs';
+import { battleStatusLines, ACT_RULES, ACT_PROMPT } from './act-prompts.mjs';
 
 export const BATTLE_ENTRY = `@@depth 0
 
@@ -153,8 +155,8 @@ export function loreUpToDate(chat) {
   return compatOn(chat) && ours.length === LORE_ENTRIES.length && LORE_ENTRIES.every((e, i) => ours[i]?.comment === e.comment && ours[i]?.content === e.content && ours[i]?.insertorder === LORE_INSERT_ORDER - i);
 }
 
-export function pastBattleLine(trainer, { korean = true, en = null } = {}) {
-  const namer = createNamer({ korean, en });
+export function pastBattleLine(trainer, { lang = 'ko', en = null } = {}) {
+  const namer = createNamer({ lang, en });
   const team = trainer.team.map(mon => `${namer.species(mon.species)} Lv${mon.level}`).join(', ');
   return `[Last Battle | Opponent: ${trainer.name} | Outcome: ${outcomeText(trainer.outcome)} | Team: ${team}]`;
 }
@@ -162,9 +164,9 @@ export function pastBattleLine(trainer, { korean = true, en = null } = {}) {
 // The lorebook key field is split by commas - commas inside a name become spaces
 const loreKey = name => name.replaceAll(',', ' ').replace(/\s+/g, ' ').trim();
 
-export function trainerLore(state, { korean = true, en = null } = {}) {
+export function trainerLore(state, { lang = 'ko', en = null } = {}) {
   return Object.values(trainersOf(state)).map(trainer => {
-    const content = pastBattleLine(trainer, { korean, en });
+    const content = pastBattleLine(trainer, { lang, en });
     return { key: [...new Set([trainer.personal, trainer.name].map(loreKey))].join(','), secondkey: '', insertorder: LORE_INSERT_ORDER - LORE_ENTRIES.length,
       comment: comment(`지난 배틀 · ${trainer.name}`, content), mode: 'normal', alwaysActive: false, selective: false, useRegex: false, content };
   });
@@ -183,13 +185,18 @@ export function writeTrainerLore(chat, entries, { newId = newUuid } = {}) {
 export const VARS = { party: '$pkb_party', storage: '$pkb_storage', bag: '$pkb_bag' };
 const STATUS_EN = { '': 'Normal', par: 'Paralyzed', brn: 'Burned', slp: 'Asleep', frz: 'Frozen', psn: 'Poisoned', tox: 'Badly Poisoned', fnt: 'Fainted' };
 
-export function varTexts(state, { sim, battle = null, korean = true, en = null } = {}) {
-  const namer = createNamer({ korean, en });
+export function varTexts(state, { sim, battle = null, lang = 'ko', en = null } = {}) {
+  const namer = createNamer({ lang, en });
+  const item = id => customText(state, id) ?? namer.items(id);
   const party = [];
   if (battle) {
     const opponent = battle.wild ? `Wild ${namer.species(battle.species)}${battle.level ? ` Lv${battle.level}` : ''}` : battle.opponent || 'Trainer';
     if (battle.pending) party.push(`[Battle Pending | Opponent: ${opponent}]`);
-    else party.push(`[Battle In Progress | Opponent: ${opponent}${Number.isInteger(battle.turn) && battle.turn > 0 ? ` | Turn: ${battle.turn}` : ''}]`);
+    else {
+      party.push(`[Battle In Progress | Opponent: ${opponent}${Number.isInteger(battle.turn) && battle.turn > 0 ? ` | Turn: ${battle.turn}` : ''}]`);
+
+      if (battle.status && ACT_PROMPT) party.push(...battleStatusLines(battle.status, namer), ACT_RULES);
+    }
   }
   (state?.party ?? []).forEach((mon, i) => {
     const hp = sim ? hpPercentOf(sim, mon) : mon.hp === 0 ? 0 : 100;
@@ -198,13 +205,13 @@ export function varTexts(state, { sim, battle = null, korean = true, en = null }
     if (mon.set.name) fields.push(`Nickname: ${mon.set.name}`);
     fields.push(`Level: ${mon.set.level}`, `HP: ${hp}%`, `Status: ${status}`);
     if (mon.set.ability) fields.push(`Ability: ${namer.abilities(mon.set.ability)}`);
-    fields.push(`Item: ${mon.set.item ? namer.items(mon.set.item) : 'None'}`);
+    fields.push(`Item: ${mon.set.item ? item(mon.set.item) : 'None'}`);
     fields.push(`Moves: ${(mon.set.moves ?? []).map(m => namer.moves(m)).join(', ') || 'None'}`);
     party.push(`[${fields.join(' | ')}]`);
   });
   if (!(state?.party ?? []).length) party.push('[Own Pokémon | None]');
   const storage = (state?.box ?? []).map((mon, i) => `${i + 1}: ${mon.set.name ? `${mon.set.name} the ` : ''}${namer.species(mon.set.species)}`);
-  const items = Object.entries(state?.bag ?? {}).filter(([, n]) => n > 0).map(([id, n]) => `${namer.items(id)} ×${n}`);
+  const items = Object.entries(state?.bag ?? {}).filter(([, n]) => n > 0).map(([id, n]) => `${item(id)} ×${n}`);
   return {
     party: party.join('\n'),
     storage: `[Storage | ${storage.length ? storage.join(' | ') : 'Empty'}]`,

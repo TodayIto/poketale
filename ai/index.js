@@ -1,5 +1,5 @@
 // from pokerogue src/phases/enemy-command-phase.ts, src/field/pokemon.ts (getNextMove), src/field/trainer.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { snapshot, restore, rolloutMove, tryChoice, applyGimmick } from './engine-copy.js';
 import { partyMatchupScores, getMatchupScore, sortScores, nextSummonIndex } from './matchup.js';
@@ -9,6 +9,7 @@ import { lookahead, switchChoices } from './lookahead.js';
 import { DEFAULT_POLICY, bossHealItems } from './policy.js';
 import { checkEnemyItem } from '../engine/bag.mjs';
 import { holdDecision } from './commit.js';
+import { simpleAI } from '../director/simple-ai.js';
 
 export { DEFAULT_POLICY, bossHealItems };
 
@@ -49,6 +50,8 @@ export function createEnemyAI(sim, options = {}) {
     const request = liveSide.activeRequest;
     if (!request || request.wait) throw new Error(`${sideId}: 기다리는 중인 요청에는 AI 를 부르지 않는다`);
     if (request.teamPreview) return 'default';
+
+    if (battle.activePerHalf > 1) return simpleAI(battle, sideId);
     const state = stateOf(battle);
     const plan = sideId === 'p2' ? healPlan(liveSide) : null;
     if (plan && state.itemsLeft === null) state.itemsLeft = plan.count;

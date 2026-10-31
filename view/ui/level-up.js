@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/battle-message-ui-handler.ts (levelUpStatsContainer, promptLevelUpStats) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { addWindow } from './window.js';
 import { windowText as baseWindowText, STAT_ROWS } from './text.js';
@@ -22,7 +22,7 @@ export class LevelUpStats {
     const s = this.scene;
     const c = this.container = s.add.container(0, 0).setVisible(false);
 
-    const labels = windowText(s, 320 - 73, -94, STAT_ROWS.map(([, label]) => label).join('\n'));
+    const labels = windowText(s, 320 - 73, -94, STAT_ROWS.map(([, name]) => s.words(name)).join('\n'));
     labels.x -= labels.displayWidth;
     const width = 80 + labels.displayWidth;
     this.bg = addWindow(s, 320 - width, -100, width, 100);

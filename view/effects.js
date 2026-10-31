@@ -3,12 +3,13 @@
 // from pokerogue src/phases/pokemon-anim-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/field/pokemon.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui-inputs.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { AbilityBar } from './ui/ability-bar.js';
 import { BattleStats } from './ui/battle-stats.js';
 import { PokemonSprite } from './sprites/pokemon.js';
-import { SPRITE_SLOTS, INFO_RECTS } from './sprites/placement.js';
+import { SPRITE_SLOTS, onInfoBox } from './sprites/placement.js';
+import { teamOf, isPlayerSide, fieldOffset, checkPosition, fieldPositions } from './positions.js';
 import { hasAnimation, chargeFile } from './anims/data.js';
 import { tween, delay } from './lifetime.js';
 
@@ -22,20 +23,24 @@ export const EFFECT_IMAGES = {
 export const EFFECT_SOUNDS = ['battle_anims/PRSFX- Transform.wav', 'battle_anims/PRSFX- Substitute2.wav'];
 
 const SUB_OFFSET = { player: [-30, 10], enemy: [30, -10] };
+
+// Where a position's substitute doll stands: the single-battle slot moved by the field offset
+const dollSpot = (scene, side) => {
+  const slot = SPRITE_SLOTS[teamOf(side)], [dx, dy] = fieldOffset(scene.double, side);
+  return [slot.x + dx, slot.bottom + dy];
+};
 const STAT_KEYS = new Set(['c', 'C', 'Shift']);
 
 export class BattleEffects {
   constructor(scene) {
-    this.scene = scene; this.subs = {}; this.stages = { player: {}, enemy: {} }; this.statsHeld = new Set();
+    this.scene = scene; this.subs = {}; this.stages = {}; this.statsHeld = new Set();
 
     const keyId = e => `key:${e.code || e.key}`;
     this.keyDown = e => { if (STAT_KEYS.has(e.key) && !e.repeat) this.holdStats(keyId(e), true); };
     this.keyUp = e => { if (STAT_KEYS.has(e.key)) this.holdStats(keyId(e), false); };
     this.pointerDown = pointer => {
       const x = pointer.worldX / 6, y = pointer.worldY / 6;
-      if (Object.entries(INFO_RECTS).some(([side, r]) => this.scene.info[side]?.container.visible && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)) {
-        this.holdStats(`pointer:${pointer.id}`, true);
-      }
+      if (onInfoBox(this.scene, x, y)) this.holdStats(`pointer:${pointer.id}`, true);
     };
     this.pointerUp = pointer => this.holdStats(`pointer:${pointer.id}`, false);
 
@@ -56,8 +61,8 @@ export class BattleEffects {
 
   showAbility(side, pokemonName, abilityName) {
     this.scene.requireReady();
-    if (!['player', 'enemy'].includes(side)) throw new Error(`Invalid side: ${side}`);
-    return this.abilityBar.show(side === 'player', String(pokemonName), String(abilityName));
+    checkPosition(this.scene.double, side);
+    return this.abilityBar.show(isPlayerSide(side), String(pokemonName), String(abilityName));
   }
   hideAbility() { return this._abilityBar?.hide(); }
 
@@ -69,7 +74,7 @@ export class BattleEffects {
   statsFor(side) {
     const info = this.scene.info[side];
     if (!info) return null;
-    if (!info.stats) { info.stats = new BattleStats(this.scene, info, side === 'player'); info.stats.update(this.stages[side]); }
+    if (!info.stats) { info.stats = new BattleStats(this.scene, info, isPlayerSide(side)); info.stats.update(this.stages[side]); }
     return info.stats;
   }
   holdStats(source, pressed) {
@@ -83,17 +88,17 @@ export class BattleEffects {
     const visible = this.statsHeld.size > 0;
     if (visible === this.statsVisible) return;
     this.statsVisible = visible;
-    for (const side of ['player', 'enemy']) if (this.scene.pokemon[side]) this.statsFor(side)?.toggle(visible);
+    for (const side of fieldPositions(this.scene.double)) if (this.scene.pokemon[side]) this.statsFor(side)?.toggle(visible);
   }
 
   async changeForm(side, mon, { instant = false, sound = true } = {}) {
     const scene = this.scene, old = scene.requireMon(side);
     const next = { ...old.mon, speciesId: mon.speciesId, spriteId: mon.spriteId, shiny: !!mon.shiny, gender: mon.gender ?? old.mon.gender,
       ...(mon.name !== undefined ? { name: mon.name } : {}), ...(mon.level !== undefined ? { level: mon.level } : {}) };
-    const asset = await scene.assets.mon(next, side === 'player');
+    const asset = await scene.assets.mon(next, isPlayerSide(side));
     scene.life.check();
     const sprite = new PokemonSprite(scene, side, next, asset);
-    const offset = this.subs[side] ? SUB_OFFSET[side] : [0, 0];
+    const offset = this.subs[side] ? SUB_OFFSET[teamOf(side)] : [0, 0];
     sprite.container.setPosition(sprite.placement.x + offset[0], sprite.placement.y + offset[1]).setAlpha(old.container.alpha);
     scene.field.moveAbove(sprite.container, old.container);
     const info = scene.info[side], relabel = info && (mon.name !== undefined || mon.level !== undefined);
@@ -123,7 +128,7 @@ export class BattleEffects {
 
   async substitute(side, action) {
     const scene = this.scene, p = scene.requireMon(side), sub = this.subs[side];
-    const [dx, dy] = SUB_OFFSET[side], home = p.placement, player = side === 'player';
+    const [dx, dy] = SUB_OFFSET[teamOf(side)], home = p.placement, player = isPlayerSide(side);
     const doll = (x, y) => {
       const s = scene.add.sprite(x, y, player ? 'sub_back' : 'sub').setOrigin(0.5, 1);
       scene.field.add(s); return s;
@@ -131,14 +136,13 @@ export class BattleEffects {
     const subScale = player ? 0.5 : 1;
     if (action === 'add') {
       if (sub) return;
-      const slot = SPRITE_SLOTS[side];
-      const [sprite, tint] = [doll(slot.x, slot.bottom), doll(slot.x, slot.bottom)];
+      const [x, y] = dollSpot(scene, side);
+      const [sprite, tint] = [doll(x, y), doll(x, y)];
       sprite.setVisible(false).setScale(subScale);
       tint.setTintFill(0xffffff).setScale(0.01);
       if (player) scene.field.bringToTop(p.container);
       this.subs[side] = { sprite };
 
-      // Sound, mon move and doll flash in parallel. This Promise.all awaits all three
       await Promise.all([
         scene.audio.play('battle_anims/PRSFX- Transform.wav'),
         tween(scene, { targets: p.container, duration: 500, x: home.x + dx, y: home.y + dy, alpha: 0.5, ease: 'Sine.easeIn' }),
@@ -189,8 +193,8 @@ export class BattleEffects {
   placeSubstitute(side) {
     const scene = this.scene, p = scene.requireMon(side);
     if (this.subs[side]) return;
-    const [dx, dy] = SUB_OFFSET[side], home = p.placement, player = side === 'player', slot = SPRITE_SLOTS[side];
-    const sprite = scene.add.sprite(slot.x, slot.bottom, player ? 'sub_back' : 'sub').setOrigin(0.5, 1).setScale(player ? 0.5 : 1);
+    const [dx, dy] = SUB_OFFSET[teamOf(side)], home = p.placement, player = isPlayerSide(side), [x, y] = dollSpot(scene, side);
+    const sprite = scene.add.sprite(x, y, player ? 'sub_back' : 'sub').setOrigin(0.5, 1).setScale(player ? 0.5 : 1);
     scene.field.add(sprite);
     if (player) scene.field.bringToTop(p.container);
     this.subs[side] = { sprite };
@@ -210,7 +214,14 @@ export class BattleEffects {
     this.subs[side]?.sprite.setVisible(visible);
   }
 
-  // MoveChargeAnim: battle-anims/<move>-charging.json. Moves without a charging file play nothing.
+  // Ally Switch (scene.swap): the substitute doll and stat stages follow the mon to its new position
+  swap(a, b) {
+    for (const map of [this.subs, this.stages]) {
+      [map[a], map[b]] = [map[b], map[a]];
+      for (const side of [a, b]) if (map[side] === undefined) delete map[side];
+    }
+  }
+
   async playCharge(moveId, side, targetSide = side) {
     this.scene.requireReady();
     const file = chargeFile(moveId);

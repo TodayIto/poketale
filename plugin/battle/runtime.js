@@ -4,8 +4,9 @@ import { createBattleView } from '../../view/index.js';
 import { createBattleSession, isWild } from './flow.js';
 import { mark, clearBattleMarks } from './marks.js';
 import { END_CSS, END_GUARD_MS, mountEndScreen, flyAway, shake, PLANE } from './end-screen.js';
-import { UI_VARS, CARD_FRAME, rowButtonsCss, crossIcon } from './ui-css.js';
+import { UI_VARS, CARD_FRAME, BAND_CSS, rowButtonsCss, crossIcon } from './ui-css.js';
 import { PHONE_CSS, isPhone, layoutOf, mountPhoneLayout, choiceCursor } from './phone.js';
+import { mountScreenButtons } from './screen-buttons.js';
 import { ENTRY_CSS, mountEntry, backToChat, entryNamed, STAMP_SOUND } from './entry.js';
 import { entryPictures, entrySound } from './entry-art.js';
 import { PLAYER_NAME } from '../../story/state.mjs';
@@ -13,9 +14,11 @@ import { mountLoading } from './loading.js';
 import { outcomeOf, isLoss } from '../../story/outcome.mjs';
 import { noteLooks, noteRule } from '../../story/card.mjs';
 import { WHAT, failureLines, failureText } from '../../story/failure.mjs';
+import { say } from '../../story/screen-text.mjs';
 import { SHEET_FONT } from '../../story/style.mjs';
 import { loadFont } from '../../view/fonts.js';
-import { names } from '../../names/index.js';
+import { battleNamesIn } from './names.js';
+import { DEFAULT_LANG } from '../../director/lang.js';
 import { DEFAULT_SPEED, nextSpeed } from '../../view/game-speed.js';
 
 // Our UI icons (icons only, no text)
@@ -26,18 +29,16 @@ const ICON = {
 
   speed: speed => `<span class="mul">x${speed}</span>`,
 
-
 };
-
-// Orientation button label: what pressing it turns the layout to
 
 const SEND_NOTE_MS = 4000;
 
-const humanError = error => failureLines(WHAT.open, error);
+const humanError = (error, lang) => failureLines(WHAT.open, error, lang);
 
 export function mountBattle({ parent = document.body, fetchBytes, onClose = () => {}, spec, development = false, createView = createBattleView,
   bgm                                                                              , story,
-  iron = false, onCollapse, onRetry, viewOptions: extraViewOptions = {}, onSpeed, phone = isPhone(), me = { black: true, image: null } }) {
+  iron = false, onCollapse, onRetry, viewOptions: extraViewOptions = {}, onSpeed, phone = isPhone(), me = { black: true, image: null }, lang = DEFAULT_LANG }) {
+  const names = battleNamesIn(lang, sim.Dex);
   loadFont(SHEET_FONT).catch(error => console.warn('[poke-battle] 배틀 창 글꼴을 올리지 못함, 대체 글꼴로', error));
   const root = document.createElement('section');
   root.className = 'poke-battle';
@@ -48,16 +49,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     .poke-battle * { box-sizing:border-box; }
     /* Only the battle screen below the strip is 16:9. Wide window = smaller by the strip, empty at the sides; tall window = strip, battle, empty space below */
     .poke-battle .frame { flex:none; display:flex; flex-direction:column; width:min(100vw, calc((100vh - var(--band)) * 16 / 9)); }
-    .poke-battle .band { flex:none; height:var(--band); display:flex; align-items:center; gap:8px; padding:0 2px; }
-    .poke-battle .band .grow { flex:1; }
-    .poke-battle .band button { flex:none; width:28px; height:26px; padding:0; display:flex; align-items:center; justify-content:center;
-      border:2px solid var(--navy); border-radius:7px; background:#fff; color:var(--navy); box-shadow:0 2.5px 0 var(--navy-dark); cursor:pointer; }
-    .poke-battle .band button:active { transform:translateY(2px); box-shadow:0 .5px 0 var(--navy-dark); }
-    .poke-battle .band button:focus-visible { outline:2px solid #ffd35c; outline-offset:2px; }
-    .poke-battle .band button[hidden] { display:none; }
-    .poke-battle .band button svg { width:16px; height:16px; display:block; }
-    .poke-battle .band .leave { color:var(--red); }
-    .poke-battle .band .leave svg { width:13px; height:13px; }
+    ${BAND_CSS}
     .poke-battle .screen { position:relative; width:100%; aspect-ratio:16 / 9; overflow:hidden; background:#203040; }
     .poke-battle .stage { position:absolute; inset:0; }
     .poke-battle .band .send, .poke-battle .side .send { position:relative; }${END_CSS}${PHONE_CSS}${ENTRY_CSS}
@@ -104,24 +96,24 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     .poke-battle.pkb-portrait .end .btns button:focus, .poke-battle.pkb-landscape .end .btns button:focus { outline:3px solid #ffd35c; outline-offset:2px; }
   </style><div class="frame">
     <div class="band">
-      <button class="close leave" type="button" aria-label="나가기" title="나가기">${ICON.leave}</button>
+      <button class="close leave" type="button" aria-label="${say(lang, 'window.leave')}" title="${say(lang, 'window.leave')}">${ICON.leave}</button>
       <span class="savenote" role="status" hidden></span>
       <span class="grow"></span>
-      <button class="speed" type="button" title="배속" hidden></button>
-      <button class="send icon-host" type="button" aria-label="이야기로 보내기" title="이야기로 보내기" hidden>${ICON.send}</button>
-      <button class="fold" type="button" aria-label="접기" title="접기" hidden>${ICON.fold}</button>
+      <button class="speed" type="button" title="${say(lang, 'window.speed')}" hidden></button>
+      <button class="send icon-host" type="button" aria-label="${say(lang, 'window.send')}" title="${say(lang, 'window.send')}" hidden>${ICON.send}</button>
+      <button class="fold" type="button" aria-label="${say(lang, 'window.fold')}" title="${say(lang, 'window.fold')}" hidden>${ICON.fold}</button>
     </div>
     <div class="screen">
       <div class="stage"></div>
       <p class="sendnote" role="alert" hidden></p>
       <div class="oops" role="alert" hidden><div class="card"><div class="hd"></div><div class="bd">
         <p class="human"></p>
-        <div class="row"><button class="retry" type="button">다시 시도</button></div>
-        <details><summary>자세히 · 복사</summary><pre class="dev"></pre><button class="copy" type="button">복사</button></details>
+        <div class="row"><button class="retry" type="button">${say(lang, 'window.retry')}</button></div>
+        <details><summary>${say(lang, 'window.details')}</summary><pre class="dev"></pre><button class="copy" type="button">${say(lang, 'window.copy')}</button></details>
       </div></div></div>
-      <div class="confirm" role="dialog" aria-modal="true" aria-labelledby="poke-battle-confirm" hidden><div class="card"><div class="hd" id="poke-battle-confirm">배틀을 그만둘까요?</div><div class="bd">
+      <div class="confirm" role="dialog" aria-modal="true" aria-labelledby="poke-battle-confirm" hidden><div class="card"><div class="hd" id="poke-battle-confirm">${say(lang, 'window.quitAsk')}</div><div class="bd">
         <p class="what"></p>
-        <div class="row"><button class="keep sec" type="button">계속하기</button><button class="quit" type="button">그만두기</button></div>
+        <div class="row"><button class="keep sec" type="button">${say(lang, 'window.keep')}</button><button class="quit" type="button">${say(lang, 'window.quit')}</button></div>
       </div></div></div>
     </div>
   </div>`;
@@ -130,6 +122,9 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
   const screenBox = $('.screen'), stage = $('.stage'), oops = $('.oops'), confirmBox = $('.confirm'), sendNote = $('.sendnote');
   const leaveButton = $('.band .leave'), sendButton = $('.band .send'), foldButton = $('.band .fold'), speedButton = $('.band .speed');
   const saveNote = $('.band .savenote');
+  const layout = layoutOf({ phone });
+
+  const screenButtons = mountScreenButtons($('.band'), { before: speedButton, press: key => padPress(key), lang });
   let session, closed = false, started = false, paused = false;
 
   const startSpec = story ? story.spec : spec;
@@ -137,21 +132,16 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     const kind = isWild(startSpec) ? 'wild' : 'trainer', named = entryNamed(startSpec), boss = !!startSpec.boss;
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     const pictures = entryPictures(startSpec, { fetchBytes, wild: kind === 'wild', named: !!named, image: me.image });
-    const myName = startSpec.p1?.name && startSpec.p1.name !== PLAYER_NAME ? startSpec.p1.name : '나';
+    const myName = startSpec.p1?.name && startSpec.p1.name !== PLAYER_NAME ? startSpec.p1.name : say(lang, 'window.me');
     const stamp = extraViewOptions.sound ? entrySound(STAMP_SOUND) : null;
     return mountEntry(root, { kind, boss, named, reduced, pictures, sound: stamp, foeBlack: !!startSpec.p2?.trainerSilhouette, meBlack: me.black,
       names: { me: myName, foe: kind === 'wild' ? '' : startSpec.p2?.name ?? '' } });
   })();
 
-  const preparing = mountLoading(screenBox, { before: oops, hidden: !!entry });
+  const preparing = mountLoading(screenBox, { before: oops, hidden: !!entry, lang });
 
-  let takeDown = () => {};
-  function putLayout() {
-    takeDown();
-    takeDown = mountPhoneLayout(root, layoutOf({ phone }), { press: key => padPress(key),
-      left: [leaveButton], right: [foldButton, sendButton, speedButton], screen: screenBox, onScreen: [saveNote] });
-  }
-  putLayout();
+  const takeDown = mountPhoneLayout(root, layout, { press: key => padPress(key), lang,
+    left: [leaveButton], right: [foldButton, sendButton, speedButton], screen: screenBox, onScreen: [saveNote] });
 
   function padPress(key) {
     if (closed) return;
@@ -168,6 +158,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     sendButton.hidden = !(mode === 'running' && story?.onSend);
     speedButton.hidden = mode !== 'running';
     foldButton.hidden = !((mode === 'running' && onCollapse) || mode === 'result');
+    screenButtons.show(mode === 'running' && layout === 'desktop');
   };
   setMode('preparing');
 
@@ -181,7 +172,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     console.error(error);
     hideConfirm();
     preparing.hide(); entry?.remove(); root.querySelector('.end')?.remove();
-    [oops.querySelector('.hd').textContent, oops.querySelector('.human').textContent] = humanError(error);
+    [oops.querySelector('.hd').textContent, oops.querySelector('.human').textContent] = humanError(error, lang);
     oops.querySelector('.dev').textContent = String(error?.stack ?? error);
     oops.querySelector('.row').hidden = !onRetry;
     oops.hidden = false;
@@ -191,7 +182,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
   oops.querySelector('.retry').onclick = () => onRetry?.();
   oops.querySelector('.copy').onclick = async () => {
     const text = oops.querySelector('.dev').textContent;
-    try { await navigator.clipboard.writeText(text); oops.querySelector('.copy').textContent = '복사함'; }
+    try { await navigator.clipboard.writeText(text); oops.querySelector('.copy').textContent = say(lang, 'window.copied'); }
     catch {
       const range = document.createRange(); range.selectNodeContents(oops.querySelector('.dev'));
       getSelection().removeAllRanges(); getSelection().addRange(range);
@@ -223,7 +214,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
   leaveButton.onclick = () => {
     if (mode === 'result' && endChoice && !saveFailed) return endChoice('confirm');
     if (mode !== 'running' || forfeitFailed) return close();
-    confirmBox.querySelector('.what').textContent = iron ? '철인 모드라 패배로 기록됩니다.' : '이 배틀은 없던 일이 됩니다.';
+    confirmBox.querySelector('.what').textContent = say(lang, iron ? 'window.quitIron' : 'window.quitVoid');
     confirmBox.hidden = false;
     confirmCursor.select(0);
   };
@@ -237,7 +228,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
       try { await story.onForfeit(progress); } catch (error) {
         console.error('[poke-battle] 강제 패배를 적지 못함', error);
         forfeitFailed = true;
-        confirmBox.querySelector('.what').textContent = failureText(WHAT.result, error);
+        confirmBox.querySelector('.what').textContent = failureText(WHAT.result, error, lang);
         confirmBox.hidden = false;
         confirmCursor.select(1);
         return;
@@ -254,7 +245,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
 
   const autosave = snapshot => Promise.resolve(story.onTurn(snapshot)).then(() => { saveNote.hidden = true; }, error => {
     console.warn('[poke-battle] 자동 저장 실패', error);
-    saveNote.textContent = failureText(WHAT.autosave, error);
+    saveNote.textContent = failureText(WHAT.autosave, error, lang);
     saveNote.hidden = false;
   });
   let sending = false, noteTimer = null;
@@ -277,14 +268,15 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
       await (sent?.sent ? flyAway(sendButton) : shake(sendButton));
     } catch (error) {
       console.error('[poke-battle] 이야기로 보내기 실패', error);
-      showNote(failureText(WHAT.send, error));
+      showNote(failureText(WHAT.send, error, lang));
     } finally { sending = false; stage.focus?.({ preventScroll: true }); }
   };
 
+  // Speed: each press moves to the next speed, for this battle and (onSpeed) the next ones
   let speed = extraViewOptions.speed ?? DEFAULT_SPEED;
   const drawSpeed = () => {
     speedButton.innerHTML = ICON.speed(speed);
-    speedButton.setAttribute('aria-label', `배속 ${speed}배`);
+    speedButton.setAttribute('aria-label', say(lang, 'window.speedNow', { speed }));
   };
   drawSpeed();
   speedButton.onclick = () => {
@@ -293,12 +285,10 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     session?.setSpeed(speed);
     Promise.resolve(onSpeed?.(speed)).catch(error => {
       console.error('[poke-battle] 배속 저장 실패', error);
-      showNote(failureText(WHAT.settings, error));
+      showNote(failureText(WHAT.settings, error, lang));
     });
     stage.focus?.({ preventScroll: true });
   };
-
-
 
   foldButton.onclick = () => {
     if (mode === 'result') return saveFailed ? close() : endChoice?.('confirm');
@@ -309,7 +299,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     let busy = false, ui = null, shownAt = 0;
     const openEnd = () => {
       if (ui || closed) return;
-      ui = mountEndScreen(screenBox, { outcome: outcomeOf(result), caught: result.captured ? names.species(result.captured.species) : '', retry: !!story?.onRetry && !iron && isLoss(result), send: !!story?.onSend,
+      ui = mountEndScreen(screenBox, { outcome: outcomeOf(result), lang, caught: result.captured ? names.species(result.captured.species) : '', retry: !!story?.onRetry && !iron && isLoss(result), send: !!story?.onSend,
         onChoice: kind => endChoice(kind) });
       shownAt = Date.now();
       root.dataset.mode = 'end';
@@ -318,7 +308,6 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
       stopEnd = () => document.removeEventListener('keydown', onEndKey, true);
     };
 
-    // End screen keys: confirm/cancel = to chat (the battle view already dismissed the end text)
     const onEndKey = event => {
       if (!['Enter', ' ', 'Escape', 'z', 'x', 'Z', 'X', 'Backspace'].includes(event.key)) return;
       if (event.target?.closest?.('button')) return;
@@ -352,8 +341,8 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
       } catch (error) {
         console.error('[poke-battle] 끝 화면', error);
         if (!ui) { openEnd(); shownAt = 0; }
-        if (committed === null) { saveFailed = true; ui.note(failureText(WHAT.result, error)); }
-        else ui.note(failureText(WHAT.send, error));
+        if (committed === null) { saveFailed = true; ui.note(failureText(WHAT.result, error, lang)); }
+        else ui.note(failureText(WHAT.send, error, lang));
       } finally { busy = false; ui?.busy(false); }
     };
 
@@ -377,6 +366,9 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     // Snapshot at the start of the last turn (checkpoint) | null
     snapshot() { return session?.snapshot?.() ?? null; },
 
+    // While a choice is being asked: { point, snapshot } of exactly now | null
+    position() { return session?.position?.() ?? null; },
+
     screen() { return session?.screen?.() ?? { lines: [], marks: {} }; },
     get mode() { return mode; },
     async start() {
@@ -388,14 +380,15 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
         const spec = startSpec;
 
         const options = loadLevelUp().then(levelUp => { mark('pb:levelup'); return { levelUp, exp: EXP_TABLE }; });
-        session = createBattleSession({ sim, spec, options, createView,
+        session = createBattleSession({ sim, spec, options, createView, lang,
           viewOptions: { ...extraViewOptions, parent: stage, fetchBytes, bgm },
-          from: story?.from ?? undefined, onTurn: story?.onTurn && autosave,
+          from: story?.from ?? undefined, commands: story?.commands, onTurn: story?.onTurn && autosave,
           onPrepared: async () => {
             await loaded();
             preparing.hide();
 
             if (entry) await entry.open().revealed;
+            session.watchButtons(screenButtons.set);
             setMode('running');
           }, development });
         const result = await session.run().finally(() => { hideConfirm(); });

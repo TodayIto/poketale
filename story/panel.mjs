@@ -2,14 +2,16 @@ import { BAG_ITEMS } from '../engine/bag.mjs';
 import { BALLS } from '../engine/capture.mjs';
 import { expForLevel, growthOf } from '../engine/exp.mjs';
 import { STATS, evolutionTargets, holdsEverstone, displayName } from '../engine/mon.mjs';
-import { applyOps, emptyState, maxHp, movePp, toID, clone } from './state.mjs';
+import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty } from './state.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, BOX_SIZE } from './rules.mjs';
 import { MAX_PP_UPS } from '../engine/pp.mjs';
 import { OUTSIDE_ITEMS, VITAMIN_EVS, HYPER_TRAIN_LEVEL, isTm } from './items.mjs';
 import { itemText, tmMove, canLearnTm } from './item-info.mjs';
-import { josa, STAT_NAME, natureName } from './diary.mjs';
-import { names } from '../names/index.js';
+import { withParticle, statName, natureName, listOf, boxLabel } from './diary.mjs';
+import { say } from './screen-text.mjs';
+import { battleNamesIn } from '../plugin/battle/names.js';
 import bagIcons from '../data/bag-icons.json' with { type: 'json' };
+import { CUSTOM_PREFIX, isCustomItem, customInfo, itemId } from './custom-items.mjs';
 
 export { PARTY_MAX, BOX_SIZE };
 export const BOX_COLS = 6;
@@ -18,18 +20,28 @@ export const TABS = Object.freeze(['party', 'box', 'bag']);
 
 const refOf = mon => ({ uid: mon.uid });
 
-export function itemName(id) {
-  const key = toID(id);
-  return names.entry('items', key)?.ko ?? names.items(key);
+const namesCache = new WeakMap();
+
+// The name lookups of lang (one per engine Dex and language)
+export function namesFor(lang, sim) {
+  let byLang = namesCache.get(sim.Dex);
+  if (!byLang) namesCache.set(sim.Dex, byLang = {});
+  return byLang[lang] ??= battleNamesIn(lang, sim.Dex);
 }
 
-// Name shown in bag rows and menus: TMs include the move they teach ("TM024 Fire Spin")
-export function bagItemName(id) {
+export const itemName = (id, names) => names.item(toID(id));
+
+export function bagItemName(id, names) {
   const key = toID(id), move = tmMove(key);
-  return move ? `${itemName(key)} ${names.moves(move)}` : itemName(key);
+  return move ? `${itemName(key, names)} ${names.move(move)}` : itemName(key, names);
 }
 
-export const monName = (mon, sim) => displayName(sim.Dex, names, mon.set.species, mon.set.name);
+export function itemLabel(state, id, names, { bag = false } = {}) {
+  if (isCustomItem(id)) return customInfo(state, id)?.name ?? id.slice(CUSTOM_PREFIX.length);
+  return bag ? bagItemName(id, names) : itemName(id, names);
+}
+
+const monName = (mon, sim, names) => displayName(sim.Dex, names, mon.set.species, mon.set.name);
 
 export const LOCK_FREE = new Set(['nickname', 'boxname']);
 
@@ -45,6 +57,7 @@ function evolutionItems(sim) {
 }
 
 export function itemKind(id, sim) {
+  if (isCustomItem(id)) return 'custom';
   const key = toID(id);
   if (Object.hasOwn(BALLS, key)) return 'ball';
   const bag = BAG_ITEMS[key];
@@ -56,9 +69,13 @@ export function itemKind(id, sim) {
   return 'held';
 }
 const USABLE = new Set(['medicine', 'candy', 'stone', 'train', 'tm', 'evolve']);
-const DESCRIBED_ONLY = new Set(['ball', 'battle', 'field', 'key']);
 
-const NOT_HOLDABLE = new Set([...DESCRIBED_ONLY, 'tm']);
+const BAG_ONLY = new Set(['ball', 'battle', 'field', 'key']);
+
+const NOT_HOLDABLE = new Set([...BAG_ONLY, 'tm']);
+
+// Key items cannot be thrown away
+const NOT_TOSSABLE = new Set(['key']);
 
 const medicineOf = id => BAG_ITEMS[id] ?? (OUTSIDE_ITEMS[id]?.kind === 'medicine' ? OUTSIDE_ITEMS[id] : null);
 
@@ -86,51 +103,66 @@ export function abilityChange(sim, mon, id) {
   return to && toID(to) !== now ? to : null;
 }
 
-const BOOST_NAME = { ...STAT_NAME, accuracy: '명중률' };
-const STATUS_KO = { par: '마비', brn: '화상', slp: '잠듦', frz: '얼음', psn: '독', tox: '맹독' };
-export const statusName = status => STATUS_KO[status] ?? '';
+const STATUSES = new Set(['par', 'brn', 'slp', 'frz', 'psn', 'tox']);
 
-export function itemDescription(id, sim) {
-  const key = toID(id), kind = itemKind(key, sim), bag = BAG_ITEMS[key];
-  if (kind === 'ball') return '야생 포켓몬에게 던져 잡는 볼. 배틀 안의 가방에서 쓴다.';
+export const statusName = (status, lang) => (STATUSES.has(status) ? say(lang, `status.${status}`) : '');
+
+export const statusShort = (status, lang) => (STATUSES.has(status) ? say(lang, `status.short.${status}`) : '');
+
+export function itemDescription(id, sim, lang) {
+  const t = (key, values) => say(lang, key, values);
+  const key = toID(id), kind = itemKind(key, sim);
+  let bag = BAG_ITEMS[key];
+  if (kind === 'ball') return t('item.ball');
   if (kind === 'battle') {
-    if (bag?.boost) return `나와 있는 포켓몬의 ${BOOST_NAME[bag.boost] ?? bag.boost}을(를) 크게 올린다. 배틀 안의 가방에서 쓴다.`;
-    return '나와 있는 포켓몬의 급소율을 올린다. 배틀 안의 가방에서 쓴다.';
+    if (bag?.boost) return t('item.boost', { stat: statName(bag.boost, lang) });
+    return t('item.crit');
   }
-  const text = itemText(key);
+  const text = lang === 'ko' ? itemText(key) : null;
   if (text) return text;
-  if (kind === 'tm') return `포켓몬에게 ${josa(names.moves(tmMove(key)), '을/를')} 가르친다. 배우면 기술머신은 없어진다.`;
+  if (kind === 'tm') return t('item.tm', { move: withParticle(lang, namesFor(lang, sim).move(tmMove(key)), '을/를') });
   if (kind === 'medicine') {
-    if (bag.revive) return `기절한 포켓몬 1마리의 HP를 ${bag.revive === 'full' ? '모두' : '절반'} 회복한다.`;
-    if (bag.pp) return bag.oneMove ? `기술 1개의 PP를 ${bag.pp === 'full' ? '모두' : bag.pp} 회복한다.` : `모든 기술의 PP를 ${bag.pp === 'full' ? '모두' : bag.pp}씩 회복한다.`;
-    if (bag.heal && bag.cure) return 'HP와 상태 이상을 모두 회복한다.';
-    if (bag.heal) return bag.heal === 'full' ? '포켓몬 1마리의 HP를 모두 회복한다.' : `포켓몬 1마리의 HP를 ${bag.heal} 회복한다.`;
-    if (bag.cure === 'all') return '포켓몬 1마리의 상태 이상을 모두 회복한다.';
-    return `포켓몬 1마리의 ${bag.cure.map(statusName).filter((v, i, a) => v && a.indexOf(v) === i).join('·')} 상태를 회복한다.`;
+    bag = medicineOf(key);
+    if (bag.all) return t('item.reviveAll');
+    if (bag.revive) return t(bag.revive === 'full' ? 'item.reviveFull' : 'item.reviveHalf');
+    if (bag.pp) return bag.pp === 'full' ? t(bag.oneMove ? 'item.ppOneFull' : 'item.ppAllFull') : t(bag.oneMove ? 'item.ppOne' : 'item.ppAll', { n: bag.pp });
+    if (bag.heal && bag.cure) return t('item.healCure');
+    if (bag.heal) return bag.heal === 'full' ? t('item.healFull') : t('item.heal', { n: bag.heal });
+    if (bag.cure === 'all') return t('item.cureAll');
+    return t('item.cure', { statuses: listOf(bag.cure.map(s => statusName(s, lang)).filter((v, i, a) => v && a.indexOf(v) === i), lang) });
   }
-  if (kind === 'candy') return '포켓몬 1마리의 레벨이 1 오른다.';
-  if (kind === 'stone') return '특정 포켓몬에게 쓰면 진화한다.';
-  return '포켓몬에게 지니게 하는 도구.';
+  if (kind === 'candy') return t('item.candy');
+  if (kind === 'stone' || kind === 'evolve') return t('item.stone');
+  const outside = OUTSIDE_ITEMS[key] ?? {};
+  if (outside.vitamin) return t('item.vitamin', { stat: statName(outside.vitamin, lang) });
+  if (outside.exp) return t('item.expCandy', { n: outside.exp.toLocaleString(lang) });
+  if (outside.ability) return t(outside.ability === 'capsule' ? 'item.abilityCapsule' : 'item.abilityPatch');
+  if (outside.mint) return t('item.mint', { nature: natureName(outside.mint, lang) });
+  if (outside.hyper) return t(outside.hyper === 'all' ? 'item.goldBottleCap' : 'item.bottleCap', { n: HYPER_TRAIN_LEVEL });
+  if (outside.ppUp) return t(outside.ppUp > 1 ? 'item.ppMax' : 'item.ppUp');
+  if (kind === 'treasure' || kind === 'field' || kind === 'key') return t(`item.${kind}`);
+  return t('item.held');
 }
 
-export const NO_EFFECT = '효과가 없는 것 같다...';
+const noEffect = lang => say(lang, 'panel.noEffect');
 
-export const SELECT_MOVE = '기술을 선택해 주십시오';
+const selectMove = lang => say(lang, 'panel.selectMove');
 
-export function useCheck(mon, itemId, { sim, exp }) {
+export function useCheck(mon, itemId, { sim, exp }, lang) {
   const id = toID(itemId), kind = itemKind(id, sim);
   const fainted = mon.hp === 0;
-  const no = { ok: false, reason: NO_EFFECT };
+  const no = { ok: false, reason: noEffect(lang) };
+  const names = namesFor(lang, sim);
+  const p = (word, pair) => withParticle(lang, word, pair);
   if (kind === 'medicine') {
     const item = medicineOf(id);
     if (item.revive) return fainted ? { ok: true } : no;
     if (fainted) return no;
     if (item.pp) {
 
-      // Max PP per move follows its PP Up count (story/state.mjs movePp)
       const moves = mon.set.moves.map(m => { const { pp, maxpp } = movePp(sim, mon, m); return { id: m, pp, maxpp, disabled: pp >= maxpp }; });
       if (!moves.some(m => !m.disabled)) return no;
-      return item.oneMove ? { ok: true, moves, prompt: SELECT_MOVE } : { ok: true };
+      return item.oneMove ? { ok: true, moves, prompt: selectMove(lang) } : { ok: true };
     }
     let useful = false;
     if (item.heal) useful ||= mon.hp !== null && mon.hp < maxHp(sim, mon.set);
@@ -143,8 +175,9 @@ export function useCheck(mon, itemId, { sim, exp }) {
   if (kind === 'tm') {
     const move = tmMove(id);
     if (!move) return no;
-    if (mon.set.moves.includes(move)) return { ok: false, reason: `${josa(monName(mon, sim), '은/는')} 이미 ${josa(names.moves(move), '을/를')} 알고 있다!` };
-    if (!canLearnTm(sim, mon.set.species, id)) return { ok: false, reason: `${josa(monName(mon, sim), '은/는')} ${josa(names.moves(move), '을/를')} 배울 수 없다!` };
+    const values = { mon: p(monName(mon, sim, names), '은/는'), move: p(names.move(move), '을/를') };
+    if (mon.set.moves.includes(move)) return { ok: false, reason: say(lang, 'panel.knows', values) };
+    if (!canLearnTm(sim, mon.set.species, id)) return { ok: false, reason: say(lang, 'panel.cannotLearn', values) };
     return { ok: true, teach: move };
   }
   if (kind !== 'train') return no;
@@ -160,12 +193,12 @@ export function useCheck(mon, itemId, { sim, exp }) {
       const { pp, maxpp, ppUps } = movePp(sim, mon, m);
       return { id: m, pp, maxpp, ppUps, disabled: ppUps >= MAX_PP_UPS || !!sim.Dex.moves.get(m).noPPBoosts };
     });
-    return moves.some(m => !m.disabled) ? { ok: true, moves, prompt: SELECT_MOVE } : no;
+    return moves.some(m => !m.disabled) ? { ok: true, moves, prompt: selectMove(lang) } : no;
   }
   if (item.exp) return mon.set.level < MAX_LEVEL && growthOf(exp, sim.Dex.species.get(mon.set.species)) ? { ok: true } : no;
   if (item.ability) {
     const to = abilityChange(sim, mon, id);
-    return to ? { ok: true, confirm: `${monName(mon, sim)}의 특성을 ${josa(names.abilities(to), '으로/로')} 바꾸겠습니까?` } : no;
+    return to ? { ok: true, confirm: say(lang, 'panel.abilityAsk', { mon: monName(mon, sim, names), ability: p(names.ability(to), '으로/로') }) } : no;
   }
   if (item.mint) return item.mint !== mon.set.nature ? { ok: true } : no;
   if (item.hyper) {
@@ -199,14 +232,18 @@ export function useOps(mon, itemId, { sim }, { move, stat } = {}) {
   else if (kind === 'train' && outside.mint) ops.push({ op: 'nature', ref, nature: outside.mint });
   else if (kind === 'train' && outside.hyper) ops.push({ op: 'hypertrain', ref, stats: outside.hyper === 'all' ? 'all' : [stat] });
   else if (kind === 'train' && outside.ppUp) ops.push({ op: 'ppup', ref, move, amount: outside.ppUp });
-  else throw new Error('지금은 쓸 수 없습니다.', { cause: `${itemName(id)}: 배틀 밖에서 바로 쓰는 도구가 아닙니다` });
+  else throw new Error(`Not an item used outside battle: ${id}`);
   ops.push({ op: 'item', item: id, delta: -1, fromBag: true });
   return ops;
 }
 
+// Bag items that can be held (balls, battle and field items only show a description; TMs cannot be held)
 export function holdableItems(state, sim) {
   return Object.entries(state.bag ?? {}).filter(([id, n]) => n > 0 && !NOT_HOLDABLE.has(itemKind(id, sim))).map(([id]) => id);
 }
+
+const bagText = (state, id, sim, lang) => (isCustomItem(id) ? itemLabel(state, id, namesFor(lang, sim))
+  : `${bagItemName(id, namesFor(lang, sim))}\n${itemDescription(id, sim, lang)}`);
 
 export const actions = {
   order: (a, b) => ({ type: 'order', ops: [{ op: 'swap', a: refOf(a), b: refOf(b) }] }),
@@ -216,8 +253,10 @@ export const actions = {
   swapIn: (boxMon, partyMon) => ({ type: 'box', ops: [{ op: 'swap', a: refOf(boxMon), b: refOf(partyMon) }] }),
   release: mon => ({ type: 'release', ops: [{ op: 'release', ref: refOf(mon) }] }),
   nickname: (mon, name) => ({ type: 'nickname', ops: [{ op: 'nickname', ref: refOf(mon), name: String(name ?? '').trim() }] }),
-  give: (mon, item) => ({ type: 'hold', ops: [{ op: 'hold', ref: refOf(mon), item: toID(item), fromBag: true }] }),
+  give: (mon, item) => ({ type: 'hold', ops: [{ op: 'hold', ref: refOf(mon), item: itemId(item), fromBag: true }] }),
   take: mon => ({ type: 'hold', ops: [{ op: 'hold', ref: refOf(mon), item: '', fromBag: true }] }),
+
+  toss: (item, n) => ({ type: 'toss', ops: [{ op: 'item', item: itemId(item), delta: -n, fromBag: true }] }),
   boxName: (box, name) => ({ type: 'boxname', ops: [{ op: 'boxname', box, name: String(name ?? '').trim() }] }),
   use: (mon, item, ctx, options) => ({ type: 'use', item: toID(item), ops: useOps(mon, item, ctx, options) }),
 };
@@ -230,7 +269,6 @@ export const pendingCount = mon => (mon?.pending?.moves?.length ?? 0) + (mon?.pe
 
 export const levelBadge = mon => (pendingCount(mon) ? Math.max(1, mon.pending.levels || pendingCount(mon)) : 0);
 
-// Order of finishing a level-up: moves to learn -> evolution
 export function levelUpPlan(mon) {
   return { moves: [...(mon?.pending?.moves ?? [])], evolve: mon?.pending?.evolve ?? null };
 }
@@ -266,34 +304,44 @@ export function teachAction(mon, item, move, result) {
 
 const opt = (id, label, disabled = false, extra = {}) => ({ id, label, disabled: !!disabled, ...extra });
 
-export function partyMenu(mon, { state, locked = false, sim }) {
-  const list = [opt('summary', '능력치 보기')];
-  if (pendingCount(mon)) list.push(opt('levelup', `레벨업 마무리 ▲${levelBadge(mon)}`, locked));
-  list.push(opt('order', '순서 바꾸기', locked || state.party.length < 2));
-  list.push(opt('give', '도구 주기', locked || !holdableItems(state, sim).length));
-  if (mon.set.item) list.push(opt('take', '도구 빼기', locked));
+// A menu row whose label is screen text panel.menu.<word> in lang
+const row = lang => (id, word, disabled = false, values = {}) => opt(id, say(lang, `panel.menu.${word}`, values), disabled);
 
-  list.push(opt('deposit', '박스로 보내기', locked || state.party.length <= 1));
-  list.push(opt('cancel', '그만두기'));
+const debugRows = (debug, locked, lang) => (debug ? [row(lang)('debugEdit', 'debugEdit', locked)] : []);
+
+export function partyMenu(mon, { state, locked = false, sim, debug = false }, lang) {
+  const r = row(lang);
+  const list = [r('summary', 'summary')];
+  if (pendingCount(mon)) list.push(r('levelup', 'levelUp', locked, { n: levelBadge(mon) }));
+  list.push(r('order', 'order', locked || state.party.length < 2));
+  list.push(r('give', 'give', locked || !holdableItems(state, sim).length));
+  if (mon.set.item) list.push(r('take', 'take', locked));
+
+  list.push(r('deposit', 'deposit', locked || state.party.length <= 1));
+  list.push(...debugRows(debug, locked, lang), r('cancel', 'cancel'));
   return list;
 }
 
-export function boxMenu(mon, { locked = false }) {
-  return [opt('withdraw', '파티로', locked), opt('summary', '능력치 보기'), opt('release', '놓아주기', locked), opt('cancel', '그만두기')];
+export function boxMenu(mon, { locked = false, debug = false }, lang) {
+  const r = row(lang);
+  return [r('withdraw', 'withdraw', locked), r('summary', 'summary'), r('release', 'release', locked), ...debugRows(debug, locked, lang), r('cancel', 'cancel')];
 }
 
-export function bagMenu(id, { locked = false, sim, state }) {
+export function bagMenu(id, { locked = false, sim, state }, lang) {
   const kind = itemKind(id, sim);
-  if (DESCRIBED_ONLY.has(kind)) return null;
+  if (NOT_TOSSABLE.has(kind)) return null;
+  const r = row(lang);
   const list = [];
-  if (USABLE.has(kind)) list.push(opt('use', '쓰기', locked || !state.party.length));
-  if (!NOT_HOLDABLE.has(kind)) list.push(opt('give', '지니게 하기', locked || !state.party.length));
-  list.push(opt('cancel', '그만두기'));
+  if (USABLE.has(kind)) list.push(r('use', 'use', locked || !state.party.length));
+  if (!NOT_HOLDABLE.has(kind)) list.push(r('give', 'hold', locked || !state.party.length));
+  list.push(r('toss', 'toss', locked));
+  list.push(r('cancel', 'cancel'));
   return list;
 }
 
 export const boxCount = state => Math.max(BOX_COUNT, Math.ceil((state.box?.length ?? 0) / BOX_SIZE));
-export const boxName = (state, index) => state.boxNames?.[index] || `박스 ${index + 1}`;
+
+export const boxName = (state, index, lang) => state.boxNames?.[index] || boxLabel(index + 1, lang);
 
 function expRatio(ctx, mon) {
   const { sim, exp } = ctx;
@@ -305,18 +353,19 @@ function expRatio(ctx, mon) {
   return Math.max(0, Math.min(1, ((mon.exp ?? low) - low) / (high - low)));
 }
 
-// One party/box slot (drawn by story/panel-html.mjs)
-export function slotView(mon, ctx) {
+export function slotView(mon, ctx, state, lang) {
   const { sim } = ctx;
+  const names = namesFor(lang, sim);
   const species = sim.Dex.species.get(mon.set.species);
   const max = maxHp(sim, mon.set);
   const hp = mon.hp === null || mon.hp === undefined ? max : Math.max(0, mon.hp);
   const ratio = max ? hp / max : 0;
   return {
-    uid: mon.uid, name: monName(mon, sim), speciesId: species.id, spriteId: species.spriteid || species.id, shiny: !!mon.set.shiny,
+    uid: mon.uid, name: monName(mon, sim, names), speciesId: species.id, spriteId: species.spriteid || species.id, shiny: !!mon.set.shiny,
     gender: mon.set.gender || '', level: mon.set.level, hp, maxhp: max, hpClass: ratio > 0.5 ? 'high' : ratio > 0.2 ? 'mid' : 'low',
     status: hp === 0 ? '' : mon.status && mon.status !== 'fnt' ? mon.status : '', fainted: hp === 0,
     exp: expRatio(ctx, mon), item: mon.set.item || '', badge: levelBadge(mon),
+    held: mon.set.item ? { name: itemLabel(state, mon.set.item, names), emoji: customInfo(state, mon.set.item)?.emoji ?? '' } : null,
   };
 }
 
@@ -330,69 +379,99 @@ export function itemIcon(id, sim) {
   return item?.exists && Number.isInteger(item.spritenum) ? { sheet: 'showdown', num: item.spritenum } : null;
 }
 
-const GROUPS = [['medicine', '회복'], ['ball', '볼'], ['battle', '배틀 도구'], ['train', '기르기'], ['tm', '기술머신'], ['evolve', '진화 도구'],
-  ['other', '지니는 도구·그 밖'], ['treasure', '보물'], ['field', '들판 도구'], ['key', '중요한 도구']];
-const GROUP_OF = { candy: 'train', stone: 'evolve', held: 'other' };
+const GROUPS = ['medicine', 'ball', 'battle', 'train', 'tm', 'evolve', 'other', 'treasure', 'field', 'key'];
+const GROUP_OF = { candy: 'train', stone: 'evolve', held: 'other', custom: 'other' };
 const ORDER = [...Object.keys(BAG_ITEMS), ...Object.keys(BALLS), 'rarecandy', ...Object.keys(OUTSIDE_ITEMS)];
-export function bagView(state, sim) {
+export function bagView(state, sim, lang) {
+  const names = namesFor(lang, sim);
   const rank = id => (ORDER.includes(id) ? ORDER.indexOf(id) : ORDER.length);
   const rows = Object.entries(state.bag ?? {}).filter(([, n]) => n > 0).map(([id, count]) => {
     const kind = itemKind(id, sim);
-    return { id, count, name: bagItemName(id), kind, icon: itemIcon(id, sim), group: GROUP_OF[kind] ?? kind };
-  }).sort((a, b) => rank(a.id) - rank(b.id) || (a.kind === 'tm' && b.kind === 'tm' ? a.id.localeCompare(b.id) : a.name.localeCompare(b.name, 'ko')));
-  return GROUPS.map(([group, label]) => ({ group, label, items: rows.filter(r => r.group === group) })).filter(g => g.items.length);
+
+    return { id, count, name: itemLabel(state, id, names, { bag: true }), kind, icon: kind === 'custom' ? { emoji: customInfo(state, id)?.emoji ?? '' } : itemIcon(id, sim),
+      group: GROUP_OF[kind] ?? kind };
+  }).sort((a, b) => rank(a.id) - rank(b.id) || (a.kind === 'tm' && b.kind === 'tm' ? a.id.localeCompare(b.id) : a.name.localeCompare(b.name, lang)));
+  return GROUPS.map(group => ({ group, label: say(lang, `panel.group.${group}`), items: rows.filter(r => r.group === group) })).filter(g => g.items.length);
 }
 
-export function panelModel({ state, ctx, locked = false, resume = false, ui }) {
+export function panelModel({ state, ctx, lang, locked = false, resume = false, debug = false, offer = null, ui, money = state.money === null ? null : state.money ?? 0 }) {
   const { sim } = ctx;
-  const party = Array.from({ length: PARTY_MAX }, (_, i) => (state.party[i] ? slotView(state.party[i], ctx) : null));
+  const party = Array.from({ length: PARTY_MAX }, (_, i) => (state.party[i] ? slotView(state.party[i], ctx, state, lang) : null));
   const count = boxCount(state);
   const index = Math.max(0, Math.min(count - 1, ui.box ?? 0));
   const cells = Array.from({ length: BOX_SIZE }, (_, i) => {
     const mon = state.box[index * BOX_SIZE + i];
-    return mon ? slotView(mon, ctx) : null;
+    return mon ? slotView(mon, ctx, state, lang) : null;
   });
   return {
-    open: !!ui.open, tab: TABS.includes(ui.tab) ? ui.tab : 'party', locked, resume: !!resume,
+    lang, open: !!ui.open, tab: TABS.includes(ui.tab) ? ui.tab : 'party', locked, resume: !!resume,
     alerts: { party: state.party.some(m => pendingCount(m) > 0), box: false, bag: false },
-    party, box: { index, count, name: boxName(state, index), cells },
-    bag: { money: state.money === null ? null : state.money ?? 0, groups: bagView(state, sim) },
-    picked: ui.ask?.uid ?? ui.menu?.uid ?? ui.select?.uid ?? ui.menu?.item ?? ui.select?.item ?? null,
-    window: windowOf(ui),
+    party, box: { index, count, name: boxName(state, index, lang), cells },
+    bag: { money, groups: bagView(state, sim, lang) },
+    add: debug ? addable(state, locked) : null,
+    heal: debug ? !locked : null,
+    offer: offer && !locked ? { note: !!offer.note, button: !!offer.button } : null,
+    picked: ui.ask?.uid ?? ui.menu?.uid ?? ui.select?.uid ?? ui.menu?.item ?? ui.select?.item ?? ui.count?.item ?? null,
+    window: windowOf(ui, lang, sim),
   };
 }
 
-function windowOf(ui) {
-  if (ui.ask) return { text: ui.ask.text, options: [{ hit: { t: 'yes' }, label: '예' }, { hit: { t: 'no' }, label: '아니오' }] };
+const addable = (state, locked) => ({ party: !locked && state.party.length < PARTY_MAX, box: !locked, bag: !locked });
+
+function healChanges(state, ctx) {
+  const { sim, formatid } = ctx;
+  const look = mon => JSON.stringify([mon.hp ?? maxHp(sim, mon.set, formatid), mon.status || '', mon.set.moves.map(m => movePp(sim, mon, m, formatid).pp)]);
+  const healed = clone(state);
+  healParty(healed, ctx);
+  return state.party.some((mon, i) => look(mon) !== look(healed.party[i]));
+}
+
+function windowOf(ui, lang, sim) {
+  const t = key => say(lang, key);
+  const cancel = { hit: { t: 'opt', id: 'cancel' }, label: t('panel.menu.cancel') };
+  if (ui.ask) return { text: ui.ask.text, options: [{ hit: { t: 'yes' }, label: t('panel.yes') }, { hit: { t: 'no' }, label: t('panel.no') }] };
   if (ui.moves) {
 
-    return { text: ui.moves.prompt ?? SELECT_MOVE, options: [...ui.moves.list.map(m => ({ hit: { t: 'move', move: m.id }, label: `${names.moves(m.id)} ${m.pp}/${m.maxpp}`, disabled: !!m.disabled })),
-      { hit: { t: 'opt', id: 'cancel' }, label: '그만두기' }] };
+    // PP restore greys out full moves, PP Up greys out moves that cannot be raised (useCheck's disabled)
+    const names = namesFor(lang, sim);
+    return { text: ui.moves.prompt ?? selectMove(lang), options: [...ui.moves.list.map(m => ({ hit: { t: 'move', move: m.id }, label: `${names.move(m.id)} ${m.pp}/${m.maxpp}`, disabled: !!m.disabled })),
+      cancel] };
   }
   if (ui.stats) {
 
-    // Silver Bottle Cap: stat to train (greyed out when the IV is already 31)
-    return { text: '어느 능력을 단련할까요?', options: [...ui.stats.list.map(s => ({ hit: { t: 'stat', stat: s.id }, label: `${STAT_NAME[s.id]} ${s.iv}`, disabled: s.iv >= MAX_IV })),
-      { hit: { t: 'opt', id: 'cancel' }, label: '그만두기' }] };
+    return { text: t('panel.pickStat'), options: [...ui.stats.list.map(s => ({ hit: { t: 'stat', stat: s.id }, label: `${statName(s.id, lang)} ${s.iv}`, disabled: s.iv >= MAX_IV })),
+      cancel] };
+  }
+  if (ui.count) {
+    return { text: ui.count.text, count: { n: ui.count.n, max: ui.count.max },
+      options: [{ hit: { t: 'toss' }, label: t('panel.menu.toss') }, cancel] };
   }
   if (ui.menu) return { text: ui.menu.text, options: ui.menu.options.map(o => ({ hit: { t: 'opt', id: o.id, ...(o.item ? { item: o.item } : {}) }, label: o.label, disabled: o.disabled })) };
-  if (ui.message) return { text: ui.message.text, error: !!ui.message.error, options: [{ hit: { t: 'msg' }, label: '확인' }] };
-  if (ui.select) return { text: ui.select.text, options: [{ hit: { t: 'opt', id: 'cancel' }, label: '그만두기' }] };
+  if (ui.message) return { text: ui.message.text, error: !!ui.message.error, options: [{ hit: { t: 'msg' }, label: t('panel.ok') }] };
+  if (ui.select) return { text: ui.select.text, options: [cancel] };
   return null;
 }
 
-export const initialUi = () => ({ open: false, tab: 'party', box: 0, menu: null, select: null, ask: null, moves: null, stats: null, message: null });
-const calm = ui => ({ ...ui, menu: null, select: null, ask: null, moves: null, stats: null, message: null });
+export const initialUi = () => ({ open: false, tab: 'party', box: 0, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null });
+const calm = ui => ({ ...ui, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null });
 const findIn = (list, uid) => list.find(m => m.uid === uid) ?? null;
 
-export function reduce(ui, hit, { state, ctx, locked = false }) {
-  const out = reduceRaw(ui, hit, { state, ctx, locked });
+export function reduce(ui, hit, { state, ctx, lang, locked = false, debug = false }) {
+  const out = reduceRaw(ui, hit, { state, ctx, locked, debug, w: wordsOf(lang, ctx.sim, state) });
 
   if (locked && out.effect && !['summary', 'renameBox', 'resume'].includes(out.effect.kind)) return { ui: out.ui, effect: null };
   return out;
 }
 
-function reduceRaw(ui, hit, { state, ctx, locked }) {
+function wordsOf(lang, sim, state) {
+  const names = namesFor(lang, sim);
+  return {
+    lang, names, t: (key, values) => say(lang, key, values), p: (word, pair) => withParticle(lang, word, pair),
+    mon: mon => monName(mon, sim, names), label: id => itemLabel(state, id, names),
+  };
+}
+
+function reduceRaw(ui, hit, { state, ctx, locked, debug, w }) {
   const { sim } = ctx;
   const same = { ui, effect: null };
   const party = state.party, box = state.box;
@@ -421,10 +500,9 @@ function reduceRaw(ui, hit, { state, ctx, locked }) {
       const mon = findIn(box, ask.uid) ?? findIn(party, ask.uid);
       if (!mon) return { ui: { ...ui, ask: null }, effect: null };
 
-      // Ability Capsule / Patch: "change it?" -> yes
-      if (ask.kind === 'use') return { ui: calm(ui), effect: useEffect(mon, ask.item, ctx) };
+      if (ask.kind === 'use') return { ui: calm(ui), effect: useEffect(mon, ask.item, ctx, w) };
       if (ask.kind !== 'release') return { ui: { ...ui, ask: null }, effect: null };
-      return { ui: { ...ui, ask: null }, effect: { kind: 'queue', action: actions.release(mon), after: `잘 가, ${monName(mon, sim)}!` } };
+      return { ui: { ...ui, ask: null }, effect: { kind: 'queue', action: actions.release(mon), after: w.t('panel.bye', { mon: w.mon(mon) }) } };
     }
     case 'stat': {
       const pick = ui.stats;
@@ -432,7 +510,7 @@ function reduceRaw(ui, hit, { state, ctx, locked }) {
       if (!mon) return { ui: { ...ui, stats: null }, effect: null };
       const stat = pick.list.find(s => s.id === hit.stat);
       if (!stat || stat.iv >= MAX_IV) return same;
-      return { ui: calm(ui), effect: useEffect(mon, pick.item, ctx, { stat: stat.id }) };
+      return { ui: calm(ui), effect: useEffect(mon, pick.item, ctx, w, { stat: stat.id }) };
     }
     case 'move': {
       const pick = ui.moves;
@@ -440,46 +518,72 @@ function reduceRaw(ui, hit, { state, ctx, locked }) {
       if (!mon) return { ui: { ...ui, moves: null }, effect: null };
       const move = pick.list.find(m => m.id === hit.move);
       if (!move || move.disabled) return same;
-      return { ui: calm(ui), effect: useEffect(mon, pick.item, ctx, { move: move.id }) };
+      return { ui: calm(ui), effect: useEffect(mon, pick.item, ctx, w, { move: move.id }) };
+    }
+    case 'add': {
+      if (!debug || !addable(state, locked)[hit.where]) return same;
+      return { ui: calm(ui), effect: { kind: 'debugAdd', where: hit.where } };
+    }
+    case 'offer': return locked ? same : { ui: calm(ui), effect: { kind: 'quickImport', asked: !!hit.asked } };
+    case 'later': return locked ? same : { ui: calm(ui), effect: { kind: 'importLater' } };
+    case 'heal': {
+      if (!debug || locked) return same;
+      if (!healChanges(state, ctx)) return { ui: { ...calm(ui), message: { text: noEffect(w.lang) } }, effect: null };
+      return { ui: calm(ui), effect: { kind: 'debugHeal', after: w.t('diary.healAll') } };
+    }
+    case 'count': {
+      const pick = ui.count;
+      if (!pick) return same;
+      return { ui: { ...ui, count: { ...pick, n: (((pick.n - 1 + hit.d) % pick.max) + pick.max) % pick.max + 1 } }, effect: null };
+    }
+    case 'toss': {
+      const pick = ui.count;
+      const owned = pick ? state.bag?.[pick.item] ?? 0 : 0;
+      if (!owned) return { ui: calm(ui), effect: null };
+      const n = Math.min(pick.n, owned);
+      return { ui: calm(ui), effect: { kind: 'queue', action: actions.toss(pick.item, n), after: w.t('panel.tossed', { item: w.p(w.label(pick.item), '을/를'), n }) } };
     }
     case 'item': {
-      const menu = bagMenu(hit.item, { locked, sim, state });
-      const text = `${bagItemName(hit.item)}\n${itemDescription(hit.item, sim)}`;
+      const menu = bagMenu(hit.item, { locked, sim, state }, w.lang);
+      const text = bagText(state, hit.item, sim, w.lang);
       if (!menu) return { ui: { ...calm(ui), message: { text } }, effect: null };
       return { ui: { ...calm(ui), menu: { where: 'bag', item: hit.item, text, options: menu } }, effect: null };
     }
-    case 'slot': return slotPress(ui, hit, { state, ctx, locked });
-    case 'opt': return optionPress(ui, hit, { state, ctx, locked });
+    case 'slot': return slotPress(ui, hit, { state, ctx, locked, debug, w });
+    case 'opt': return optionPress(ui, hit, { state, ctx, w });
     default: return same;
   }
 }
 
-function useEffect(mon, item, ctx, options = {}) {
+function useEffect(mon, item, ctx, w, options = {}) {
   const id = toID(item), outside = OUTSIDE_ITEMS[id] ?? {};
 
   const levels = itemKind(id, ctx.sim) === 'candy' || !!outside.exp;
-  return { kind: 'queue', action: actions.use(mon, id, ctx, options), after: useAfter(mon, id, ctx, options), followLevelUp: levels ? mon.uid : undefined };
+  return { kind: 'queue', action: actions.use(mon, id, ctx, options), after: useAfter(mon, id, ctx, w, options), followLevelUp: levels ? mon.uid : undefined };
 }
 
-function useAfter(mon, id, { sim }, { stat, move } = {}) {
-  const outside = OUTSIDE_ITEMS[id] ?? {}, who = mon ? monName(mon, sim) : '';
-  if (outside.all) return '기절한 포켓몬이 모두 기운을 되찾았다!';
-  if (outside.vitamin) return `${who}의 ${STAT_NAME[outside.vitamin]} 기초포인트가 올랐다!`;
-  if (outside.exp) return `${josa(who, '은/는')} 경험치를 ${outside.exp.toLocaleString('ko-KR')} 얻었다!`;
-  if (outside.ability) return `${who}의 특성이 ${josa(names.abilities(abilityChange(sim, mon, id)), '으로/로')} 바뀌었다!`;
-  if (outside.mint) return `${who}의 능력이 ${natureName(outside.mint)} 성격처럼 자라게 되었다!`;
-  if (outside.hyper) return `${josa(who, '은/는')} 대단한 특훈으로 ${outside.hyper === 'all' ? '모든 능력' : STAT_NAME[stat]}의 개체값이 최고가 되었다!`;
+function useAfter(mon, id, { sim }, w, { stat, move } = {}) {
+  const { t, p, lang } = w;
+  const outside = OUTSIDE_ITEMS[id] ?? {}, who = mon ? w.mon(mon) : '';
+  if (outside.all) return t('panel.usedAll');
+  if (outside.vitamin) return t('panel.usedVitamin', { mon: who, stat: statName(outside.vitamin, lang) });
+  if (outside.exp) return t('panel.usedExp', { mon: p(who, '은/는'), n: outside.exp.toLocaleString(lang) });
+  if (outside.ability) return t('panel.usedAbility', { mon: who, ability: p(w.names.ability(abilityChange(sim, mon, id)), '으로/로') });
+  if (outside.mint) return t('panel.usedMint', { mon: who, nature: natureName(outside.mint, lang) });
+  if (outside.hyper) return t('panel.usedHyper', { mon: p(who, '은/는'), stats: outside.hyper === 'all' ? t('diary.allStats') : statName(stat, lang) });
 
-  if (outside.ppUp) return `${names.moves(move)}의 PP가 올라갔다!`;
-  return `${who}에게 ${josa(itemName(id), '을/를')} 썼다.`;
+  // Same text for PP Max
+  if (outside.ppUp) return t('panel.usedPpUp', { move: w.names.move(move) });
+  return t('panel.used', { mon: who, item: p(itemName(id, w.names), '을/를') });
 }
 
-function slotPress(ui, hit, { state, ctx, locked }) {
+function slotPress(ui, hit, { state, ctx, locked, debug, w }) {
   const { sim } = ctx;
+  const { t, p } = w;
   if (hit.where === 'box') {
     const mon = findIn(state.box, hit.uid);
     if (!mon) return { ui, effect: null };
-    return { ui: { ...calm(ui), menu: { where: 'box', uid: mon.uid, text: `${josa(monName(mon, sim), '을/를')} 어떻게 하겠습니까?`, options: boxMenu(mon, { locked }) } }, effect: null };
+    return { ui: { ...calm(ui), menu: { where: 'box', uid: mon.uid, text: t('panel.boxAsk', { mon: p(w.mon(mon), '을/를') }), options: boxMenu(mon, { locked, debug }, w.lang) } }, effect: null };
   }
   const mon = findIn(state.party, hit.uid);
   if (!mon) return { ui, effect: null };
@@ -499,11 +603,11 @@ function slotPress(ui, hit, { state, ctx, locked }) {
       }
       case 'give': {
         if (!(state.bag?.[select.item] > 0)) return { ui: calm(ui), effect: null };
-        return { ui: calm(ui), effect: { kind: 'queue', action: actions.give(mon, select.item), after: `${monName(mon, sim)}에게 ${josa(itemName(select.item), '을/를')} 지니게 했다.` } };
+        return { ui: calm(ui), effect: { kind: 'queue', action: actions.give(mon, select.item), after: t('panel.gave', { mon: w.mon(mon), item: p(w.label(select.item), '을/를') }) } };
       }
       case 'use': {
         if (!(state.bag?.[select.item] > 0)) return { ui: calm(ui), effect: null };
-        const check = useCheck(mon, select.item, ctx);
+        const check = useCheck(mon, select.item, ctx, w.lang);
 
         if (!check.ok) return { ui: { ...ui, message: { text: check.reason } }, effect: null };
         if (check.evolve) {
@@ -513,16 +617,17 @@ function slotPress(ui, hit, { state, ctx, locked }) {
         if (check.moves) return { ui: { ...calm(ui), moves: { uid: mon.uid, item: select.item, list: check.moves, prompt: check.prompt } }, effect: null };
         if (check.stats) return { ui: { ...calm(ui), stats: { uid: mon.uid, item: select.item, list: check.stats } }, effect: null };
         if (check.confirm) return { ui: { ...calm(ui), ask: { kind: 'use', uid: mon.uid, item: select.item, text: check.confirm } }, effect: null };
-        return { ui: calm(ui), effect: useEffect(mon, select.item, ctx) };
+        return { ui: calm(ui), effect: useEffect(mon, select.item, ctx, w) };
       }
       default: return { ui: calm(ui), effect: null };
     }
   }
-  return { ui: { ...calm(ui), menu: { where: 'party', uid: mon.uid, text: '포켓몬을 어떻게 하겠습니까?', options: partyMenu(mon, { state, locked, sim }) } }, effect: null };
+  return { ui: { ...calm(ui), menu: { where: 'party', uid: mon.uid, text: t('panel.partyAsk'), options: partyMenu(mon, { state, locked, sim, debug }, w.lang) } }, effect: null };
 }
 
-function optionPress(ui, hit, { state, ctx, locked }) {
+function optionPress(ui, hit, { state, ctx, w }) {
   const { sim } = ctx;
+  const { t, p } = w;
   if (hit.id === 'cancel') {
 
     return { ui: { ...calm(ui), tab: ui.select?.mode === 'swapin' ? 'box' : ui.tab }, effect: null };
@@ -531,26 +636,27 @@ function optionPress(ui, hit, { state, ctx, locked }) {
   if (!menu) return { ui, effect: null };
   const chosen = menu.options.find(o => o.id === hit.id && (o.item ?? null) === (hit.item ?? null));
   if (!chosen || chosen.disabled) return { ui, effect: null };
+  if (hit.id === 'debugEdit') return { ui: calm(ui), effect: { kind: 'debugEdit', uid: menu.uid } };
   if (menu.where === 'party') {
     const mon = findIn(state.party, menu.uid);
     if (!mon) return { ui: calm(ui), effect: null };
     switch (hit.id) {
       case 'summary': return { ui: calm(ui), effect: { kind: 'summary', uid: mon.uid } };
       case 'levelup': return { ui: calm(ui), effect: { kind: 'levelup', uid: mon.uid } };
-      case 'order': return { ui: { ...calm(ui), select: { mode: 'order', uid: mon.uid, text: '어디로 옮길까요?' } }, effect: null };
+      case 'order': return { ui: { ...calm(ui), select: { mode: 'order', uid: mon.uid, text: t('panel.orderAsk') } }, effect: null };
       case 'give': {
-        const options = [...holdableItems(state, sim).map(id => opt('pick', `${itemName(id)} ×${state.bag[id]}`, false, { item: id })), opt('cancel', '그만두기')];
-        return { ui: { ...calm(ui), menu: { where: 'give', uid: mon.uid, text: `${monName(mon, sim)}에게 무엇을 지니게 할까요?`, options } }, effect: null };
+        const options = [...holdableItems(state, sim).map(id => opt('pick', `${w.label(id)} ×${state.bag[id]}`, false, { item: id })), opt('cancel', t('panel.menu.cancel'))];
+        return { ui: { ...calm(ui), menu: { where: 'give', uid: mon.uid, text: t('panel.giveAsk', { mon: w.mon(mon) }), options } }, effect: null };
       }
-      case 'take': return { ui: calm(ui), effect: { kind: 'queue', action: actions.take(mon), after: `${monName(mon, sim)}의 ${josa(itemName(mon.set.item), '을/를')} 가방에 넣었다.` } };
-      case 'deposit': return { ui: calm(ui), effect: { kind: 'queue', action: actions.deposit(mon), after: `${josa(monName(mon, sim), '을/를')} 박스로 보냈다.` } };
+      case 'take': return { ui: calm(ui), effect: { kind: 'queue', action: actions.take(mon), after: t('panel.took', { mon: w.mon(mon), item: p(w.label(mon.set.item), '을/를') }) } };
+      case 'deposit': return { ui: calm(ui), effect: { kind: 'queue', action: actions.deposit(mon), after: t('panel.deposited', { mon: p(w.mon(mon), '을/를') }) } };
       default: return { ui: calm(ui), effect: null };
     }
   }
   if (menu.where === 'give') {
     const mon = findIn(state.party, menu.uid);
     if (!mon || hit.id !== 'pick') return { ui: calm(ui), effect: null };
-    return { ui: calm(ui), effect: { kind: 'queue', action: actions.give(mon, hit.item), after: `${monName(mon, sim)}에게 ${josa(itemName(hit.item), '을/를')} 지니게 했다.` } };
+    return { ui: calm(ui), effect: { kind: 'queue', action: actions.give(mon, hit.item), after: t('panel.gave', { mon: w.mon(mon), item: p(w.label(hit.item), '을/를') }) } };
   }
   if (menu.where === 'box') {
     const mon = findIn(state.box, menu.uid);
@@ -558,10 +664,10 @@ function optionPress(ui, hit, { state, ctx, locked }) {
     switch (hit.id) {
       case 'summary': return { ui: calm(ui), effect: { kind: 'summary', uid: mon.uid } };
       case 'withdraw':
-        if (state.party.length < PARTY_MAX) return { ui: calm(ui), effect: { kind: 'queue', action: actions.withdraw(mon), after: `${josa(monName(mon, sim), '을/를')} 파티로 데려왔다.` } };
+        if (state.party.length < PARTY_MAX) return { ui: calm(ui), effect: { kind: 'queue', action: actions.withdraw(mon), after: t('panel.withdrew', { mon: p(w.mon(mon), '을/를') }) } };
 
-        return { ui: { ...calm(ui), tab: 'party', select: { mode: 'swapin', uid: mon.uid, text: `${josa(monName(mon, sim), '과/와')} 바꿀 포켓몬을 골라 주십시오.` } }, effect: null };
-      case 'release': return { ui: { ...calm(ui), ask: { kind: 'release', uid: mon.uid, text: `${josa(monName(mon, sim), '을/를')} 정말로 놓아줄까요?` } }, effect: null };
+        return { ui: { ...calm(ui), tab: 'party', select: { mode: 'swapin', uid: mon.uid, text: t('panel.swapAsk', { mon: p(w.mon(mon), '과/와') }) } }, effect: null };
+      case 'release': return { ui: { ...calm(ui), ask: { kind: 'release', uid: mon.uid, text: t('panel.releaseAsk', { mon: p(w.mon(mon), '을/를') }) } }, effect: null };
       default: return { ui: calm(ui), effect: null };
     }
   }
@@ -569,11 +675,16 @@ function optionPress(ui, hit, { state, ctx, locked }) {
     const item = menu.item;
     if (hit.id === 'use' && partyWide(item)) {
 
-      if (!state.party.some(m => m.hp === 0)) return { ui: { ...calm(ui), message: { text: NO_EFFECT } }, effect: null };
-      return { ui: calm(ui), effect: { kind: 'queue', action: { type: 'use', item: toID(item), ops: useOps(null, item, ctx) }, after: useAfter(null, toID(item), ctx) } };
+      if (!state.party.some(m => m.hp === 0)) return { ui: { ...calm(ui), message: { text: noEffect(w.lang) } }, effect: null };
+      return { ui: calm(ui), effect: { kind: 'queue', action: { type: 'use', item: toID(item), ops: useOps(null, item, ctx) }, after: useAfter(null, toID(item), ctx, w) } };
     }
-    if (hit.id === 'use') return { ui: { ...calm(ui), tab: 'party', select: { mode: 'use', item, text: `${josa(itemName(item), '을/를')} 누구에게 쓸까요?` } }, effect: null };
-    if (hit.id === 'give') return { ui: { ...calm(ui), tab: 'party', select: { mode: 'give', item, text: `${josa(itemName(item), '을/를')} 누구에게 지니게 할까요?` } }, effect: null };
+    if (hit.id === 'use') return { ui: { ...calm(ui), tab: 'party', select: { mode: 'use', item, text: t('panel.useAsk', { item: p(itemName(item, w.names), '을/를') }) } }, effect: null };
+    if (hit.id === 'give') return { ui: { ...calm(ui), tab: 'party', select: { mode: 'give', item, text: t('panel.holdAsk', { item: p(w.label(item), '을/를') }) } }, effect: null };
+    if (hit.id === 'toss') {
+      const max = state.bag?.[item] ?? 0;
+      if (!max) return { ui: calm(ui), effect: null };
+      return { ui: { ...calm(ui), count: { item, n: 1, max, text: t('panel.tossAsk', { item: p(w.label(item), '을/를') }) } }, effect: null };
+    }
   }
   return { ui: calm(ui), effect: null };
 }

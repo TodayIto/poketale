@@ -1,17 +1,19 @@
-import phrases from './text-effects-ko.json' with { type: 'json' };
-import { interpolate, statusNames, commonNames } from './text.js';
+import ko from './text-effects-ko.json' with { type: 'json' };
+import en from './text-effects-en.json' with { type: 'json' };
+import { phrase, text, nameWithAffix, statusNames, commonNames } from './text.js';
+import { DEFAULT_LANG } from './lang.js';
 import { megaFormName } from './steps-mega.js';
-import { sideOf, isIdent, uidOf } from './read.js';
+import { positionOf, isIdent, uidOf, teamOf, fieldPositions } from './read.js';
 import { ownTemplate } from './own-text.js';
 import { toID } from '../engine/mon.mjs';
 
-export function effectText(key, values = {}) {
-  const template = ownTemplate(key) ?? (key !== '_source' && Object.hasOwn(phrases, key) ? phrases[key] : undefined);
-  if (template === undefined) throw new Error(`Unknown effect text key: ${key}`);
-  return interpolate(template, values);
-}
+const PHRASES = { ko, en };
+export const effectText = (key, values = {}, lang = DEFAULT_LANG) => phrase(PHRASES, key, values, lang, 'effect text');
 
-const other = side => side === 'player' ? 'enemy' : 'player';
+// Type and stat names of a language (pokemon-info.json). Unknown ones stay as given
+export const typeNameIn = (lang, type) => PHRASES[lang][`pokemon-info.type.${toID(type)}`] ?? type;
+
+const other = position => (teamOf(position) === 'player' ? position.replace('player', 'enemy') : position.replace('enemy', 'player'));
 
 const effectOf = value => {
   const match = /^(move|ability|item|pokemon):\s*(.*)$/.exec(String(value ?? ''));
@@ -91,35 +93,33 @@ const RUIN = { vesselofruin: ['postSummonVesselOfRuin', 'spatk'], swordofruin: [
 const ITEM_THEN_EFFECT = new Set(['weaknesspolicy', 'throatspray', 'absorbbulb', 'cellbattery', 'luminousmoss', 'snowball', 'electricseed',
   'grassyseed', 'mistyseed', 'psychicseed', 'roomservice', 'adrenalineorb', 'blunderpolicy', 'boosterenergy']);
 
-// Lines passed with no screen (not warned about)
 const SILENT = new Set(['debug', '-hint', '-mustrecharge', '-center', '-waiting', '-fieldactivate', '-cureteam']);
 
+// Lines this module handles (steps.js dispatch table)
 export const EFFECT_KINDS = ['-damage', '-heal', '-sethp', '-status', '-curestatus', 'cant', '-boost', '-unboost', '-setboost', '-clearallboost',
   '-clearboost', '-clearnegativeboost', '-clearpositiveboost', '-invertboost', '-copyboost', '-swapboost', '-transform', '-formechange', 'detailschange',
   '-fail', '-block', '-nothing', '-notarget', '-ability', '-endability', '-item', '-enditem', '-activate', '-start', '-end', '-singleturn',
   '-singlemove', '-weather', '-fieldstart', '-fieldend', '-sidestart', '-sideend', '-swapsideconditions', '-prepare', '-anim', '-hitcount', ...SILENT];
 
-const STAT_LABEL = { atk: '공격', def: '방어', spa: '특수공격', spd: '특수방어', spe: '스피드', accuracy: '명중률', evasion: '회피율' };
-
 export const EFFECT_TABLES = { WEATHER, TERRAIN, FIELD, SIDE, TRAP, VOLATILE, CHARGE, SINGLE_TURN, ABILITY_LINE, RUIN };
 
-export function createEffects({ battle, view, names, text, warn, ledger }) {
+export function createEffects({ battle, view, names, warn, ledger, lang = DEFAULT_LANG, affix = nameWithAffix(lang) }) {
   const id = value => battle.dex?.toID ? battle.dex.toID(value) : toID(value);
-  const label = side => ledger.atField(side)?.name;
-  const nameOf = ident => ledger.get(ident).name;
+  const plainName = ident => ledger.get(ident).name;
+  const label = side => affix(ledger.atField(side)?.name, side);
+  const nameOf = ident => affix(plainName(ident), positionOf(ident));
   const nv = ident => ({ pokemonName: nameOf(ident), pokemonNameWithAffix: nameOf(ident) });
-  const say = (key, values = {}) => view.message(effectText(key, values), {});
-  const show = message => view.message(message, {});
+  const say = (key, values = {}) => view.message(effectText(key, values, lang), {});
+  const show = (key, values) => view.message(text(key, values, lang), {});
 
-  const sourceSay = (ident, effect) => view.message(text('battle.useMove', { ...nv(ident),
-    moveName: effect.prefix === 'item' ? names.item(effect.id) : effect.prefix === 'ability' ? names.ability(effect.id) : effect.prefix === 'move' ? names.move(effect.id) : effect.name }), {});
-  const typeName = type => phrases[`pokemon-info.type.${id(type)}`] ?? type;
-  const statName = stat => phrases[`pokemon-info.stat.${STAT_KEY[id(stat)]}`] ?? stat;
-  const sideKey = side => side === 'player' ? 'Player' : 'Enemy';
+  const sourceSay = (ident, effect) => show('battle.useMove', { ...nv(ident),
+    moveName: effect.prefix === 'item' ? names.item(effect.id) : effect.prefix === 'ability' ? names.ability(effect.id) : effect.prefix === 'move' ? names.move(effect.id) : effect.name });
+  const typeName = type => typeNameIn(lang, id(type));
+  const statName = stat => PHRASES[lang][`pokemon-info.stat.${STAT_KEY[id(stat)]}`] ?? stat;
+  const sideKey = position => teamOf(position) === 'player' ? 'Player' : 'Enemy';
 
   let weather = null;
 
-  // Ability popup currently shown { uid, id } (owner uid, ability id) | null
   let bar = null;
 
   const dollOut = new WeakSet();
@@ -131,33 +131,33 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
     return eaten === undefined || item.eaten === eaten ? item.id : null;
   };
 
-  const fieldSide = () => ['player', 'enemy'].find(side => ledger.atField(side) && !ledger.atField(side).fainted);
+  const fieldSide = () => fieldPositions(battle).find(side => ledger.atField(side) && !ledger.atField(side).fainted);
   const common = async (name, side, targetSide = side) => { if (side && ledger.atField(side)) await view.playCommon(name, side, targetSide); };
   const showStages = side => ledger.atField(side) ? view.setStatStages(side, { ...ledger.atField(side).boosts }) : undefined;
 
   async function hp(ident, cause = 'other', effectiveness = 'normal') {
     if (!ledger.onField(ident)) return;
     const { hp: value, maxhp } = ledger.get(ident);
-    await view.hpChange(sideOf(ident), value, maxhp, { cause, effectiveness });
+    await view.hpChange(positionOf(ident), value, maxhp, { cause, effectiveness });
   }
   const sourceLabel = source => {
     const match = /^(ability|item|move):\s*(.*)$/.exec(source);
     return match ? names[match[1]](id(match[2])) : source;
   };
 
+  // Text for sourced HP changes that have no specific entry
   async function sourceMessage(ident, source, heal) {
     if (statusNames[source] && !heal) {
 
-      if (ledger.onField(ident)) await view.playCommon(commonNames[source], sideOf(ident));
-      return show(text(`status-effect.${statusNames[source]}.activation`, nv(ident)));
+      if (ledger.onField(ident)) await view.playCommon(commonNames[source], positionOf(ident));
+      return show(`status-effect.${statusNames[source]}.activation`, nv(ident));
     }
-    if (source === 'recoil') return show(text('move-trigger.hitWithRecoil', nv(ident)));
+    if (source === 'recoil') return show('move-trigger.hitWithRecoil', nv(ident));
 
-    await show(text('battle.useMove', { ...nv(ident), moveName: sourceLabel(source) }));
-    if (heal) await show(text('battle.regainHealth', nv(ident)));
+    await show('battle.useMove', { ...nv(ident), moveName: sourceLabel(source) });
+    if (heal) await show('battle.regainHealth', nv(ident));
   }
 
-  // Whether this heal line raised HP (event.before = ledger before the line)
   const heals = event => event.before?.hp === undefined || ledger.get(event.args[0]).hp > event.before.hp;
 
   function abilityTrigger({ kind, args: a, kwArgs: kw }) {
@@ -192,7 +192,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
       const uid = uidOf(event, trigger.ident), abilityId = id(trigger.name);
       if (bar?.uid === uid && bar.id === abilityId) return;
       await hideBar();
-      await view.showAbility(sideOf(trigger.ident), nameOf(trigger.ident), names.ability(abilityId));
+      await view.showAbility(positionOf(trigger.ident), plainName(trigger.ident), names.ability(abilityId));
       bar = { uid, id: abilityId, by: writer(event, uid, abilityId) };
       return;
     }
@@ -201,7 +201,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
 
   async function cue({ cue: kind, move, event }) {
     if (kind === 'survive') return surviveMessage(event);
-    const user = ledger.pokemon.get(uidOf(move, move.args[0])), side = sideOf(move.args[0]);
+    const user = ledger.pokemon.get(uidOf(move, move.args[0])), side = positionOf(move.args[0]);
     if (kind === 'doll-out' && user?.substitute && !move.kwArgs.still) { dollOut.add(move); await view.substitute(side, 'pre'); }
     if (kind === 'doll-back' && dollOut.has(move) && ledger.atField(side)?.substitute) await view.substitute(side, 'post');
   }
@@ -219,7 +219,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
     const { args: a, kwArgs: kw } = event;
 
     if (!kw.from) return hp(a[0], 'move', event.hit?.effectiveness);
-    const from = effectOf(kw.from), side = sideOf(a[0]);
+    const from = effectOf(kw.from), side = positionOf(a[0]);
     const holder = typeof kw.of === 'string' ? kw.of : a[0];
     if (from.prefix === 'item') {
 
@@ -261,7 +261,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
       return;
     case 'leechseed': {
 
-      const source = typeof kw.of === 'string' ? sideOf(kw.of) : other(side);
+      const source = typeof kw.of === 'string' ? positionOf(kw.of) : other(side);
       await common('leech-seed', source, side);
       await hp(a[0]);
       await say('battler-tags.seededLapse', nv(a[0]));
@@ -279,15 +279,15 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
 
   async function onHeal(event) {
     const { args: a, kwArgs: kw } = event;
-    const side = sideOf(a[0]);
+    const side = positionOf(a[0]);
     if (kw.silent && !kw.from) { await hp(a[0]); return; }
-    if (!kw.from) { await hp(a[0]); await show(text('battle.regainHealth', nv(a[0]))); return; }
+    if (!kw.from) { await hp(a[0]); await show('battle.regainHealth', nv(a[0])); return; }
     const from = effectOf(kw.from);
     if (kw.silent) { await hp(a[0]); return; }
     if (from.id === 'revivalblessing') {
 
       await hp(a[0]);
-      await view.message(effectText('move-trigger.revivalBlessing', { pokemonName: nameOf(a[0]) }), { wait: true });
+      await view.message(effectText('move-trigger.revivalBlessing', { pokemonName: nameOf(a[0]) }, lang), { wait: true });
       return;
     }
 
@@ -317,7 +317,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
     case 'wish':
       await healed();
 
-      await say('arena-tag.wishTagOnAdd', { pokemonNameWithAffix: typeof kw.wisher === 'string' ? names.species(kw.wisher) : nameOf(a[0]) });
+      await say('arena-tag.wishTagOnAdd', { pokemonNameWithAffix: typeof kw.wisher === 'string' ? affix(names.species(kw.wisher), positionOf(a[0])) : nameOf(a[0]) });
       return;
     case 'grassyterrain': await healed(); await say('battle.turnEndHpRestore', nv(a[0])); return;
     case 'ingrain': await healed(); await say('battler-tags.ingrainLapse', nv(a[0])); return;
@@ -331,7 +331,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
   async function onStart(event) {
     const { args: a, kwArgs: kw } = event;
     if (kw.silent) return true;
-    const side = sideOf(a[0]), effect = effectOf(a[1]), from = kw.from ? effectOf(kw.from) : null;
+    const side = positionOf(a[0]), effect = effectOf(a[1]), from = kw.from ? effectOf(kw.from) : null;
     const v = nv(a[0]);
     if (effect.id === 'substitute') {
       await view.substitute(side, 'add');
@@ -399,7 +399,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
 
   async function onEnd(event) {
     const { args: a, kwArgs: kw } = event;
-    const side = sideOf(a[0]), effect = effectOf(a[1]);
+    const side = positionOf(a[0]), effect = effectOf(a[1]);
     if (effect.id === 'substitute') {
       await view.substitute(side, 'remove');
       if (!kw.silent) await say('battler-tags.substituteOnRemove', nv(a[0]));
@@ -414,7 +414,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
     if (effect.id === 'illusion') {
 
       await hideBar();
-      await view.showAbility(side, label(side) ?? nameOf(a[0]), names.ability('illusion'));
+      await view.showAbility(side, ledger.atField(side)?.name ?? plainName(a[0]), names.ability('illusion'));
       bar = { uid: uidOf(event, a[0]), id: 'illusion', by: writer(event, uidOf(event, a[0]), 'illusion') };
       await say('ability-trigger.illusionBreak', v);
       return true;
@@ -437,7 +437,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
   }
 
   async function onActivate(a, kw) {
-    const side = sideOf(a[0]), effect = effectOf(a[1]), v = nv(a[0]);
+    const side = positionOf(a[0]), effect = effectOf(a[1]), v = nv(a[0]);
     if (effect.prefix === 'ability') {
       const abilityName = names.ability(effect.id);
       if (effect.id === 'disguise') await say('ability-trigger.disguiseAvoidedDamage', v);
@@ -446,6 +446,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
       else if (effect.id === 'forewarn' && a[2]) await say('ability-trigger.forewarn', { ...v, moveName: names.move(id(a[2])) });
       else if (effect.id === 'anticipation') await say('ability-trigger.postSummonAnticipation', v);
 
+      // Items: Protosynthesis / Quark Drive via Booster Energy (the preceding -enditem is anim only)
       else if (kw.fromitem) await say('own.boosterEnergy', { ...v, itemName: names.item('boosterenergy'), abilityName });
       return true;
     }
@@ -466,7 +467,6 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
       return true;
     case 'protect': case 'kingsshield': case 'spikyshield': case 'banefulbunker': case 'silktrap': case 'burningbulwark': case 'obstruct': case 'detect': case 'maxguard':
 
-      // ProtectedTag.lapse: CommonAnim.PROTECT then protectedLapse
       await common('protect', side);
       await say('battler-tags.protectedLapse', v);
       return true;
@@ -488,7 +488,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
     case 'safeguard': await say('move-trigger.safeguard', { targetName: v.pokemonName }); return true;
     case 'mistyterrain': await say('terrain.mistyBlockMessage', v); return true;
     case 'psychicterrain': case 'electricterrain': case 'grassyterrain':
-      await say('terrain.defaultBlockMessage', { ...v, terrainName: effectText(`terrain.${TERRAIN[effect.id]}`) });
+      await say('terrain.defaultBlockMessage', { ...v, terrainName: effectText(`terrain.${TERRAIN[effect.id]}`, {}, lang) });
       return true;
     case 'custapberry': case 'quickclaw':
       await say('modifier.bypassSpeedChanceApply', { pokemonName: v.pokemonName, itemName: names.item(effect.id) }); return true;
@@ -532,7 +532,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
   }
 
   async function onEndItem(a, kw) {
-    const side = sideOf(a[0]), item = id(a[1]), itemName = names.item(item), v = nv(a[0]);
+    const side = positionOf(a[0]), item = id(a[1]), itemName = names.item(item), v = nv(a[0]);
     const from = kw.from ? effectOf(kw.from) : null;
     if (kw.eat) {
 
@@ -589,12 +589,12 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
       return true;
     }
     if (ABILITY_LINE[ability]) await say(`ability-trigger.${ABILITY_LINE[ability]}`, v);
-    else if (RUIN[ability]) await say(`ability-trigger.${RUIN[ability][0]}`, { ...v, statName: phrases[`pokemon-info.stat.${RUIN[ability][1]}`] });
+    else if (RUIN[ability]) await say(`ability-trigger.${RUIN[ability][0]}`, { ...v, statName: PHRASES[lang][`pokemon-info.stat.${RUIN[ability][1]}`] });
 
     else if (ability === 'sturdy') return true;
 
-    else if (ability === 'unnerve' && label(other(sideOf(a[0])))) {
-      const foe = label(other(sideOf(a[0])));
+    else if (ability === 'unnerve' && label(other(positionOf(a[0])))) {
+      const foe = label(other(positionOf(a[0])));
       await say('ability-trigger.preventBerryUse', { pokemonName: foe, pokemonNameWithAffix: foe });
     }
     return true;
@@ -612,7 +612,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
     const [anim, key] = entry;
     if (kw.upkeep) {
 
-      await view.message(effectText(`weather.${key}LapseMessage`), { hold: 0 });
+      await view.message(effectText(`weather.${key}LapseMessage`, {}, lang), { hold: 0 });
       await common(anim, fieldSide());
     } else {
 
@@ -642,7 +642,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
   }
 
   async function onSide(kind, a) {
-    const side = sideOf(a[0]), effect = effectOf(a[1]);
+    const side = positionOf(a[0]), effect = effectOf(a[1]);
     if (GUARD.has(effect.id)) {
       if (kind === '-sidestart') await say(`arena-tag.conditionalProtectOnAdd${sideKey(side)}`, { moveName: names.move(effect.id) });
       return true;
@@ -654,10 +654,10 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
   }
 
   async function changeForm(ident, speciesName, { instant = false, message = true, from = null } = {}) {
-    const side = sideOf(ident), mon = ledger.get(ident);
+    const side = positionOf(ident), mon = ledger.get(ident);
     const species = battle.dex.species.get(speciesName);
     if (!species?.exists) { warn(`form:${id(speciesName)}`); return; }
-    const preName = mon.name;
+    const preName = affix(mon.name, side);
     const { speciesId, spriteId, shiny, gender } = mon;
     if (ledger.onField(ident)) await view.changeForm(side, { speciesId, spriteId, shiny, gender }, { instant });
     if (!message) return;
@@ -669,26 +669,27 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
   }
 
   async function statusChange({ kind, args: a }) {
-    const side = sideOf(a[0]), status = a[1], name = statusNames[status];
+    const side = positionOf(a[0]), status = a[1], name = statusNames[status];
     if (!name) { warn(`${kind}:${status}`); return; }
     if (ledger.onField(a[0])) {
       await view.setStatus(side, kind === '-status' ? status : '');
       if (kind === '-status') await view.playCommon(commonNames[status], side);
     }
-    await show(text(`status-effect.${name}.${kind === '-status' ? 'obtain' : 'heal'}`, nv(a[0])));
+    await show(`status-effect.${name}.${kind === '-status' ? 'obtain' : 'heal'}`, nv(a[0]));
   }
 
+  // Can't-move reasons with no specific entry: status; flinch; recharge; Truant
   async function cantDefault(a) {
     const reason = a[1];
     if (statusNames[reason]) {
-      await show(text(`status-effect.${statusNames[reason]}.activation`, nv(a[0])));
-      await view.playCommon(commonNames[reason], sideOf(a[0]));
+      await show(`status-effect.${statusNames[reason]}.activation`, nv(a[0]));
+      await view.playCommon(commonNames[reason], positionOf(a[0]));
     } else if (['flinch', 'recharge', 'truant'].includes(reason)) {
       const key = { flinch: 'flinchedLapse', recharge: 'rechargingLapse', truant: 'truantLapse' }[reason];
-      await show(text(`battler-tags.${key}`, nv(a[0])));
+      await show(`battler-tags.${key}`, nv(a[0]));
     } else {
       warn(`cant:${reason}`);
-      await show(text('move-trigger.cannotUseMove', { ...nv(a[0]), moveName: names.move(id(a[2] || reason.replace(/^move: /, ''))) }));
+      await show('move-trigger.cannotUseMove', { ...nv(a[0]), moveName: names.move(id(a[2] || reason.replace(/^move: /, ''))) });
     }
   }
 
@@ -697,7 +698,6 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
     await say(`battle.${keys[Math.min(Math.abs(delta), 3) - 1]}`, { ...nv(ident), stats: statName(stat) });
   }
 
-  // View call for one handled line (steps.js dispatch table)
   async function present(event) {
     const { kind, args: a, kwArgs: kw } = event;
     switch (kind) {
@@ -731,8 +731,10 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
     case '-end': return onEnd(event);
     case '-singleturn': {
       const effect = effectOf(a[1]);
-      if (GUARD.has(effect.id)) await say(`arena-tag.conditionalProtectOnAdd${sideKey(sideOf(a[0]))}`, { moveName: names.move(effect.id) });
-      else if (SINGLE_TURN[effect.id]) await say(SINGLE_TURN[effect.id], { ...nv(a[0]), pokemonName: label(other(sideOf(a[0]))) ?? '' });
+
+      if (effect.id === 'helpinghand') await say('battler-tags.helpingHandOnAdd', { pokemonNameWithAffix: nameOf(kw.of ?? a[0]), pokemonName: nameOf(a[0]) });
+      else if (GUARD.has(effect.id)) await say(`arena-tag.conditionalProtectOnAdd${sideKey(positionOf(a[0]))}`, { moveName: names.move(effect.id) });
+      else if (SINGLE_TURN[effect.id]) await say(SINGLE_TURN[effect.id], { ...nv(a[0]), pokemonName: label(other(positionOf(a[0]))) ?? '' });
       else if (!QUIET_VOLATILE.has(effect.id) && effect.id !== 'snatch') warn(`-singleturn:${effect.id}`);
       return true;
     }
@@ -755,16 +757,16 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
       return true;
     }
     case '-prepare': {
-      const move = id(a[1]), side = sideOf(a[0]);
-      await view.playCharge(move, side, isIdent(a[2]) ? sideOf(a[2]) : other(side));
+      const move = id(a[1]), side = positionOf(a[0]);
+      await view.playCharge(move, side, isIdent(a[2]) ? positionOf(a[2]) : other(side));
 
-      for (const ident of [a[0], a[2]]) if (isIdent(ident) && ledger.get(ident).semiInvulnerable) await view.setHidden(sideOf(ident), true);
+      for (const ident of [a[0], a[2]]) if (isIdent(ident) && ledger.get(ident).semiInvulnerable) await view.setHidden(positionOf(ident), true);
       if (CHARGE[move]) await say(`move-trigger.${CHARGE[move]}`, { pokemonName: nameOf(a[0]), targetName: label(other(side)) ?? '' });
       return true;
     }
     case '-anim': {
-      const side = sideOf(a[0]);
-      await view.playMove(id(a[1]), side, isIdent(a[2]) ? sideOf(a[2]) : side);
+      const side = positionOf(a[0]);
+      await view.playMove(id(a[1]), side, isIdent(a[2]) ? positionOf(a[2]) : side);
       return true;
     }
     case '-hitcount': await say('battle.attackHitsCount', { count: Number(a[1]) }); return true;
@@ -776,17 +778,17 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
 
       const item = itemFrom(event, { eaten: kw.from ? undefined : false });
       const delta = Number(a[2]) * (kind === '-boost' ? 1 : -1);
-      await view.statStage(sideOf(a[0]), a[1], delta);
+      await view.statStage(positionOf(a[0]), a[1], delta);
       if (item && item !== 'mirrorherb') {
         await say(`own.item${delta > 0 ? 'Boost' : 'Unboost'}${Math.min(Math.abs(delta), 3)}`, { ...nv(a[0]), itemName: names.item(item), stats: statName(a[1]) });
       } else {
         const keys = delta > 0 ? ['statRose_one', 'statSharplyRose_one', 'statRoseDrastically_one'] : ['statFell_one', 'statHarshlyFell_one', 'statSeverelyFell_one'];
-        await show(text(`battle.${keys[Math.min(Math.abs(delta), 3) - 1]}`, { ...nv(a[0]), stats: STAT_LABEL[a[1]] || a[1] }));
+        await show(`battle.${keys[Math.min(Math.abs(delta), 3) - 1]}`, { ...nv(a[0]), stats: statName(a[1]) });
       }
-      return showStages(sideOf(a[0]));
+      return showStages(positionOf(a[0]));
     }
     case '-status': {
-      const from = kw.from ? effectOf(kw.from) : null, key = `own.statusFromItem.${a[1]}`, side = sideOf(a[0]);
+      const from = kw.from ? effectOf(kw.from) : null, key = `own.statusFromItem.${a[1]}`, side = positionOf(a[0]);
       if (from?.prefix !== 'item' || !ownTemplate(key)) return statusChange(event);
       await view.setStatus(side, a[1]);
       await view.playCommon(commonNames[a[1]], side);
@@ -794,14 +796,14 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
       return true;
     }
     case '-curestatus': {
-      const item = itemFrom(event, { eaten: true }), key = `own.cureFromItem.${a[1] === 'tox' ? 'psn' : a[1]}`, side = sideOf(a[0]);
+      const item = itemFrom(event, { eaten: true }), key = `own.cureFromItem.${a[1] === 'tox' ? 'psn' : a[1]}`, side = positionOf(a[0]);
       if (!item || !ownTemplate(key) || !ledger.onField(a[0])) return statusChange(event);
       await view.setStatus(side, '');
       await say(key, { ...nv(a[0]), itemName: names.item(item) });
       return true;
     }
     case '-setboost': {
-      const side = sideOf(a[0]), stat = a[1], delta = Number(a[2]) - (event.before.boosts[stat] || 0);
+      const side = positionOf(a[0]), stat = a[1], delta = Number(a[2]) - (event.before.boosts[stat] || 0);
       if (delta) await view.statStage(side, stat, delta);
       await showStages(side);
       const from = kw.from ? effectOf(kw.from) : null;
@@ -810,41 +812,41 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
       return true;
     }
     case '-clearallboost':
-      for (const side of ['player', 'enemy']) await showStages(side);
+      for (const side of fieldPositions(battle)) await showStages(side);
       if (!kw.silent) await say('move-trigger.statEliminated');
       return true;
     case '-clearboost': {
-      await showStages(sideOf(a[0]));
+      await showStages(positionOf(a[0]));
       if (!kw.silent) await say('move-trigger.resetStats', { pokemonName: nameOf(a[0]) });
       return true;
     }
     case '-clearnegativeboost':
-      await showStages(sideOf(a[0]));
+      await showStages(positionOf(a[0]));
       return true;
     case '-clearpositiveboost': {
-      await showStages(sideOf(a[0]));
+      await showStages(positionOf(a[0]));
       if (isIdent(a[1])) await say('move-trigger.stealPositiveStats', { pokemonName: nameOf(a[1]), targetName: nameOf(a[0]) });
       return true;
     }
     case '-invertboost': {
-      await showStages(sideOf(a[0]));
+      await showStages(positionOf(a[0]));
       await say('move-trigger.invertStats', { pokemonName: nameOf(a[0]) });
       return true;
     }
     case '-copyboost': {
-      await showStages(sideOf(a[0]));
+      await showStages(positionOf(a[0]));
       await say('move-trigger.copiedStatChanges', { pokemonName: nameOf(a[0]), targetName: nameOf(a[1]) });
       return true;
     }
     case '-swapboost': {
       const list = a[2] ? a[2].split(/,\s*/).filter(Boolean) : BOOSTS;
-      await showStages(sideOf(a[0])); await showStages(sideOf(a[1]));
+      await showStages(positionOf(a[0])); await showStages(positionOf(a[1]));
       if (a[2] && list.length === 2) await say('move-trigger.switchedTwoStatChanges', { pokemonName: nameOf(a[0]), firstStat: statName(list[0]), secondStat: statName(list[1]) });
       else await say('move-trigger.switchedStatChanges', { pokemonName: nameOf(a[0]) });
       return true;
     }
     case '-transform': {
-      const side = sideOf(a[0]), target = ledger.get(a[1]);
+      const side = positionOf(a[0]), target = ledger.get(a[1]);
       if (target.speciesId) await view.changeForm(side, { speciesId: target.speciesId, spriteId: target.spriteId, shiny: target.shiny, gender: target.gender }, { instant: true });
       await showStages(side);
       const from = kw.from ? effectOf(kw.from) : null;
@@ -873,7 +875,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
 
       if (from?.prefix === 'item' && effect.id === 'unboost') { await say('own.clearAmulet', { ...v, itemName: names.item(from.id) }); return true; }
       if (statusNames[effect.id] && !from) { await say(`status-effect.${statusNames[effect.id]}.overlap`, v); return true; }
-      return show(text('battle.attackFailed'));
+      return show('battle.attackFailed');
     }
     case '-block': {
       const effect = effectOf(a[1]);
@@ -884,7 +886,7 @@ export function createEffects({ battle, view, names, text, warn, ledger }) {
       return true;
     }
     case '-nothing': await say('move-trigger.splash'); return true;
-    case '-notarget': await view.message(text('battle.attackFailed'), {}); return true;
+    case '-notarget': await show('battle.attackFailed'); return true;
     default:
     }
   }

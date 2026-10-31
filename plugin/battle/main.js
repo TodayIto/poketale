@@ -1,6 +1,6 @@
 import { createFetchBytes } from './fetch-bytes.js';
 import { mark } from './marks.js';
-import { startStoryLink, openSettings, currentSettings, queueAction, storyNow, onStoryChange, showWindow, hideWindow, resumeHere } from './story-link.js';
+import { startStoryLink, openSettings, currentSettings, openLang, queueAction, storyNow, onStoryChange, showWindow, hideWindow, resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, quickImport, importLater } from './story-link.js';
 import { startPanel } from '../panel/panel.js';
 import { createPanelScreens } from '../panel/screens.js';
 import { personaName } from './persona.js';
@@ -16,7 +16,7 @@ mark('pb:script');
   } catch (error) {
     const owner = {};
     const { mountBattle } = await import('./runtime.js');
-    const app = mountBattle({ fetchBytes: createFetchBytes(risuai), onClose: () => hideWindow(owner) });
+    const app = mountBattle({ fetchBytes: createFetchBytes(risuai), onClose: () => hideWindow(owner), lang: await openLang() });
     app.showError(error);
     try { await showWindow(owner); } catch (showError) { app.showError(showError); }
   }
@@ -33,9 +33,9 @@ mark('pb:script');
     const doc = await risuai.getRootDocument();
     if (doc) {
       useMainDocument(doc);
-      const screens = createPanelScreens({ fetchBytes: createFetchBytes(risuai), settings: currentSettings,
+      const screens = createPanelScreens({ fetchBytes: createFetchBytes(risuai), settings: currentSettings, lang: openLang,
         show: showWindow, hide: hideWindow, trainer: () => personaName(risuai).catch(() => null) });
-      await startPanel({ doc, read: storyNow, queueAction, screens, changes: onStoryChange, resume: resumeHere });
+      await startPanel({ doc, read: storyNow, queueAction, screens, changes: onStoryChange, resume: resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, quickImport, importLater });
     }
   } catch (error) { console.warn('[poke-battle] 오른쪽 패널을 끼우지 못함', error); }
 })();

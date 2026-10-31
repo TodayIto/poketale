@@ -1,8 +1,8 @@
 {
 	"_source": "tools/build-font.mjs: vendor/pokerogue/assets/fonts/pokemon-emerald-pro.ttf (PokeRogue 에셋, 글꼴 라이선스 CC BY-SA 3.0 crystalwalrein) 의 조각. 다시 만들기: node tools/build-font.mjs (python fontTools 필요)",
 	"sourceSha256": "da8025c85028a40dd70731e83e3bdf0e314218a24110cbb8f789bf8ab0c0e255",
-	"woff2Sha256": "0ff802b498eb5f1e8a33d184a870c387c865bbd75b2fbef5c94c4358c6a53f84",
-	"bytes": 17180,
-	"glyphs": 12019,
-	"cmap": "20-7e,b7,c3,d7,e9,301,2013-2014,2018-2019,201d,2022,2026,2030,20a9,20bd,2191-2193,2640,2642,3001,300d,300f,3063,3093,30c3,30f3,ac00-d7a3,ff0c,ff1a"
+	"woff2Sha256": "877a3111ce29f7eb852c2785388c9467ea72a9b34923e14e1b010db9e8034e36",
+	"bytes": 17420,
+	"glyphs": 12021,
+	"cmap": "20-7e,b7,be,c3,d7,e9,301,2013-2014,2018-2019,201c-201d,2022,2026,2030,20a9,20bd,2191-2193,2640,2642,3001,300d,300f,3063,3093,30c3,30f3,ac00-d7a3,e000,ff0c,ff1a"
 }

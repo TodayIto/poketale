@@ -1,4 +1,4 @@
-import { INFO_RECTS } from '../sprites/placement.js';
+import { onInfoBox } from '../sprites/placement.js';
 
 const inside = (x, y, r) => !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 
@@ -11,11 +11,16 @@ export function backTarget(scene) {
   return scene.openMenus?.at(-1)?.tapBack() ?? null;
 }
 
+export function screenButtons(scene) {
+  const top = scene.openMenus?.at(-1);
+  return { back: top ? top.canBack() : !!scene.levels?.evolution?.cancelable, pages: scene.summaryScreen?.pages() ?? null };
+}
+
 export function installTapBack(scene) {
   const down = (pointer, over) => {
     if (over?.length) return;
     const x = pointer.worldX / 6, y = pointer.worldY / 6;
-    if (Object.entries(INFO_RECTS).some(([side, r]) => scene.info?.[side]?.container?.visible && inside(x, y, r))) return;
+    if (onInfoBox(scene, x, y)) return;
     const target = backTarget(scene);
     if (!target || target.windows.some(r => inside(x, y, r))) return;
     target.back();

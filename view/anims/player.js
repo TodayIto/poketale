@@ -1,11 +1,12 @@
 // from pokerogue src/data/battle-anims.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import Phaser from 'phaser';
 import { animation, moveFile } from './data.js';
 import { framePosition } from './geometry.js';
 import { delay } from '../lifetime.js';
 import { LoadError } from '../retry.js';
+import { isPlayerSide, firstOnSide } from '../positions.js';
 
 const PRIORITY = {
   0: ({ front }) => ['moveBelow', front],
@@ -71,7 +72,7 @@ export class AnimationPlayer {
     if (onSubstitute && targetSide !== side) target = scene.effects.dollTarget(targetSide) ?? target;
     const source = await (this.prepared.get(file) ?? animation(file));
     if (!source) throw new Error(`Missing animation: ${file}`);
-    const index = variant ?? (side === 'player' ? 0 : 1);
+    const index = variant ?? (isPlayerSide(side) ? 0 : 1);
     const opposite = Array.isArray(source) && index === 1;
     const anim = Array.isArray(source) ? source[index] : source;
     if (!anim) throw new Error(`Missing variant ${index}: ${file}`);
@@ -84,7 +85,7 @@ export class AnimationPlayer {
     const visible = originals.map(s => s.visible);
     const priorities = [];
     const setPriority = (sprite, frame) => {
-      const front = (scene.pokemon.enemy ?? scene.pokemon.player).container;
+      const front = (firstOnSide(scene, 'enemy') ?? firstOnSide(scene, 'player')).container;
       const [move, anchor] = PRIORITY[frame.priority]?.({ bg, front, focus: actors[FOCUS[frame.focus]] }) ?? [];
       if (anchor && scene.field.exists(anchor)) scene.field[move](sprite, anchor);
       else scene.field.bringToTop(sprite);
@@ -100,7 +101,7 @@ export class AnimationPlayer {
           ? scene.add.tileSprite((event.bgX ?? 0) - 320, (event.bgY ?? 0) - 284, 896, 576, `anim-bg:${event.resourceName}`)
           : scene.add.rectangle((event.bgX ?? 0) - 320, (event.bgY ?? 0) - 284, 896, 576, 0);
         bg.setOrigin(0).setScale(1.25).setAlpha((event.opacity ?? 0) / 255);
-        scene.field.add(bg); scene.field.moveBelow(bg, (scene.pokemon.enemy ?? user).container);
+        scene.field.add(bg); scene.field.moveBelow(bg, (firstOnSide(scene, 'enemy') ?? user).container);
         tail = Math.max(tail, (event.duration ?? 0) * 2);
       } else if (event.eventType === 'AnimTimedUpdateBgEvent' && bg) {
         const config = { targets: bg, duration: (event.duration ?? 0) * frameMs };

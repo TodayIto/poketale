@@ -16,11 +16,13 @@ function readSaveRaw(chat) {
 export const saveStatus = chat => readSaveRaw(chat).status;
 
 const startOf = s => (s?.spec ? { blockKey: s.blockKey, spec: s.spec } : null);
-const recordOf = r => (r ? { blockKey: r.blockKey, sends: r.sends ?? [] } : null);
+
+// A committed record keeps what its story commands did (act, turns) for the message log
+const recordOf = r => (r ? { blockKey: r.blockKey, sends: r.sends ?? [], ...(r.plans?.length ? { plans: r.plans.map(p => ({ act: p.act, turns: p.turns })) } : {}) } : null);
 const placeOf = o => (typeof o?.on === 'string' ? { on: o.on, above: typeof o.above === 'string' ? o.above : null } : null);
 
 const attemptOf = a => (a ? { blockKey: a.blockKey, auto: a.auto ?? null, balls: a.balls ?? null, sends: [...a.sends ?? [], ...a.prepared ? [a.prepared] : []],
-  opened: placeOf(a.opened) } : null);
+  opened: placeOf(a.opened), ...(a.plans?.length ? { plans: a.plans } : {}) } : null);
 
 function openedHere(chat) {
   const messages = chat?.message ?? [], at = messages.length - 1;
@@ -62,7 +64,6 @@ function ahead(a, b) {
   return at < 0 ? 0 : x[at] < y[at] ? -1 : 1;
 }
 
-// The row furthest into the battle (of level rows, the later one) | null (none)
 const furthest = sends => sends.reduce((best, send) => (best && ahead(send, best) < 0 ? best : send), null);
 
 // This block's committed record ('record') or current attempt ('attempt') | null
@@ -116,7 +117,7 @@ export function leaveAttempt(chat, blockKey) {
 export function commitAttempt(chat, blockKey) {
   const save = readSave(chat) ?? empty;
   const attempt = partFor(save, blockKey, 'attempt');
-  writeSave(chat, { ...save, record: recordOf({ blockKey, sends: attempt?.sends }), attempt: attempt ? null : save.attempt });
+  writeSave(chat, { ...save, record: recordOf({ blockKey, sends: attempt?.sends, plans: attempt?.plans }), attempt: attempt ? null : save.attempt });
 }
 
 export function addSend(chat, blockKey, send) {

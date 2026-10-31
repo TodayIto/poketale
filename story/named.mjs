@@ -55,6 +55,8 @@ export const namedPerson = key => (isNamedSprite(key) ? named.people[key] : null
 
 export const cardFace = key => (isNamedSprite(key) && Object.hasOwn(named.showdown, key) ? named.showdown[key] : null);
 
+export const namedGender = key => (isNamedSprite(key) ? named.gender[key] ?? null : null);
+
 export const cardBounds = face => named.faceBounds?.[face] ?? null;
 
 export const cardSheet = key => (isNamedSprite(key) && Object.hasOwn(named.sheet, key) ? { key, rect: named.sheet[key] } : null);

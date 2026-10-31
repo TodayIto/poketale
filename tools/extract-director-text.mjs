@@ -1,8 +1,8 @@
-// from pokerogue locales/ko/*.json @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// from pokerogue locales/{ko,en}/*.json @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
-// Extract only the phrases used by director/text.js and director/steps.js.
 import { readFile, writeFile } from 'node:fs/promises';
+import { LANGS } from '../director/lang.js';
 
 const keys = {
   battle: ['useMove', 'fainted', 'hitResultCriticalHit', 'hitResultSuperEffective',
@@ -12,11 +12,13 @@ const keys = {
 
     'playerComeBack', 'trainerComeBack', 'playerGo', 'trainerGo', 'trainerSendOut', 'pokemonDraggedOut', 'noEscapeSwitch',
 
-    'trainerAppeared',
+    'trainerAppeared', 'multiWildAppeared',
 
     'runAwaySuccess', 'runAwayCannotEscape', 'noEscapeTrainer', 'noEscapePokemon', 'noEscapeFlee', 'escapeVerbFlee',
 
-    'trainerDefeated', 'hitResultOneHitKo', 'hitResultExtremelyEffective', 'hitResultMostlyIneffective', 'magicCoatActivated'],
+    'trainerDefeated', 'hitResultOneHitKo', 'hitResultExtremelyEffective', 'hitResultMostlyIneffective', 'magicCoatActivated',
+
+    'wildPokemonWithAffix', 'foePokemonWithAffix'],
 
   'party-ui-handler': ['noEnergy', 'hasEnergy'],
   'move-trigger': ['hitWithRecoil', 'cannotUseMove'],
@@ -29,16 +31,16 @@ const keys = {
     'freeze.obtain', 'freeze.activation', 'freeze.heal',
     'burn.obtain', 'burn.activation', 'burn.heal'],
 };
-const result = {
-  _source: 'from pokerogue locales/ko @ 7d7da4a8 (AGPL-3.0-only); locales @ 485b48eb',
-};
-for (const [file, selected] of Object.entries(keys)) {
-  const source = JSON.parse(await readFile(new URL(`../vendor/pokerogue/locales/ko/${file}.json`, import.meta.url), 'utf8'));
-  for (const key of selected) {
-    const value = key.split('.').reduce((object, part) => object?.[part], source);
-    if (typeof value !== 'string') throw new Error(`Missing locale key: ${file}.${key}`);
-    result[`${file}.${key}`] = value;
+for (const lang of LANGS) {
+  const result = { _source: `from pokerogue locales/${lang} @ 7d7da4a8 (AGPL-3.0-only); locales @ 485b48eb` };
+  for (const [file, selected] of Object.entries(keys)) {
+    const source = JSON.parse(await readFile(new URL(`../vendor/pokerogue/locales/${lang}/${file}.json`, import.meta.url), 'utf8'));
+    for (const key of selected) {
+      const value = key.split('.').reduce((object, part) => object?.[part], source);
+      if (typeof value !== 'string') throw new Error(`Missing locale key: ${lang}/${file}.${key}`);
+      result[`${file}.${key}`] = value;
+    }
   }
+  await writeFile(new URL(`../director/text-${lang}.json`, import.meta.url), JSON.stringify(result, null, 2) + '\n');
+  console.log(`Extracted ${Object.keys(result).length - 1} ${lang} phrases -> director/text-${lang}.json`);
 }
-await writeFile(new URL('../director/text-ko.json', import.meta.url), JSON.stringify(result, null, 2) + '\n');
-console.log(`Extracted ${Object.keys(result).length - 1} Korean phrases -> director/text-ko.json`);

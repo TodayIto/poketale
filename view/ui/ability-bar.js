@@ -1,7 +1,7 @@
 // from pokerogue src/ui/containers/ability-bar.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/show-ability-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/hide-ability-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { addTextObject, styledText } from './text.js';
 import { applyTheme, themeOf, usesLegacyArt } from './theme.js';
@@ -12,7 +12,7 @@ const BASE_Y = -116;
 const TEXT_PADDING = 15;
 const SCREEN_RIGHT = 320;
 
-export const abilityFlyInText = (pokemonName, abilityName) => ` ${pokemonName}의\n${abilityName}`;
+export const abilityFlyInText = (words, pokemonName, abilityName) => words('fight-ui-handler.abilityFlyInText', { pokemonName, passive: '', abilityName });
 
 export class AbilityBar {
   constructor(scene) {
@@ -43,9 +43,10 @@ export class AbilityBar {
       this.player = player;
     }
     this.scene.fieldUI.bringToTop(this.container);
-    this.container.setY(player ? BASE_Y : BASE_Y - 14);
+    const double = !!this.scene.double;
+    this.container.setY(player ? BASE_Y + (double ? 14 : 0) : BASE_Y - (double ? 28 : 14));
     this.setVisible(true);
-    const text = abilityFlyInText(pokemonName, abilityName);
+    const text = abilityFlyInText(this.scene.words, pokemonName, abilityName);
     if (this.abilityText) {
       const [name, ability] = text.split('\n');
       this.text.setText(name.trimStart()); this.abilityText.setText(ability.trimStart());

@@ -3,12 +3,13 @@
 // from pokerogue src/phases/summon-phase.ts (preSummon's player ball throw) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/field/trainer.ts (sprites, tint/untint, playAnim) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/data/trainers/trainer-config.ts (loadAssets anims) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { tween, delay } from './lifetime.js';
 import { fieldAtlases, atlasJson, animFrames } from './field-atlases.js';
 import { PokemonSprite } from './sprites/pokemon.js';
 import { BattleInfo } from './ui/battle-info.js';
+import { checkPosition, teamOf, infoLayout } from './positions.js';
 import { SHOWDOWN_TRAINER } from '../story/named.mjs';
 
 export const DEFAULT_TRAINER = 'ace_trainer_m';
@@ -128,13 +129,15 @@ export class BattleEncounter {
     return { ...trainer, tintSprite };
   }
 
-  async encounter({ kind = 'trainer', enemy } = {}) {
+  async encounter({ kind = 'trainer', enemy, others = [] } = {}) {
     const s = this.scene;
     s.requireReady();
     if (!['trainer', 'wild'].includes(kind)) throw new Error(`Invalid encounter kind: ${kind}`);
     if (kind === 'wild' && !enemy) throw new Error('Wild encounter needs the enemy MonView');
+    const wild = kind === 'wild' ? [{ position: 'enemy', mon: enemy }, ...others] : [];
+    for (const { position } of wild) if (teamOf(checkPosition(s.double, position)) !== 'enemy') throw new Error(`Wild mon on the player side: ${position}`);
     await Promise.all([kind === 'trainer' ? this.loadEnemy() : null, this.load(this.playerKey), this.load(`${this.playerKey}_pb`)]);
-    const asset = kind === 'wild' ? await s.assets.mon(enemy, false) : null;
+    const assets = await Promise.all(wild.map(({ mon }) => s.assets.mon(mon, false)));
     s.life.check();
     const [, arenaPlayer, arenaEnemy] = s.biomeObjects;
 
@@ -150,12 +153,14 @@ export class BattleEncounter {
       enemyTargets.push(trainer.container);
     } else {
 
-      s.pokemon.enemy?.destroy(); s.info.enemy?.destroy();
-      const pokemon = s.pokemon.enemy = new PokemonSprite(s, 'enemy', enemy, asset);
-      (s.info.enemy = new BattleInfo(s, false)).init(enemy);
-      pokemon.container.setVisible(true); pokemon.container.x -= 300;
-      pokemon.playAnim(); pokemon.tint(0, 0.5);
-      enemyTargets.push(pokemon.container);
+      wild.forEach(({ position, mon }, i) => {
+        s.pokemon[position]?.destroy(); s.info[position]?.destroy();
+        const pokemon = s.pokemon[position] = new PokemonSprite(s, position, mon, assets[i]);
+        (s.info[position] = new BattleInfo(s, false, infoLayout(s.double, position))).init(mon);
+        pokemon.container.setVisible(true); pokemon.container.x -= ENTER_DISTANCE;
+        pokemon.playAnim(); pokemon.tint(0, 0.5);
+        enemyTargets.push(pokemon.container);
+      });
     }
     s.audio.startBattleMusic();
     await Promise.all([
@@ -170,9 +175,8 @@ export class BattleEncounter {
       tintSprite.setVisible(false).setAlpha(1);
     } else {
 
-      s.audio.cry(enemy).catch(() => {});
-      s.info.enemy.show().catch(() => {});
-      await s.pokemon.enemy.untint(100, 'Sine.easeOut');
+      for (const { position, mon } of wild) { s.audio.cry(mon).catch(() => {}); s.info[position].show().catch(() => {}); }
+      await Promise.all(wild.map(({ position }) => s.pokemon[position].untint(100, 'Sine.easeOut')));
     }
   }
 

@@ -1,88 +1,93 @@
 import { mountLoading } from './loading.js';
 import { UI_VARS, CARD_FRAME, crossIcon } from './ui-css.js';
-import { isRecord } from '../../story/stored.mjs';
+import { isRecord, isUnreadable, unreadableLine } from '../../story/stored.mjs';
 import { THEMES as THEME_IDS, DEFAULT_THEME } from '../../view/ui/theme.js';
 import { DIFFICULTIES as DIFFICULTY_IDS } from '../../ai/index.js';
 import { GAME_SPEEDS, DEFAULT_SPEED } from '../../view/game-speed.js';
 import { QUALITIES as QUALITY_IDS } from '../../view/quality.js';
 import { MAINLINE_FORMAT, CHAMPIONS_FORMAT } from '../../engine/rules.mjs';
+import { EXP_SHARE_MODES } from '../../story/items.mjs';
 import { shrinkPicture } from './my-picture.js';
 import { loadFont } from '../../view/fonts.js';
 import { FONT, noteRule } from '../../story/card.mjs';
 import { WHAT, failureText } from '../../story/failure.mjs';
+import { sayer, perLang } from '../../story/screen-text.mjs';
 import { SHEET_FONT } from '../../story/style.mjs';
 import { TAB_COLOR, ICON as PANEL_ICON } from '../../story/panel-html.mjs';
 
 export const SETTINGS_KEY = 'pkb_settings';
-export const DEFAULT_SETTINGS = Object.freeze({ iron: false, sound: false, sendFormat: 'key', theme: DEFAULT_THEME, orientation: 'portrait', koNames: true, autoSend: false, difficulty: 'normal',
-  rule: 'mainline', speed: DEFAULT_SPEED, typeHints: false, moveAnims: true, quality: 'high', silhouette: true,
-  looks: Object.freeze({}), oldLook: null,
+
+// Languages (list order = settings row order). Labels are each language's own name
+export const LANGS = [['ko', '한국어'], ['en', 'English']];
+
+export const LANG_OPEN = false;
+
+const OLD_LANG = 'ko';
+
+export const langOf = tag => (/^ko\b/i.test(String(tag ?? '')) ? 'ko' : 'en');
+
+export const hostLang = () => langOf(globalThis.navigator?.language);
+export const DEFAULT_SETTINGS = Object.freeze({ iron: false, sound: false, sendFormat: 'key', theme: DEFAULT_THEME, orientation: 'portrait', lang: null, autoSend: false, aux: false, auxRecent: 8, oocTrial: false, difficulty: 'normal',
+  rule: 'mainline', expShare: 'always', speed: DEFAULT_SPEED, typeHints: false, moveAnims: true, quality: 'high', silhouette: true,
+  looks: Object.freeze({}), oldLook: null, debug: false,
   bots: Object.freeze([]), botsOff: Object.freeze([]) });
 
 export const DEFAULT_LOOK = Object.freeze({ gender: 'm', myBack: 'silhouette', myPicture: 'silhouette' });
-export const SEND_FORMATS = [['summary', '요약'], ['key', '핵심'], ['log', '로그']];
 
-const THEME_LABELS = { plugin: '기본', legacy: '레거시', default: 'PokeRogue' };
-export const THEMES = THEME_IDS.map(id => [id, THEME_LABELS[id]]);
-const DIFFICULTY_LABELS = { easy: '쉬움', normal: '보통', hard: '어려움', max: '최고' };
-export const DIFFICULTIES = DIFFICULTY_IDS.map(id => [id, DIFFICULTY_LABELS[id]]);
+const labelled = (ids, prefix) => perLang(t => Object.freeze(ids.map(id => Object.freeze([id, t(`${prefix}.${id}`)]))));
+
+const SEND_FORMAT_IDS = ['summary', 'key', 'log'];
+const RULE_IDS = ['mainline', 'champions'];
+const LOOK_IDS = ['silhouette', 'color'];
+const PICTURE_LOOK_IDS = [...LOOK_IDS, 'image'];
+const GENDER_IDS = ['m', 'f'];
+export const SEND_FORMATS = labelled(SEND_FORMAT_IDS, 'settings.sendFormat');
+export const THEMES = labelled(THEME_IDS, 'settings.theme');
+export const DIFFICULTIES = labelled(DIFFICULTY_IDS, 'settings.difficulty');
 
 const RULE_FORMATS = { mainline: MAINLINE_FORMAT, champions: CHAMPIONS_FORMAT };
-export const RULES = [['mainline', '본가'], ['champions', '챔피언스']];
+export const RULES = labelled(RULE_IDS, 'settings.rule');
+export const EXP_SHARES = labelled(EXP_SHARE_MODES, 'settings.expShare');
 export const ruleFormat = rule => RULE_FORMATS[rule];
-export const SPEEDS = GAME_SPEEDS.map(speed => [speed, `${speed}배`]);
-const QUALITY_LABELS = { high: '높음', low: '낮음' };
-export const QUALITIES = QUALITY_IDS.map(id => [id, QUALITY_LABELS[id]]);
+export const SPEEDS = perLang(t => Object.freeze(GAME_SPEEDS.map(speed => Object.freeze([speed, t('settings.speed', { speed })]))));
+export const QUALITIES = labelled(QUALITY_IDS, 'settings.quality');
 
-export const LOOKS = [['silhouette', '실루엣'], ['color', '컬러']];
-export const PICTURE_LOOKS = [...LOOKS, ['image', '그림']];
+export const LOOKS = labelled(LOOK_IDS, 'settings.look');
+export const PICTURE_LOOKS = labelled(PICTURE_LOOK_IDS, 'settings.look');
 
 // My gender = m/f of the protagonist sprites (back and front)
-export const GENDERS = [['m', '남'], ['f', '여']];
+export const GENDERS = labelled(GENDER_IDS, 'settings.gender');
 
 export const pictureLocked = look => look.myPicture !== 'image';
 
-export const SEND_FORMAT_NOTES = [
-  ['요약', '누가 나왔고, 누가 쓰러졌고, 누가 이겼는지만 보냅니다. 장면은 AI 가 자유롭게 지어 씁니다.'],
-  ['핵심', '턴마다 누가 어떤 기술을 써서 얼마나 맞혔는지 보냅니다. 실제 배틀 흐름대로 쓰게 됩니다.'],
-  ['로그', '배틀 화면에 나온 문장을 전부 보냅니다. 가장 자세하고, 그만큼 깁니다.'],
-];
+export const SEND_FORMAT_NOTES = perLang((t, lang) => Object.freeze(SEND_FORMATS(lang).map(([id, name]) => Object.freeze([name, t(`settings.sendFormatNote.${id}`)]))));
 
-export const ON_OFF = [[true, '켜기'], [false, '끄기']];
+const LANG_HELP = '화면과 AI 글의 언어\nLanguage of screens and AI text';
 
-export const SETTING_TABS = [
-  { id: 'battle', label: '배틀', rows: [
-    { key: 'rule', label: '규칙', options: RULES, help: '새로 시작하는 배틀부터 적용됩니다.\n챔피언스 규칙에는 노력치가 없습니다.' },
-    { key: 'iron', label: '철인 모드', options: ON_OFF, help: '다시 하기를 쓸 수 없습니다. 배틀 도중에 나가면 패배가 됩니다.' },
-    { key: 'difficulty', label: '상대 AI 난이도', options: DIFFICULTIES, help: '상대 트레이너가 기술을 고르는 실력입니다. 야생 포켓몬에는 적용되지 않습니다.' },
-    { key: 'speed', label: '배속', options: SPEEDS, help: '배틀 중 바꾼 배속도 다음 배틀에 유지됩니다.' },
-    { key: 'typeHints', label: '상성 힌트', options: ON_OFF, help: '기술을 고를 때 상성을 글자 색으로 보여 줍니다.' },
-  ] },
-  { id: 'screen', label: '화면', rows: [
-    { key: 'sound', label: '소리', options: ON_OFF, help: '배틀 음악과 효과음' },
-    { key: 'moveAnims', label: '기술 애니메이션', options: ON_OFF, help: '끄면 기술 연출 없이 문구와 HP 변화만 나옵니다.' },
-    { key: 'silhouette', label: '상대 트레이너', options: LOOKS, help: '배틀 화면의 상대 트레이너 그림입니다. 원작 인물은 언제나 컬러로 나옵니다.',
-      get: s => (s.silhouette ? 'silhouette' : 'color'), set: id => ({ silhouette: id === 'silhouette' }) },
-    { key: 'persona', label: '지금 페르소나', help: '내 성별·내 뒷모습·내 그림은 페르소나마다 따로 기억합니다.' },
-    { key: 'gender', label: '내 성별', options: GENDERS, help: '내 트레이너의 성별입니다.', look: true },
-    { key: 'myBack', label: '내 뒷모습', options: LOOKS, help: '배틀 화면의 내 트레이너 그림입니다.', look: true },
-    { key: 'myPicture', label: '내 그림', options: PICTURE_LOOKS, help: '배틀 준비 화면에 나옵니다.', look: true },
-    { key: 'theme', label: '배틀 화면 색', options: THEMES, help: '배틀 화면 안의 창 색' },
-    { key: 'quality', label: '화질', options: QUALITIES, help: '낮음은 절반 해상도로 그립니다.\n새로 여는 배틀부터 적용됩니다.' },
-  ] },
-  { id: 'story', label: '이야기', rows: [
-    { key: 'sendFormat', label: 'AI 전달 양식', options: SEND_FORMATS, help: SEND_FORMAT_NOTES },
-    { key: 'koNames', label: '한국어 이름 병기', options: ON_OFF, help: 'AI 에게 주는 포켓몬·기술·도구·특성 이름 옆에 한국어 이름.\n끄면 영어만' },
-    { key: 'autoSend', label: '보내기 후 바로 전송', options: ON_OFF, permission: 'sendChat',
-      help: '켜면 이야기로 보내기가 즉시 AI 호출까지 부릅니다.' },
-  ] },
-  { id: 'bot', label: '봇', rows: [
-    { key: 'bot', label: '이 봇에 기능 적용', options: ON_OFF },
-    { key: 'bots', label: '기능을 켤 봇', help: '이름에 ‘포켓몬’·‘Poké’·‘Pokemon’이 들어간 봇은 자동으로 켜집니다.\n다른 봇은 이름을 그대로 적어 추가합니다.' },
-  ] },
-];
+const AUX_RECENT_COUNTS = [4, 8, 12, 24];
+export const AUX_RECENTS = perLang(t => Object.freeze(AUX_RECENT_COUNTS.map(count => Object.freeze([count, t('settings.auxRecent', { count })]))));
 
-export const rowValue = (row, values) => (row.get ? row.get(values) : values[row.key]);
+export const ON_OFF = perLang(t => Object.freeze([Object.freeze([true, t('settings.on')]), Object.freeze([false, t('settings.off')])]));
+
+export const SETTING_TABS = perLang((t, lang) => {
+  const row = (key, options, extra = {}) => ({ key, label: t(`settings.row.${key}`), ...(options ? { options } : {}), ...('help' in extra ? {} : { help: t(`settings.help.${key}`) }), ...extra });
+  const onOff = ON_OFF(lang);
+  return Object.freeze([
+    { id: 'battle', rows: [row('rule', RULES(lang)), row('expShare', EXP_SHARES(lang)), row('iron', onOff), row('difficulty', DIFFICULTIES(lang)), row('speed', SPEEDS(lang)), row('typeHints', onOff)] },
+    { id: 'screen', rows: [
+      ...(LANG_OPEN ? [row('lang', LANGS, { help: LANG_HELP })] : []),
+      row('sound', onOff), row('moveAnims', onOff),
+      row('silhouette', LOOKS(lang), { get: s => (s.silhouette ? 'silhouette' : 'color'), set: id => ({ silhouette: id === 'silhouette' }) }),
+      row('persona'),
+      row('gender', GENDERS(lang), { look: true }), row('myBack', LOOKS(lang), { look: true }), row('myPicture', PICTURE_LOOKS(lang), { look: true }),
+      row('theme', THEMES(lang)), row('quality', QUALITIES(lang)),
+    ] },
+    { id: 'story', rows: [row('sendFormat', SEND_FORMATS(lang), { help: SEND_FORMAT_NOTES(lang) }), row('autoSend', onOff, { permission: 'sendChat' }), row('aux', onOff), row('auxRecent', AUX_RECENTS(lang)), row('oocTrial', onOff), row('debug', onOff)] },
+    { id: 'bot', rows: [row('bot', onOff, { help: undefined }), row('bots'), row('import')] },
+  ].map(tab => Object.freeze({ ...tab, label: t(`settings.tab.${tab.id}`) })));
+});
+
+export const rowValue = (row, values, inUse = {}) => (row.get ? row.get(values) : values[row.key]) ?? inUse[row.key];
 
 // Value chosen in a row -> settings patch
 export const rowPatch = (row, id) => (row.set ? row.set(id) : { [row.key]: id });
@@ -92,12 +97,12 @@ export const POKE_BALL_ICON = '<svg viewBox="-9 -9 18 18" width="100%" height="1
   + '<path d="M-5.94-.84A6 6 0 0 1 5.94-.84Z" fill="#e3343f"/><path d="M-5.94.84A6 6 0 0 0 5.94.84Z" fill="#fff"/>'
   + '<circle r="2.64" fill="#18242e"/><circle r="1.56" fill="#fff"/></svg>';
 
-const pick = (v, list, dflt) => (list.some(([id]) => id === v) ? v : dflt);
+const pick = (v, ids, dflt) => (ids.includes(v) ? v : dflt);
 
 const normalizeLook = l => ({
-  gender: pick(l.gender, GENDERS, DEFAULT_LOOK.gender),
-  myBack: pick(l.myBack, LOOKS, DEFAULT_LOOK.myBack),
-  myPicture: pick(l.myPicture, PICTURE_LOOKS, DEFAULT_LOOK.myPicture),
+  gender: pick(l.gender, GENDER_IDS, null),
+  myBack: pick(l.myBack, LOOK_IDS, DEFAULT_LOOK.myBack),
+  myPicture: pick(l.myPicture, PICTURE_LOOK_IDS, DEFAULT_LOOK.myPicture),
 });
 
 const lookMap = value => Object.fromEntries(Object.entries(isRecord(value) ? value : {})
@@ -110,18 +115,23 @@ export function normalizeSettings(raw) {
   return {
     iron: s.iron === true,
     sound: s.sound === true,
-    sendFormat: pick(s.sendFormat, SEND_FORMATS, DEFAULT_SETTINGS.sendFormat),
-    theme: pick(s.theme, THEMES, DEFAULT_SETTINGS.theme),
+    sendFormat: pick(s.sendFormat, SEND_FORMAT_IDS, DEFAULT_SETTINGS.sendFormat),
+    theme: pick(s.theme, THEME_IDS, DEFAULT_SETTINGS.theme),
     orientation: 'portrait',
-    koNames: s.koNames !== false,
+    lang: pick(s.lang, LANGS.map(([id]) => id), null),
     autoSend: s.autoSend === true,
-    difficulty: pick(s.difficulty, DIFFICULTIES, DEFAULT_SETTINGS.difficulty),
-    rule: pick(s.rule, RULES, DEFAULT_SETTINGS.rule),
-    speed: pick(s.speed, SPEEDS, DEFAULT_SETTINGS.speed),
+    aux: s.aux === true,
+    auxRecent: pick(s.auxRecent, AUX_RECENT_COUNTS, DEFAULT_SETTINGS.auxRecent),
+    oocTrial: s.oocTrial === true,
+    difficulty: pick(s.difficulty, DIFFICULTY_IDS, DEFAULT_SETTINGS.difficulty),
+    rule: pick(s.rule, RULE_IDS, DEFAULT_SETTINGS.rule),
+    expShare: pick(s.expShare, EXP_SHARE_MODES, DEFAULT_SETTINGS.expShare),
+    speed: pick(s.speed, GAME_SPEEDS, DEFAULT_SETTINGS.speed),
     typeHints: s.typeHints === true,
     moveAnims: s.moveAnims !== false,
-    quality: pick(s.quality, QUALITIES, DEFAULT_SETTINGS.quality),
+    quality: pick(s.quality, QUALITY_IDS, DEFAULT_SETTINGS.quality),
     silhouette: s.silhouette !== false,
+    debug: s.debug === true,
     looks: lookMap(s.looks),
     oldLook: isRecord(s.oldLook) ? normalizeLook(s.oldLook) : null,
     bots: nameList(s.bots),
@@ -129,10 +139,19 @@ export function normalizeSettings(raw) {
   };
 }
 
-// This persona's my-look settings. Defaults when the name is unknown or the persona is new
-export const lookOf = (settings, name) => (name && Object.hasOwn(settings.looks, name) ? settings.looks[name] : DEFAULT_LOOK);
+const storedLook = (settings, name) => (name && Object.hasOwn(settings.looks, name) ? settings.looks[name] : null);
 
-export const setLook = (settings, name, patch) => normalizeSettings({ ...settings, looks: { ...settings.looks, [name]: { ...lookOf(settings, name), ...patch } } });
+export const lookOf = (settings, name) => {
+  const look = storedLook(settings, name);
+  return look ? { ...look, gender: look.gender ?? DEFAULT_LOOK.gender } : DEFAULT_LOOK;
+};
+
+// This persona's chosen gender ('m' | 'f'), null when not chosen or the name is unknown
+export const chosenGender = (settings, name) => storedLook(settings, name)?.gender ?? null;
+
+export const shownLook = (settings, name) => ({ ...lookOf(settings, name), gender: chosenGender(settings, name) });
+
+export const setLook = (settings, name, patch) => normalizeSettings({ ...settings, looks: { ...settings.looks, [name]: { ...storedLook(settings, name), ...patch } } });
 
 export const adoptOldLook = (settings, name) => (settings.oldLook
   ? normalizeSettings({ ...settings, looks: { [name]: settings.oldLook, ...settings.looks }, oldLook: null }) : settings);
@@ -145,7 +164,6 @@ export const botKey = name => String(name ?? '').normalize('NFC').trim().toLower
 
 export const autoBot = name => { const key = botKey(name); return AUTO_BOT_WORDS.some(word => key.includes(word)); };
 
-// Stored name list -> array of strings without empty names or duplicates (by key)
 function nameList(value) {
   const seen = new Set(), out = [];
   for (const raw of Array.isArray(value) ? value : []) {
@@ -158,6 +176,7 @@ function nameList(value) {
 }
 const hasName = (list, name) => list.some(other => botKey(other) === botKey(name));
 
+// Whether the features are enabled for the bot with this name
 export function botEnabled(settings, name) {
   if (!botKey(name)) return false;
   const s = normalizeSettings(settings);
@@ -185,22 +204,24 @@ export function botsSwitched(before, next) {
 
 export const SETTINGS_VERSION = 1;
 
-export const SETTINGS_UNREADABLE = failureText(WHAT.settings, 'unreadable');
+export const settingsUnreadable = lang => failureText(WHAT.settings, 'unreadable', lang);
 
 export function readSettings(raw) {
-  const fallback = status => ({ settings: normalizeSettings(null), status });
-  if (raw === undefined || raw === null || raw === '') return fallback('none');
+  const fallback = status => ({ settings: normalizeSettings({ lang: OLD_LANG }), status });
+  if (raw === undefined || raw === null || raw === '') return { settings: normalizeSettings(null), status: 'none' };
   let value = raw;
   if (typeof raw === 'string') { try { value = JSON.parse(raw); } catch { return fallback('corrupt'); } }
   if (!isRecord(value)) return fallback('corrupt');
   if ((value.v ?? SETTINGS_VERSION) !== SETTINGS_VERSION) return fallback('unsupported');
 
   const old = Object.keys(DEFAULT_LOOK).some(key => key in value);
-  return { settings: normalizeSettings(old ? { ...value, oldLook: value } : value), status: 'ok' };
+
+  const lang = 'lang' in value ? value.lang : OLD_LANG;
+  return { settings: normalizeSettings({ ...value, lang, ...(old ? { oldLook: value } : {}) }), status: 'ok' };
 }
 export async function loadSettings(storage) {
   let raw;
-  try { raw = await storage?.getItem?.(SETTINGS_KEY); } catch { return { settings: normalizeSettings(null), status: 'corrupt' }; }
+  try { raw = await storage?.getItem?.(SETTINGS_KEY); } catch { return { settings: normalizeSettings({ lang: OLD_LANG }), status: 'corrupt' }; }
   return readSettings(raw);
 }
 export async function saveSettings(storage, settings) {
@@ -222,15 +243,14 @@ const TAB_ICONS = {
 
 const CURSOR = '<svg class="cur" viewBox="0 0 8 10" aria-hidden="true"><path d="M1 0h2l5 5-5 5H1z" fill="currentColor"/></svg>';
 
-// Line added to the bot tab description after the current bot is turned on or off
-const BOT_REDRAW_HINT = '이미 있는 메시지는 채팅을 다시 열면 바뀝니다.';
+export function importLabel({ count }, lang) {
+  return sayer(lang)('settings.importLabel', { count });
+}
 
-const COMPAT_HINT = '플러그인을 지우기 전에 이 봇에 기능 적용을 끄십시오.';
-
-const NEEDS_CHAT = '캐릭터 채팅을 연 상태에서만 바꿀 수 있습니다.';
-
-export function mountSettings({ parent = document.body, settings, bot = null, persona = null, notice = '', picture = null,
-  onChange = () => {}, onPicture = async () => {}, onPermission = async () => false, onClose = () => {} }) {
+export function mountSettings({ parent = document.body, settings, bot = null, persona = null, notice = '', picture = null, imports = null, inUse = {}, lang,
+  onChange = () => {}, onPicture = async () => {}, onPermission = async () => false, onImport = async () => {}, onCancelImport = async () => imports, onClose = () => {} }) {
+  const t = sayer(lang);
+  const NEEDS_CHAT = t('settings.needsChat');
   let current = normalizeSettings(settings);
   loadFont(SHEET_FONT).catch(error => console.warn('[poke-battle] 설정 창 글꼴을 올리지 못함 — 대체 글꼴로', error));
   const root = document.createElement('section');
@@ -305,6 +325,15 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     .pkb-settings .chip button { flex:none; width:20px; height:20px; padding:0; display:flex; align-items:center; justify-content:center; border:0; border-radius:50%;
       background:transparent; color:inherit; cursor:pointer; }
     .pkb-settings .chip button svg { width:8px; height:8px; }
+    /* Import row: open button; past imports, each with cancel (asked once more) */
+    .pkb-settings .imports { grid-column:2 / 4; display:flex; flex-wrap:wrap; gap:6px; margin-top:2px; }
+    .pkb-settings .imports[hidden] { display:none; }
+    .pkb-settings .chip .ask { display:inline-flex; gap:2px; margin-left:4px; }
+    .pkb-settings .chip .ask button { width:auto; height:20px; padding:0 6px; border-radius:999px; font-size:11px; }
+    .pkb-settings .chip .ask .yes { background:var(--red); color:#fff; }
+    ${noteRule('.pkb-settings .import-fail', 'error')}
+    .pkb-settings .import-fail { grid-column:2 / 4; margin:4px 0 2px; font-size:12px; }
+    .pkb-settings .import-fail[hidden] { display:none; }
     /* Message window: the chosen row's description + a blinking red triangle at the bottom right */
     .pkb-settings .msg { flex:none; position:relative; min-height:76px; margin:0 10px 10px; padding:9px 12px; border:3px solid #4f6f8a; border-radius:10px; background:#fff;
       box-shadow:inset 0 0 0 2px #dbe8f2, 0 3px 0 #466c87; font-size:13px; line-height:1.55; white-space:pre-line; word-break:keep-all; overflow-wrap:anywhere; }
@@ -321,8 +350,8 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
       .pkb-settings .card { width:100%; height:100%; border:0; border-radius:0; box-shadow:none; }
     }
   </style><div class="card" role="dialog" aria-labelledby="pkb-settings-title">
-    <div class="hd"><span class="pb">${POKE_BALL_ICON}</span><b id="pkb-settings-title">PokéTale 설정</b>
-      <button class="x" type="button" aria-label="닫기" title="닫기">${crossIcon(2.8)}</button></div>
+    <div class="hd"><span class="pb">${POKE_BALL_ICON}</span><b id="pkb-settings-title">${t('settings.title')}</b>
+      <button class="x" type="button" aria-label="${t('settings.close')}" title="${t('settings.close')}">${crossIcon(2.8)}</button></div>
     <div class="tabs" role="tablist"></div>
     <div class="list"></div>
     <div class="msg" aria-live="polite"></div>
@@ -334,6 +363,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     tabBar.before(line);
   }
 
+  // Selected row and message box
   const helps = new Map();
   let picked = null;
   const drawHelp = () => {
@@ -353,7 +383,6 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     drawHelp();
   };
 
-  // One row (right-arrow; name; choices)
   const line = (page, label, help, control) => {
     const r = document.createElement('div'); r.className = 'row'; r.innerHTML = CURSOR;
     const name = document.createElement('span'); name.className = 'lab'; name.textContent = label;
@@ -391,19 +420,19 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     busy = true; failLine.hidden = true; drawPicture();
     try { await onPicture(next); image = next; } catch (error) {
       console.warn('[poke-battle] 내 그림을 저장하지 못함', error);
-      failLine.textContent = failureText(next ? WHAT.picture : WHAT.pictureRemove, error); failLine.hidden = false;
+      failLine.textContent = failureText(next ? WHAT.picture : WHAT.pictureRemove, error, lang); failLine.hidden = false;
     } finally { busy = false; drawPicture(); }
   };
-  const uploadButton = button('올리기', () => fileInput.click());
-  const changeButton = button('바꾸기', () => fileInput.click());
-  const removeButton = button('지우기', () => setPicture(null));
+  const uploadButton = button(t('settings.upload'), () => fileInput.click());
+  const changeButton = button(t('settings.change'), () => fileInput.click());
+  const removeButton = button(t('settings.remove'), () => setPicture(null));
   fileInput.onchange = async () => {
     const [file] = fileInput.files; fileInput.value = '';
     if (!file) return;
     let next;
     try { next = await shrinkPicture(file); } catch (error) {
       console.warn('[poke-battle] 고른 파일을 그림으로 읽지 못함', error);
-      failLine.textContent = failureText(WHAT.picture, 'notPicture'); failLine.hidden = false;
+      failLine.textContent = failureText(WHAT.picture, 'notPicture', lang); failLine.hidden = false;
       return;
     }
     await setPicture(next);
@@ -417,20 +446,20 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     pic.setAttribute('aria-disabled', String(locked));
     uploadButton.disabled = locked || busy || !!image;
     changeButton.disabled = removeButton.disabled = locked || busy || !image;
-    if (image && preview.firstChild?.src !== image) preview.replaceChildren(Object.assign(document.createElement('img'), { src: image, alt: '내 그림' }));
+    if (image && preview.firstChild?.src !== image) preview.replaceChildren(Object.assign(document.createElement('img'), { src: image, alt: t('settings.myPictureAlt') }));
     else if (!image) preview.replaceChildren();
   }
 
   const enabledNow = () => !!bot?.name && botEnabled(current, bot.name);
   const botSub = !bot ? NEEDS_CHAT
-    : `${bot.name || '이름 없는 봇'}${autoBot(bot.name) ? ' · 자동으로 켜지는 봇' : ''}${bot.compat ? `\n${bot.compat}\n${COMPAT_HINT}` : ''}`;
+    : `${bot.name || t('settings.noNameBot')}${autoBot(bot.name) ? ` · ${t('settings.autoBot')}` : ''}${bot.compat ? `\n${bot.compat}\n${t('settings.compatHint')}` : ''}`;
   let botChoices = null, hinted = false;
-  const botHelp = text => () => (hinted ? `${text}\n${BOT_REDRAW_HINT}` : text);
+  const botHelp = text => () => (hinted ? `${text}\n${t('settings.botRedraw')}` : text);
   const names = document.createElement('div'); names.className = 'names';
   const form = document.createElement('div'); form.className = 'add';
   const input = document.createElement('input');
-  Object.assign(input, { type: 'text', placeholder: '봇 이름', maxLength: BOT_NAME_MAX });
-  input.setAttribute('aria-label', '추가할 봇 이름');
+  Object.assign(input, { type: 'text', placeholder: t('settings.botName'), maxLength: BOT_NAME_MAX });
+  input.setAttribute('aria-label', t('settings.botNameToAdd'));
 
   const changeBots = next => {
     const before = enabledNow();
@@ -439,14 +468,15 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     const after = enabledNow();
     if (bot?.name && before !== after) { hinted = true; drawHelp(); }
     drawBots();
+    drawImports();
   };
   const chip = (name, off) => {
     const c = document.createElement('span'); c.className = `chip${off ? ' off' : ''}`;
-    if (off) { const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = '끔'; c.append(tag); }
+    if (off) { const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = t('settings.offTag'); c.append(tag); }
     const label = document.createElement('span'); label.textContent = name;
     const remove = document.createElement('button'); remove.type = 'button';
     remove.innerHTML = crossIcon(3);
-    const what = off ? `${name} 다시 켜기` : `${name} 삭제`;
+    const what = t(off ? 'settings.botOn' : 'settings.botRemove', { name });
     remove.setAttribute('aria-label', what); remove.title = what;
     remove.onclick = () => changeBots(off ? { ...current, botsOff: current.botsOff.filter(n => n !== name) } : { ...current, bots: current.bots.filter(n => n !== name) });
     c.append(label, remove);
@@ -463,16 +493,66 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     input.value = '';
     changeBots({ ...current, bots: [...current.bots, name], botsOff: current.botsOff.filter(n => botKey(n) !== botKey(name)) });
   };
-  form.append(input, button('추가', addName));
+  form.append(input, button(t('settings.add'), addName));
   input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addName(); } });
 
+  let pastImports = imports, importBusy = false, asking = null;
+  const importButton = button(t('settings.open'), async () => {
+    importBusy = true; importFail.hidden = true; drawImports();
+    try { await onImport(); } catch (error) {
+      console.warn('[poke-battle] 가져오기 화면을 열지 못함', error);
+      importFail.textContent = failureText(WHAT.importOpen, error, lang); importFail.hidden = false;
+    } finally { importBusy = false; drawImports(); }
+  });
+  const importList = document.createElement('div'); importList.className = 'imports';
+  const importFail = document.createElement('p'); importFail.className = 'import-fail'; importFail.setAttribute('role', 'alert'); importFail.hidden = true;
+  const cancelPast = async id => {
+    importBusy = true; asking = null; importFail.hidden = true; drawImports();
+    try { pastImports = await onCancelImport(id); } catch (error) {
+      console.warn('[poke-battle] 가져오기를 취소하지 못함', error);
+      importFail.textContent = failureText(WHAT.importCancel, error, lang); importFail.hidden = false;
+    } finally { importBusy = false; drawImports(); drawHelp(); }
+  };
+  const importChip = imp => {
+    const c = document.createElement('span'); c.className = 'chip';
+    const label = document.createElement('span'); label.textContent = importLabel(imp, lang);
+    c.append(label);
+    if (asking === imp.id) {
+      const ask = document.createElement('span'); ask.className = 'ask';
+      const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'yes'; yes.textContent = t('settings.cancelIt'); yes.onclick = () => cancelPast(imp.id);
+      const no = document.createElement('button'); no.type = 'button'; no.textContent = t('settings.keep'); no.onclick = () => { asking = null; drawImports(); };
+      ask.append(yes, no); c.append(ask);
+      return c;
+    }
+    const remove = document.createElement('button'); remove.type = 'button'; remove.innerHTML = crossIcon(3); remove.disabled = importBusy;
+    const what = t('settings.cancelImport', { label: importLabel(imp, lang) });
+    remove.setAttribute('aria-label', what); remove.title = what;
+    remove.onclick = () => { asking = imp.id; drawImports(); };
+    c.append(remove);
+    return c;
+  };
+  function drawImports() {
+    importButton.disabled = importBusy || !enabledNow();
+    importRow?.classList.toggle('off', !enabledNow());
+    const list = pastImports?.list ?? [];
+    importList.replaceChildren(...list.map(importChip));
+    importList.hidden = !list.length;
+  }
+
+  const importHelp = row => () => {
+    if (!bot) return NEEDS_CHAT;
+    if (!enabledNow()) return t('settings.importNeedsOn');
+    return isUnreadable(pastImports?.status) ? `${row.help}\n${unreadableLine(lang)}` : row.help;
+  };
+  let importRow = null;
+
   const pages = new Map();
-  for (const tab of SETTING_TABS) {
-    const t = document.createElement('button'); t.type = 'button'; t.className = 'tab'; t.setAttribute('role', 'tab'); t.dataset.tab = tab.id;
-    t.style.background = TAB_COLORS[tab.id];
-    t.innerHTML = TAB_ICONS[tab.id]; t.append(tab.label);
-    t.onclick = () => showTab(tab.id);
-    tabBar.append(t);
+  for (const tab of SETTING_TABS(lang)) {
+    const tabButton = document.createElement('button'); tabButton.type = 'button'; tabButton.className = 'tab'; tabButton.setAttribute('role', 'tab'); tabButton.dataset.tab = tab.id;
+    tabButton.style.background = TAB_COLORS[tab.id];
+    tabButton.innerHTML = TAB_ICONS[tab.id]; tabButton.append(tab.label);
+    tabButton.onclick = () => showTab(tab.id);
+    tabBar.append(tabButton);
     const page = document.createElement('div'); page.className = 'page'; page.setAttribute('role', 'tabpanel'); page.setAttribute('aria-label', tab.label);
     list.append(page); pages.set(tab.id, page);
     for (const row of tab.rows) {
@@ -481,17 +561,20 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
         line(page, row.label, botHelp(botSub), botChoices).classList.toggle('off', !bot?.name);
       } else if (row.key === 'bots') {
         line(page, row.label, botHelp(row.help)).append(form, names);
+      } else if (row.key === 'import') {
+        importRow = line(page, row.label, importHelp(row), importButton);
+        importRow.append(importList, importFail);
       } else if (row.key === 'persona') {
-        line(page, `${row.label}: ${persona ?? '모름'}`, () => (persona ? row.help : NEEDS_CHAT)).classList.toggle('off', !persona);
+        line(page, t('settings.personaOf', { label: row.label, name: persona ?? t('settings.unknown') }), () => (persona ? row.help : NEEDS_CHAT)).classList.toggle('off', !persona);
       } else if (row.look) {
-        const r = line(page, row.label, () => row.help, choices(row.options, rowValue(row, lookOf(current, persona)), row.label, id => {
+        const r = line(page, row.label, () => row.help, choices(row.options, rowValue(row, shownLook(current, persona)), row.label, id => {
           commit(setLook(current, persona, rowPatch(row, id)));
           if (row.key === 'myPicture') drawPicture();
         }, !persona));
         r.classList.toggle('off', !persona);
         if (row.key === 'myPicture') r.append(pic);
       } else {
-        const group = choices(row.options, rowValue(row, current), row.label, async id => {
+        const group = choices(row.options, rowValue(row, current, inUse), row.label, async id => {
           if (row.permission && id === true && rowValue(row, current) !== true && !(await onPermission(row.permission))) {
             setChoice(group, rowValue(row, current));
             return;
@@ -503,14 +586,15 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     }
   }
   function showTab(id) {
-    for (const t of tabBar.children) t.setAttribute('aria-selected', String(t.dataset.tab === id));
+    for (const tabButton of tabBar.children) tabButton.setAttribute('aria-selected', String(tabButton.dataset.tab === id));
     for (const [key, page] of pages) page.hidden = key !== id;
     list.scrollTop = 0;
     pick(pages.get(id).firstElementChild);
   }
   drawPicture();
   drawBots();
-  showTab(SETTING_TABS[0].id);
+  drawImports();
+  showTab(SETTING_TABS(lang)[0].id);
 
   let closed = false;
   const close = async () => { if (closed) return; closed = true; try { await onClose(); } finally { root.remove(); } };
@@ -518,11 +602,11 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
   root.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
   root.addEventListener('pointerdown', e => { if (e.target === root) close(); });
   root.querySelector('.hd .x').focus();
-  return { close, get settings() { return current; } };
+  return { close, get settings() { return current; }, setImports(next) { pastImports = next; asking = null; drawImports(); drawHelp(); } };
 }
 
-export function mountPreparing({ parent = document.body } = {}) {
-  const preparing = mountLoading(parent, { page: true });
+export function mountPreparing({ parent = document.body, lang }) {
+  const preparing = mountLoading(parent, { page: true, lang });
   preparing.element.style.zIndex = SETTINGS_Z;
   return preparing;
 }

@@ -1,10 +1,15 @@
 import { findBlocks, findTags, parseChange, hashKey, stripForPrompt, messageId } from './blocks.mjs';
 import { readTable, writeTable, computeState, isReflected, heldChanges, changeAt, applyOps, findMon, hpPercentOf, movePp, toID } from './state.mjs';
 import { readStored } from './stored.mjs';
+import { refusal, ruleError, ruleText } from './failure.mjs';
 import { findOocs, unwrapOocs } from './chat.mjs';
 import { pkbLog } from './prompts.mjs';
 import { coveredMarks } from './save.mjs';
 import { boxOf } from './diary.mjs';
+import { itemId, customInfo } from './custom-items.mjs';
+import { say } from './screen-text.mjs';
+import { commandsIn } from './commands.mjs';
+import { answeredLine, ACT_PROMPT } from './act-prompts.mjs';
 
 export const QUEUE_VAR = '$pkb_queue';
 
@@ -44,7 +49,7 @@ export function runAction(state, action, ctx, { normalize = false } = {}) {
 
   // An action is all or nothing: if any op fails, nothing is applied
   let cur = state;
-  const ops = [], steps = [], errors = [];
+  const ops = [], steps = [], errors = [], notes = [];
   (action.ops ?? []).forEach((raw, i) => {
     const op = normalize ? withUids(cur, raw, ctx.sim) : raw;
     const result = applyOps(cur, [op], ctx, `act:${action.id ?? 'x'}:${i}`, null, { trace: true });
@@ -52,15 +57,18 @@ export function runAction(state, action, ctx, { normalize = false } = {}) {
     ops.push(op);
     steps.push(...result.steps);
     errors.push(...result.errors);
+    notes.push(...result.notes);
   });
-  if (errors.length) return { state, ops, events: [], errors };
+  if (errors.length) return { state, ops, events: [], errors, notes };
   const ok = steps;
   let events = ok.map(step => eventOf(step, ctx.sim));
 
   if (action.type === 'use' && action.item) {
-    const effects = events.filter(e => !(e.kind === 'item' && e.item === toID(action.item)));
-    events = [{ kind: 'use', item: toID(action.item), who: effects.find(e => e.who)?.who ?? null, effects }];
+    const effects = events.filter(e => !(e.kind === 'item' && e.item === itemId(action.item)));
+    events = [{ kind: 'use', item: itemId(action.item), who: effects.find(e => e.who)?.who ?? null, effects }];
   }
+
+  if (action.type === 'toss') events = events.map(e => (e.kind === 'item' ? { ...e, toss: true } : e));
   return { state: cur, ops, events, errors };
 }
 
@@ -95,11 +103,11 @@ export function queueAction(chat, ctx, input, { now = Date.now(), salt = '' } = 
   const { state: base } = pendingState(chat, ctx);
   const type = /^[a-z]{1,16}$/.test(String(input.type ?? '')) ? input.type : 'other';
   const action = { id: hashKey(`${now}:${salt}:${queue.actions.length}:${JSON.stringify(input.ops)}`), type, at: now };
-  if (input.item) action.item = toID(input.item);
+  if (input.item) action.item = itemId(input.item);
   const result = runAction(base, { ...action, ops: input.ops }, ctx, { normalize: true });
-  if (result.errors.length) throw new Error(result.errors.join(' / '));
+  if (result.errors.length) throw result.notes.length ? refusal(result.notes, { join: ' / ' }) : new Error(result.errors.join(' / '));
 
-  if (base.party.length && !result.state.party.length) throw new Error('파티에 포켓몬이 한 마리는 있어야 합니다.');
+  if (base.party.length && !result.state.party.length) throw ruleError('acts.lastInParty');
   action.ops = result.ops;
   action.events = result.events;
   const messages = chat.message ?? [];
@@ -125,6 +133,7 @@ export function attachQueue(chat, ctx, { salt = '', uptoIndex } = {}) {
   return tag;
 }
 
+// Next player message: the first player message after since that has no action tag yet. -1 if none
 export function nextOwnMessage(chat, queue = readQueue(chat), table = null) {
   const messages = chat?.message ?? [];
   if (!queue.actions.length || !queue.since) return -1;
@@ -156,6 +165,12 @@ export function eventOf({ op, before, after }, sim) {
     return { ref: ref?.slot ? `#${ref.slot}` : ref?.box ? `box ${ref.box}` : ref?.name ?? '?' };
   };
   const pair = w => [byUid(before, w?.uid), byUid(after, w?.uid)];
+
+  const named = ids => {
+    const fromOp = id => (op.custom && id === itemId(op.item) ? { name: op.custom.name, emoji: op.custom.emoji } : null);
+    const found = ids.map(id => [id, customInfo(after, id) ?? customInfo(before, id) ?? fromOp(id)]).filter(([, info]) => info);
+    return found.length ? { customItems: Object.fromEntries(found) } : {};
+  };
   const hp = mon => (mon && sim ? hpPercentOf(sim, mon) : null);
   switch (op?.op) {
     case 'add': {
@@ -172,7 +187,6 @@ export function eventOf({ op, before, after }, sim) {
     case 'heal': {
       if (op.ref === 'all') {
 
-        // Sacred Ash (revive): include the number revived - one log line "all fainted Pokemon revived"
         const revived = op.revive ? (before?.party ?? []).filter(m => m.hp === 0).length : 0;
         return revived ? { kind: 'heal', all: true, revivedAll: revived } : { kind: 'heal', all: true };
       }
@@ -180,7 +194,7 @@ export function eventOf({ op, before, after }, sim) {
       return { kind: 'heal', who: w, hpFrom: hp(b), hpTo: hp(a),
         cured: !!(b && a && b.status && b.status !== 'fnt' && !a.status), revived: !!(b && a && b.hp === 0 && a.hp !== 0) };
     }
-    case 'item': return { kind: 'item', item: toID(op.item), delta: op.delta };
+    case 'item': return { kind: 'item', item: itemId(op.item), delta: op.delta, ...named([itemId(op.item)]) };
     case 'swap': {
       const at = w => { const i = before?.party.findIndex(m => m.uid === w.uid) ?? -1; return i >= 0 ? { party: i + 1 } : { box: true }; };
       const a = refWho(op.a), b = refWho(op.b);
@@ -191,7 +205,8 @@ export function eventOf({ op, before, after }, sim) {
     case 'nickname': return { kind: 'nickname', who: refWho(op.ref), name: String(op.name ?? '').trim() };
     case 'hold': {
       const w = refWho(op.ref); const [b] = pair(w);
-      return { kind: 'hold', who: w, item: op.item ? toID(op.item) : '', prev: b?.set.item || '' };
+      const item = op.item ? itemId(op.item) : '', prev = b?.set.item || '';
+      return { kind: 'hold', who: w, item, prev, ...named([item, prev]) };
     }
     case 'evolve': {
       const w = refWho(op.ref); const [, a] = pair(w);
@@ -212,6 +227,7 @@ export function eventOf({ op, before, after }, sim) {
     case 'pp': return { kind: 'pp', who: refWho(op.ref), move: op.move ? toID(op.move) : null };
     case 'boxname': return { kind: 'boxname', box: Number(op.box), name: String(op.name ?? '').trim() };
 
+    // Items outside battle: vitamins, Exp. Candy, Ability Capsule/Patch, Mints, Bottle Caps
     case 'evs': {
       const w = refWho(op.ref); const [b, a] = pair(w);
       return { kind: 'evs', who: w, stat: op.stat, from: b?.set.evs?.[op.stat] ?? 0, to: a?.set.evs?.[op.stat] ?? 0 };
@@ -234,7 +250,6 @@ export function eventOf({ op, before, after }, sim) {
     }
     case 'ppup': {
 
-      // PP Up / PP Max: that move's max PP from what to what (one log line)
       const w = refWho(op.ref); const [b, a] = pair(w);
       const move = toID(op.move), max = mon => (mon && sim ? movePp(sim, mon, move).maxpp : null);
       return { kind: 'ppup', who: w, move, from: max(b), to: max(a) };
@@ -243,15 +258,16 @@ export function eventOf({ op, before, after }, sim) {
   }
 }
 
+// Action tags of a player message -> { events, errors } (null if no tags)
 export function actsIn(text, table) {
   const acts = findTags(text).map(t => table?.acts?.[t.key]).filter(Boolean);
   if (!acts.length) return null;
   return { events: acts.flatMap(a => a.events ?? []), errors: acts.flatMap(a => a.errors ?? []) };
 }
 
-export const HELD_LINE = '배틀 중이라 반영하지 않음';
+export const heldLine = lang => say(lang, 'notice.held');
 
-export function changesIn(text, chat, ctx) {
+export function changesIn(text, chat, ctx, lang) {
   const blocks = findBlocks(text).filter(b => b.kind === 'change');
   if (!blocks.length) return null;
   const messages = chat?.message ?? [];
@@ -267,14 +283,14 @@ export function changesIn(text, chat, ctx) {
   const held = index >= 0 ? heldChanges(chat, table ?? readTable(chat)) : new Set();
   const events = [], errors = [];
   for (const [n, block] of blocks.entries()) {
-    if (held.has(changeAt(index, n))) { errors.push(HELD_LINE); continue; }
+    if (held.has(changeAt(index, n))) { errors.push(heldLine(lang)); continue; }
     const { ops, errors: unread } = parseChange(block.body);
-    errors.push(...unread);
+    errors.push(...unread.map(note => ruleText(note, lang)));
     if (!state) { events.push(...ops.map(op => eventOf({ op, before: null, after: null }, null))); continue; }
     const result = applyOps(state, ops, ctx, `${chatId}:${block.key}`, table, { trace: true });
     state = result.state;
     for (const step of result.steps) {
-      if (step.error) errors.push(step.error);
+      if (step.error) errors.push(step.notes.length ? step.notes.map(note => ruleText(note, lang)).join(' / ') : step.error);
       else events.push(eventOf(step, ctx.sim));
     }
   }
@@ -290,20 +306,55 @@ const coveredIn = chat => {
   return coveredOf.get(chat);
 };
 
-export function promptText(text, chat, table, { names = null, korean = true } = {}) {
+const guidedOf = new WeakMap();
+const guidedIn = chat => {
+  if (!chat || typeof chat !== 'object') return null;
+  if (!guidedOf.has(chat)) {
+    const messages = chat.message ?? [], covered = coveredIn(chat);
+    let found = null;
+    for (let index = messages.length - 1; index >= 0 && !found && inWindow(messages, index); index--) {
+      const text = String(messages[index]?.data ?? '');
+      const ooc = findOocs(text).findLast(o => !covered.has(o.info.mark));
+      if (ooc) found = { index, piece: text.slice(ooc.start, ooc.end) };
+    }
+    guidedOf.set(chat, found);
+  }
+  return guidedOf.get(chat);
+};
+
+function guided(ooc, guide) {
+  try {
+    return guide(ooc.inner, ooc.info);
+  } catch (error) {
+    console.warn('[poke-battle] narration guide skipped', error);
+    return ooc.inner;
+  }
+}
+
+const END_SLOT = '\uE000';
+const oocEnd = text => text.replace(/\)(\s*(?:<\/pkb-story\s*>)?\s*)$/, `${END_SLOT})$1`);
+
+export function promptText(text, chat, table, { names = null, lang = 'ko', guide = null } = {}) {
   const messages = chat?.message ?? [];
   let out = String(text ?? '');
+  const latest = messages.findLastIndex(m => m?.role === 'user');
+  const latestText = latest >= 0 ? String(messages[latest].data ?? '') : null;
+
+  const commands = ACT_PROMPT && latestText === String(text ?? '') ? commandsIn(messages[latest], latest) : [];
+  const line = commands.length ? answeredLine(commands.every(block => block.own)) : null;
+  let slot = !!line;
   const covered = coveredIn(chat);
   for (const ooc of findOocs(out).reverse()) {
     if (covered.has(ooc.info.mark)) { out = out.slice(0, ooc.start) + out.slice(ooc.end); continue; }
     const piece = out.slice(ooc.start, ooc.end);
     const index = messages.findLastIndex(m => String(m?.data ?? '').includes(piece));
     if (index < 0) continue;
-    if (!inWindow(messages, index)) out = out.slice(0, ooc.start) + out.slice(ooc.end);
+    if (!inWindow(messages, index)) { out = out.slice(0, ooc.start) + out.slice(ooc.end); continue; }
+    const shown = guide && guidedIn(chat)?.index === index && guidedIn(chat).piece === piece ? guided(ooc, guide) : piece;
+    out = out.slice(0, ooc.start) + (slot ? oocEnd(shown) : shown) + out.slice(ooc.end);
+    slot = false;
   }
   out = unwrapOocs(out);
-  const latest = messages.findLastIndex(m => m?.role === 'user');
-  const latestText = latest >= 0 ? String(messages[latest].data ?? '') : null;
   let events = [];
   const own = findTags(out).filter(t => table?.acts?.[t.key]);
   if (own.length && own.some(t => latestText?.includes(tagText(t.key)))) events = own.flatMap(t => table.acts[t.key].events ?? []);
@@ -311,7 +362,8 @@ export function promptText(text, chat, table, { names = null, korean = true } = 
     events = readQueue(chat).actions.flatMap(a => a.events ?? []);
   }
   out = stripForPrompt(out);
-  const log = pkbLog(events, { korean, en: names });
+  if (line) out = out.includes(END_SLOT) ? out.replace(END_SLOT, `\n${line}`) : `${out}\n(OOC: ${line})`;
+  const log = pkbLog(events, { lang, en: names });
   return log ? `${out}\n${log}` : out;
 }
 

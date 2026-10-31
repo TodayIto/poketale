@@ -1,8 +1,14 @@
 import { MAX_LEVEL, STATUS_IDS } from './mon.mjs';
+import { isCustomItem, customText } from '../story/custom-items.mjs';
 
-export function engineMember(mon) {
+export function engineMember(mon, customItems = null) {
 	const known = values => Object.fromEntries(Object.entries(values ?? {}).filter(([id]) => mon.set.moves.includes(id)));
 	const member = { uid: mon.uid, set: structuredClone(mon.set), status: mon.status === 'fnt' ? '' : mon.status || '', pp: known(mon.pp), exp: mon.exp };
+	if (isCustomItem(member.set.item)) {
+		const label = customText({ customItems }, member.set.item);
+		if (label) member.heldCustom = label;
+		member.set.item = '';
+	}
 	const ppUps = known(mon.ppUps);
 	if (Object.keys(ppUps).length) member.ppUps = ppUps;
 	if (mon.hp !== null && mon.hp !== undefined) member.hp = mon.hp;

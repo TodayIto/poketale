@@ -1,21 +1,24 @@
 // from pokerogue src/ui/battle-info/battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/battle-info/player-battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/battle-info/enemy-battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 import { addTextObject, STATUS_FRAMES, GENDER_COLORS, genderSymbol } from './text.js';
 import { tween } from '../lifetime.js';
 import { ExpBar } from './exp-bar.js';
 
 export class BattleInfo {
-  constructor(scene, player) {
-    this.scene = scene; this.player = player;
-    this.baseX = player ? 310 : 140;
+
+  constructor(scene, player, { mini = false, dx = 0, dy = 0 } = {}) {
+    this.scene = scene; this.player = player; this.mini = mini;
+    this.baseX = (player ? 310 : 140) + dx; this.baseY = (player ? -72 : -141) + dy;
+
+    const rowY = mini ? -1.5 : 0;
     const p = player
-      ? { nameX: -115, nameY: -15.2, levelX: -41, levelY: -10, hpX: -61, hpY: -1 }
+      ? { nameX: -115, nameY: -15.2 + rowY, levelX: -41, levelY: -10 + rowY, hpX: -61, hpY: -1 }
       : { nameX: -124, nameY: -11.2, levelX: -50, levelY: -5, hpX: -71, hpY: 4.5 };
-    const c = this.container = scene.add.container(this.baseX, player ? -72 : -141).setVisible(false);
+    const c = this.container = scene.add.container(this.baseX, this.baseY).setVisible(false);
     scene.fieldUI.add(c);
-    this.box = scene.add.sprite(0, 0, player ? 'pbinfo_player' : 'pbinfo_enemy_mini').setOrigin(1, 0.5);
+    this.box = scene.add.sprite(0, 0, mini ? 'pbinfo_player_mini' : player ? 'pbinfo_player' : 'pbinfo_enemy_mini').setOrigin(1, 0.5);
     this.nameText = addTextObject(scene, p.nameX, p.nameY, '', 'info');
     this.genderText = addTextObject(scene, 0, p.nameY + 2, '', 'info');
     this.status = scene.add.sprite(p.nameX, p.nameY + 11.5, 'statuses', 'paralysis').setOrigin(0).setVisible(false);
@@ -23,9 +26,10 @@ export class BattleInfo {
     this.level = scene.add.container(p.levelX, p.levelY);
     this.hp = scene.add.image(p.hpX, p.hpY, 'overlay_hp', 'high').setOrigin(0);
     const hpLabel = scene.add.image(p.hpX - 1, p.hpY - 3, 'overlay_hp_label').setOrigin(1, 0);
-    this.numbers = scene.add.container(-15, 10).setVisible(player);
+    this.numbers = scene.add.container(-15, 10).setVisible(player && !mini);
     c.add([this.box, this.nameText, this.genderText, this.status, this.level, this.hp, hpLabel, this.numbers]);
     if (player) this.exp = new ExpBar(scene, this);
+    if (mini) { this.exp.label.setVisible(false); this.exp.bar.setVisible(false); }
 
   }
   init(mon) {
@@ -65,6 +69,14 @@ export class BattleInfo {
     this.mon.status = status;
     this.status.setVisible(!!status);
     if (status) this.status.setFrame(STATUS_FRAMES[status]);
+  }
+
+  // Ally Switch: moves to another position's layout (same side, so only the offset changes)
+  place({ dx = 0, dy = 0, mini = this.mini } = {}) {
+    if (mini !== this.mini) throw new Error('An info box keeps its size when it moves');
+    const x = (this.player ? 310 : 140) + dx, y = (this.player ? -72 : -141) + dy;
+    this.container.setPosition(this.container.x + x - this.baseX, this.container.y + y - this.baseY);
+    this.baseX = x; this.baseY = y;
   }
   async show() {
     const c = this.container;

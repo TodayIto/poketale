@@ -1,5 +1,6 @@
 export const MAX_LEVEL = 100;
 
+// Pokemon that can be carried in the party. Beyond this, caught Pokemon go to the box
 export const PARTY_MAX = 6;
 
 export const MAX_MOVES = 4;
@@ -46,6 +47,9 @@ export function completeSet(dex, set, rng, { levelUp, label = set.species } = {}
 	}
 	out.ivs = { ...out.ivs };
 	out.evs = { ...out.evs };
+	const open = STATS.filter(s => out.ivs[s] === undefined);
+	for (let n = Math.min(out.perfectIvs ?? 0, open.length); n > 0; n--) out.ivs[open.splice(rng.random(open.length), 1)[0]] = MAX_IV;
+	delete out.perfectIvs;
 	for (const s of STATS) {
 		if (out.ivs[s] === undefined) out.ivs[s] = rng.random(MAX_IV + 1);
 		if (out.evs[s] === undefined) out.evs[s] = 0;
@@ -59,7 +63,26 @@ export function completeSet(dex, set, rng, { levelUp, label = set.species } = {}
 	return out;
 }
 
-// Gender-specific evolutions (female-only Vespiquen, male Meowstic etc.) require the same gender
+const requiredItems = species => species.requiredItems ?? (species.requiredItem ? [species.requiredItem] : []);
+
+export function heldItemForm(dex, set) {
+	const species = dex.species.get(set.species);
+	if (species.battleOnly) return set;
+	const base = dex.species.get(species.baseSpecies);
+	const item = toID(set.item);
+	const forms = [base, ...(base.otherFormes ?? []).map(name => dex.species.get(name))].filter(form => !form.battleOnly);
+	const form = (item && forms.find(f => requiredItems(f).some(name => toID(name) === item)))
+		|| (requiredItems(species).length ? base : species);
+	const out = { ...set };
+	if (form.name !== species.name) {
+		out.species = form.name;
+		const slot = Object.keys(species.abilities).find(key => toID(species.abilities[key]) === toID(set.ability));
+		if (slot) out.ability = form.abilities[slot] ?? form.abilities[0];
+	}
+	if (form.requiredTeraType) out.teraType = form.requiredTeraType;
+	return out;
+}
+
 export const genderAllows = (gender, target) => !(target.gender === 'M' || target.gender === 'F') || gender === target.gender;
 
 export const isLevelEvolution = (target, level) => !target.evoType && !!target.evoLevel && !target.evoCondition && !target.evoRegion && target.evoLevel <= level;

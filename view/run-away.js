@@ -1,7 +1,8 @@
 // from pokerogue src/phases/attempt-run-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/command-phase.ts (handleRunCommand, queueShowText) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
+import { teamOf, fieldPositions } from './positions.js';
 import { tween } from './lifetime.js';
 import { addTextObject } from './ui/text.js';
 import { themeColors } from './ui/theme.js';
@@ -14,14 +15,16 @@ export async function runAway(scene) {
   scene.requireReady();
 
   scene.audio.play(FLEE_SOUND).catch(() => {});
-  const enemy = scene.pokemon.enemy;
 
-  const targets = [scene.biomeObjects[2], enemy?.container].filter(Boolean);
+  const sides = fieldPositions(scene.double).filter(side => teamOf(side) === 'enemy');
+  const enemies = sides.map(side => scene.pokemon[side]).filter(Boolean);
+
+  const targets = [scene.biomeObjects[2], ...enemies.map(enemy => enemy.container)].filter(Boolean);
   await Promise.all([
     tween(scene, { targets, alpha: 0, duration: 250, ease: 'Sine.easeIn' }),
-    scene.info.enemy?.hide(),
+    ...sides.map(side => scene.info[side]?.hide()),
   ]);
-  enemy?.container.setVisible(false);
+  enemies.forEach(enemy => enemy.container.setVisible(false));
 }
 
 export function chooseRun(menu) {

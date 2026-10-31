@@ -1,42 +1,44 @@
 import { expTextBase64 } from './text-exp-source.js';
 import { interpolate } from './text.js';
+import { checkLang, DEFAULT_LANG } from './lang.js';
 import { expForLevel, levelForExp, replaceMove } from '../engine/exp.mjs';
 import { newMovePp } from '../engine/pp.mjs';
 import { MAX_LEVEL, NON_HP_STATS } from '../engine/mon.mjs';
 import { createLedger } from './ledger.js';
-import { identName } from './read.js';
+import { identName, teamOf } from './read.js';
 import { ownTemplate } from './own-text.js';
 
 // Lines this module handles (steps.js dispatch table)
 export const EXP_KINDS = ['-story-exp', '-story-levelup', '-story-learnmove', '-story-movequeue', '-story-replacemove', '-story-skipmove'];
-let phrases, pendingText;
 
-export function loadExpText() {
-  return pendingText ??= (async () => {
-    const bytes = Uint8Array.from(atob(expTextBase64()), c => c.charCodeAt(0));
+// Per language: the decompressed table, and the Promise of the one decompression
+const loaded = {}, pending = {};
+
+export function loadExpText(lang = DEFAULT_LANG) {
+  return pending[checkLang(lang)] ??= (async () => {
+    const bytes = Uint8Array.from(atob(expTextBase64(lang)), c => c.charCodeAt(0));
     const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-    phrases = JSON.parse(await new Response(stream).text());
-    return phrases;
-  })().catch(error => { pendingText = undefined; throw error; });
+    loaded[lang] = JSON.parse(await new Response(stream).text());
+    return loaded[lang];
+  })().catch(error => { delete pending[lang]; throw error; });
 }
 
-function requireExpText() {
-  if (!phrases) throw new Error('Exp text is not loaded: await loadExpText() first');
-  return phrases;
+function requireExpText(lang) {
+  if (!loaded[checkLang(lang)]) throw new Error('Exp text is not loaded: await loadExpText() first');
+  return loaded[lang];
 }
 
-// Synchronous text lookup. Await loadExpText() in an async step before calling.
-export function expText(key, values = {}, { keepCodes = false } = {}) {
-  const phrases = requireExpText();
-  if (ownTemplate(key)) return interpolate(ownTemplate(key), values);
+export function expText(key, values = {}, { keepCodes = false, lang = DEFAULT_LANG } = {}) {
+  const phrases = requireExpText(lang);
+  if (ownTemplate(key, lang)) return interpolate(ownTemplate(key, lang), values, lang);
   if (key === '_source' || !Object.hasOwn(phrases, key)) throw new Error(`Unknown exp text key: ${key}`);
 
-  const result = interpolate(phrases[key], values);
+  const result = interpolate(phrases[key], values, lang);
   return keepCodes ? result : result.replace(/@[ds]\{[^}]*\}/g, '');
 }
 
-export function learnMoveOption(battle, names, id, pp, maxpp) {
-  const phrases = requireExpText();
+export function learnMoveOption(battle, names, id, pp, maxpp, lang = DEFAULT_LANG) {
+  const phrases = requireExpText(lang);
   const move = battle.dex.moves.get(id);
   return {
     id: move.id, name: names.move(move.id), type: move.type, category: move.category, pp, maxpp,
@@ -49,15 +51,15 @@ export function learnMoveOption(battle, names, id, pp, maxpp) {
 
 const newMovePP = newMovePp;
 
-export function createLearnSteps(view) {
-  const say = (key, values, wait = true) => view.message(expText(key, values), wait ? { wait } : { wait, hold: 0 });
+export function createLearnSteps(view, lang = DEFAULT_LANG) {
+  const say = (key, values, wait = true) => view.message(expText(key, values, { lang }), wait ? { wait } : { wait, hold: 0 });
 
-  const sayTimed = (key, values, timing) => view.message(expText(key, values), { wait: true, ...timing });
+  const sayTimed = (key, values, timing) => view.message(expText(key, values, { lang }), { wait: true, ...timing });
 
   const fanfare = () => { Promise.resolve(view.playFanfare()).catch(() => {}); };
 
   async function learnFlow({ mon, moves, newMove, commit, inEvolution = false }) {
-    await loadExpText();
+    await loadExpText(lang);
     const pokemonName = mon.name, moveName = newMove.name;
     while (true) {
       await say('battle.learnMovePrompt', { pokemonName, moveName });
@@ -69,7 +71,8 @@ export function createLearnSteps(view) {
         if (Number.isInteger(slot) && slot >= 0 && slot < moves.length) {
           await commit(slot);
 
-          await view.message(expText('battle.countdownPoof', {}, { keepCodes: true }), { wait: true });
+          // The pauses and the 'poof' sound of "1, 2, ... ... poof!" (@d/@s kept for the message window to handle)
+          await view.message(expText('battle.countdownPoof', {}, { keepCodes: true, lang }), { wait: true });
           await say('battle.learnMoveForgetSuccess', { pokemonName, moveName: moves[slot].name });
           await say('battle.learnMoveAnd');
           await learned(pokemonName, moveName, inEvolution);
@@ -95,7 +98,7 @@ export function createLearnSteps(view) {
   return { say, sayTimed, fanfare, learned, learnFlow };
 }
 
-export function createExpSteps({ battle, view, names, warn, ledger = createLedger({ battle, names }), options = {}, mode = {}, onInput }) {
+export function createExpSteps({ battle, view, names, warn, ledger = createLedger({ battle, names }), options = {}, mode = {}, onInput, lang = DEFAULT_LANG }) {
   const table = options.exp, levelUp = options.levelUp;
   const party = () => battle.sides?.[0]?.pokemon ?? [];
   const byUid = uid => party().find(p => p.m?.uid === uid);
@@ -111,11 +114,10 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
     tracked.set(p.m.uid, { exp: p.m.exp, level: p.level, stats: statsOf(p), growth: growthOf(p) });
   }
 
-  // Lines we produced ourselves via replaceMove (their text was already shown in the prompt flow)
   const expected = [];
 
   const displayName = p => (p.name === p.species.name || p.name === p.species.baseSpecies ? names.species(p.species.id) : p.name);
-  const { say, sayTimed, fanfare, learned, learnFlow } = createLearnSteps(view);
+  const { say, sayTimed, fanfare, learned, learnFlow } = createLearnSteps(view, lang);
 
   function levelRatio(growth, exp) {
     if (!growth) return null;
@@ -125,7 +127,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
     return { level, ratio: Math.max(0, Math.min(1, (exp - low) / (high - low))) };
   }
 
-  const onField = uid => ledger.field.player === uid;
+  const onField = uid => { const position = ledger.positionOfUid(uid); return position && teamOf(position) === 'player' ? position : null; };
   const nameOf = (uid, ident) => ledger.pokemon.get(uid)?.name ?? identName(ident);
 
   // Summary and learn-move screens (chosen now, so current engine values)
@@ -133,7 +135,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
     gender: p.gender || '', shiny: !!p.set.shiny, hp: p.hp, maxhp: p.maxhp, status: p.status || '' });
 
   function summonInfo(side, uid) {
-    if (side !== 'player') return {};
+    if (teamOf(side) !== 'player') return {};
     const record = tracked.get(uid);
     const shown = record && levelRatio(record.growth, record.exp);
     return shown ? { exp: shown.ratio } : {};
@@ -146,7 +148,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
     fanfare();
     const message = say('battle.levelUp', { pokemonName: nameOf(uid, ident), level });
     if (onField(uid)) {
-      await Promise.all([message, view.updateLevel('player', { level, hp: stats.hp, maxhp: stats.maxhp })]);
+      await Promise.all([message, view.updateLevel(onField(uid), { level, hp: stats.hp, maxhp: stats.maxhp })]);
     } else await message;
     await view.showLevelUpStats({ prev, next });
   }
@@ -158,7 +160,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
   async function present(event) {
     const { kind, args: a } = event;
 
-    await loadExpText();
+    await loadExpText(lang);
     switch (kind) {
     case '-story-exp': {
 
@@ -169,7 +171,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
       if (event.sharedFirst) await say('own.expShare');
       if (onField(uid)) {
         await say('battle.expGain', { pokemonName: nameOf(uid, ident), exp: Number(gain) });
-        if (target) await view.gainExp('player', target);
+        if (target) await view.gainExp(onField(uid), target);
       } else {
         const { tera, ...icon } = ledger.view(ledger.pokemon.get(uid));
         await view.partyExp(icon, Number(gain));
@@ -200,8 +202,8 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
       if (!p) { warn(`${kind}:unknown uid`); return; }
       const move = battle.dex.moves.get(moveName);
       const pp = newMovePP(battle, move);
-      const moves = p.baseMoveSlots.map(s => learnMoveOption(battle, names, s.id, s.pp, s.maxpp));
-      await learnFlow({ mon: summaryMon(p), moves, newMove: learnMoveOption(battle, names, move.id, pp, pp), commit: slot => {
+      const moves = p.baseMoveSlots.map(s => learnMoveOption(battle, names, s.id, s.pp, s.maxpp, lang));
+      await learnFlow({ mon: summaryMon(p), moves, newMove: learnMoveOption(battle, names, move.id, pp, pp, lang), commit: slot => {
         onInput?.(['learn', uid, slot, move.id]);
         replaceMove(battle, uid, slot, move.id);
         expected.push(`${slot === null ? '-story-skipmove' : '-story-replacemove'}|${uid}|${move.name}`);
@@ -241,7 +243,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
   }
 
   async function evolveScreen(member, evolution) {
-    await loadExpText();
+    await loadExpText(lang);
     const from = battle.dex.species.get(evolution.from), to = battle.dex.species.get(evolution.to);
     const nicknamed = !(member.name === from.name || member.name === from.baseSpecies);
     const preName = nicknamed ? member.name : names.species(from.id);
@@ -269,8 +271,8 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
         continue;
       }
       const summary = { ...mon(to), dexNumber: to.num };
-      const moves = outcome.moves.map(m => learnMoveOption(battle, names, m.id, m.pp, m.maxpp));
-      await learnFlow({ mon: summary, moves, newMove: learnMoveOption(battle, names, move.id, pp, pp), inEvolution: true,
+      const moves = outcome.moves.map(m => learnMoveOption(battle, names, m.id, m.pp, m.maxpp, lang));
+      await learnFlow({ mon: summary, moves, newMove: learnMoveOption(battle, names, move.id, pp, pp, lang), inEvolution: true,
         commit: index => { if (index !== null) outcome.moves[index] = slot; } });
     }
     await view.endEvolution();

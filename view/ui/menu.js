@@ -9,7 +9,8 @@ export function openMenu(scene, { input, paused = () => false, close = () => {},
     e.preventDefault(); e.stopImmediatePropagation(); input(action);
   };
   const open = scene.openMenus ??= [];
-  const entry = { tapBack: () => { const windows = tapWindows?.(); return windows ? { windows, back: () => input('back') } : null; } };
+  const entry = { tapBack: () => { const windows = tapWindows?.(); return windows ? { windows, back: () => input('back') } : null; },
+    canBack: () => !paused() && (!tapWindows || tapWindows() !== null) };
   const menu = {};
   menu.promise = new Promise((resolve, reject) => {
     let settled = false;

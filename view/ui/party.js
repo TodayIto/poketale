@@ -1,7 +1,7 @@
 // from pokerogue src/ui/handlers/party-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/utils/pokemon-icon-anim-helper.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/message-ui-handler.ts (showPrompt) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { addWindow } from './window.js';
 import { uiRect } from './tap-back.js';
@@ -24,8 +24,8 @@ export async function partyFade(scene, swap) {
   scene.tweens.add({ targets: overlay, alpha: 0, duration: 250, ease: 'Sine.easeIn', onComplete: () => overlay.destroy() });
 }
 
-const TEXT = { choose: '포켓몬을 선택하세요.', doWhat: '포켓몬을 어떻게 하겠습니까?', sendOut: '교체한다', cancel: '그만둔다',
-  apply: '사용한다', selectAMove: '기술을 선택해 주십시오', revive: '되살린다', summary: '능력치를 본다' };
+const TEXT = Object.freeze(Object.fromEntries(Object.entries({ choose: 'choosePokemon', doWhat: 'doWhatWithThisPokemon', sendOut: 'sendOut', cancel: 'cancel',
+  apply: 'apply', selectAMove: 'selectAMove', revive: 'revive', summary: 'summary' }).map(([name, key]) => [name, `party-ui-handler.${key}`])));
 const CANCEL = 6;
 
 const MAIN = { key: 'party_slot_main', pb: [4, 4], name: [24, 10], maxName: 76, lv: [32, 22], gender: [68, -9], status: [55, 0], hp: [8, 31] };
@@ -34,12 +34,20 @@ const BENCH = { key: 'party_slot', pb: [2, 12], name: [21, 2], maxName: 52, lv: 
 const partyText = (scene, x, y, str, extra) => styledText(scene, x, y, str, 'PARTY', extra);
 const CANCEL_STYLE = { fontSize: 44, padding: { top: 6, bottom: 12, left: 4 } };
 
+const battlerCount = scene => (scene.double ? 2 : 1);
+
+export function slotPosition(double, index) {
+  if (index < (double ? 2 : 1)) return [9, -148.5 + (double ? -8 : 0) + 64 * index];
+  return [143, -196 + (double ? -40 : 0) + (28 + (double ? 8 : 0)) * index];
+}
+
+const PARTNER_TEXT = { party_slot_main: [56, 22], party_slot: [96, 14] };
+
 class PartySlot {
   constructor(menu, index, mon, icon) {
-    const s = menu.scene, benched = index >= 1, p = benched ? BENCH : MAIN;
+    const s = menu.scene, benched = index >= battlerCount(s), p = benched ? BENCH : MAIN;
     this.mon = mon; this.p = p; this.selected = false;
-
-    const c = this.container = s.add.container(benched ? 143 : 9, benched ? -196 + 28 * index : -148.5);
+    const c = this.container = s.add.container(...slotPosition(!!s.double, index));
     this.bg = s.add.sprite(0, 0, p.key, this.frame()).setOrigin(0);
     this.pb = s.add.sprite(p.pb[0], p.pb[1], 'party_pb', 'party_pb');
 
@@ -73,6 +81,12 @@ class PartySlot {
 
       partyText(s, hx + 100 - 3, hy + 7 - 2, `${mon.hp}/${mon.maxhp}`).setOrigin(1, 0),
     );
+    if (mon.partner) {
+
+      objects.forEach(o => o.setAlpha(0.55));
+      const [tx, ty] = PARTNER_TEXT[p.key];
+      objects.push(partyText(s, tx, ty, s.words('own.partnerMon', { trainerName: mon.partner }), { color: '#f8d030' }).setShadow(4, 5, '#806000').setOrigin(0, 0.25));
+    }
     this.hit = s.add.rectangle(0, 0, benched ? 175 : 110, benched ? 24 : 49, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
     this.hit.on('pointerover', () => menu.hover(index));
     this.hit.on('pointerdown', () => menu.tap(index));
@@ -100,11 +114,11 @@ export class PartyMenu {
     scene.life.check();
     if (this.finish) throw new Error('Party menu already open');
     this.party = party.map(m => ({ ...m })); this.forced = !!forced || this.revive;
-    this.cursor = 0; this.lastRight = 0; this.mode = 'party'; this.toggled = false;
+    this.cursor = 0; this.lastRight = 0; this.lastLeft = 0; this.mode = 'party'; this.toggled = false;
     const menu = openMenu(scene, { input: action => this.input(action), close: () => this.clear(),
       paused: () => this.sub || this.fading,
 
-      tapWindows: () => (this.sub || this.fading || !['party', 'options'].includes(this.mode) ? null : this.windows()) });
+      tapWindows: () => (this.sub || this.fading || !['party', 'options'].includes(this.mode) || (this.forced && this.mode === 'party') ? null : this.windows()) });
 
     this.finish = choice => {
       if (this.fading) return;
@@ -120,7 +134,7 @@ export class PartyMenu {
   draw(icons) {
     const s = this.scene;
     const c = this.container = s.add.container(0, 0); s.ui.add(c);
-    c.add(s.add.image(0, 0, 'party_bg').setOrigin(0, 1));
+    c.add(s.add.image(0, 0, s.double ? 'party_bg_double' : 'party_bg').setOrigin(0, 1));
     this.slots = this.party.map((mon, i) => new PartySlot(this, i, mon, icons[i]));
     c.add(this.slots.map(slot => slot.container));
 
@@ -131,7 +145,8 @@ export class PartyMenu {
     cancelHit.on('pointerover', () => this.hover(CANCEL));
     cancelHit.on('pointerdown', () => this.tap(CANCEL));
     cancel.add([this.cancelBg, this.cancelPb,
-      partyText(s, -10, -7, TEXT.cancel, CANCEL_STYLE), cancelHit]);
+      partyText(s, -10, -7, s.words(TEXT.cancel), CANCEL_STYLE), cancelHit]);
+    if (s.double && this.forced) cancel.setAlpha(0.5);
     c.add(cancel);
 
     this.messageBox = addWindow(s, 1, -31, 262, 30);
@@ -173,11 +188,11 @@ export class PartyMenu {
     const onCancel = cursor === CANCEL;
     this.cancelBg.setFrame(onCancel ? 'party_cancel_sel' : 'party_cancel');
     this.cancelPb.setFrame(onCancel ? 'party_pb_sel' : 'party_pb');
-    if (onCancel) this.hideText(); else this.showText(TEXT.choose);
+    if (onCancel) this.hideText(); else this.showText(this.scene.words(TEXT.choose));
   }
   hover(index) {
     if (this.fading || this.mode !== 'party' || index === this.cursor) return;
-    if (index >= 1 && index < CANCEL) this.lastRight = index;
+    if (index >= battlerCount(this.scene) && index < CANCEL) this.lastRight = index;
     this.setCursor(index);
   }
   tap(index) {
@@ -190,14 +205,16 @@ export class PartyMenu {
   input(action) {
     if (this.fading) return;
     if (this.mode === 'prompt') {
-      if (action === 'ok' || action === 'back') { playSelect(this.scene); this.mode = 'party'; this.promptHit.setVisible(false); this.showText(TEXT.choose); }
+      if (action === 'ok' || action === 'back') { playSelect(this.scene); this.mode = 'party'; this.promptHit.setVisible(false); this.showText(this.scene.words(TEXT.choose)); }
       return;
     }
     if (this.mode === 'options') return this.optionInput(action);
-    const n = this.party.length, c = this.cursor;
-    if (c >= 1 && c < CANCEL) this.lastRight = c;
+    const n = this.party.length, c = this.cursor, field = battlerCount(this.scene);
+    if (c < field) this.lastLeft = c;
+    if (c >= field && c < CANCEL) this.lastRight = c;
     switch (action) {
     case 'ok':
+      if (c !== CANCEL && this.party[c].partner) { playError(this.scene); return this.showPrompt(this.party[c].blocked ?? ''); }
       if (c !== CANCEL) { playSelect(this.scene); return this.showOptions(); }
       if (this.forced) return playError(this.scene);
       return this.cancel();
@@ -206,8 +223,8 @@ export class PartyMenu {
 
     if (action === 'up') this.setCursor(c ? (c < CANCEL ? c - 1 : n - 1) : CANCEL);
     if (action === 'down') this.setCursor(c < CANCEL ? (c < n - 1 ? c + 1 : CANCEL) : 0);
-    if (action === 'left' && (c === CANCEL || c >= 1)) this.setCursor(0);
-    if (action === 'right') { if (n <= 1) this.setCursor(CANCEL); else if (c < 1) this.setCursor(this.lastRight || 1); }
+    if (action === 'left' && (c === CANCEL || c >= field)) this.setCursor(this.lastLeft);
+    if (action === 'right') { if (n <= field) this.setCursor(CANCEL); else if (c < field) this.setCursor(this.lastRight || field); }
     if (this.cursor !== c) playSelect(this.scene);
   }
 
@@ -224,7 +241,7 @@ export class PartyMenu {
     if (this.use) this.optionList = [...(slot.moves ? slot.moves.map((_, i) => i) : ['apply']), 'cancel'];
 
     if (slot.summary && !(this.use && slot.moves)) this.optionList.splice(this.optionList.length - 1, 0, 'summary');
-    const label = o => typeof o === 'number' ? `${slot.moves[o].name} ${slot.moves[o].pp}/${slot.moves[o].maxpp}` : TEXT[o];
+    const label = o => typeof o === 'number' ? `${slot.moves[o].name} ${slot.moves[o].pp}/${slot.moves[o].maxpp}` : s.words(TEXT[o]);
     this.mode = 'options'; this.optionCursor = 0;
     const count = this.optionList.length;
     const texts = this.optionList.map(o => windowText(s, 0, 0, label(o), { maxLines: 1 }).setOrigin(0));
@@ -243,7 +260,7 @@ export class PartyMenu {
     });
     this.optionCursorObj = s.add.image(0, 0, 'cursor').setOrigin(0);
     this.optionBox.add(this.optionCursorObj);
-    this.showText(this.use && slot.moves ? TEXT.selectAMove : TEXT.doWhat);
+    this.showText(s.words(this.use && slot.moves ? TEXT.selectAMove : TEXT.doWhat));
     this.setOptionCursor(0);
   }
   setOptionCursor(i) {
@@ -283,7 +300,7 @@ export class PartyMenu {
   clearOptions() {
     this.optionRect = null;
     this.optionBox.removeAll(true); this.optionCursorObj = null; this.optionsWidth = 0;
-    this.mode = 'party'; this.showText(TEXT.choose);
+    this.mode = 'party'; this.showText(this.scene.words(TEXT.choose));
   }
   clear() {
     this.timer?.remove(); this.timer = null;
@@ -308,7 +325,7 @@ export async function showPartyBackdrop(scene, { party, cursor = 0 }) {
     container.add(slots.map(slot => slot.container));
     const cancel = s.add.container(291, -16);
     cancel.add([s.add.sprite(0, 0, 'party_cancel', 'party_cancel'), s.add.sprite(-17, 0, 'party_pb', 'party_pb'),
-      partyText(s, -10, -7, TEXT.cancel, CANCEL_STYLE)]);
+      partyText(s, -10, -7, s.words(TEXT.cancel), CANCEL_STYLE)]);
     container.add(cancel);
     let toggled = false;
     timer = s.time.addEvent({ delay: fixed(200), loop: true, callback: () => { toggled = !toggled; slots.forEach(slot => slot.bob(toggled)); } });

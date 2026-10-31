@@ -3,6 +3,7 @@ import { readLog, turnSpan, hasEvents } from './narrate.mjs';
 import { storyOoc, RESULT_LINE_RE } from './prompts.mjs';
 import { outcomeOf } from './outcome.mjs';
 import { hashKey, findTags, findMarks } from './blocks.mjs';
+import { say } from './screen-text.mjs';
 
 // What the plugin puts in a message besides OOC: action tags, marks, and a result line with its tag
 const RESULT_WITH_TAG = new RegExp(String.raw`${RESULT_LINE_RE.source}(?=\s*<pkb#)`, 'g');
@@ -14,7 +15,7 @@ function ownWords(text) {
   return out.trim();
 }
 
-export const SEND_WAIT = Object.freeze({ text: '응답이 끝나면 보냅니다', kind: 'info' });
+export const sendWait = lang => ({ text: say(lang, 'notice.sendWait'), kind: 'info' });
 
 export const isOurOoc = message => message?.role === 'user' && findOocs(message?.data ?? '').length > 0 && !ownWords(message.data);
 
@@ -34,12 +35,12 @@ export function sendRange({ sent = { upto: -1 }, log = [], to = log.length, ende
   return { from, to: end, first, read };
 }
 
-export function buildOoc(format, source, range, { screenFrom = 0, screenTo, korean = true, en = null } = {}) {
+export function buildOoc(format, source, range, { screenFrom = 0, screenTo, lang = 'ko', en = null, guide = false } = {}) {
   const ended = !!source.result;
   const text = storyOoc(format, { battle: source.battle, result: source.result, ended, first: range.first, read: range.read,
-    screen: (source.screen ?? []).slice(screenFrom, screenTo), korean, en });
+    screen: (source.screen ?? []).slice(screenFrom, screenTo), lang, en });
   const span = turnSpan(range.read);
-  return { text, info: { vs: source.vs ?? '', turns: span ? [span.fromTurn, span.toTurn] : null, result: ended ? outcomeOf(source.result) : '' } };
+  return { text, info: { battle: source.key ?? '', turns: span ? [span.fromTurn, span.toTurn] : null, result: ended ? outcomeOf(source.result) : '', ...(guide ? { form: format } : {}) } };
 }
 
 export function markOoc(text, info = {}, newId = () => globalThis.crypto.randomUUID()) {

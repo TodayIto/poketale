@@ -1,6 +1,6 @@
 // from pokerogue src/ui/text.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (getStatKey order) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { loadFont as loadEmbeddedFont } from '../fonts.js';
 import { themeColors } from './theme.js';
@@ -23,8 +23,8 @@ export const genderSymbol = gender => (gender === 'M' ? '♂' : gender === 'F' ?
 
 export const STATUS_FRAMES = Object.freeze({ brn: 'burn', par: 'paralysis', slp: 'sleep', frz: 'freeze', psn: 'poison', tox: 'toxic' });
 
-export const STAT_LABELS = Object.freeze({ hp: 'HP', atk: '공격', def: '방어', spa: '특수공격', spd: '특수방어', spe: '스피드' });
-export const STAT_ROWS = Object.freeze(STATS.map(stat => [stat, STAT_LABELS[stat]]));
+const STAT_KEYS = Object.freeze({ hp: 'hp', atk: 'atk', def: 'def', spa: 'spatk', spd: 'spdef', spe: 'spd' });
+export const STAT_ROWS = Object.freeze(STATS.map(stat => [stat, `pokemon-info.stat.${STAT_KEYS[stat]}`]));
 
 const style = (color, shadow, sx, sy, more = {}) => ({ color, shadow, sx, sy, ...more });
 const STYLES = {

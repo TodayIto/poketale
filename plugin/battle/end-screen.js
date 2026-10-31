@@ -1,15 +1,12 @@
 import { SEND_MS, ICON_PLANE, noteRule } from '../../story/card.mjs';
+import { say } from '../../story/screen-text.mjs';
 
 export const END_GUARD_MS = 500;
+const OUTCOMES = ['win', 'lose', 'forfeit', 'run'];
 
-export function outcomeLine(outcome, caught = '') {
-  const lines = { win: '승부에서 이겼다!', lose: '승부에서 졌다…', forfeit: '승부에서 물러났다…', run: '무사히 도망쳤다!' };
-  if (outcome === 'capture') {
-    const name = caught || '포켓몬';
-    const batchim = /[가-힣]$/.test(name) && (name.charCodeAt(name.length - 1) - 0xac00) % 28 !== 0;
-    return `${name}${batchim ? '을' : '를'} 잡았다!`;
-  }
-  return lines[outcome] ?? '';
+export function outcomeLine(outcome, caught, lang) {
+  if (outcome === 'capture') return say(lang, 'end.capture', { pokemonName: caught || say(lang, 'end.someone') });
+  return OUTCOMES.includes(outcome) ? say(lang, `end.${outcome}`) : '';
 }
 
 export const PLANE = ICON_PLANE;
@@ -84,16 +81,16 @@ export async function shake(button) {
   button.classList.remove('shaking');
 }
 
-export function mountEndScreen(screen, { outcome = '', caught = '', retry = false, send = false, onChoice = () => {} }) {
+export function mountEndScreen(screen, { outcome = '', caught = '', lang, retry = false, send = false, onChoice = () => {} }) {
   const end = document.createElement('div');
   end.className = 'end';
   end.dataset.outcome = outcome;
   end.innerHTML = `<p class="word"></p><div class="btns">
-      <button class="retry" type="button">↻ 다시 하기</button>
-      <button class="send" type="button"><span>이야기로 보내기</span><span class="icon">${PLANE}</span></button>
+      <button class="retry" type="button">${say(lang, 'end.retry')}</button>
+      <button class="send" type="button"><span>${say(lang, 'window.send')}</span><span class="icon">${PLANE}</span></button>
       <p class="note" role="alert"></p>
-    </div><p class="hint">아무 데나 누르면 채팅으로</p>`;
-  end.querySelector('.word').textContent = outcomeLine(outcome, caught);
+    </div><p class="hint">${say(lang, 'end.hint')}</p>`;
+  end.querySelector('.word').textContent = outcomeLine(outcome, caught, lang);
   const $ = selector => end.querySelector(selector);
   const retryButton = $('.retry'), sendButton = $('.send'), note = $('.note');
   retryButton.hidden = !retry;

@@ -1,20 +1,22 @@
 import { createStoryBattle, extractResult } from '../../engine/core.mjs';
 import { runBattle, isWild } from '../../director/index.js';
 import { createEnemyAI } from '../../ai/index.js';
-import { battleNames } from './names.js';
+import { battleNames, battleNamesIn } from './names.js';
+import { DEFAULT_LANG } from '../../director/lang.js';
 import { mark } from './marks.js';
 
-export function previewBattle(sim, spec, options) {
+export function previewBattle(sim, spec, options, names = battleNames) {
   const preview = createStoryBattle(sim, spec, options);
   try {
     const team = extractResult(sim, preview).sides.flatMap(side => side.team.map(mon => ({ side: side.id === 'p1' ? 'player' : 'enemy', mon })));
     return {
       mons: team.map(({ side, mon }) => {
         const species = sim.Dex.species.get(mon.species);
-        return { side, speciesId: species.id, spriteId: species.spriteid, name: battleNames.species(species.id),
+        return { side, speciesId: species.id, spriteId: species.spriteid, name: names.species(species.id),
           level: mon.level, gender: mon.gender, shiny: mon.shiny, hp: mon.hp, maxhp: mon.maxhp, status: mon.status };
       }),
       moves: [...new Set(team.flatMap(({ mon }) => mon.moves.map(move => move.id)))],
+      ...(preview.activePerHalf > 1 ? { double: true } : {}),
     };
   } finally { preview.destroy(); }
 }
@@ -30,7 +32,8 @@ export function battleMusicOptions(sim, spec, viewOptions = {}) {
     enemies: (spec.p2?.team ?? []).map(member => sim.Dex.species.get(member?.set?.species ?? '').id).filter(Boolean) };
 }
 
-export function createBattleSession({ sim, spec, options, createView, viewOptions = {}, onPrepared = () => {}, development = false, from, onTurn }) {
+export function createBattleSession({ sim, spec, options, createView, viewOptions = {}, onPrepared = () => {}, development = false, from, onTurn, commands, lang = DEFAULT_LANG }) {
+  const names = battleNamesIn(lang, sim.Dex);
   const controller = new AbortController();
   const { signal } = controller;
   let view, started = false, paused = false, control = null;
@@ -83,6 +86,8 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
 
     snapshot() { return control?.snapshot() ?? null; },
 
+    position() { return control?.position() ?? null; },
+
     diagnostics() { return [...aiNotes]; },
 
     // Send to story: sentences shown on screen so far and turn start positions (copy)
@@ -91,6 +96,8 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
     warmUp() { return wait(() => view.warmUp()); },
 
     pressKey(key) { return view?.pressKey?.(key) ?? false; },
+
+    watchButtons(fn) { return view?.watchButtons?.(fn) ?? (() => {}); },
 
     async waitDismiss() {
       try {
@@ -109,13 +116,13 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
         let preview;
         await wait(async () => {
 
-          const booting = createView({ ...viewOptions, speed, ...battleMusicOptions(sim, battleSpec, viewOptions), signal }).then(created => {
+          const booting = createView({ ...viewOptions, speed, ...battleMusicOptions(sim, battleSpec, viewOptions), signal, lang }).then(created => {
 
             if (signal.aborted) { created.destroy(); signal.throwIfAborted(); }
             view = created;
             if (paused) view.suspend?.();
           });
-          const engine = Promise.resolve(options).then(ready => { options = ready; preview = previewBattle(sim, battleSpec, options); });
+          const engine = Promise.resolve(options).then(ready => { options = ready; preview = previewBattle(sim, battleSpec, options, names); });
 
           for (const settled of await Promise.allSettled([booting, engine])) if (settled.status === 'rejected') throw settled.reason;
         });
@@ -141,10 +148,10 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
         const replayView = new Proxy({}, { get: (_, key) => (key === 'then' ? undefined
           : key === 'message' ? async text => { record(text); } : async () => undefined) });
 
-        const result = await runBattle({ sim, spec: battleSpec, options, view: guarded, names: battleNames, development,
+        const result = await runBattle({ sim, spec: battleSpec, options, view: guarded, names, lang, development,
 
           enemyAI: createEnemyAI(sim, { trainer: !isWild(battleSpec), difficulty: battleSpec.difficulty ?? 'normal', boss: !!battleSpec.boss, onDecision }),
-          from, onTurn: turnStart, replayView, onBattle: c => { control = c; } });
+          from, onTurn: turnStart, replayView, commands, onBattle: c => { control = c; } });
 
         return result && { ...result, screen: [...screen] };
       } catch (error) {

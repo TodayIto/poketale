@@ -1,6 +1,6 @@
 // from pokerogue src/main.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/scene-base.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 import Phaser from 'phaser';
 import { BattleScene } from './scene.js';
 import { Lifetime, destroyGame } from './lifetime.js';
@@ -9,10 +9,13 @@ import { runAway } from './run-away.js';
 import { keyAction } from './ui/keys.js';
 import { showTrainer, hideInfo, pause } from './flow-extras.js';
 import { checkTheme } from './ui/theme.js';
+import { checkLang, DEFAULT_LANG } from '../director/lang.js';
 import { prepareOutside, showSummary, startPartyScene, endPartyScene } from './outside.js';
 import { refitScale } from './refit.js';
+import { screenButtons } from './ui/tap-back.js';
 import { GAME_SPEEDS, DEFAULT_SPEED } from './game-speed.js';
 import { QUALITIES, DEFAULT_QUALITY, CANVAS_SIZE } from './quality.js';
+import { POSITIONS } from './positions.js';
 
 // Phone pad: arrows, A, B -> the same input as the keyboard (keys from the view/ui/keys.js table)
 export const PAD_KEYS = Object.freeze({ up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', a: 'z', b: 'x' });
@@ -25,6 +28,7 @@ function checkSpeed(speed) {
 export async function createBattleView(options) {
   if (!options?.parent || typeof options.fetchBytes !== 'function') throw new Error('parent and fetchBytes are required');
   options = { ...options, theme: checkTheme(options.theme) };
+  options.lang = checkLang(options.lang ?? DEFAULT_LANG);
 
   options.speed = checkSpeed(options.speed ?? DEFAULT_SPEED);
   options.quality ??= DEFAULT_QUALITY;
@@ -80,7 +84,7 @@ export async function createBattleView(options) {
   const view = {};
   for (const [api, method] of Object.entries({ preload: 'prepare', summon: 'summon', recall: 'recall', hpChange: 'hpChange', setStatus: 'setStatus', faint: 'faint', message: 'message', end: 'end', playMove:'playMove', playCommon:'playCommon', statStage:'statStage', chooseAction:'chooseAction', chooseSwitch:'chooseSwitch' })) {
     view[api] = (...args) => life.run(() => {
-      if (['summon', 'recall', 'hpChange', 'setStatus', 'faint'].includes(api) && !['player', 'enemy'].includes(args[0])) throw new Error(`Invalid side: ${args[0]}`);
+      if (['summon', 'recall', 'hpChange', 'setStatus', 'faint'].includes(api) && !POSITIONS.includes(args[0])) throw new Error(`Invalid side: ${args[0]}`);
       return scene[method](...args);
     });
   }
@@ -103,6 +107,8 @@ export async function createBattleView(options) {
 
   view.encounter = (...args) => life.run(() => scene.encounter.encounter(...args));
   view.hideTrainer = () => life.run(() => scene.encounter.hideTrainer());
+
+  view.swap = (a, b) => life.run(() => scene.swap(a, b));
 
   view.trainerPicture = who => (destroyed ? null : scene.encounter.picture(who));
   view.playSound = path => { if (!destroyed) scene.audio?.play(path).catch(() => {}); };
@@ -131,6 +137,18 @@ export async function createBattleView(options) {
     if (destroyed || suspended) return false;
     for (const type of ['keydown', 'keyup']) options.parent.dispatchEvent(new KeyboardEvent(type, { key: name, bubbles: true, cancelable: true }));
     return true;
+  };
+
+  view.watchButtons = fn => {
+    let last = null;
+    const check = () => {
+      if (destroyed) return;
+      const now = screenButtons(scene), key = JSON.stringify(now);
+      if (key !== last) { last = key; fn(now); }
+    };
+    check();
+    scene.events.on('postupdate', check);
+    return () => scene.events?.off('postupdate', check);
   };
 
   view.suspend = () => {

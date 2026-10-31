@@ -1,5 +1,13 @@
 import { hashKey, norm } from './blocks.mjs';
-import { namedTrainer, personalName, cardFace, cardSheet, plainTrainerSprite } from './named.mjs';
+import { namedTrainer, namedGender, personalName, cardFace, cardSheet, plainTrainerSprite } from './named.mjs';
+import { compatTrainerGender } from './compat.mjs';
+
+export function opponentGender(battle, chat = null) {
+  if (!battle || battle.wild) return null;
+  if (battle.gender) return battle.gender;
+  const named = namedTrainer(battle);
+  return named ? namedGender(named) : compatTrainerGender(chat);
+}
 
 export const LOOK_PICTURES = Object.freeze({
   boy: [
@@ -47,7 +55,7 @@ export function lookPicture({ look, name, trainerClass } = {}, { key = null, tab
 
 const faceOf = sprite => Object.values(LOOK_PICTURES).flat().find(row => row[0] === sprite)?.[1] ?? null;
 
-export function opponentPicture(battle, { key = null, silhouette = false } = {}) {
+export function opponentPicture(battle, { key = null, silhouette = false, chat = null } = {}) {
   if (!battle || battle.wild) return { sprite: null, face: null };
   const named = namedTrainer(battle);
   if (named) {
@@ -55,6 +63,6 @@ export function opponentPicture(battle, { key = null, silhouette = false } = {})
     return face ? { sprite: named, face } : { sprite: named, face: null, sheet: cardSheet(named) };
   }
   const picture = lookPicture(battle, { key, table: silhouette ? SILHOUETTE_PICTURES : LOOK_PICTURES });
-  const sprite = picture?.sprite ?? plainTrainerSprite(battle.gender);
+  const sprite = picture?.sprite ?? plainTrainerSprite(opponentGender(battle, chat));
   return silhouette ? { sprite, face: picture?.face ?? faceOf(sprite), silhouette: true } : { sprite, face: picture?.face ?? null };
 }

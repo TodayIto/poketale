@@ -1,21 +1,20 @@
-import phrases from './text-effects-ko.json' with { type: 'json' };
-import { interpolate } from './text.js';
-import { sideOf } from './read.js';
-import { ownTemplate } from './own-text.js';
-import { toID } from '../engine/mon.mjs';
+import { positionOf } from './read.js';
+import { effectText, typeNameIn } from './steps-effects.js';
+import { nameWithAffix } from './text.js';
+import { DEFAULT_LANG } from './lang.js';
 
 // Lines this module handles (steps.js dispatch table)
 export const MEGA_KINDS = ['-terastallize', '-mega', '-primal', '-burst', '-zpower', '-zbroken'];
 
-export function gimmickOptions(request, { teraOrb = true } = {}) {
-  const active = request?.active?.[0];
+export function gimmickOptions(request, { teraOrb = true } = {}, slot = 0) {
+  const active = request?.active?.[slot];
   if (active?.canMegaEvo) return { mega: true };
   if (active?.canTerastallize && teraOrb) return { tera: String(active.canTerastallize) };
   return {};
 }
 
-export function gimmickSuffix(choice, request, allow) {
-  const options = gimmickOptions(request, allow);
+export function gimmickSuffix(choice, request, allow, slot = 0) {
+  const options = gimmickOptions(request, allow, slot);
   if (choice.mega && choice.tera) throw new Error('Invalid player choice');
   if (choice.mega) { if (!options.mega) throw new Error('Invalid player choice'); return ' mega'; }
   if (choice.tera) { if (!options.tera) throw new Error('Invalid player choice'); return ' terastallize'; }
@@ -24,20 +23,23 @@ export function gimmickSuffix(choice, request, allow) {
 
 export function megaFormName(names, species) {
   const full = names.species(species.id);
-  return /\(([^()]+)\)\s*$/.exec(full)?.[1] ?? full;
+  const inner = /\(([^()]+)\)\s*$/.exec(full)?.[1];
+  if (inner) return inner;
+  const mega = /^Mega(?:-(\w+))?$/.exec(species.forme ?? '');
+  return mega ? `Mega ${names.species(species.baseSpecies)}${mega[1] ? ` ${mega[1]}` : ''}` : full;
 }
 
-export function createMegaTera({ battle, view, names, warn, ledger }) {
-  const nameOf = ident => ledger.get(ident).name;
+export function createMegaTera({ view, warn, ledger, lang = DEFAULT_LANG, affix = nameWithAffix(lang) }) {
+  const nameOf = ident => affix(ledger.get(ident).name, positionOf(ident));
   const nv = ident => ({ pokemonName: nameOf(ident), pokemonNameWithAffix: nameOf(ident) });
-  const say = (key, values) => view.message(interpolate(ownTemplate(key) ?? phrases[key], values), {});
-  const typeName = type => phrases[`pokemon-info.type.${toID(type)}`] ?? type;
+  const say = (key, values) => view.message(effectText(key, values, lang), {});
+  const typeName = type => typeNameIn(lang, type);
 
   async function present({ kind, args: a }) {
     switch (kind) {
     case '-terastallize': {
 
-      const side = sideOf(a[0]), type = a[1];
+      const side = positionOf(a[0]), type = a[1];
       if (!ledger.onField(a[0])) { warn(`${kind}:${a[0]}`); return; }
       await view.terastallize(side, type);
       await say('battle.pokemonTerastallized', { ...nv(a[0]), type: typeName(type) });

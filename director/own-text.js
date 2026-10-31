@@ -1,4 +1,6 @@
-export const OWN = {
+import { checkLang, DEFAULT_LANG } from './lang.js';
+
+const KO = {
 
   'own.itemObtained': '{{pokemonNameWithAffix}}[[는]]\n{{itemName}}[[를]] 손에 넣었다!',
 
@@ -61,7 +63,87 @@ export const OWN = {
   'own.sentToBox': '{{pokemonName}}[[는]]\n박스로 전송되었다!',
 
   'own.expShare': '나머지 포켓몬들도\n경험치를 얻었다!',
+
+  'own.mintNote': '{{itemName}}의 효과를 받고 있다.',
+
+  'own.pocket.heal': '회복', 'own.pocket.status': '상태', 'own.pocket.battle': '배틀', 'own.pocket.ball': '볼',
+
+  'own.forfeitQuestion': '정말로 도망칠까요?',
+  'own.forfeitNote': '패배로 기록됩니다',
+
+  'own.alreadyChosen': '{{pokemonName}}[[는]]\n이미 교체하기로 골랐다!',
+  'own.partnerPokemon': '동료의 포켓몬은 고를 수 없다!',
+  'own.swap': '{{pokemonNameWithAffix}}[[와]] {{targetName}}[[는]]\n자리를 바꿨다!',
+
+  'own.partnerGo': '{{trainerName}}[[는]] {{pokemonName}}[[를]] 꺼냈다!',
+  'own.partnerPokemonWithAffix': '{{trainerName}}의 {{pokemonName}}',
 };
 
-// Template of an own text (undefined if not an own.* key or missing)
-export const ownTemplate = key => (Object.hasOwn(OWN, key) ? OWN[key] : undefined);
+const EN = {
+  'own.itemObtained': '{{pokemonNameWithAffix}} obtained\n{{itemName}}.',
+  'own.airBalloon': '{{pokemonNameWithAffix}} floats in the air\nwith its Air Balloon!',
+  'own.airBalloonPopped': '{{pokemonNameWithAffix}}\'s\nAir Balloon popped!',
+  'own.itemHeal': '{{pokemonNameWithAffix}} restored a little HP\nusing its {{itemName}}!',
+  'own.lifeOrb': '{{pokemonNameWithAffix}}\nlost some of its HP!',
+  'own.itemDamage': '{{pokemonNameWithAffix}} was hurt\nby its {{itemName}}!',
+  'own.itemDamageFrom': '{{pokemonNameWithAffix}} was hurt by\n{{sourceName}}\'s {{itemName}}!',
+  'own.itemSurvive': '{{pokemonNameWithAffix}} hung on\nusing its {{itemName}}!',
+  'own.itemWeaken': '{{pokemonNameWithAffix}}\'s {{itemName}}\nlessened the damage it took!',
+  'own.gem': '{{itemName}} strengthened\n{{moveName}}\'s power!',
+  'own.powerHerb': '{{pokemonNameWithAffix}} became fully charged\ndue to its {{itemName}}!',
+  'own.ejectItem': '{{pokemonNameWithAffix}} is switched out\nwith the {{itemName}}!',
+  'own.redCard': '{{pokemonNameWithAffix}} held up its {{itemName}}\nagainst {{targetName}}!',
+  'own.mirrorHerb': '{{pokemonNameWithAffix}} used its {{itemName}} to mirror\nits opponent\'s stat changes!',
+  'own.abilityShield': '{{pokemonNameWithAffix}}\'s Ability is protected\nby the effects of its {{itemName}}!',
+  'own.clearAmulet': 'The effects of {{pokemonNameWithAffix}}\'s {{itemName}}\nprevent its stats from being lowered!',
+  'own.safetyGoggles': '{{pokemonNameWithAffix}} is not affected by {{moveName}}\nthanks to its {{itemName}}!',
+  'own.boosterEnergy': '{{pokemonNameWithAffix}} used its {{itemName}}\nto activate {{abilityName}}!',
+  'own.statusFromItem.brn': '{{pokemonNameWithAffix}} was burned\nby the {{itemName}}!',
+  'own.statusFromItem.tox': '{{pokemonNameWithAffix}} was badly poisoned\nby the {{itemName}}!',
+  'own.cureFromItem.brn': '{{pokemonNameWithAffix}}\'s {{itemName}}\nhealed its burn!',
+  'own.cureFromItem.frz': '{{pokemonNameWithAffix}}\'s {{itemName}}\ndefrosted it!',
+  'own.cureFromItem.par': '{{pokemonNameWithAffix}}\'s {{itemName}}\ncured its paralysis!',
+  'own.cureFromItem.psn': '{{pokemonNameWithAffix}}\'s {{itemName}}\ncured its poison!',
+  'own.cureFromItem.slp': '{{pokemonNameWithAffix}}\'s {{itemName}}\nwoke it up!',
+  'own.cureFromItem.confusion': '{{pokemonNameWithAffix}}\'s {{itemName}}\nsnapped it out of its confusion!',
+  'own.focusEnergyFromItem': '{{pokemonNameWithAffix}} used the {{itemName}}\nto get pumped!',
+  'own.attractFromItem': '{{pokemonNameWithAffix}} fell in love\nbecause of the {{itemName}}!',
+  'own.itemBoost1': 'The {{itemName}} raised\n{{pokemonNameWithAffix}}\'s {{stats}}!',
+  'own.itemBoost2': 'The {{itemName}} sharply raised\n{{pokemonNameWithAffix}}\'s {{stats}}!',
+  'own.itemBoost3': 'The {{itemName}} drastically raised\n{{pokemonNameWithAffix}}\'s {{stats}}!',
+  'own.itemUnboost1': 'The {{itemName}} lowered\n{{pokemonNameWithAffix}}\'s {{stats}}!',
+  'own.itemUnboost2': 'The {{itemName}} harshly lowered\n{{pokemonNameWithAffix}}\'s {{stats}}!',
+  'own.itemUnboost3': 'The {{itemName}} severely lowered\n{{pokemonNameWithAffix}}\'s {{stats}}!',
+  'own.itemUsed': '{{pokemonNameWithAffix}} used its\n{{itemName}}!',
+  'own.fling': '{{pokemonNameWithAffix}} flung its\n{{itemName}}!',
+  'own.recycle': '{{pokemonNameWithAffix}} found one\n{{itemName}}!',
+  'own.micleBerry': '{{pokemonNameWithAffix}} boosted the accuracy of\nits next move using its {{itemName}}!',
+  'own.switchedItems': '{{pokemonName}} switched items\nwith its target!',
+  'own.moveDisabledTaunt': '{{pokemonNameWithAffix}} can\u2019t use {{moveName}} after the taunt!',
+  'own.zPower': '{{pokemonNameWithAffix}} surrounded itself\nwith its Z-Power!',
+  'own.zBroken': '{{pokemonNameWithAffix}} couldn\'t fully protect\nitself and got hurt!',
+  'own.ultraBurst': '{{pokemonNameWithAffix}} regained its true power\nthrough Ultra Burst!',
+  'own.usedItem': 'You used {{itemName}}\non {{pokemonName}}!',
+  'own.trainerUsedItem': '{{trainerName}} used\n{{itemName}}!',
+  'own.revived': '{{pokemonName}} was revived!',
+  'own.ppRestoredAll': '{{pokemonNameWithAffix}}\'s PP was restored\nby the {{itemName}}!',
+  'own.ballNoTarget': 'The Pok\u00e9mon can\'t be seen,\nso you can\'t throw a Ball!',
+  'own.bagLocked': 'You can\'t use\nthe Bag right now!',
+  'own.sentToBox': '{{pokemonName}} was sent\nto the Box!',
+  'own.expShare': 'The rest of your team\ngained Exp. Points!',
+  'own.mintNote': 'Under the effect of the {{itemName}}.',
+  'own.pocket.heal': 'HP/PP Restore', 'own.pocket.status': 'Status Restore', 'own.pocket.battle': 'Battle Items', 'own.pocket.ball': 'Pok\u00e9 Balls',
+  'own.forfeitQuestion': 'Do you really want to run away?',
+  'own.forfeitNote': 'It will count as a loss.',
+  'own.alreadyChosen': '{{pokemonName}} is already\ngoing in!',
+  'own.partnerPokemon': 'You can\'t choose your partner\'s Pok\u00e9mon!',
+  'own.swap': '{{pokemonNameWithAffix}} and {{targetName}}\nswitched places!',
+  'own.partnerGo': '{{trainerName}} sent out {{pokemonName}}!',
+  'own.partnerPokemonWithAffix': '{{trainerName}}\'s {{pokemonName}}',
+};
+
+// Own text per language, same keys
+export const OWN = Object.freeze({ ko: KO, en: EN });
+
+// Template of an own text in a language (undefined if not an own.* key or missing)
+export const ownTemplate = (key, lang = DEFAULT_LANG) => (Object.hasOwn(OWN[checkLang(lang)], key) ? OWN[lang][key] : undefined);

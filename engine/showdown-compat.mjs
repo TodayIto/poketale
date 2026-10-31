@@ -43,6 +43,9 @@ const SWITCH_ORDER = 103;
 export function chooseEventAction(battle, side, event) {
 	side.clearChoice();
 	side.choice.actions.push({ choice: 'event', event, order: SWITCH_ORDER, priority: 0, pokemon: side.active[0], side });
+
+	// The side's other Pokemon on the field do nothing this turn (a run or item takes the whole side's turn)
+	for (const pokemon of side.active.slice(1)) side.choice.actions.push({ choice: 'pass', pokemon, side });
 	if (battle.allChoicesDone()) battle.commitChoices();
 }
 

@@ -13,21 +13,26 @@ export function installInitialState(sim, battle, spec) {
 	});
 }
 
-export function recordStartForms(sim, battle) {
+export function recordStartForms(battle, sets) {
 	for (const side of battle.sides) {
 		for (const pokemon of side.pokemon) {
-			pokemon.m.start = { species: battle.dex.species.get(pokemon.set.species || pokemon.set.name).name, ability: sim.Dex.toID(pokemon.set.ability) };
+			const set = sets[side.id][side.team.indexOf(pokemon.set)];
+			pokemon.m.start = { species: battle.dex.species.get(set.species).name, ability: set.ability };
 		}
 	}
 }
+
+export const startsFainted = member => (member.hp !== undefined ? Math.trunc(member.hp) <= 0 : member.hpPercent !== undefined && member.hpPercent <= 0);
 
 function applyInitialState(sim, side, team) {
 
 	side.pokemon.forEach((pokemon, i) => {
 		const member = team[i];
 		pokemon.m.uid = member.uid;
+		if (member.partner) pokemon.m.partner = member.partner;
 		if (member.natureOrig) pokemon.m.natureOrig = member.natureOrig;
 		if (member.ot) pokemon.m.ot = member.ot;
+		if (member.heldCustom) pokemon.m.heldCustom = member.heldCustom;
 
 		applyPpUps(side.battle, pokemon, member.ppUps);
 
@@ -44,7 +49,7 @@ function applyInitialState(sim, side, team) {
 		if (member.hpPercent > 0 && hp === 0) hp = 1;
 		pokemon.hp = hp;
 
-		if (hp === 0) {
+		if (startsFainted(member)) {
 			pokemon.fainted = true;
 			pokemon.status = 'fnt';
 			side.pokemonLeft--;
@@ -62,9 +67,13 @@ function applyInitialState(sim, side, team) {
 		}
 	});
 
-	// The lead is side.pokemon[0]. Fainted party members are moved to the back (input order otherwise kept).
-	const alive = side.pokemon.filter(p => !p.fainted);
+	let alive = side.pokemon.filter(p => !p.fainted);
 	if (!alive.length) throw new Error(`${side.id}: 싸울 수 있는 포켓몬이 없습니다`);
+	if (alive.some(p => p.m.partner)) {
+		const own = alive.find(p => !p.m.partner), partner = alive.find(p => p.m.partner);
+		if (!own) throw new Error(`${side.id}: 태그배틀에 내 쪽 싸울 수 있는 포켓몬이 없습니다`);
+		alive = [own, partner, ...alive.filter(p => p !== own && p !== partner)];
+	}
 	side.pokemon = [...alive, ...side.pokemon.filter(p => p.fainted)];
 	side.pokemon.forEach((p, i) => { p.position = i; });
 }

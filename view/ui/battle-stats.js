@@ -1,7 +1,7 @@
 // from pokerogue src/ui/battle-info/battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/battle-info/player-battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/battle-info/enemy-battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { fixed } from '../game-speed.js';
 
@@ -15,7 +15,7 @@ export class BattleStats {
     const { xOffset, paddingX, statOverflow } = player ? { xOffset: 8, paddingX: 4, statOverflow: 1 } : { xOffset: 5, paddingX: 2, statOverflow: 0 };
     this.order = player ? PLAYER_ORDER : ENEMY_ORDER;
     const c = this.container = scene.add.container(0, 0).setAlpha(0);
-    this.box = scene.add.sprite(0, 0, player ? 'pbinfo_player_stats' : 'pbinfo_enemy_mini_stats').setOrigin(1, 0.5);
+    this.box = scene.add.sprite(0, 0, info.mini ? 'pbinfo_player_mini_stats' : player ? 'pbinfo_player_stats' : 'pbinfo_enemy_mini_stats').setOrigin(1, 0.5);
     this.values = scene.add.container();
     c.add([this.box, this.values]);
     this.numbers = [];
@@ -33,7 +33,7 @@ export class BattleStats {
       this.numbers.push(number);
     });
 
-    if (player) this.values.setPosition(8, 7);
+    if (player) this.values.setPosition(info.mini ? 10 : 8, info.mini ? 0 : 7);
     info.container.add(c);
   }
 

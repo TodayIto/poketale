@@ -50,11 +50,12 @@ export function attachExperience(sim, battle, spec, { exp: table, levelUp }) {
 	if (!levelUp) throw new Error('경험치를 쓰려면 레벨업 기술 표(options.levelUp)도 필요합니다');
 
 	const effort = formatRules(sim, battle.format).effort && Array.isArray(table.effort);
-	const state = { sim, table, levelUp, effort, faced: new Map(), awarded: new Set(), learnQueue: [] };
+	const state = { sim, table, levelUp, effort, share: spec.expShare !== false, faced: new Map(), awarded: new Set(), learnQueue: [] };
 	states.set(battle, state);
 	const [p1] = battle.sides;
 	const members = new Map(spec.p1.team.map(m => [m.uid, m]));
 	for (const pokemon of p1.pokemon) {
+		if (pokemon.m.partner) continue;
 		const growth = growthOf(state.table, speciesOf(battle, pokemon));
 		pokemon.m.startLevel = pokemon.level;
 		if (!growth) continue;
@@ -117,12 +118,13 @@ function awardExperience(battle, state, foe) {
 	// EVs first, then experience (gainEffort below - on level-up the new stats include this battle's EVs)
 	if (state.effort) {
 		const yieldOf = effortYield(state.table, speciesOf(battle, foe));
-		for (const p of battle.sides[0].pokemon) if (p.hp > 0 && !p.fainted && p.m.exp !== undefined) gainEffort(p, yieldOf);
+		for (const p of battle.sides[0].pokemon) if (p.hp > 0 && !p.fainted && p.m.exp !== undefined && (state.share || faced.has(p))) gainEffort(p, yieldOf);
 	}
 
 	const recipients = battle.sides[0].pokemon
 		.filter(p => p.hp > 0 && !p.fainted && p.m.exp !== undefined && p.level < MAX_LEVEL)
 		.map(p => ({ pokemon: p, participant: faced.has(p) }))
+		.filter(r => state.share || r.participant)
 		.sort((a, b) => b.participant - a.participant);
 	for (const r of recipients) {
 		r.gain = calcExpGain({

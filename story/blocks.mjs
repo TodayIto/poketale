@@ -3,13 +3,15 @@ import movesTable from '../data/names/moves.json' with { type: 'json' };
 import abilitiesTable from '../data/names/abilities.json' with { type: 'json' };
 import itemsTable from '../data/names/items.json' with { type: 'json' };
 import storyNames from '../data/story-names.json' with { type: 'json' };
-import { PARTY_MAX, MAX_LEVEL, MAX_MOVES, OT_NAME_MAX } from './rules.mjs';
+import { PARTY_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, OT_NAME_MAX } from './rules.mjs';
+import { STATS } from '../engine/mon.mjs';
 import { toID } from '../names/index.js';
+import { DEFAULT_EMOJI, customItemId, splitEmoji } from './custom-items.mjs';
+import { ruleNote } from './failure.mjs';
 
 export const norm = s => String(s ?? '').normalize('NFKC').replace(/♀/g, 'f').replace(/♂/g, 'm').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 
 const TABLES = { species: speciesTable, moves: movesTable, abilities: abilitiesTable, items: itemsTable };
-const KIND_KO = { species: '포켓몬', moves: '기술', abilities: '특성', items: '도구' };
 const reverse = {};
 
 function buildReverse(kind) {
@@ -59,9 +61,11 @@ export function speciesName(raw) {
   return id ? speciesTable[id].en : null;
 }
 
+const note = (rule, values) => ruleNote(`block.${rule}`, values);
+
 function need(kind, raw, errors) {
   const id = lookupId(kind, raw);
-  if (!id) errors.push(`모르는 ${KIND_KO[kind]}: ${String(raw).trim()}`);
+  if (!id) errors.push(note(`unknown.${kind}`, { name: String(raw).trim() }));
   return id;
 }
 
@@ -110,7 +114,7 @@ export function hashKey(str) {
   return (n % 36 ** 8).toString(36).padStart(8, '0');
 }
 
-const BLOCK_RE = /<\s*pkb-(battle|change|end)\s*>([\s\S]*?)<\s*\/\s*pkb-\1\s*>/gi;
+const BLOCK_RE = /<\s*pkb-(battle|change|end|act)\s*>([\s\S]*?)<\s*\/\s*pkb-\1\s*>/gi;
 const TAG_RE = /<pkb#([a-z0-9]+)>/g;
 
 const MARK_RE = /<pkb!([a-z]):([a-z0-9]+)>/g;
@@ -135,6 +139,16 @@ export const battlesInText = (text, id) => findBlocks(text).filter(b => b.kind =
 // Battle blocks in a message
 export const battlesIn = (message, index) => battlesInText(message?.data ?? '', messageId(message, index));
 
+export const actsIn = (message, index) => findBlocks(message?.data ?? '').filter(b => b.kind === 'act').map((b, n) => {
+  const id = ACT_ID_RE.exec(b.body)?.[1];
+  return { ...b, own: !!id, key: id ? hashKey(`act-id\n${id}`) : battleKey(`act:${messageId(message, index)}`, n, b.body) };
+});
+const ACT_ID_RE = /^\s*id\s*:\s*([a-z0-9]+)\s*$/im;
+
+export function actBlock(body, id) {
+  return { text: `<pkb-act>\nid: ${id}\n${String(body ?? '').trim()}\n</pkb-act>`, key: hashKey(`act-id\n${id}`) };
+}
+
 export function findTags(text) {
   return [...String(text ?? '').matchAll(TAG_RE)].map(m => ({ key: m[1], start: m.index, end: m.index + m[0].length }));
 }
@@ -154,7 +168,7 @@ function lines(body, errors) {
     const line = raw.replace(/^\s*[-*•·]\s+/, '').trim();
     if (!line) continue;
     const m = /^([^:：]+?)\s*[:：]\s*(.*)$/.exec(line);
-    if (!m) { errors.push(`읽을 수 없는 줄: ${line}`); continue; }
+    if (!m) { errors.push(note('badLine', { line })); continue; }
     out.push({ key: norm(m[1]), value: m[2].trim(), line });
   }
   return out;
@@ -169,7 +183,7 @@ const SET_KEYS = words({
   ability: ['ability', '특성'], moves: ['moves', 'move', '기술', '기술들'], item: ['item', 'helditem', 'hold', '도구', '지닌도구', '지닌물건'],
   nature: ['nature', '성격'], gender: ['gender', 'sex', '성별'], shiny: ['shiny', '이로치', '색이다름'], tera: ['tera', 'teratype', '테라', '테라타입'],
   name: ['nickname', 'name', '별명', '이름', '닉네임'], hp: ['hp', '체력'], status: ['status', '상태', '상태이상'], level: ['level', 'lv', 'lvl', '레벨'],
-  box: ['box', '박스'], party: ['party', '파티'], ot: ['ot', 'originaltrainer', '어버이'],
+  box: ['box', '박스'], party: ['party', '파티'], ot: ['ot', 'originaltrainer', '어버이'], ivs: ['ivs', 'iv', '개체값'],
 });
 const CHANGE_KEYS = words({
   add: ['add', 'get', 'catch', '추가', '얻음', '받음', '잡음'], level: ['level', 'levelup', 'lv', '레벨', '레벨업'], heal: ['heal', 'restore', '회복', '치료'],
@@ -194,7 +208,8 @@ function splitSeg(seg, map) {
   if (!m) return null;
   for (const [head, n] of [[m[1] + (m[2] ?? ''), 2], [m[1], 1]]) {
     const k = norm(head.replace(/[:：]$/, ''));
-    if (n === 2 && !m[2]) continue;
+
+    if (n === 2 && !(m[2] && /[\p{L}\p{N}]/u.test(m[2]))) continue;
     if (map.has(k)) return [map.get(k), seg.split(/\s+/).slice(n).join(' ').replace(/^[:：]\s*/, '').trim()];
   }
 
@@ -208,17 +223,32 @@ function percent(v, warn) {
   const m = /^(\d+(?:\.\d+)?)\s*%?$/.exec(s);
   if (!m) return null;
   const n = Number(m[1]);
-  if (n > 100) { warn?.(`HP 는 100% 까지: ${s} → 100%`); return 100; }
+  if (n > 100) { warn?.(note('hpCapped', { value: s })); return 100; }
   return n;
+}
+
+function readIvs(v) {
+  const n = /^([1-6])\s*v$/i.exec(v);
+  if (n) return Number(n[1]) === STATS.length ? { ivs: Object.fromEntries(STATS.map(s => [s, MAX_IV])) } : { perfectIvs: Number(n[1]) };
+  const nums = v.split('/').map(x => x.trim());
+  if (nums.length !== STATS.length || !nums.every(x => /^\d{1,2}$/.test(x) && Number(x) <= MAX_IV)) return null;
+  return { ivs: Object.fromEntries(STATS.map((s, i) => [s, Number(nums[i])])) };
 }
 
 function parseSet(value, errors, dest, warnings = errors) {
   const warn = text => warnings.push(text);
   const segs = String(value).split(/[|｜]/).map(s => s.trim()).filter(Boolean);
-  if (!segs.length) { errors.push('포켓몬 줄이 비었음'); return null; }
+  if (!segs.length) { errors.push(note('emptyMon')); return null; }
   let { level, rest } = takeLevel(segs[0]);
   const set = {};
-  let to = 'party', ot = null;
+  let to = 'party', ot = null, custom = null;
+
+  const ivField = (v, seg) => {
+    const r = readIvs(v);
+    if (!r) { errors.push(note('badIvs', { max: MAX_IV, seg })); return; }
+    delete set.ivs; delete set.perfectIvs;
+    Object.assign(set, r);
+  };
   for (const seg of segs.slice(1)) {
     const kv = splitSeg(seg, SET_KEYS);
     if (!kv) {
@@ -228,62 +258,69 @@ function parseSet(value, errors, dest, warnings = errors) {
       if (/^\d+(?:\.\d+)?\s*%$/.test(seg)) { set.hpPercent = percent(seg, warn); continue; }
       if (GENDER.has(norm(seg)) && /^[♂♀]$/.test(seg)) { set.gender = GENDER.get(norm(seg)); continue; }
       if (NOT_SHINY.has(norm(seg))) continue;
-      errors.push(`모르는 덧붙임: ${seg}`);
+      if (/^\d+\s*v$/i.test(seg)) { ivField(seg, seg); continue; }
+      errors.push(note('unknownExtra', { seg }));
       continue;
     }
     const [k, v] = kv;
     if (k === 'shiny') {
       const yes = v ? SHINY.get(norm(v)) : 'yes';
       if (yes === 'yes') set.shiny = true;
-      else if (yes !== 'no') errors.push(`이로치는 예/아니오: ${seg}`);
+      else if (yes !== 'no') errors.push(note('shinyWord', { seg }));
       continue;
     }
     if (k === 'box' || k === 'party') {
-      if (dest) to = k; else errors.push(`배틀 블록에는 쓸 수 없음: ${seg}`);
+      if (dest) to = k; else errors.push(note('notInBattle', { seg }));
       continue;
     }
-    if (!v) { errors.push(`값이 없음: ${seg}`); continue; }
+    if (!v) { errors.push(note('noValue', { text: seg })); continue; }
     if (k === 'ot') {
 
-      if (dest) ot = v.slice(0, OT_NAME_MAX); else errors.push(`배틀 블록에는 쓸 수 없음: ${seg}`);
+      if (dest) ot = v.slice(0, OT_NAME_MAX); else errors.push(note('notInBattle', { seg }));
       continue;
     }
-    if (k === 'level') {
+    if (k === 'ivs') {
+      ivField(v, seg);
+    } else if (k === 'level') {
       const n = /^(?:lv\.?\s*)?(\d{1,3})$/i.exec(v);
-      if (n) level = Number(n[1]); else errors.push(`레벨을 읽을 수 없음: ${v}`);
+      if (n) level = Number(n[1]); else errors.push(note('badLevel', { value: v }));
     } else if (k === 'ability') {
       const id = need('abilities', v, errors); if (id) set.ability = id;
     } else if (k === 'item') {
-      const id = need('items', v, errors); if (id) set.item = id;
+
+      // A name-table item, else a custom item under the name as written (the same reading as item / hold lines)
+      const { emoji, rest: name } = splitEmoji(v);
+      const item = itemOf(name, emoji, v, errors);
+      if (item) { set.item = item.item; custom = item.custom ?? null; }
     } else if (k === 'moves') {
       const moves = v.split(/[,，、\/]/).map(s => s.trim()).filter(Boolean).map(s => need('moves', s, errors)).filter(Boolean);
-      if (moves.length > MAX_MOVES) errors.push(`기술은 ${MAX_MOVES}개까지: ${moves.length}개`);
+      if (moves.length > MAX_MOVES) errors.push(note('tooManyMoves', { max: MAX_MOVES, n: moves.length }));
       if (moves.length) set.moves = [...new Set(moves)].slice(0, MAX_MOVES);
     } else if (k === 'nature') {
       const n = storyNames.natures[norm(v)];
-      if (n) set.nature = n; else errors.push(`모르는 성격: ${v}`);
+      if (n) set.nature = n; else errors.push(note('unknownNature', { value: v }));
     } else if (k === 'gender') {
       const g = GENDER.get(norm(v));
-      if (g) set.gender = g; else errors.push(`모르는 성별: ${v}`);
+      if (g) set.gender = g; else errors.push(note('unknownGender', { value: v }));
     } else if (k === 'tera') {
       const t = storyNames.types[norm(v)];
-      if (t) set.teraType = t; else errors.push(`모르는 테라 타입: ${v}`);
+      if (t) set.teraType = t; else errors.push(note('unknownTera', { value: v }));
     } else if (k === 'name') {
       set.name = v;
     } else if (k === 'hp') {
       const p = percent(v, warn);
-      if (p != null) set.hpPercent = p; else errors.push(`HP 는 0~100%: ${v}`);
+      if (p != null) set.hpPercent = p; else errors.push(note('hpRange', { value: v }));
     } else if (k === 'status') {
       const s = STATUS.get(norm(v));
-      if (s !== undefined) set.status = s; else errors.push(`모르는 상태: ${v}`);
+      if (s !== undefined) set.status = s; else errors.push(note('unknownStatus', { value: v }));
     }
   }
-  if (!rest) { errors.push(`포켓몬 이름이 없음: ${segs[0]}`); return null; }
+  if (!rest) { errors.push(note('noMonName', { seg: segs[0] })); return null; }
   const species = speciesName(rest);
-  if (!species) { errors.push(`모르는 포켓몬: ${rest}`); return null; }
-  if (level == null) { errors.push(`레벨이 없음: ${rest}`); return null; }
-  if (level < 1 || level > MAX_LEVEL) { errors.push(`레벨은 1~${MAX_LEVEL}: ${rest} Lv${level}`); return null; }
-  return { set: { species, level, ...set }, to, ...(ot ? { ot } : {}) };
+  if (!species) { errors.push(note('unknown.species', { name: rest })); return null; }
+  if (level == null) { errors.push(note('noLevel', { name: rest })); return null; }
+  if (level < 1 || level > MAX_LEVEL) { errors.push(note('monLevelRange', { max: MAX_LEVEL, name: rest, level })); return null; }
+  return { set: { species, level, ...set }, to, ...(ot ? { ot } : {}), ...(custom ? { custom } : {}) };
 }
 
 export function parseBattle(body) {
@@ -292,40 +329,40 @@ export function parseBattle(body) {
   const spec = { wild: null, name: null, gender: null, look: null, trainerClass: null, boss: null, place: 'plains', time: 'day', team: [] };
   for (const { key, value, line } of lines(body, errors)) {
     const k = BATTLE_KEYS.get(key);
-    if (!k) { errors.push(`모르는 항목: ${line}`); continue; }
+    if (!k) { errors.push(note('unknownKey', { line })); continue; }
     if (k === 'pokemon') {
       const r = parseSet(value, errors, false);
       if (r) spec.team.push(r.set); else fatal = true;
       continue;
     }
-    if (!value) { errors.push(`값이 없음: ${line}`); continue; }
+    if (!value) { errors.push(note('noValue', { text: line })); continue; }
     if (k === 'opponent') {
       const o = OPPONENT.get(norm(value));
-      if (o) spec.wild = o === 'wild'; else errors.push(`상대는 야생/트레이너: ${value}`);
+      if (o) spec.wild = o === 'wild'; else errors.push(note('sideWord', { value }));
     } else if (k === 'name') spec.name = value;
     else if (k === 'class') spec.trainerClass = value;
     else if (k === 'gender') {
       const g = GENDER.get(norm(value));
-      if (g) spec.gender = g; else errors.push(`모르는 성별: ${value}`);
+      if (g) spec.gender = g; else errors.push(note('unknownGender', { value }));
     } else if (k === 'look') {
       const l = LOOKS.get(norm(value));
-      if (l) spec.look = l; else errors.push(`모르는 모습: ${value}`);
+      if (l) spec.look = l; else errors.push(note('unknownLook', { value }));
     } else if (k === 'rank') {
       const r = RANK.get(norm(value));
-      if (r) spec.boss = r === 'boss'; else errors.push(`등급은 일반/보스: ${value}`);
+      if (r) spec.boss = r === 'boss'; else errors.push(note('rankWord', { value }));
     } else if (k === 'place') {
       const b = storyNames.biomes[norm(value)];
-      if (b) spec.place = b; else errors.push(`모르는 장소: ${value} (초원으로)`);
+      if (b) spec.place = b; else errors.push(note('unknownPlace', { value }));
     } else if (k === 'time') {
       const t = TIME.get(norm(value));
-      if (t) spec.time = t; else errors.push(`시간은 낮/밤: ${value}`);
+      if (t) spec.time = t; else errors.push(note('timeWord', { value }));
     }
   }
-  if (spec.wild == null) { errors.push('상대(야생/트레이너)가 없음'); fatal = true; }
+  if (spec.wild == null) { errors.push(note('noSide')); fatal = true; }
   const n = spec.team.length;
-  if (!n && !fatal) { errors.push('포켓몬이 없음'); fatal = true; }
-  if (spec.wild === true && n > 1) { errors.push(`야생은 한 마리만: ${n}마리`); fatal = true; }
-  if (spec.wild === false && n > PARTY_MAX) { errors.push(`트레이너 포켓몬은 ${PARTY_MAX}마리까지: ${n}마리`); fatal = true; }
+  if (!n && !fatal) { errors.push(note('noMons')); fatal = true; }
+  if (spec.wild === true && n > 1) { errors.push(note('wildOne', { n })); fatal = true; }
+  if (spec.wild === false && n > PARTY_MAX) { errors.push(note('trainerMax', { max: PARTY_MAX, n })); fatal = true; }
 
   // Without a rank, guess from the class (else the name)
   if (spec.boss == null) spec.boss = !spec.wild && BOSS_CLASS.test(`${spec.trainerClass ?? ''} ${spec.name ?? ''}`);
@@ -341,17 +378,17 @@ function ref(str, errors) {
   if (b) {
     const box = Number(b[1]);
     if (box >= 1) return { box };
-    errors.push(`박스 번호는 1부터: ${s}`);
+    errors.push(note('boxNumber', { ref: s }));
     return null;
   }
   const m = /^#\s*(\d+)(?:번)?$/.exec(s);
   if (m) {
     const slot = Number(m[1]);
     if (slot >= 1 && slot <= PARTY_MAX) return { slot };
-    errors.push(`파티 번호는 #1~#${PARTY_MAX}: ${s}`);
+    errors.push(note('partyNumber', { max: PARTY_MAX, ref: s }));
     return null;
   }
-  if (!s || s.startsWith('#')) { errors.push(s ? `파티 번호를 읽을 수 없음: ${s}` : '누구인지 없음'); return null; }
+  if (!s || s.startsWith('#')) { errors.push(s ? note('badPartyNumber', { ref: s }) : note('noWho')); return null; }
   return { name: s };
 }
 
@@ -365,6 +402,20 @@ function headRef(value, rest = true) {
     if (speciesName(head)) return [head, parts.slice(n).join(' ')];
   }
   return parts.length ? [parts[0], parts.slice(1).join(' ')] : ['', ''];
+}
+
+function itemOf(name, emoji, value, errors) {
+  const id = lookupId('items', name);
+  if (id) return { item: id };
+  if (!/\p{L}/u.test(name)) { errors.push(note('noItemName', { value: value.trim() })); return null; }
+  return { item: customItemId(name), custom: { name, emoji: emoji || DEFAULT_EMOJI } };
+}
+
+function atEmoji(value) {
+  const parts = value.trim().split(/\s+/);
+  const leads = (part, i) => { const { emoji, rest } = splitEmoji(part); return !!emoji && (!!rest || i < parts.length - 1); };
+  const at = parts.findIndex((part, i) => i > 0 && !/^[♀♂]/u.test(part) && leads(part, i));
+  return at > 0 ? [parts.slice(0, at).join(' '), parts.slice(at).join(' ')] : null;
 }
 
 function tailCount(value, dflt) {
@@ -383,8 +434,8 @@ export function parseChange(body) {
   const ops = [];
   for (const { key, value, line } of lines(body, errors)) {
     const op = CHANGE_KEYS.get(key);
-    if (!op) { errors.push(`모르는 항목: ${line}`); continue; }
-    if (!value) { errors.push(`값이 없음: ${line}`); continue; }
+    if (!op) { errors.push(note('unknownKey', { line })); continue; }
+    if (!value) { errors.push(note('noValue', { text: line })); continue; }
     const errs = [], warns = [];
     const r = parseOp(op, value, errs, warns);
     errors.push(...errs, ...warns);
@@ -400,20 +451,20 @@ function parseOp(op, value, errors, warnings) {
   switch (op) {
     case 'add': {
       const r = parseSet(value, errors, true, warnings);
-      return r && { op, set: r.set, to: r.to, ...(r.ot ? { ot: r.ot } : {}) };
+      return r && { op, set: r.set, to: r.to, ...(r.ot ? { ot: r.ot } : {}), ...(r.custom ? { custom: r.custom } : {}) };
     }
     case 'level': {
       const m = /^(.*?)\s*(?:([+-])\s*(\d{1,3})|=\s*(?:lv\.?\s*)?(\d{1,3})|(?:lv\.?\s*|레벨\s*)?(\d{1,3}))\s*(?:레벨)?$/i.exec(value);
-      if (!m || !m[1] || /^#\s*$/.test(m[1])) { errors.push(`레벨 변경을 읽을 수 없음: ${value} (예: #1 +3, #1 =20)`); return null; }
+      if (!m || !m[1] || /^#\s*$/.test(m[1])) { errors.push(note('badLevelChange', { value })); return null; }
       const who = ref(m[1], errors);
       if (!who) return null;
       if (m[3] != null) {
         const delta = Number(m[2] + m[3]);
-        if (!delta) { errors.push(`레벨 변화가 0: ${value}`); return null; }
+        if (!delta) { errors.push(note('levelZero', { value })); return null; }
         return { op, ref: who, delta };
       }
       const to = Number(m[4] ?? m[5]);
-      if (to < 1 || to > MAX_LEVEL) { errors.push(`레벨은 1~${MAX_LEVEL}: ${to}`); return null; }
+      if (to < 1 || to > MAX_LEVEL) { errors.push(note('levelRange', { max: MAX_LEVEL, level: to })); return null; }
       return { op, ref: who, to };
     }
     case 'heal': {
@@ -432,13 +483,14 @@ function parseOp(op, value, errors, warnings) {
       return who && { op, ref: who, ...mods };
     }
     case 'item': {
+      const { emoji, rest } = splitEmoji(value);
 
-      const { name, n } = /^\s*(?:tm|기술\s*머신)\s*[-:.#]?\s*\d{1,3}\s*$/i.test(value) ? { name: value.trim(), n: 1 } : tailCount(value, 1);
-      const item = need('items', name, errors);
+      const { name, n } = /^\s*(?:tm|기술\s*머신)\s*[-:.#]?\s*\d{1,3}\s*$/i.test(rest) ? { name: rest, n: 1 } : tailCount(rest, 1);
+      const item = itemOf(name, emoji, value, errors);
       if (!item) return null;
-      if (!Number.isSafeInteger(n)) { errors.push(`도구 개수가 너무 큼: ${value}`); return null; }
-      if (!n) { errors.push(`도구 개수가 0: ${value}`); return null; }
-      return { op, item, delta: n };
+      if (!Number.isSafeInteger(n)) { errors.push(note('itemCountBig', { value })); return null; }
+      if (!n) { errors.push(note('itemCountZero', { value })); return null; }
+      return { op, ...item, delta: n };
     }
     case 'release': case 'deposit': case 'withdraw': {
       const who = ref(value, errors);
@@ -446,25 +498,26 @@ function parseOp(op, value, errors, warnings) {
     }
     case 'nickname': {
       const [h, name] = headRef(value);
-      if (!name) { errors.push(`새 별명이 없음: ${value}`); return null; }
+      if (!name) { errors.push(note('noNickname', { value })); return null; }
       const who = ref(h, errors);
       return who && { op, ref: who, name };
     }
     case 'hold': {
-      const [h, rest] = headRef(value, false);
+      const [h, rest] = atEmoji(value) ?? headRef(value, false);
       const who = ref(h, errors);
       if (!who) return null;
       if (!rest || NONE.has(norm(rest))) return { op, ref: who, item: null };
-      const item = need('items', rest, errors);
-      return item && { op, ref: who, item };
+      const { emoji, rest: name } = splitEmoji(rest);
+      const item = itemOf(name, emoji, value, errors);
+      return item && { op, ref: who, ...item };
     }
     case 'evolve': {
       const [h, rest] = headRef(value);
-      if (!rest) { errors.push(`무엇으로 진화하는지 없음: ${value}`); return null; }
+      if (!rest) { errors.push(note('noEvolveTo', { value })); return null; }
       const who = ref(h, errors);
       if (!who) return null;
       const species = speciesName(rest);
-      if (!species) { errors.push(`모르는 포켓몬: ${rest}`); return null; }
+      if (!species) { errors.push(note('unknown.species', { name: rest })); return null; }
       return { op, ref: who, species };
     }
     case 'teach': {
@@ -477,7 +530,7 @@ function parseOp(op, value, errors, warnings) {
       const d = /^(.+?)\s+(?:대신|instead\s+of)\s+(.+)$/i.exec(rest);
       if (f) [learn, forget] = [f[1], f[2]];
       else if (d) [forget, learn] = [d[1], d[2]];
-      if (!learn) { errors.push(`배울 기술이 없음: ${value}`); return null; }
+      if (!learn) { errors.push(note('noLearn', { value })); return null; }
       const move = need('moves', learn, errors);
       const old = forget ? need('moves', forget, errors) : null;
       if (!move || (forget && !old)) return null;
@@ -485,11 +538,11 @@ function parseOp(op, value, errors, warnings) {
     }
     case 'money': {
       const m = /^([+-])?\s*[₩$]?\s*(\d[\d,]*)\s*(?:원|₩|p|pokedollars?)?$/i.exec(value.trim());
-      if (!m) { errors.push(`돈을 읽을 수 없음: ${value} (예: +500)`); return null; }
+      if (!m) { errors.push(note('badMoney', { value })); return null; }
       const delta = Number((m[1] ?? '+') + m[2].replace(/,/g, ''));
 
-      if (!Number.isSafeInteger(delta)) { errors.push(`돈 숫자가 너무 큼: ${value}`); return null; }
-      if (!delta) { errors.push(`돈 변화가 0: ${value}`); return null; }
+      if (!Number.isSafeInteger(delta)) { errors.push(note('moneyBig', { value })); return null; }
+      if (!delta) { errors.push(note('moneyZero', { value })); return null; }
       return { op, delta };
     }
   }
@@ -513,9 +566,72 @@ export function parseEnd(body) {
   }
   let outcome = null;
   for (const { key, value, line } of lines(body, errors)) {
-    if (END_KEYS.get(key) !== 'result') { errors.push(`모르는 항목: ${line}`); continue; }
+    if (END_KEYS.get(key) !== 'result') { errors.push(note('unknownKey', { line })); continue; }
     const r = END_RESULT.get(norm(value));
-    if (r) outcome = r; else errors.push(`결과는 승리/패배/중단: ${value}`);
+    if (r) outcome = r; else errors.push(note('endWord', { value }));
   }
   return { outcome: outcome ?? 'stop', errors };
+}
+
+const ACT_KEYS = words({ turn: ['turn', 'action', 'command', '턴', '행동', '명령'] });
+const ACT_SIDES = words({ me: ['me', 'my', 'mine', 'player', 'own', '나', '내', '내쪽', '아군', '플레이어'],
+  foe: ['foe', 'opponent', 'enemy', 'opp', 'them', '상대', '적', '상대쪽'] });
+const ACT_VERBS = words({ switch: ['switch', 'swap', 'change', 'go', 'send', '교체', '교대', '바꾸기'], item: ['item', 'use', 'bag', '도구', '가방', '사용'],
+  run: ['run', 'flee', 'escape', 'forfeit', '도망', '도주', '항복'], move: ['move', 'attack', '기술', '공격'] });
+const GIMMICKS = words({ tera: ['tera', 'terastallize', 'terastal', '테라', '테라스탈'], mega: ['mega', 'megaevolve', '메가', '메가진화'] });
+
+function actTarget(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return null;
+  const slot = /^#\s*(\d+)(?:번)?$/.exec(s);
+  if (slot) return { slot: Number(slot[1]) };
+  return { species: lookupId('species', s), name: s };
+}
+
+// One side's part of a turn ("switch Bulbasaur") -> command, with errors for names the tables do not know
+function actPart(rest, side, errors) {
+  const toks = rest.trim().split(/\s+/).filter(Boolean);
+  const verb = ACT_VERBS.get(norm(toks[0]));
+  const after = toks.slice(verb ? 1 : 0).join(' ');
+  if (verb === 'run') return side === 'me' ? { kind: 'run' } : null;
+  if (verb === 'switch') {
+    const target = actTarget(after);
+    if (!target) errors.push(note('act.noSwitchTarget', { text: rest }));
+    return target && { kind: 'switch', target };
+  }
+  if (verb === 'item') {
+    const m = /^(.*?)\s*(?:(#\s*\d+(?:번)?)|(?:\b(?:on|to)\b|에게|→|->)\s*(.+))?$/i.exec(after);
+    const name = (m?.[1] ?? after).trim();
+    const item = lookupId('items', name);
+    if (!item) errors.push(note('unknown.items', { name }));
+    const target = actTarget(m?.[2] ?? m?.[3]);
+    return { kind: 'item', item, ...(target ? { target } : {}) };
+  }
+
+  const words = after.split(/\s+/).filter(Boolean);
+  const gimmick = words.length > 1 ? GIMMICKS.get(norm(words.at(-1))) : undefined;
+  const name = (gimmick ? words.slice(0, -1) : words).join(' ');
+  const move = lookupId('moves', name);
+  if (!move) errors.push(note('unknown.moves', { name }));
+  return { kind: 'move', move, ...(gimmick ? { gimmick } : {}), ...(move ? {} : { raw: name }) };
+}
+
+export function parseAct(body) {
+  const errors = [], turns = [], labels = [];
+  for (const { key, value, line } of lines(body, errors)) {
+    if (key === 'id') continue;
+    if (ACT_KEYS.get(key.replace(/\d+$/, '')) !== 'turn') { errors.push(note('unknownKey', { line })); continue; }
+    const turn = { me: null, foe: null }, label = { me: '', foe: '' };
+    for (const part of value.split('|').map(p => p.trim()).filter(Boolean)) {
+      const m = /^(\S+)\s+(.+)$/.exec(part);
+      const side = m && ACT_SIDES.get(norm(m[1]));
+      if (!side) { errors.push(note('act.badSide', { part })); continue; }
+      turn[side] = actPart(m[2], side, errors);
+      label[side] = m[2].trim();
+    }
+    if (!turn.me) { errors.push(note('act.noMine', { line })); continue; }
+    turns.push(turn);
+    labels.push(label);
+  }
+  return { turns, labels, errors };
 }

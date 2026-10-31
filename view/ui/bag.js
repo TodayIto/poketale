@@ -1,6 +1,6 @@
 // from pokerogue src/ui/handlers/ball-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/command-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { addWindow } from './window.js';
 import BAG_ICONS from '../../data/bag-icons.json' with { type: 'json' };
@@ -9,9 +9,9 @@ import { openMenu } from './menu.js';
 import { styledText } from './text.js';
 import { uiRect } from './tap-back.js';
 import { fixed } from '../game-speed.js';
-import { LoadError, OPEN_FAILED } from '../retry.js';
+import { LoadError } from '../retry.js';
 
-const CANCEL_TEXT = '취소';
+const CANCEL_TEXT = 'command-ui-handler.ballCancel';
 const ROWS = 6;
 
 export const BALL_FRAMES = { pokeball: 'pb', greatball: 'gb', ultraball: 'ub', masterball: 'mb', luxuryball: 'lb' };
@@ -34,7 +34,7 @@ export function openBag(menu) {
   }, error => {
     if (!menu.finish) return;
     if (!(error instanceof LoadError)) return menu.fail(error);
-    menu.cursor = 1; menu.showBlocked(OPEN_FAILED, 'command');
+    menu.cursor = 1; menu.showBlocked(menu.scene.words('own.openFailed'), 'command');
   });
 }
 
@@ -81,7 +81,7 @@ export class BagMenu {
     const countsWidth = Math.max(0, ...all.map(i => measure(`×${i.count}`)));
     const tabs = this.bag.pockets.map(p => measure(p.name));
     const tabsWidth = tabs.reduce((a, b) => a + b, 0) + 8 * (tabs.length - 1);
-    const content = Math.max(64, namesWidth + 4 + countsWidth, measure(CANCEL_TEXT), tabsWidth - 24);
+    const content = Math.max(64, namesWidth + 4 + countsWidth, measure(s.words(CANCEL_TEXT)), tabsWidth - 24);
     const width = 50 + content, height = 128, x = 320 - 51 - content, top = -49 - height;
     this.box = s.add.container(x, 0); c.add(this.box);
     this.box.add(addWindow(s, 0, top, width, height));
@@ -111,7 +111,7 @@ export class BagMenu {
       hit.on('pointerup', () => { if (!this.drag?.moved && this.cursor === index) this.input('ok'); });
       if (!item) {
 
-        this.box.add([windowText(s, 18, y, CANCEL_TEXT), hit]);
+        this.box.add([windowText(s, 18, y, s.words(CANCEL_TEXT)), hit]);
         this.rows.push({ index });
         continue;
       }

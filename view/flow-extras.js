@@ -1,8 +1,9 @@
 // from pokerogue src/phases/battle-phase.ts (showEnemyTrainer) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/attempt-capture-phase.ts (hideInfo after the catch is confirmed) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { tween, delay } from './lifetime.js';
+import { checkPosition } from './positions.js';
 
 export async function showTrainer(scene) {
   const trainer = scene.encounter?.enemyTrainer;
@@ -14,7 +15,7 @@ export async function showTrainer(scene) {
 }
 
 export async function hideInfo(scene, side) {
-  if (!['player', 'enemy'].includes(side)) throw new Error(`Invalid side: ${side}`);
+  checkPosition(scene.double, side);
   await scene.info[side]?.hide();
 }
 

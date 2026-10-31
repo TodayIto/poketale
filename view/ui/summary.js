@@ -1,6 +1,6 @@
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (SummaryUiMode.DEFAULT, Page.PROFILE/STATS/MOVES) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/party-ui-handler.ts (processSummaryOption) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { placeSprite } from '../sprites/placement.js';
 import { fixed } from '../game-speed.js';
@@ -10,9 +10,7 @@ import { styledText, STATUS_FRAMES, STAT_ROWS, GENDER_COLORS, genderSymbol } fro
 import { playSelect, playError } from './keys.js';
 import { openMenu } from './menu.js';
 import { RenameForm } from './rename-form.js';
-import { LoadError, OPEN_FAILED, LOAD_FAILED } from '../retry.js';
-
-const RENAME_FAILED = '닉네임을 바꾸지 못했습니다.\n다시 시도해 주십시오.';
+import { LoadError } from '../retry.js';
 
 const KO = 'images/ui/text_images/ko/summary/';
 
@@ -28,7 +26,9 @@ export const SUMMARY_IMAGES = {
   shiny_star: 'images/ui/shiny.png', button_tera: 'images/ui/button_tera.png',
 };
 
-const TEXT = { ...SUMMARY_TEXT, ot: '어버이', type: '타입', expPoints: '현재 경험치', nextLv: '다음 레벨까지' };
+// Phrases by name (view/words.js): pokemon-summary.json ot, type, expPoints, nextLv. idNo is not shown
+const TEXT = Object.freeze({ ...SUMMARY_TEXT, ot: 'pokemon-summary.ot', type: 'pokemon-summary.type', expPoints: 'pokemon-summary.expPoints',
+  nextLv: 'pokemon-summary.nextLv', noItem: 'own.noItem' });
 
 const QUILL = ['......oo', '.....owo', '....owwo', '...owwo.', '..owwo..', '..owo...', '.oo.....', 'o.......'];
 const QUILL_COLOR = { o: 0x484848, w: 0xf8f8f8 };
@@ -46,7 +46,7 @@ export function openSummary(menu) {
       if (scene.life.signal.aborted) return;
       if (!(error instanceof LoadError)) console.error(error);
       if (!menu.finish) return;
-      menu.clearOptions(); menu.showPrompt(OPEN_FAILED);
+      menu.clearOptions(); menu.showPrompt(scene.words('own.openFailed'));
     })
     .finally(() => { menu.sub = false; });
 }
@@ -95,6 +95,11 @@ export class SummaryScreen {
     if (this.pointerDown) { s.input.off('pointerdown', this.pointerDown); s.input.off('pointerup', this.pointerUp); this.pointerDown = this.pointerUp = null; }
   }
 
+  pages() {
+    if (!this.finish || this.renaming) return null;
+    return { prev: this.page > PROFILE, next: this.page < MOVES && !this.moveSelect };
+  }
+
   // Only when the same press was not a swipe (object pointerup)
   tap(fn) {
     return (pointer, localX) => {
@@ -113,7 +118,7 @@ export class SummaryScreen {
     c.add(s.add.image(0, 0, 'summary_bg').setOrigin(0, 1));
 
     this.tab = s.add.image(81, -180 + 16, 'summary_tabs_1').setOrigin(0, 1);
-    c.add([this.tab, styledText(s, 4, -165, TEXT.pokemonInfo, 'SUMMARY_HEADER').setOrigin(0, 1),
+    c.add([this.tab, styledText(s, 4, -165, s.words(TEXT.pokemonInfo), 'SUMMARY_HEADER').setOrigin(0, 1),
       s.add.image(6, -151, 'summary_dexnb_label').setOrigin(0, 1)]);
 
     this.monLayer = s.add.container(0, 0);
@@ -121,7 +126,7 @@ export class SummaryScreen {
 
     this.status = s.add.sprite(91, 4, 'statuses', 'burn').setOrigin(0.5, 0);
     this.statusContainer = s.add.container(-106, -16);
-    this.statusContainer.add([s.add.image(0, 0, 'summary_status').setOrigin(0), styledText(s, 3, 0, TEXT.status, 'SUMMARY').setOrigin(0), this.status]);
+    this.statusContainer.add([s.add.image(0, 0, 'summary_status').setOrigin(0), styledText(s, 3, 0, s.words(TEXT.status), 'SUMMARY').setOrigin(0), this.status]);
     c.add(this.statusContainer);
     const fx = buildMoveEffect(s, 106);
     c.add(fx.container);
@@ -135,7 +140,6 @@ export class SummaryScreen {
     this.pageC = pageContainer(); this.transC = pageContainer();
     c.add([this.pageC, this.transC]);
 
-    // Touch: left half of the tab text = left, right half = right, the "Status" header = X
     const tabHit = s.add.rectangle(81, -180, 62, 16, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
     tabHit.on('pointerup', this.tap(localX => {
       const x = localX ?? 0, width = this.tab.width ?? 38;
@@ -172,7 +176,7 @@ export class SummaryScreen {
     this.placeQuill();
     layer.add(s.add.sprite(6, -19, 'pb', ballFrame(summary.ball)).setOrigin(0, 1));
 
-    layer.add(styledText(s, 24, -17, `${TEXT.lv}${mon.level}`, 'SUMMARY_ALT').setOrigin(0, 1));
+    layer.add(styledText(s, 24, -17, String(mon.level), 'SUMMARY_ALT').setOrigin(0, 1));
     if (GENDER_COLORS[mon.gender]) layer.add(styledText(s, 96, -17, genderSymbol(mon.gender), `GENDER_${mon.gender}`).setOrigin(0, 1));
 
     const status = STATUS_FRAMES[mon.status];
@@ -218,11 +222,11 @@ export class SummaryScreen {
     content.add(p);
     p.add(s.add.image(7, 4, 'summary_profile_profile_title').setOrigin(0, 0.5));
 
-    const ot = styledText(s, 7, 10, `${TEXT.ot}/`, 'SUMMARY_ALT').setOrigin(0);
+    const ot = styledText(s, 7, 10, `${s.words(TEXT.ot)}/`, 'SUMMARY_ALT').setOrigin(0);
 
     p.add([ot, styledText(s, 7 + ot.displayWidth, 10, summary.trainer ?? '', 'SUMMARY_BLUE').setOrigin(0)]);
 
-    const typeLabel = styledText(s, 7, 27, `${TEXT.type}/`, 'WINDOW_ALT').setOrigin(0, 0);
+    const typeLabel = styledText(s, 7, 27, `${s.words(TEXT.type)}/`, 'WINDOW_ALT').setOrigin(0, 0);
     p.add(typeLabel);
     (summary.types ?? []).slice(0, 2).forEach((type, i) =>
       p.add(s.add.sprite(typeLabel.displayWidth + 9 + 34 * i, 41, 'types', type.toLowerCase()).setOrigin(0, 1)));
@@ -263,14 +267,17 @@ export class SummaryScreen {
     content.add(p);
     const perm = s.add.container(27, 64), ivs = s.add.container(27, 64).setVisible(false);
     p.add([s.add.container(0, 0)                                                        , perm, ivs]);
+
+    // Held item as one text line under the item title (in place of the icons)
+    p.add(styledText(s, 8, 14, summary.item ?? s.words(TEXT.noItem), 'WINDOW_ALT').setOrigin(0, 0));
     p.add([s.add.image(7, 4, 'summary_stats_item_title').setOrigin(0, 0.5), s.add.image(16, 59, 'summary_stats_stats_title').setOrigin(0, 0.5),
       s.add.image(7, 115, 'summary_stats_exp_title').setOrigin(0, 0.5), s.add.image(126, 152, 'summary_stats_expbar_title').setOrigin(0, 0)]);
     const stats = summary.stats ?? {};
-    STAT_ROWS.forEach(([key, label], i) => {
+    STAT_ROWS.forEach(([key, name], i) => {
       const row = i % 3, col = Math.floor(i / 3), x = 116 * col + (col === 1 ? 5 : 0);
 
       const style = summary.nature?.plus === key ? 'SUMMARY_STATS_PINK' : summary.nature?.minus === key ? 'SUMMARY_STATS_BLUE' : 'SUMMARY_STATS';
-      const iv = summary.ivs?.[key];
+      const iv = summary.ivs?.[key], label = s.words(name);
       perm.add([styledText(s, x, 16 * row, label, style).setOrigin(0.5, 0),
         styledText(s, 93 + 93 * col, 16 * row, key === 'hp' ? `${stats.hp ?? mon.hp}/${stats.maxhp ?? mon.maxhp}` : String(stats[key] ?? ''), 'WINDOW_ALT').setOrigin(1, 0)]);
       ivs.add([styledText(s, x, 16 * row, label, iv === 31 ? 'SUMMARY_STATS_GOLD' : 'SUMMARY_STATS').setOrigin(0.5, 0),
@@ -278,7 +285,7 @@ export class SummaryScreen {
     });
 
     const exp = summary.exp;
-    p.add([styledText(s, 6, 120, TEXT.expPoints, 'SUMMARY').setOrigin(0, 0), styledText(s, 6, 136, TEXT.nextLv, 'SUMMARY').setOrigin(0, 0),
+    p.add([styledText(s, 6, 120, s.words(TEXT.expPoints), 'SUMMARY').setOrigin(0, 0), styledText(s, 6, 136, s.words(TEXT.nextLv), 'SUMMARY').setOrigin(0, 0),
       styledText(s, 213, 120, exp ? String(exp.total) : '', 'WINDOW_ALT').setOrigin(1, 0),
       styledText(s, 213, 136, exp ? String(exp.next) : '', 'WINDOW_ALT').setOrigin(1, 0)]);
     const bar = s.add.image(140, 153, 'summary_stats_overlay_exp').setOrigin(0, 0);
@@ -359,7 +366,7 @@ export class SummaryScreen {
 
       if (this.scene.life.signal.aborted || !this.container) return;
       if (!(error instanceof LoadError)) throw error;
-      await this.notice(LOAD_FAILED);
+      await this.notice(this.scene.words('own.loadFailed'));
     } finally { this.transitioning = false; }
   }
 
@@ -425,7 +432,7 @@ export class SummaryScreen {
 
       if (s.life.signal.aborted || !this.container) return;
       if (!(error instanceof LoadError)) console.error(error);
-      await this.notice(RENAME_FAILED);
+      await this.notice(this.scene.words('own.renameFailed'));
     } finally { this.renaming = false; }
   }
 
@@ -448,7 +455,6 @@ export class SummaryScreen {
     return { icon, hit };
   }
 
-  // Quill 3px right of the name (or the shiny star), vertically centred on the text
   placeQuill() {
     const { name, shiny, quill } = this.nameRefs ?? {};
     if (!quill) return;

@@ -2,8 +2,8 @@
 	"_source": "tools/build-font.mjs: vendor/galmuri/Galmuri11.ttf (Galmuri11 2.40.3, Copyright (c) 2019–2025 Lee Minseo (quiple@quiple.dev), SIL Open Font License 1.1 — data/fonts/OFL-Galmuri11.txt, https://github.com/quiple/galmuri) 의 조각. 다시 만들기: node tools/build-font.mjs (python fontTools 필요)",
 	"family": "PkbPixel",
 	"sourceSha256": "2c709890595668f7bdb6df408420fda957dde0288e95b31a1cc17a2ab98b4b4f",
-	"woff2Sha256": "a8afb7aa04d789299a2d5bdd6cf0ac1aab4fa7aa33f7c8540eb3023ebaed712e",
-	"bytes": 146668,
-	"glyphs": 11297,
-	"cmap": "20-7e,a0,b7,d7,e9,2013-2014,2018-2019,201d,2022,2026,20a9,2192,2194,21ba-21bb,25b2,2640,2642,3001,300d,300f,ac00-d7a3,ff0c,ff1a,ff5c"
+	"woff2Sha256": "ede6d326c40a258c55c04043be1b2296564d6256e699faa0a7f110c8f5357355",
+	"bytes": 146836,
+	"glyphs": 11298,
+	"cmap": "20-7e,a0,b7,d7,e9,2013-2014,2018-2019,201d,2022,2026,20a9,2192,2194,21ba-21bb,25b2,2640,2642,3001,300d,300f,ac00-d7a3,e000,ff0c,ff1a,ff5c"
 }
