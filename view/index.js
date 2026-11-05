@@ -1,6 +1,6 @@
 // from pokerogue src/main.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
 // from pokerogue src/scene-base.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 import Phaser from 'phaser';
 import { BattleScene } from './scene.js';
 import { Lifetime, destroyGame } from './lifetime.js';
@@ -10,14 +10,14 @@ import { keyAction } from './ui/keys.js';
 import { showTrainer, hideInfo, pause } from './flow-extras.js';
 import { checkTheme } from './ui/theme.js';
 import { checkLang, DEFAULT_LANG } from '../director/lang.js';
-import { prepareOutside, showSummary, startPartyScene, endPartyScene } from './outside.js';
+import { prepareOutside, showSummary, startPartyScene, endPartyScene, chooseRememberMove } from './outside.js';
 import { refitScale } from './refit.js';
 import { screenButtons } from './ui/tap-back.js';
 import { GAME_SPEEDS, DEFAULT_SPEED } from './game-speed.js';
 import { QUALITIES, DEFAULT_QUALITY, CANVAS_SIZE } from './quality.js';
 import { POSITIONS } from './positions.js';
+import { rendererConfig } from './color-matrix.js';
 
-// Phone pad: arrows, A, B -> the same input as the keyboard (keys from the view/ui/keys.js table)
 export const PAD_KEYS = Object.freeze({ up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', a: 'z', b: 'x' });
 
 function checkSpeed(speed) {
@@ -42,7 +42,7 @@ export async function createBattleView(options) {
     type: Phaser.WEBGL, parent: options.parent, width, height,
     pixelArt: true, roundPixels: true, backgroundColor: '#203040', banner: false,
     audio: { noAudio: true }, dom: { createContainer: false },
-    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }, scene: [scene],
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }, scene: [scene], ...rendererConfig(),
   });
 
   const resizer = new ResizeObserver(() => refitScale(game.scale));
@@ -131,6 +131,8 @@ export async function createBattleView(options) {
   view.startPartyScene = options => life.run(() => startPartyScene(scene, options));
   view.endPartyScene = () => life.run(() => endPartyScene(scene));
 
+  view.chooseRememberMove = options => life.run(() => chooseRememberMove(scene, options));
+
   view.pressKey = key => {
     const name = PAD_KEYS[key];
     if (!name) throw new TypeError(`Unknown pad key: ${key} (up down left right a b)`);
@@ -165,6 +167,8 @@ export async function createBattleView(options) {
     scene.resume();
   };
   Object.defineProperty(view, 'suspended', { get: () => suspended, enumerable: false });
+
+  Object.defineProperty(view, 'closed', { get: () => destroyed, enumerable: false });
 
   view.destroy = () => {
     if (destroyed) return;

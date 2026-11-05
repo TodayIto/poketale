@@ -2,12 +2,11 @@ import { BAG_ITEMS } from '../engine/bag.mjs';
 import { statusNames, nameWithAffix } from './text.js';
 import { DEFAULT_LANG } from './lang.js';
 import { bagText } from './bag.js';
-import { sideOf } from './read.js';
+import { sideOf, positionOf } from './read.js';
 import { toID } from '../engine/mon.mjs';
 
 const BY_NAME = new Map(Object.entries(BAG_ITEMS).map(([id, item]) => [`item: ${item.name}`, id]));
 
-// Lines this module handles (steps.js dispatch table). Plus -heal/-curestatus from bag items (usesBagItem)
 export const BAG_KINDS = ['-story-item', '-story-pp', '-story-ball'];
 
 export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAULT_LANG, affix = nameWithAffix(lang) }) {
@@ -23,7 +22,7 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
       if (sideOf(ident) === 'enemy') {
 
         using = null;
-        await say('own.trainerUsedItem', { trainerName: battle.sides[1].name, itemName: names.item(item) });
+        await say('own.trainerUsedItem', { trainerName: battle.getSide(ident.slice(0, 2)).name, itemName: names.item(item) });
         return;
       }
       using = { item, name: ledger.get(ident).name, ppShown: false };
@@ -32,7 +31,6 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
       return;
     }
     case '-story-pp': {
-
       // One line per restored move - text only once (PP values reach the move menu with the next request)
       if (!using || using.ppShown) return;
       using.ppShown = true;
@@ -65,15 +63,15 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
       if (sideOf(a[0]) === 'enemy') {
 
         if (!ledger.onField(a[0])) return;
-        await view.playCommon('health-up', 'enemy');
-        await view.hpChange('enemy', hp, maxhp, { cause: 'other', effectiveness: 'normal' });
+        await view.playCommon('health-up', positionOf(a[0]));
+        await view.hpChange(positionOf(a[0]), hp, maxhp, { cause: 'other', effectiveness: 'normal' });
         return;
       }
 
       if (!ledger.onField(a[0])) { await say(BAG_ITEMS[item].revive ? 'own.revived' : 'battle.regainHealth', { pokemonName: name }); return; }
 
-      await view.playCommon('health-up', 'player');
-      await view.hpChange('player', hp, maxhp, { cause: 'other', effectiveness: 'normal' });
+      await view.playCommon('health-up', positionOf(a[0]));
+      await view.hpChange(positionOf(a[0]), hp, maxhp, { cause: 'other', effectiveness: 'normal' });
       await say('battle.regainHealth', { pokemonName: name });
       return;
     }
@@ -81,7 +79,7 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
       const status = statusNames[a[1]], name = ledger.get(a[0]).name;
 
       if (!ledger.onField(a[0])) { if (status) await say(`status-effect.${status}.heal`, { pokemonNameWithAffix: affix(name, 'player') }); return; }
-      await view.setStatus(sideOf(a[0]), '');
+      await view.setStatus(positionOf(a[0]), '');
       await say(`own.cureFromItem.${a[1] === 'tox' ? 'psn' : a[1]}`, { pokemonNameWithAffix: affix(name, 'player'), pokemonName: affix(name, 'player'), itemName: names.item(BY_NAME.get(String(kw.from))) });
       return;
     }

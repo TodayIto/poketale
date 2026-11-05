@@ -6,6 +6,7 @@
   "command-ui-handler.run": "Run",
   "command-ui-handler.actionMessage": "What will\n{{pokemonName}} do?",
   "command-ui-handler.ballCancel": "Cancel",
+  "fight-ui-handler.pp": "PP",
   "fight-ui-handler.power": "Power",
   "fight-ui-handler.accuracy": "Accuracy",
   "fight-ui-handler.abilityFlyInText": " {{pokemonName}}’s\n{{passive}}{{abilityName}}",

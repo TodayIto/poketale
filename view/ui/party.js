@@ -1,7 +1,7 @@
 // from pokerogue src/ui/handlers/party-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/utils/pokemon-icon-anim-helper.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/message-ui-handler.ts (showPrompt) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { addWindow } from './window.js';
 import { uiRect } from './tap-back.js';
@@ -12,6 +12,7 @@ import { styledText, windowText, STATUS_FRAMES, GENDER_COLORS, genderSymbol } fr
 import { tween, delay } from '../lifetime.js';
 import { fixed } from '../game-speed.js';
 import { fadeSwap } from './learn-move.js';
+import { MoveInfoOverlay } from './move-info.js';
 
 export async function partyFade(scene, swap) {
   const overlay = scene.add.rectangle(0, 0, 1920, 1080, 0).setOrigin(0).setDepth(10).setAlpha(0);
@@ -40,6 +41,8 @@ export function slotPosition(double, index) {
   if (index < (double ? 2 : 1)) return [9, -148.5 + (double ? -8 : 0) + 64 * index];
   return [143, -196 + (double ? -40 : 0) + (28 + (double ? 8 : 0)) * index];
 }
+
+export const PARTNER_ALPHA = 0.8;
 
 const PARTNER_TEXT = { party_slot_main: [56, 22], party_slot: [96, 14] };
 
@@ -83,7 +86,7 @@ class PartySlot {
     );
     if (mon.partner) {
 
-      objects.forEach(o => o.setAlpha(0.55));
+      objects.forEach(o => o.setAlpha(PARTNER_ALPHA));
       const [tx, ty] = PARTNER_TEXT[p.key];
       objects.push(partyText(s, tx, ty, s.words('own.partnerMon', { trainerName: mon.partner }), { color: '#f8d030' }).setShadow(4, 5, '#806000').setOrigin(0, 0.25));
     }
@@ -105,8 +108,8 @@ class PartySlot {
 export class PartyMenu {
   constructor(scene) { this.scene = scene; }
 
-  async choose({ party, forced = false, use = null, revive = false, onOpen } = {}) {
-    this.use = use; this.revive = !!revive && !use;
+  async choose({ party, forced = false, use = null, revive = false, remember = null, onOpen } = {}) {
+    this.use = use; this.revive = !!revive && !use; this.remember = remember; this.scrollCursor = 0;
     if (this.finish) throw new Error('Party menu already open');
     if (!Array.isArray(party) || !party.length || party.length > 6) throw new Error('Expected 1–6 party slots');
     const scene = this.scene;
@@ -127,7 +130,11 @@ export class PartyMenu {
     };
     this.abort = menu.abort;
     this.fading = true;
-    partyFade(scene, () => { this.fading = false; onOpen?.(); this.draw(icons); scene.options.parent.focus({ preventScroll: true }); })
+    partyFade(scene, () => {
+      this.fading = false; onOpen?.(); this.draw(icons);
+      if (remember) { this.setCursor(remember.cursor ?? 0); this.showOptions(); }
+      scene.options.parent.focus({ preventScroll: true });
+    })
       .catch(menu.fail);
     return menu.promise;
   }
@@ -157,6 +164,7 @@ export class PartyMenu {
     this.promptHit = s.add.rectangle(0, -180, 320, 180, 0, 0).setOrigin(0).setInteractive().setVisible(false);
     this.promptHit.on('pointerdown', () => this.input('ok'));
     c.add([this.messageBox, this.messageText, this.prompt, this.optionBox, this.promptHit]);
+    if (this.remember) { this.moveInfo = new MoveInfoOverlay(s); c.add(this.moveInfo.container); }
     this.timer = s.time.addEvent({ delay: fixed(200), loop: true, callback: () => {
       this.toggled = !this.toggled; this.slots.forEach(slot => slot.bob(this.toggled));
     } });
@@ -230,13 +238,12 @@ export class PartyMenu {
 
   cancel() { if (!this.forced) { playSelect(this.scene); this.finish(null); } }
   showOptions() {
+    if (this.remember) return this.showRememberOptions();
     const s = this.scene, slot = this.party[this.cursor];
 
     this.optionList = slot.active ? ['cancel'] : ['sendOut', 'cancel'];
-
     // REVIVAL_BLESSING: "Revive" regardless of slot position (updateOptions case PartyUiMode.REVIVAL_BLESSING)
     if (this.revive) this.optionList = ['revive', 'cancel'];
-
     // MOVE_MODIFIER: move indices (showMovePp: "name PP/max") / MODIFIER: "Use"
     if (this.use) this.optionList = [...(slot.moves ? slot.moves.map((_, i) => i) : ['apply']), 'cancel'];
 
@@ -268,10 +275,95 @@ export class PartyMenu {
     this.optionCursor = i;
 
     this.optionCursorObj.setPosition(319 + 8 - this.optionsWidth, -1 - 19 - 16 * (this.optionList.length - 1 - i));
+
+    if (this.moveInfo) {
+      const option = this.optionList[i];
+      if (typeof option === 'number') this.moveInfo.show(this.remember.moves[option]); else this.moveInfo.clear();
+    }
+  }
+
+  showRememberOptions(cursor = 0) {
+    const s = this.scene, moves = this.remember.moves, total = moves.length, start = this.scrollCursor;
+    let list = moves.map((_, i) => i);
+    if (total > 9) {
+      const end = Math.min(total, start + (!start || start + 8 >= total ? 8 : 7));
+      list = [...(start ? ['up'] : []), ...list.slice(start, end), ...(end < total ? ['down'] : [])];
+    }
+    this.optionBox.removeAll(true); this.optionCursorObj = null;
+    this.optionList = [...list, 'cancel'];
+    this.mode = 'options';
+    const count = this.optionList.length;
+    const label = o => (o === 'up' ? '↑' : o === 'down' ? '↓' : o === 'cancel' ? s.words(TEXT.cancel) : moves[o].name);
+    const texts = this.optionList.map(o => windowText(s, 0, 0, label(o), { maxLines: 1 }).setOrigin(0));
+    const width = this.optionsWidth = Math.max(Math.max(...texts.map(t => t.displayWidth)) + 24, 94);
+    const height = 16 * count + 13;
+    this.optionBox.add(addWindow(s, 319 - width, -1 - height, width, height));
+    this.optionRect = uiRect(319 - width, -1 - height, width, height);
+    texts.forEach((t, i) => {
+      const o = count - 1 - i, y = -1 - 6 - 16 * o, option = this.optionList[i];
+      t.setPosition(319 + 19 - width, y - 16);
+      const hit = s.add.rectangle(319 - width + 4, y - 16, width - 8, 16, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
+      const scroll = option === 'up' || option === 'down';
+      if (!scroll) hit.on('pointerover', () => this.setOptionCursor(i));
+      hit.on('pointerdown', () => {
+        if (this.fading) return;
+        if (scroll) { playSelect(s); return this.scrollRemember(option === 'down'); }
+        this.setOptionCursor(i); this.optionInput('ok');
+      });
+      this.optionBox.add([t, hit]);
+    });
+    this.optionCursorObj = s.add.image(0, 0, 'cursor').setOrigin(0);
+    this.optionBox.add(this.optionCursorObj);
+    this.hideText();
+    this.setOptionCursor(cursor);
+  }
+
+  scrollRemember(down) {
+    this.scrollCursor += down ? 1 : -1;
+    if (this.scrollCursor === 1) this.scrollCursor += down ? 1 : -1;
+    const keep = this.optionCursor;
+    this.showRememberOptions(0);
+    const list = this.optionList;
+    this.setOptionCursor(list[keep] === 'up' ? 1 : list[keep] === 'down' ? keep - 1 : Math.min(keep, list.length - 1));
+  }
+
+  moveRememberCursor(cursor) {
+    const before = this.optionCursor, list = this.optionList, total = this.remember.moves.length;
+    if (cursor === before) return false;
+    if (total > 9) {
+      if (Math.abs(cursor - before) === list.length - 1) {
+        this.scrollCursor = cursor ? total - 8 : 0;
+        this.showRememberOptions(cursor);
+        return true;
+      }
+      const down = cursor > before;
+      let scroll = false;
+      if (down && list[cursor] === 'down') { scroll = true; this.scrollCursor++; }
+      else if (!down && !cursor && this.scrollCursor) { scroll = true; this.scrollCursor--; }
+      if (scroll && this.scrollCursor === 1) this.scrollCursor += down ? 1 : -1;
+      if (scroll) { this.showRememberOptions(before); return true; }
+    }
+    this.setOptionCursor(cursor);
+    return true;
+  }
+
+  rememberInput(action) {
+    const count = this.optionList.length, before = this.optionCursor;
+    if (action === 'back') { playSelect(this.scene); return this.finish(null); }
+    if (action === 'up' || action === 'down') {
+      if (this.moveRememberCursor(action === 'up' ? (before ? before - 1 : count - 1) : (before < count - 1 ? before + 1 : 0))) playSelect(this.scene);
+      return;
+    }
+    if (action !== 'ok') return;
+    playSelect(this.scene);
+    const option = this.optionList[before];
+    if (option === 'cancel') return this.finish(null);
+    if (typeof option === 'number') this.finish({ kind: 'remember', move: option });
   }
 
   optionInput(action) {
     if (this.fading) return;
+    if (this.remember) return this.rememberInput(action);
     const count = this.optionList.length, before = this.optionCursor;
     if (action === 'back') { playSelect(this.scene); return this.clearOptions(); }
     if (action === 'up' || action === 'down') {
@@ -295,6 +387,7 @@ export class PartyMenu {
     const box = this.messageBox, out = [];
     if (box?.visible) out.push(uiRect(box.x, box.y, box.width, box.height));
     if (this.mode === 'options' && this.optionRect) out.push(this.optionRect);
+    if (this.moveInfo?.container.visible) { const b = this.moveInfo.box; out.push(uiRect(b.x, b.y, b.width, b.height)); }
     return out;
   }
   clearOptions() {
@@ -303,6 +396,7 @@ export class PartyMenu {
     this.mode = 'party'; this.showText(this.scene.words(TEXT.choose));
   }
   clear() {
+    this.moveInfo?.destroy(); this.moveInfo = null;
     this.timer?.remove(); this.timer = null;
     this.container?.destroy(); this.container = null; this.finish = null; this.slots = []; this.fading = false;
   }

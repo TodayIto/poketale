@@ -1,5 +1,5 @@
 {
-  "_note": "호환 봇 파티 줄의 Condition 낱말 (한국어·영어·일본어) → 상태 id ('' = 상태 없음, fnt = 기절). shiny = 이로치를 뜻하는 낱말 (Condition 은 자유 낱말 칸이라 그 봇이 이로치도 여기에 적음). 그 밖의 낱말은 조용히 넘김. 읽기만 하고 화면에 그리지 않는 낱말이라 글꼴 조각이 읽는 코드 밖에 둔다. 쓰는 곳: story/import.mjs COMPAT_FORMAT",
+  "_note": "호환 봇 파티 줄의 Condition 낱말 (한국어·영어·일본어) → 상태 id ('' = 상태 없음, fnt = 기절). shiny = 이로치를 뜻하는 낱말 (Condition 은 자유 낱말 칸이라 그 봇이 이로치도 여기에 적음). 그 밖의 낱말은 조용히 넘김. write = 기능을 끌 때 그 봇 양식으로 써 둘 때의 낱말 (언어마다 상태 id → 낱말, 이로치, State 칸) — 위 목록에 든 낱말이어야 다시 읽힘. 채팅 글에만 쓰고 우리 화면에 그리지 않는 낱말이라 글꼴 조각이 읽는 코드 밖에 둔다. 쓰는 곳: story/import.mjs COMPAT_FORMAT",
   "conditions": {
     "": [
       "정상",
@@ -64,5 +64,35 @@
     "이로치",
     "Shiny",
     "色違い"
-  ]
+  ],
+  "write": {
+    "ko": {
+      "conditions": {
+        "": "정상",
+        "par": "마비",
+        "brn": "화상",
+        "slp": "잠듦",
+        "frz": "얼음",
+        "psn": "독",
+        "tox": "맹독",
+        "fnt": "기절"
+      },
+      "shiny": "이로치",
+      "state": "볼"
+    },
+    "en": {
+      "conditions": {
+        "": "Normal",
+        "par": "Paralyzed",
+        "brn": "Burned",
+        "slp": "Asleep",
+        "frz": "Frozen",
+        "psn": "Poisoned",
+        "tox": "Badly Poisoned",
+        "fnt": "Fainted"
+      },
+      "shiny": "Shiny",
+      "state": "Ball"
+    }
+  }
 }

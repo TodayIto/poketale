@@ -1,8 +1,9 @@
 import { VIEW_ATLASES, VIEW_LEGACY_ATLASES, LEGACY_UI, POKEMON_ICONS } from 'embedded:view';
 import { POKEROGUE_BOXES } from 'embedded:pokerogue-boxes';
 import { pokerogueReference } from './sprites/pokerogue-reference.js';
-import { loadShowdown, hasFemaleSprite } from './sprites/showdown.js';
-import { pokerogueGeometry, loadPokerogueStill } from './sprites/pokerogue.js';
+import { hasFemaleSprite } from './sprites/showdown.js';
+import { loadMonSprite } from './sprites/sources.js';
+import { pokerogueGeometry } from './sprites/pokerogue.js';
 import { iconFrame, iconAtlas } from './ui/party-icons.js';
 import { biomeImages, biomeKey, DEFAULT_BIOME } from './arena.js';
 import { fieldAtlases, atlasJson } from './field-atlases.js';
@@ -121,20 +122,10 @@ export class Assets {
     const key = this.monKey(mon, back);
     if (!this.mons.has(key)) {
       const promise = (async () => {
-        if (this.source === 'showdown-ani') {
-          const reference = pokerogueReference(mon, back ? 'player' : 'enemy', POKEROGUE_BOXES);
-          try {
-            return { ...await loadShowdown(this, mon, back, key), pokerogue: reference };
-          } catch (error) {
 
-            this.life.check();
-            if (!(error instanceof LoadError) || !reference) throw error;
-            this.diagnostics.push({ sprite: mon.spriteId, back, showdownFailed: error.message });
-            return await loadPokerogueStill(this, mon, back, key, reference);
-          }
-        }
+        if (this.source === 'showdown-ani') return await loadMonSprite(this, mon, back, key, pokerogueReference(mon, back ? 'player' : 'enemy', POKEROGUE_BOXES));
         const id = PR_SPECIES[mon.speciesId];
-        if (!id) throw new Error(`PokeRogue atlas not embedded: ${mon.speciesId}`);
+        if (!id) throw new Error(`PokeRogue atlas not embedded: ${mon.speciesId} (embedded: pikachu, gyarados)`);
         const path = `images/pokemon/${back ? 'back/' : ''}${mon.shiny ? 'shiny/' : ''}${id}`;
         const atlas = VIEW_ATLASES[path];
         if (!atlas) throw new Error(`PokeRogue atlas not embedded: ${path}`);

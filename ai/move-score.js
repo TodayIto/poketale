@@ -1,9 +1,8 @@
 // from pokerogue src/data/moves/move.ts, src/field/pokemon.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
 
 import table from './pokerogue-moves.json' with { type: 'json' };
 import { hpRatio, typeEffectiveness } from './matchup.js';
-import { SELF_TARGETS } from './engine-copy.js';
 
 export const MOVE_TABLE = table.moves;
 const STATUS_EFFECT_CHANCE_EXCEPT = new Set(['orderup', 'electroshot']);
@@ -122,7 +121,7 @@ function attrTargetScore(ctx, attr, pokemon, target) {
       const score = (1 - hpRatio(pokemon)) * 20 - ratio * 10;
       return Math.round(score / (1 - ratio / 2));
     }
-    case 'FlameBurst': return 0;
+    case 'FlameBurst': return pokemon.allies().length ? -5 : 0;
     case 'MultiHit': return -5;
     case 'Status': case 'MultiStatus': {
       const effect = attr[0] === 'Status' ? attr[1] : attr[1][0];
@@ -221,40 +220,29 @@ function moveTypeEffectiveness(ctx, target, useRoll) {
   return 2 ** target.runEffectiveness(ctx.activeMove);
 }
 
-export function moveTargets(move, user, foe) {
-  if (move.target === 'scripted') return [];
-  if (SELF_TARGETS.has(move.target)) return [user];
-  if (move.target === 'all') return [user, foe];
-  return [foe];
-}
-
-export function moveScore(ctx) {
+export function targetScore(ctx, target) {
   const { user, move, roll } = ctx;
-  const targets = moveTargets(move, user, ctx.foe);
-  const targetScores = [];
-  for (const target of targets) {
-    const sign = target.side === user.side ? 1 : -1;
-    let score = userBenefitScore(ctx, target) + targetBenefitScore(ctx, target) * sign;
-    if (Number.isNaN(score)) score = 0;
-    if (roll?.failed) {
-
-      score = -20;
-    } else if (move.category !== 'Status') {
-      const effectiveness = moveTypeEffectiveness(ctx, target, true);
-      if (sign < 0) {
-        score *= effectiveness;
-        if (user.hasType(move.type)) score *= 1.5;
-      } else if (effectiveness) {
-        score /= effectiveness;
-        if (user.hasType(move.type)) score /= 1.5;
-      }
-      if (!score) score = -20;
-    }
-    targetScores.push(score);
+  const ours = user.isAlly(target);
+  let score = userBenefitScore(ctx, target) + targetBenefitScore(ctx, target) * (ours ? 1 : -1);
+  if (Number.isNaN(score)) score = 0;
+  if (roll?.failed) return -20;
+  if (move.category === 'Status') return score;
+  const effectiveness = moveTypeEffectiveness(ctx, target, true);
+  const stab = user.hasType(move.type);
+  if (ours && target !== user) return score * effectiveness * (stab ? 1.5 : 1);
+  if (!ours) {
+    score *= effectiveness;
+    if (stab) score *= 1.5;
+  } else if (effectiveness) {
+    score /= effectiveness;
+    if (stab) score /= 1.5;
   }
-
-  return Math.max(...targetScores);
+  return score || -20;
 }
+
+export const targetWeight = (ctx, target) => targetBenefitScore(ctx, target) * (ctx.user.isAlly(target) ? 1 : -1);
+
+export const combineScores = (scores, spread) => (spread ? scores.reduce((sum, score) => sum + score, 0) : Math.max(...scores));
 
 export const tableEntry = (moveId, dexMove) => MOVE_TABLE[moveId] ||
   { chance: dexMove.secondary?.chance ?? -1, power: dexMove.basePower || -1, attrs: [] };

@@ -38,7 +38,6 @@ function rogueNames(file) {
     const korean = typeof ko[key] === 'string' ? ko[key] : ko[key]?.name;
     if (!english || !korean) continue;
     const id = englishID(english);
-
     // Regional pokemon share the base English name. Never silently overwrite a different translation.
     if (entries.has(id) && entries.get(id) !== korean) throw new Error(`Ambiguous locale: ${file}/${id}`);
     entries.set(id, korean);
@@ -124,7 +123,6 @@ function translateSpecies(s) {
     return { ko: `${base.ko} (${formKo.regionalForm[regional[1].toLowerCase()]})`, src: 'pokerogue' };
   }
   const form = apiForms.get(toID(apiFormAliases[s.id] || s.id));
-
   // Confirm the species too: a similar-looking form key must never cross species boundaries.
   if (form && Number(pokemon.get(form.pokemon_id)?.species_id) === s.num && form.names?.ko) {
     return { ko: `${base.ko} (${form.names.ko})`, src: 'pokeapi' };

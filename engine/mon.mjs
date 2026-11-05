@@ -1,6 +1,5 @@
 export const MAX_LEVEL = 100;
 
-// Pokemon that can be carried in the party. Beyond this, caught Pokemon go to the box
 export const PARTY_MAX = 6;
 
 export const MAX_MOVES = 4;
@@ -66,17 +65,18 @@ export function completeSet(dex, set, rng, { levelUp, label = set.species } = {}
 const requiredItems = species => species.requiredItems ?? (species.requiredItem ? [species.requiredItem] : []);
 
 export function heldItemForm(dex, set) {
-	const species = dex.species.get(set.species);
-	if (species.battleOnly) return set;
-	const base = dex.species.get(species.baseSpecies);
 	const item = toID(set.item);
+	const holds = form => requiredItems(form).some(name => toID(name) === item);
+	const written = dex.species.get(set.species);
+	if (written.battleOnly && (!requiredItems(written).length || holds(written))) return set;
+	const species = written.battleOnly ? battleOnlyBase(dex, written) : written;
+	const base = dex.species.get(species.baseSpecies);
 	const forms = [base, ...(base.otherFormes ?? []).map(name => dex.species.get(name))].filter(form => !form.battleOnly);
-	const form = (item && forms.find(f => requiredItems(f).some(name => toID(name) === item)))
-		|| (requiredItems(species).length ? base : species);
+	const form = (item && forms.find(holds)) || (requiredItems(species).length ? base : species);
 	const out = { ...set };
-	if (form.name !== species.name) {
+	if (form.name !== written.name) {
 		out.species = form.name;
-		const slot = Object.keys(species.abilities).find(key => toID(species.abilities[key]) === toID(set.ability));
+		const slot = Object.keys(written.abilities).find(key => toID(written.abilities[key]) === toID(set.ability));
 		if (slot) out.ability = form.abilities[slot] ?? form.abilities[0];
 	}
 	if (form.requiredTeraType) out.teraType = form.requiredTeraType;
@@ -87,7 +87,6 @@ export const genderAllows = (gender, target) => !(target.gender === 'M' || targe
 
 export const isLevelEvolution = (target, level) => !target.evoType && !!target.evoLevel && !target.evoCondition && !target.evoRegion && target.evoLevel <= level;
 
-// Evolution into another region's form (only in that region)
 export const isForeignRegional = (target, species) => REGIONAL_FORMES.has(target.forme) && target.forme !== species.forme;
 
 export const holdsEverstone = item => toID(item) === 'everstone';

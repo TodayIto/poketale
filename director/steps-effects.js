@@ -5,21 +5,15 @@ import { DEFAULT_LANG } from './lang.js';
 import { megaFormName } from './steps-mega.js';
 import { positionOf, isIdent, uidOf, teamOf, fieldPositions } from './read.js';
 import { ownTemplate } from './own-text.js';
+import { effectOf, abilityTrigger } from './ability-trigger.js';
 import { toID } from '../engine/mon.mjs';
 
 const PHRASES = { ko, en };
 export const effectText = (key, values = {}, lang = DEFAULT_LANG) => phrase(PHRASES, key, values, lang, 'effect text');
 
-// Type and stat names of a language (pokemon-info.json). Unknown ones stay as given
 export const typeNameIn = (lang, type) => PHRASES[lang][`pokemon-info.type.${toID(type)}`] ?? type;
 
 const other = position => (teamOf(position) === 'player' ? position.replace('player', 'enemy') : position.replace('enemy', 'player'));
-
-const effectOf = value => {
-  const match = /^(move|ability|item|pokemon):\s*(.*)$/.exec(String(value ?? ''));
-  const name = match ? match[2] : String(value ?? '');
-  return { prefix: match?.[1] ?? '', name, id: toID(name) };
-};
 
 const STAT_KEY = { atk: 'atk', def: 'def', spa: 'spatk', spd: 'spdef', spe: 'spd', accuracy: 'acc', evasion: 'eva',
   attack: 'atk', defense: 'def', spatk: 'spatk', spdef: 'spdef', speed: 'spd' };
@@ -34,7 +28,6 @@ const WEATHER = {
 const TERRAIN = { electricterrain: 'electric', grassyterrain: 'grassy', mistyterrain: 'misty', psychicterrain: 'psychic' };
 
 const FIELD = { trickroom: 'trickRoom', gravity: 'gravity', wonderroom: 'wonderRoom', mudsport: 'mudSport', watersport: 'waterSport' };
-
 // Side conditions (arena-tag.json <key>OnAdd{Player,Enemy} / OnRemove{Player,Enemy})
 const SIDE = {
   reflect: 'reflect', lightscreen: 'lightScreen', auroraveil: 'auroraVeil', mist: 'mist', safeguard: 'safeguard', tailwind: 'tailwind',
@@ -95,7 +88,6 @@ const ITEM_THEN_EFFECT = new Set(['weaknesspolicy', 'throatspray', 'absorbbulb',
 
 const SILENT = new Set(['debug', '-hint', '-mustrecharge', '-center', '-waiting', '-fieldactivate', '-cureteam']);
 
-// Lines this module handles (steps.js dispatch table)
 export const EFFECT_KINDS = ['-damage', '-heal', '-sethp', '-status', '-curestatus', 'cant', '-boost', '-unboost', '-setboost', '-clearallboost',
   '-clearboost', '-clearnegativeboost', '-clearpositiveboost', '-invertboost', '-copyboost', '-swapboost', '-transform', '-formechange', 'detailschange',
   '-fail', '-block', '-nothing', '-notarget', '-ability', '-endability', '-item', '-enditem', '-activate', '-start', '-end', '-singleturn',
@@ -145,7 +137,6 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     return match ? names[match[1]](id(match[2])) : source;
   };
 
-  // Text for sourced HP changes that have no specific entry
   async function sourceMessage(ident, source, heal) {
     if (statusNames[source] && !heal) {
 
@@ -160,25 +151,6 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
 
   const heals = event => event.before?.hp === undefined || ledger.get(event.args[0]).hp > event.before.hp;
 
-  function abilityTrigger({ kind, args: a, kwArgs: kw }) {
-    if (kind.startsWith('-story-')) return null;
-    const from = kw.from ? effectOf(kw.from) : null;
-    if (kind === '-ability') {
-      if (from && from.prefix !== 'ability') return null;
-      return { ident: a[0], name: from?.name ?? a[1] };
-    }
-    if (from?.prefix === 'ability') {
-      const ofHolder = kw.of && !['-heal', '-item', '-enditem', '-transform', '-immune'].includes(kind) || (kind === '-item' && from.id === 'frisk');
-      const ident = ofHolder && typeof kw.of === 'string' ? kw.of : a[0];
-      return isIdent(ident) ? { ident, name: from.name } : null;
-    }
-    if (['-activate', '-start', '-end', '-block'].includes(kind) && /^ability:/.test(a[1] ?? '') && !kw.silent) {
-      const ident = kind === '-block' && typeof kw.of === 'string' ? kw.of : a[0];
-      return { ident, name: effectOf(a[1]).name };
-    }
-    if (kind === 'cant' && /^ability:/.test(a[1] ?? '')) return { ident: typeof kw.of === 'string' ? kw.of : a[0], name: effectOf(a[1]).name };
-    return null;
-  }
   async function hideBar() {
     if (!bar) return;
     bar = null;
@@ -445,7 +417,6 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       else if (effect.id === 'terashell') await say('ability-trigger.fullHpResistType', v);
       else if (effect.id === 'forewarn' && a[2]) await say('ability-trigger.forewarn', { ...v, moveName: names.move(id(a[2])) });
       else if (effect.id === 'anticipation') await say('ability-trigger.postSummonAnticipation', v);
-
       // Items: Protosynthesis / Quark Drive via Booster Energy (the preceding -enditem is anim only)
       else if (kw.fromitem) await say('own.boosterEnergy', { ...v, itemName: names.item('boosterenergy'), abilityName });
       return true;
@@ -678,7 +649,6 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     await show(`status-effect.${name}.${kind === '-status' ? 'obtain' : 'heal'}`, nv(a[0]));
   }
 
-  // Can't-move reasons with no specific entry: status; flinch; recharge; Truant
   async function cantDefault(a) {
     const reason = a[1];
     if (statusNames[reason]) {

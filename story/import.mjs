@@ -1,10 +1,12 @@
 import storyNames from '../data/story-names.json' with { type: 'json' };
 import compatWords from '../data/compat-words.json' with { type: 'json' };
-import { lookupId, speciesName, stripForPrompt, hashKey, norm } from './blocks.mjs';
+import { lookupId, speciesName, stripForPrompt, hashKey, norm, findBlocks, findTags, findMarks } from './blocks.mjs';
+import { namesIn } from '../names/index.js';
 import { dropOocs } from './chat.mjs';
+import { COMPAT_LINES, COMPAT_LINE_RE, COMPAT_FIELD_SEP, compatHead, compatFold, dropTaken } from './compat.mjs';
 import { readStored, isRecord, isUnreadable } from './stored.mjs';
 import { ruleNote, ruleError, refusal, failed } from './failure.mjs';
-import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, markDex, toID, maxHp, healParty } from './state.mjs';
+import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty } from './state.mjs';
 import { STATS, STATUS_IDS } from '../engine/mon.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX } from './rules.mjs';
 import { isCustomItem, customItemId, customInfo, splitEmoji, itemId, addCustomItem, tidyCustomItems, DEFAULT_EMOJI } from './custom-items.mjs';
@@ -12,13 +14,13 @@ import { isCustomItem, customItemId, customInfo, splitEmoji, itemId, addCustomIt
 export const IMPORT_VAR = '$pkb_import';
 
 export const COMPAT_FORMAT = Object.freeze({
-  party: 'Own Pokémon',
-  storageAdd: 'Pokémon Storage Add',
-  storageRemove: 'Pokémon Storage Remove',
-  fields: Object.freeze({ name: 'Name', level: 'Level', hp: 'HP', condition: 'Condition', english: 'English Name', number: 'Number' }),
+  fields: Object.freeze({ name: 'Name', level: 'Level', hp: 'HP', condition: 'Condition', state: 'State', english: 'English Name', number: 'Number' }),
+  partyFields: Object.freeze(['name', 'level', 'hp', 'condition', 'state', 'english']),
+  lineSep: ' | ',
   conditionSep: '/',
   conditions: Object.freeze(Object.fromEntries(Object.entries(compatWords.conditions).flatMap(([id, words]) => words.map(word => [word, id])))),
   shinyWords: Object.freeze([...compatWords.shiny]),
+  written: Object.freeze(compatWords.write),
   storageVar: 'yp_PokemonStorage',
   entrySep: '|',
   fieldSep: '^',
@@ -29,46 +31,40 @@ export const FIELD_FROM = Object.freeze(['record', 'auto', 'user', 'ai', 'curren
 const SET_FIELDS = ['species', 'name', 'level', 'gender', 'shiny', 'nature', 'ability', 'item', 'moves', 'ivs', 'evs', 'teraType'];
 const MON_FIELDS = [...SET_FIELDS, 'hpPercent', 'status', 'place'];
 const ACTIONS = ['add', 'update', 'skip'];
-
 // Auto fields that follow the species / the level (filled again when either is edited)
 const BY_SPECIES = ['ability', 'moves', 'gender', 'teraType'];
 const BY_LEVEL = ['moves'];
 
 const LEVEL_NEAR = 5;
 
-// Refuses by one rule of importing (screen text rule.import.<rule>)
 const fail = (rule, values) => { throw ruleError(`import.${rule}`, values); };
 
 const note = (rule, values) => ruleNote(`import.${rule}`, values);
 
-const fold = text => norm(String(text ?? '').normalize('NFD').replace(/\p{M}/gu, ''));
-const BRACKET_RE = /\[([^[\]\n]*)\]/g;
+const READ_KINDS = Object.freeze({ party: 'party', storageAdd: 'add', storageRemove: 'remove' });
 
 function compatReader(format) {
-  const fieldOf = new Map(Object.entries(format.fields).map(([field, name]) => [fold(name), field]));
-  const conditions = new Map(Object.entries(format.conditions).map(([word, id]) => [fold(word), id]));
-  const shinyWords = new Set((format.shinyWords ?? []).map(fold));
-  const party = fold(format.party), add = fold(format.storageAdd), remove = fold(format.storageRemove);
+  const fieldOf = new Map(Object.entries(format.fields).map(([field, name]) => [compatFold(name), field]));
+  const conditions = new Map(Object.entries(format.conditions).map(([word, id]) => [compatFold(word), id]));
+  const shinyWords = new Set((format.shinyWords ?? []).map(compatFold));
 
-  const entries = text => [...String(text ?? '').matchAll(BRACKET_RE)].map(m => {
-    const [head, ...segs] = m[1].split(/[|｜]/).map(s => s.trim());
-    const key = fold(head);
-    const slot = key.startsWith(party) && /^\d*$/.test(key.slice(party.length)) ? key.slice(party.length) : null;
-    const kind = key === add ? 'add' : key === remove ? 'remove' : slot !== null ? 'party' : null;
+  const entries = text => [...String(text ?? '').matchAll(COMPAT_LINE_RE)].map(m => {
+    const [head, ...segs] = m[1].split(COMPAT_FIELD_SEP).map(s => s.trim());
+    const line = compatHead(head);
     const fields = {};
     for (const seg of segs) {
       const kv = /^([^:：]+)[:：]\s*(.*)$/.exec(seg);
-      const field = kv && fieldOf.get(fold(kv[1]));
+      const field = kv && fieldOf.get(compatFold(kv[1]));
       if (field) fields[field] = kv[2].trim();
     }
-    return { kind, slot: slot ? Number(slot) : null, fields };
+    return { kind: READ_KINDS[line?.line] ?? null, slot: line?.slot ?? null, fields };
   });
 
   const condition = text => {
     let status, shiny = false;
     for (const word of String(text ?? '').split(format.conditionSep).map(s => s.trim()).filter(Boolean)) {
-      if (shinyWords.has(fold(word))) { shiny = true; continue; }
-      const id = conditions.get(fold(word));
+      if (shinyWords.has(compatFold(word))) { shiny = true; continue; }
+      const id = conditions.get(compatFold(word));
       if (id === undefined) continue;
       if (!id) status ||= '';
       else status ||= id;
@@ -76,7 +72,6 @@ function compatReader(format) {
     return { status, shiny };
   };
 
-  // Box variable text -> fields of each entry, in order
   const storageEntries = text => text.split(format.entrySep)
     .map(entry => { const [name = '', level = '', english = ''] = entry.split(format.fieldSep).map(s => s.trim()); return { name, level, english }; });
   return { entries, condition, storageEntries };
@@ -93,14 +88,13 @@ function nameId(kind, raw) {
 }
 const speciesOf = raw => { const id = nameId('species', raw); return id ? speciesName(id) : null; };
 
-// Whether the fields name a Pokemon at all
 const named = fields => !!(fields.name || fields.english);
 
 function speciesAndNickname(sim, name, english) {
   const species = (english ? speciesOf(english) : speciesOf(name)) ?? (english || name).trim();
   const base = raw => { const s = sim.Dex.species.get(raw ?? ''); return s.exists ? s.baseSpecies : null; };
   const own = speciesOf(name);
-  const isSpecies = !name || [english, species].some(n => n && fold(n) === fold(name)) || (!!own && (own === species || (!!base(own) && base(own) === base(species))));
+  const isSpecies = !name || [english, species].some(n => n && compatFold(n) === compatFold(name)) || (!!own && (own === species || (!!base(own) && base(own) === base(species))));
   return { species, nickname: isSpecies ? undefined : name };
 }
 
@@ -121,7 +115,6 @@ function toFound(fields, reader, sim, source, warnings) {
 
 const recordText = text => stripForPrompt(dropOocs(text));
 
-// Root of a species' evolution line (pre-evolutions and base forms walked up) | null for an unknown species
 function lineOf(sim, name) {
   let s = sim.Dex.species.get(name ?? '');
   if (!s.exists) return null;
@@ -131,7 +124,7 @@ function lineOf(sim, name) {
     else return s.id;
   }
 }
-const sameName = (a, b) => !!a && !!b && fold(a) === fold(b);
+const sameName = (a, b) => !!a && !!b && compatFold(a) === compatFold(b);
 
 export function readCompat(chat, ctx, { format = COMPAT_FORMAT } = {}) {
   const { sim } = ctx;
@@ -174,7 +167,6 @@ export function readCompat(chat, ctx, { format = COMPAT_FORMAT } = {}) {
 const zeroEvs = () => Object.fromEntries(STATS.map(s => [s, 0]));
 const blankOf = { species: '', name: '', level: null, gender: null, shiny: false, nature: null, ability: null, item: '', moves: [], ivs: null, evs: null, teraType: null };
 
-// A DraftMon with a blank set, full HP and every field 'auto', to be added
 const blankMon = (key, place, seed) => ({ key, place, set: clone(blankOf), hpPercent: 100, status: '', from: Object.fromEntries(MON_FIELDS.map(f => [f, 'auto'])),
   match: null, action: 'add', problems: [], seed: `${seed}:${key}` });
 
@@ -277,8 +269,27 @@ function draftMon(found, place, key, ctx, seed) {
 
 const labelOf = ({ name, species, level }) => `${name ? `${name} (${species})` : species}${level ? ` Lv${level}` : ''}`;
 
-function rematch(draft, sim) {
+function valuesOf(ctx, mon) {
+  const hpPercent = mon.hp === null || mon.hp === undefined ? 100 : mon.hp / maxHp(ctx.sim, mon.set, ctx.formatid) * 100;
+  return { set: Object.fromEntries(SET_FIELDS.map(f => [f, clone(mon.set[f])])), hpPercent, status: mon.status === 'fnt' ? '' : mon.status ?? '' };
+}
+const FOLLOWING = MON_FIELDS.filter(f => f !== 'place');
+const putField = (mon, field, value) => { if (field in mon.set) mon.set[field] = value; else mon[field] = value; };
+
+function followPair(mon, hit, ctx) {
+  const free = FOLLOWING.filter(f => mon.from[f] === 'auto' || mon.from[f] === 'current');
+  if (hit) {
+    for (const f of free) { putField(mon, f, clone(f in hit.now.set ? hit.now.set[f] : hit.now[f])); mon.from[f] = 'current'; }
+    return;
+  }
+  const back = free.filter(f => mon.from[f] === 'current');
+  for (const f of back) { putField(mon, f, f in blankOf ? clone(blankOf[f]) : f === 'hpPercent' ? 100 : ''); mon.from[f] = 'auto'; }
+  fillAuto(mon, ctx, back);
+}
+
+function rematch(draft, ctx) {
   if (draft.kind === DEBUG_KIND) return;
+  const { sim } = ctx;
   const taken = new Set();
   const pairs = new Map();
   const lines = new Map(draft.pool.map(p => [p.uid, lineOf(sim, p.species)]));
@@ -303,13 +314,14 @@ function rematch(draft, sim) {
     if ((mon.match?.uid ?? null) === (match?.uid ?? null)) { mon.match = match; continue; }
     mon.match = match;
     if (mon.action !== 'skip') mon.action = match ? 'update' : 'add';
+    followPair(mon, hit, ctx);
   }
 }
 
 export function makeDraft(chat, state, ctx, { seed = 0, format } = {}) {
   const found = readCompat(chat, ctx, format ? { format } : {});
   const pool = [...(state?.party ?? []).map(m => [m, 'party']), ...(state?.box ?? []).map(m => [m, 'box'])]
-    .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level }));
+    .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level, now: valuesOf(ctx, m) }));
   const bag = Object.fromEntries(Object.entries(state?.bag ?? {}).filter(([, n]) => n > 0).map(([id, n]) => [id, { count: n, from: 'current' }]));
 
   const customItems = Object.fromEntries(Object.keys(bag).filter(isCustomItem).map(id => [id, customInfo(state, id)]).filter(([, info]) => info));
@@ -318,17 +330,65 @@ export function makeDraft(chat, state, ctx, { seed = 0, format } = {}) {
     mons: [...found.party.map((f, i) => draftMon(f, 'party', `p${i + 1}`, ctx, seed)), ...found.box.map((f, i) => draftMon(f, 'box', `b${i + 1}`, ctx, seed))],
     bag, warnings: found.warnings, pool, base: { bag: Object.fromEntries(Object.entries(bag).map(([id, e]) => [id, e.count])) }, customItems,
   };
-  rematch(draft, ctx.sim);
+  rematch(draft, ctx);
   for (const mon of draft.mons) mon.problems = monProblems(mon, ctx);
   return draft;
 }
 
-export function importOffer(chat, state, ctx, { allowed = false, seed = 0 } = {}) {
-  if (!allowed || !state || state.party.length) return null;
+export function importTurn(chat) {
   const { status, imports } = readImports(chat);
-  if (isUnreadable(status) || imports.some(imp => imp.kind !== DEBUG_KIND)) return null;
+  const moves = imports.filter(imp => imp.kind !== DEBUG_KIND);
+  const latest = moves.findLast(inForce);
+  const moved = !!latest && latest.kind !== HANDBACK_KIND;
+  return { status, moved, back: latest?.kind === HANDBACK_KIND ? latest : null, declined: !moved && !!moves.length && !inForce(moves.at(-1)) };
+}
+
+export function importOffer(chat, state, ctx, { allowed = false, seed = 0 } = {}) {
+  if (!allowed || !state) return null;
+  const turn = importTurn(chat);
+  if (isUnreadable(turn.status) || turn.moved || turn.declined || (!turn.back && state.party.length)) return null;
   const draft = makeDraft(chat, state, ctx, { seed });
   return draft.mons.length ? draft : null;
+}
+
+export const HANDBACK_KIND = 'handback';
+
+const plainValue = (value, seps) => [...String(value ?? '')].map(c => (seps.includes(c) || c === '\n' || c === '\r' ? ' ' : c)).join('').trim();
+const LINE_SEPS = ['|', '｜', '[', ']'];
+
+export function compatRecords(state, ctx, { lang = 'ko' } = {}) {
+  const { sim } = ctx;
+  const words = COMPAT_FORMAT.written[lang] ?? COMPAT_FORMAT.written.en;
+  const species = namesIn(lang === 'ko' ? 'ko' : 'en').species;
+  const nameOf = mon => mon.set.name || species(mon.set.species);
+  const { fields } = COMPAT_FORMAT;
+  const lines = state.party.map((mon, i) => {
+    const hp = hpPercentOf(sim, mon, ctx.formatid);
+    const status = hp === 0 ? 'fnt' : mon.status || '';
+    const values = {
+      name: nameOf(mon), level: mon.set.level, hp: `${hp}%`, state: words.state, english: mon.set.species,
+      condition: [words.conditions[status], ...(mon.set.shiny ? [words.shiny] : [])].join(` ${COMPAT_FORMAT.conditionSep} `),
+    };
+    return `[${[`${COMPAT_LINES.party} ${i + 1}`, ...COMPAT_FORMAT.partyFields.map(f => `${fields[f]}: ${plainValue(values[f], LINE_SEPS)}`)].join(COMPAT_FORMAT.lineSep)}]`;
+  });
+  const boxSeps = [COMPAT_FORMAT.entrySep, COMPAT_FORMAT.fieldSep];
+  const storage = state.box.map(mon => [nameOf(mon), mon.set.level, mon.set.species].map(v => plainValue(v, boxSeps)).join(COMPAT_FORMAT.fieldSep)).join(COMPAT_FORMAT.entrySep);
+  return { lines, storage };
+}
+
+const hasOurs = text => findBlocks(text).length + findTags(text).length + findMarks(text).length > 0;
+
+export function handBack(chat, state, ctx, { lang = 'ko', now = Date.now() } = {}) {
+  const turn = importTurn(chat);
+  if (turn.status !== 'ok' || !turn.moved) return false;
+  const { lines, storage } = compatRecords(state, ctx, { lang });
+  const messages = chat.message ?? [];
+  for (const message of messages) if (hasOurs(message.data)) message.data = stripForPrompt(message.data);
+  const last = messages.findLastIndex(m => m?.role === 'char');
+  if (last >= 0 && lines.length) messages[last].data = `${dropTaken(messages[last].data).replace(/\s+$/, '')}\n\n${lines.join('\n')}`;
+  chat.scriptstate[`$${COMPAT_FORMAT.storageVar}`] = storage;
+  appendImport(chat, now, HANDBACK_KIND, () => ({ mons: [], bag: {}, kind: HANDBACK_KIND, state: clone(state) }));
+  return true;
 }
 
 export const DEBUG_KIND = 'debug';
@@ -342,12 +402,9 @@ export function newMonDraft(ctx, { place = 'party', seed = 0 } = {}) {
 }
 
 export function currentMonDraft(ctx, state, uid) {
-  const { sim } = ctx;
   const place = state.party.some(m => m.uid === uid) ? 'party' : state.box.some(m => m.uid === uid) ? 'box' : fail('notInState', { uid });
-  const now = [...state.party, ...state.box].find(m => m.uid === uid);
-  const set = Object.fromEntries(SET_FIELDS.map(f => [f, clone(now.set[f])]));
-  const hpPercent = now.hp === null || now.hp === undefined ? 100 : now.hp / maxHp(sim, now.set, ctx.formatid) * 100;
-  const mon = { key: 'e1', place, set, hpPercent, status: now.status === 'fnt' ? '' : now.status ?? '', from: Object.fromEntries(MON_FIELDS.map(f => [f, 'current'])),
+  const { set, hpPercent, status } = valuesOf(ctx, [...state.party, ...state.box].find(m => m.uid === uid));
+  const mon = { key: 'e1', place, set, hpPercent, status, from: Object.fromEntries(MON_FIELDS.map(f => [f, 'current'])),
     match: { uid, place, label: labelOf(set) }, action: 'update', problems: [], seed: `0:e1` };
   mon.problems = monProblems(mon, ctx);
   return { v: 1, kind: DEBUG_KIND, mons: [mon], bag: {}, warnings: [], pool: [], base: { bag: {} } };
@@ -397,7 +454,7 @@ export function editMon(draft, key, field, value, ctx) {
 
   const blanks = SET_FIELDS.filter(f => mon.set[f] === null || (f === 'moves' && !mon.set.moves?.length));
   fillAuto(mon, ctx, [...(field === 'species' ? BY_SPECIES : field === 'level' ? BY_LEVEL : []), ...blanks]);
-  if (['species', 'name', 'level'].includes(field)) rematch(next, ctx.sim);
+  if (['species', 'name', 'level'].includes(field)) rematch(next, ctx);
   mon.problems = monProblems(mon, ctx);
   return next;
 }
@@ -455,7 +512,8 @@ export function draftProblems(draft, ctx) {
   return out;
 }
 
-const importShape = imp => isRecord(imp) && typeof imp.id === 'string' && isRecord(imp.at) && Array.isArray(imp.mons) && (imp.bag === undefined || isRecord(imp.bag));
+const importShape = imp => isRecord(imp) && typeof imp.id === 'string' && isRecord(imp.at) && Array.isArray(imp.mons) && (imp.bag === undefined || isRecord(imp.bag))
+  && (imp.canceled === undefined || typeof imp.canceled === 'number');
 const readImportsRaw = chat => readStored(chat?.scriptstate?.[IMPORT_VAR], { shape: value => Array.isArray(value.imports) && value.imports.every(importShape) });
 
 export function readImports(chat) {
@@ -499,10 +557,12 @@ function appendImport(chat, now, key, body) {
   return imp;
 }
 
-export function cancelImport(chat, id) {
+export const inForce = imp => !imp.canceled;
+
+export function cancelImport(chat, id, { now = Date.now() } = {}) {
   const { status, imports } = readImports(chat);
-  if (status !== 'ok' || !imports.some(imp => imp.id === id)) return false;
-  writeImports(chat, imports.filter(imp => imp.id !== id));
+  if (status !== 'ok' || !imports.some(imp => imp.id === id && inForce(imp))) return false;
+  writeImports(chat, imports.map(imp => (imp.id === id ? { ...imp, canceled: now } : imp)));
   return true;
 }
 
@@ -528,6 +588,7 @@ function updatedMon(ctx, old, set) {
 }
 
 export function applyImport(state, imp, ctx) {
+  if (imp.kind === HANDBACK_KIND) return clone(imp.state);
   const { sim } = ctx;
   const next = clone(state);
   const partyOrder = [];

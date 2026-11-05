@@ -1,6 +1,5 @@
 const IDENT = /^p[1-4][a-z]?: /;
 
-// Whether this is a Pokemon ident (`p1a: X`; `p1: X`)
 export const isIdent = text => IDENT.test(String(text ?? ''));
 
 export function sideOf(ident) {
@@ -16,7 +15,9 @@ export function positionAt(sideIndex, slot) {
 export function positionOf(ident) {
   const match = /^p([1-4])([a-z]?):/.exec(String(ident));
   if (!match) throw new Error(`Unsupported Pokemon identifier: ${ident}`);
-  return positionAt(+match[1] - 1, match[2] ? match[2].charCodeAt(0) - 97 : 0);
+  const side = +match[1] - 1;
+
+  return match[2] ? (side % 2 ? 'enemy' : 'player') + (match[2] === 'a' ? '' : String(match[2].charCodeAt(0) - 96)) : positionAt(side, 0);
 }
 
 export const sideIndexOf = ident => Number(/^p([1-4])/.exec(String(ident))[1]) - 1;

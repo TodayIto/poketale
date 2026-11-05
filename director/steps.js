@@ -12,13 +12,15 @@ import { DEFAULT_LANG } from './lang.js';
 
 const IGNORED = ['', 't:', 'gametype', 'player', 'gen', 'tier', 'rule', 'debug', 'raw', 'teamsize', 'start', 'upkeep', 'turn'];
 
-// Lines this file handles
 const CORE_KINDS = ['switch', 'drag', 'replace', 'swap', 'move', '-crit', '-ohko', '-supereffective', '-resisted', '-immune', '-miss', 'faint', 'win', 'tie'];
 
 export function createSteps({ battle, view, names, warn, bag, options, run, mode = {}, onInput, wild = false, lang = DEFAULT_LANG }) {
   const text = (key, values) => baseText(key, values, lang);
 
   const ledger = createLedger({ battle, names });
+
+  const foeTrainers = [...new Set([battle.sides?.[1]?.name, ...(battle.sides ?? []).filter(side => side?.n % 2).flatMap(side => side.pokemon ?? [])
+    .map(p => p.m.trainer ?? (p.side.n === 3 && !p.m.split ? p.side.name : null))].filter(Boolean))].join(' & ');
 
   const sideAffix = nameWithAffix(lang, wild);
   const affix = (name, position) => {
@@ -69,11 +71,10 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
   async function enter(event) {
     const { kind, args: a } = event;
     const side = positionOf(a[0]), previous = event.previous, player = teamOf(side) === 'player';
-
     // Player-side info box exp bar (MonView.exp)
     const mon = { ...ledger.view(ledger.get(a[0])), ...exp.summonInfo(side, event.actor) };
-    const { partner } = ledger.get(a[0]);
-    const trainerName = partner ?? battle.sides[sideIndexOf(a[0])].name;
+    const { partner, trainer } = ledger.get(a[0]);
+    const trainerName = partner ?? trainer ?? battle.sides[sideIndexOf(a[0])].name;
 
     const enemyTrainerTurn = !player && !!previous && kind === 'switch' && !wild;
     const showing = enemyTrainerTurn ? view.showTrainer?.() : null;
@@ -117,14 +118,13 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
     } else {
       if (encounter) await view.encounter({ kind: 'trainer' });
 
-      await view.message(text('battle.trainerAppeared', { trainerName }), { wait: true, hold: 1500 });
+      await view.message(text('battle.trainerAppeared', { trainerName: foeTrainers }), { wait: true, hold: 1500 });
 
       await Promise.all([encounter ? view.hideTrainer() : null, sayAlong('battle.trainerSendOut', { trainerName, pokemonName: mon.name })]);
     }
     if (!(wildAppears && encounter)) await summon();
   }
 
-  // Lines this file handles (CORE_KINDS)
   async function present(event) {
     const { kind, args: a, kwArgs: kw } = event;
     switch (kind) {
@@ -203,7 +203,7 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
       const outcome = kind === 'tie' || !winner ? 'tie' : winner === 'p1' ? 'win' : 'lose';
       if (outcome === 'win' && !wild) {
 
-        const said = text('battle.trainerDefeated', { trainerName: battle.sides[1].name });
+        const said = text('battle.trainerDefeated', { trainerName: foeTrainers });
         await Promise.all([view.showTrainer?.(), view.end({ outcome, text: said })]);
       } else await view.end({ outcome });
       break;
@@ -225,6 +225,7 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
     }
     return state;
   };
+  step.abilityShown = ledger.abilityShown;
   step.ledger = ledger;
   return step;
 }

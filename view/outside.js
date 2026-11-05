@@ -24,7 +24,6 @@ export function showSummary(scene, slot, { rename, onOpen } = {}) {
   return screen.show({ party: [slot], index: 0, rename, onOpen });
 }
 
-// Party screen backdrop (party = MonView[] 1-6, cursor = slot of the mon learning). Error if already shown
 export async function startPartyScene(scene, { party, cursor = 0 } = {}) {
   if (!scene.messages) throw new Error('Call prepareOutside before startPartyScene');
   if (scene.partyBackdrop) throw new Error('Party scene already open');
@@ -37,4 +36,11 @@ export async function endPartyScene(scene) {
   const backdrop = scene.partyBackdrop;
   scene.partyBackdrop = null;
   if (backdrop && backdrop !== true) await backdrop.close();
+}
+
+export async function chooseRememberMove(scene, { party, cursor = 0, moves, onOpen } = {}) {
+  if (!scene.messages) throw new Error('Call prepareOutside before chooseRememberMove');
+  if (!Array.isArray(moves)) throw new TypeError('chooseRememberMove needs moves');
+  const picked = await scene.party.choose({ party, remember: { cursor, moves }, onOpen });
+  return picked ? picked.move : null;
 }

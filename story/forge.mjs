@@ -1,16 +1,19 @@
 import { findBlocks, parseBattle, hashKey, messageId, stripForPrompt } from './blocks.mjs';
 import { BATTLE_BLOCK_PART, varTexts, trainerLore } from './lore.mjs';
 import { dropOocs } from './chat.mjs';
+import { PLAYER_NAME } from './rules.mjs';
+import { sceneLines } from './ai-names.mjs';
 
 export const FORGE_MODE = 'otherAx';
 
-// Messages the model reads: the one with the button and the ones right before it
+export const withUserName = (messages, name) =>
+  messages.map(m => ({ ...m, content: String(m.content ?? '').replace(/\{\{user\}\}/gi, () => name || PLAYER_NAME) }));
+
 export const SCENE_SIZE = 3;
 
 export const FORGE_INTRO = `You write Battle Blocks for a Pokémon story. Write no story text.
-Choose an opponent and levels that fit the scene and the player's party. Named characters keep their usual strength.`;
+Choose an opponent and levels that fit the scene and {{user}}'s party. Named characters keep their usual strength.`;
 export const FORGE_ASK = `Write exactly one Battle Block for a battle that could start in the latest scene, and nothing else. If no Trainer is present, use a wild Pokémon that fits the surroundings.`;
-const SPEAKER = { user: 'Player', char: 'Story' };
 
 export const mayForge = message => message?.role === 'char';
 
@@ -31,10 +34,9 @@ export function pastIn(entries, texts) {
 }
 
 export function forgeMessages({ scene, party, past = [] }) {
-  const system = [FORGE_INTRO, '## Battle Block', BATTLE_BLOCK_PART, "## Player's Party", party,
+  const system = [FORGE_INTRO, '## Battle Block', BATTLE_BLOCK_PART, "## {{user}}'s Party", party,
     ...(past.length ? ['## Last Battles', past.join('\n')] : [])].join('\n\n');
-  const lines = scene.map(s => `[${SPEAKER[s.role] ?? SPEAKER.char}]\n${s.text}`).join('\n\n');
-  return [{ role: 'system', content: system }, { role: 'user', content: `## Recent Scene (oldest first)\n\n${lines}\n\n${FORGE_ASK}` }];
+  return [{ role: 'system', content: system }, { role: 'user', content: `## Recent Scene (oldest first)\n\n${sceneLines(scene)}\n\n${FORGE_ASK}` }];
 }
 
 function forgeBasis(chat, at, { state, sim, naming = {} }) {

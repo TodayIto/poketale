@@ -5,6 +5,7 @@ import { installInitialState, recordStartForms } from './initial-state.mjs';
 import { attachExperience, experienceResult } from './exp.mjs';
 import { installBag, bagResult } from './bag.mjs';
 import { installRun, runResult } from './run.mjs';
+import { installSeats } from './seats.mjs';
 
 export const EXTENSIONS = [
 
@@ -14,9 +15,15 @@ export const EXTENSIONS = [
 	{ name: 'winner', at: 'create', install: (sim, battle) => installWinner(battle), keys: ['storyWinner'], copy: 'keep',
 		fields: ['outcome', 'winner'], result: winnerResult },
 
-	{ name: 'initial-state', at: 'create', install: (sim, battle, { spec }) => installInitialState(sim, battle, spec), keys: [], copy: 'keep' },
+	{ name: 'initial-state', at: 'create', install: (sim, battle, { seats }) => installInitialState(sim, battle, seats), keys: [], copy: 'keep' },
+
+	{ name: 'seats', at: 'create', install: (sim, battle, { seats }) => {
+		if (seats ? seats.p2.team.some(member => member.trainer) : battle.sides.some(side => side?.pokemon.some(p => p.m.trainer))) installSeats(battle);
+	}, keys: [], copy: 'reapply' },
 
 	{ name: 'start-form', at: 'players', install: (sim, battle, { sets }) => recordStartForms(battle, sets), keys: [], copy: 'keep' },
+
+	{ name: 'waiting', at: 'players', install: (sim, battle, { sets }) => { if (sets.waiting) battle.storyWaiting = sets.waiting; }, keys: ['storyWaiting'], copy: 'strip' },
 
 	{ name: 'exp', at: 'players', install: (sim, battle, { spec, options }) => { if (options.exp) attachExperience(sim, battle, spec, options); },
 		keys: ['events'], copy: 'strip', fields: ['evolutions', 'learnQueue'], result: experienceResult },
@@ -28,7 +35,6 @@ export const EXTENSIONS = [
 		fields: ['ran', 'outcome', 'winner', 'forfeited'], result: runResult },
 ];
 
-// Called by createStoryBattle: extensions with the given `at`, in table order
 export function installExtensions(sim, battle, at, context) {
 	for (const ext of EXTENSIONS) if (ext.at === at) ext.install(sim, battle, context);
 }

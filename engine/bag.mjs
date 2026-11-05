@@ -1,9 +1,8 @@
 import { BALLS, ballModifier, captureValues, rollCapture } from './capture.mjs';
 import { awardCaptureExperience } from './exp.mjs';
 import { PARTY_MAX, toID } from './mon.mjs';
-import { chooseEventAction, revive } from './showdown-compat.mjs';
+import { chooseEventAction, chooseParts, revive, sideLead } from './showdown-compat.mjs';
 
-// Bag items usable in battle. Balls are in capture.mjs BALLS.
 export const BAG_ITEMS = {
 
 	potion: { name: 'Potion', heal: 20 },
@@ -22,7 +21,6 @@ export const BAG_ITEMS = {
 
 	revive: { name: 'Revive', revive: 'half' },
 	maxrevive: { name: 'Max Revive', revive: 'full' },
-
 	// PP (Ether: one move 10, Max Ether: one move full, Elixir: all moves 10, Max Elixir: all moves full)
 	ether: { name: 'Ether', pp: 10, oneMove: true },
 	maxether: { name: 'Max Ether', pp: 'full', oneMove: true },
@@ -73,16 +71,16 @@ export function installBag(sim, battle, options = {}) {
 		options: { ...options, env: { ...options.env } },
 		catchRates: options.catchRates?.byNum ?? options.catchRates ?? null,
 		caught: new Set(options.caughtSpecies || []),
-		pending: null,
+		pending: new Map(),
 		itemsUsed: [],
 		captured: null,
 	};
 	battle.storyBag = state;
-	battle.onEvent('StoryBag', battle.format, function () {
-		const choice = state.pending;
-		state.pending = null;
+	battle.onEvent('StoryBag', battle.format, function (user) {
+		const choice = state.pending.get(user);
+		state.pending.delete(user);
 		if (!choice) throw new Error('가방 행동인데 선택이 없습니다');
-		if (isBall(choice.item)) throwBall(sim, this, state, choice);
+		if (isBall(choice.item)) throwBall(sim, this, state, choice, user);
 		else useItem(sim, this, state, choice);
 	});
 	return state;
@@ -105,7 +103,8 @@ export function checkBagItem(battle, choice) {
 	if (battle.ended) return fail('ended');
 	const side = battle.sides[0];
 	if (side.requestState !== 'move' || side.choice.cantUndo) return fail('notyourturn');
-	const user = side.active[0];
+
+	const user = isBall(toID(choice?.item)) ? sideLead(side) : side.active[choice?.position ?? 0];
 	if (!user || user.fainted) return fail('notyourturn');
 
 	if (user.getLockedMove()) return fail('locked');
@@ -151,9 +150,13 @@ function ppSlots(target, item, move) {
 
 const realSpecies = pokemon => pokemon.battle.dex.species.get(pokemon.m.start.species);
 
+const foesOut = battle => battle.sides.filter(side => side.n % 2).flatMap(side => side.active).filter(p => p && !p.fainted);
+
 function checkBall(battle, state, id) {
-	const foe = battle.sides[1].active[0];
-	if (!foe || foe.fainted) return fail('nofoe');
+	const foes = foesOut(battle);
+	if (!foes.length) return fail('nofoe');
+	if (state.options.wild && foes.length > 1) return fail('twofoes');
+	const foe = foes[0];
 	if (!state.options.wild) return { ok: true };
 
 	if (foe.isSemiInvulnerable()) return fail('semiinvulnerable');
@@ -168,8 +171,28 @@ function catchRateOf(state, species) {
 export function chooseBagItem(battle, choice) {
 	const check = checkBagItem(battle, choice);
 	if (!check.ok) return check;
-	battle.storyBag.pending = { item: toID(choice.item), target: choice.target ?? null, move: choice.move ? toID(choice.move) : null };
-	chooseEventAction(battle, battle.sides[0], 'StoryBag');
+	const side = battle.sides[0];
+	const position = isBall(toID(choice.item)) ? side.active.indexOf(sideLead(side)) : choice.position ?? 0;
+	battle.storyBag.pending.clear();
+	battle.storyBag.pending.set(battle.sides[0].active[position], pendingOf(choice));
+	chooseEventAction(battle, battle.sides[0], 'StoryBag', position);
+	return { ok: true };
+}
+
+const pendingOf = choice => ({ item: toID(choice.item), target: choice.target ?? null, move: choice.move ? toID(choice.move) : null });
+
+export function chooseBagParts(battle, parts) {
+	const state = battle.storyBag;
+	for (const [position, part] of parts.entries()) {
+		if (typeof part === 'string') continue;
+		if (isBall(toID(part?.item))) return { ...fail('ball'), position };
+		const check = checkBagItem(battle, { ...part, position });
+		if (!check.ok) return { ...check, position };
+	}
+	const side = battle.sides[0];
+	if (!chooseParts(battle, side, parts.map(part => (typeof part === 'string' ? part : { event: 'StoryBag' })))) return fail('rejected');
+	state.pending.clear();
+	parts.forEach((part, position) => { if (typeof part !== 'string') state.pending.set(side.active[position], pendingOf(part)); });
 	return { ok: true };
 }
 
@@ -177,9 +200,9 @@ const isEnemyItem = item => !!item && !item.revive && !item.pp && !item.boost &&
 
 export function checkEnemyItem(battle, choice) {
 	if (battle.ended) return fail('ended');
-	const side = battle.sides[1];
+	const side = battle.getSide(choice?.side ?? 'p2');
 	if (side.requestState !== 'move' || side.choice.cantUndo) return fail('notyourturn');
-	const user = side.active[0];
+	const user = side.active[choice?.position ?? 0];
 	if (!user || user.fainted) return fail('notyourturn');
 	if (user.getLockedMove()) return fail('locked');
 	const item = BAG_ITEMS[toID(choice?.item)];
@@ -188,23 +211,38 @@ export function checkEnemyItem(battle, choice) {
 	return itemHasEffect(user, item) ? { ok: true } : fail('noeffect');
 }
 
-// Sets the opponent's (p2) action this turn to a healing item use. The handler is attached on first use
-export function chooseEnemyItem(battle, choice) {
-	const check = checkEnemyItem(battle, choice);
-	if (!check.ok) return check;
+export const enemyItemOf = part => /^item (\S+)$/.exec(String(part).trim())?.[1];
+
+export const hasEnemyItem = choice => String(choice).split(',').some(part => enemyItemOf(part));
+
+export function chooseEnemyParts(battle, choice, sideId = 'p2') {
+	const parts = String(choice).split(',').map(part => part.trim());
+	for (const [position, part] of parts.entries()) {
+		const item = enemyItemOf(part);
+		if (!item) continue;
+		const check = checkEnemyItem(battle, { item, position, side: sideId });
+		if (!check.ok) return { ...check, position };
+	}
 	if (!battle.storyEnemyItem) {
-		const state = battle.storyEnemyItem = { pending: null };
-		battle.onEvent('StoryEnemyItem', battle.format, function () {
-			const picked = state.pending;
-			state.pending = null;
+		const state = battle.storyEnemyItem = { pending: new Map() };
+		battle.onEvent('StoryEnemyItem', battle.format, function (user) {
+			const picked = state.pending.get(user);
+			state.pending.delete(user);
 			if (!picked) throw new Error('상대 도구 행동인데 선택이 없습니다');
-			useItem(null, this, null, picked, this.sides[1]);
+			useItem(null, this, null, picked, user.side);
 		});
 	}
-	const side = battle.sides[1];
-	battle.storyEnemyItem.pending = { item: toID(choice.item), target: side.active[0].m.uid, move: null };
-	chooseEventAction(battle, side, 'StoryEnemyItem');
-	return { ok: true };
+
+	const side = battle.getSide(sideId), { pending } = battle.storyEnemyItem;
+	const drop = () => { for (const user of pending.keys()) if (user.side === side) pending.delete(user); };
+	drop();
+	parts.forEach((part, position) => {
+		const item = enemyItemOf(part);
+		if (item) pending.set(side.active[position], { item: toID(item), target: side.active[position].m.uid, move: null });
+	});
+	if (chooseParts(battle, side, parts.map(part => (enemyItemOf(part) ? { event: 'StoryEnemyItem' } : part)))) return { ok: true };
+	drop();
+	return fail('rejected');
 }
 
 function itemEffect(item, id) {
@@ -247,11 +285,9 @@ function useItem(sim, battle, state, choice, side = battle.sides[0]) {
 	state?.itemsUsed.push({ turn: battle.turn, item: choice.item, target: choice.target, ...(choice.move && item.oneMove ? { move: choice.move } : {}) });
 }
 
-function throwBall(sim, battle, state, choice) {
-	const foe = battle.sides[1].active[0];
-	const user = battle.sides[0].active[0];
+function throwBall(sim, battle, state, choice, user) {
+	const foe = foesOut(battle)[0] ?? battle.sides[1].active[0];
 	if (!state.options.wild) {
-
 		// Trainer battle: the opponent blocks the ball. The turn is used and the ball is not consumed
 		battle.add('-story-ball', foe, foe.m.uid, choice.item, 0, 'blocked');
 		return;

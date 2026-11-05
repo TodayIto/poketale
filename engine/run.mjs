@@ -1,4 +1,4 @@
-import { chooseEventAction, findTrap } from './showdown-compat.mjs';
+import { chooseEventAction, findTrap, sideLead } from './showdown-compat.mjs';
 
 export function installRun(sim, battle, options = {}) {
 	if (battle.storyRun) throw new Error('도망가기가 이미 설치됐습니다');
@@ -27,7 +27,7 @@ export function checkRun(battle) {
 	if (battle.ended) return fail('ended');
 	const side = battle.sides[0];
 	if (side.requestState !== 'move' || side.choice.cantUndo) return fail('notyourturn');
-	const user = side.active[0];
+	const user = sideLead(side);
 	if (!user || user.fainted) return fail('notyourturn');
 	if (!state.wild) return fail('trainer');
 
@@ -43,12 +43,12 @@ export function checkRun(battle) {
 	return { ok: true };
 }
 
-// Sets p1's action this turn to running. If blocked, changes nothing and returns { ok:false, reason }
 export function chooseRun(battle) {
 	const check = checkRun(battle);
 	if (!check.ok) return check;
 	battle.storyRun.pending = true;
-	chooseEventAction(battle, battle.sides[0], 'StoryRun');
+	const side = battle.sides[0];
+	chooseEventAction(battle, side, 'StoryRun', side.active.indexOf(sideLead(side)));
 	return { ok: true };
 }
 
@@ -90,7 +90,7 @@ export function escapeOdds(playerSpeed, wildSpeed, attempts) {
 export const unmodifiedSpeed = pokemon => pokemon.getStat('spe', true, true);
 
 function attemptRun(battle, state) {
-	const user = battle.sides[0].active[0];
+	const user = sideLead(battle.sides[0]);
 	const foe = battle.sides[1].active[0];
 	if (!user || user.fainted) return;
 	const guarantee = escapeGuarantee(user);

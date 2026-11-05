@@ -43,7 +43,6 @@ function monViewOf(ctx, { battle, pokemon, fainted }, mon, species) {
   };
 }
 
-// Current move slots (LearnMoveOption[])
 const moveOptions = (ctx, { battle, pokemon }) => pokemon.baseMoveSlots.map(slot => learnMoveOption(battle, ctx.names, slot.id, slot.pp, slot.maxpp, langOf(ctx)));
 
 function newMoveOption(ctx, battle, move) {
@@ -105,6 +104,17 @@ export async function learnMoveOutside({ view, ctx, mon, move: moveId, party }) 
   }
 }
 
+export async function rememberMoveOutside({ view, ctx, mon, moves, party }) {
+  await loadExpText(langOf(ctx));
+  const options = readOutside(ctx, mon, ({ battle }) => moves.map(({ move, level }) => ({
+    ...newMoveOption(ctx, battle, battle.dex.moves.get(move)), level,
+  })));
+  const backdrop = outsidePartyViews(ctx, party, mon);
+  await view.prepareOutside({ mons: [] });
+  const picked = await view.chooseRememberMove({ party: backdrop.views, cursor: backdrop.cursor, moves: options });
+  return picked === null ? null : options[picked].id;
+}
+
 async function learnOne({ view, lang, shown, moves, newMove, inEvolution }) {
   const { learned, learnFlow } = createLearnSteps(view, lang);
   if (moves.length < 4) {
@@ -133,23 +143,25 @@ export async function evolveOutside({ view, ctx, mon, into, learn = [] }) {
   const { from, target, moves } = plan;
   await view.prepareOutside({ mons: [from, target] });
   await view.startEvolution(from);
+
+  const result = { evolved: false, learned: [] };
   try {
     await say('menu.evolving', { pokemonName: from.name }, false);
-    const evolved = !!await view.evolve(target, { canCancel: true });
-    if (!evolved) {
-      await say('menu.stoppedEvolving', { pokemonName: from.name });
-      return { evolved: false, learned: [] };
-    }
-    await sayTimed('menu.evolutionDone', { pokemonName: from.name, evolvedPokemonName: target.name }, { promptDelay: 4000 });
+    result.evolved = !!await view.evolve(target, { canCancel: true });
+    if (!result.evolved) await say('menu.stoppedEvolving', { pokemonName: from.name });
+    else {
+      await sayTimed('menu.evolutionDone', { pokemonName: from.name, evolvedPokemonName: target.name }, { promptDelay: 4000 });
 
-    const shown = { ...target, dexNumber: plan.dexNumber };
-    const learned = [];
-    for (const newMove of plan.newMoves) {
-      if (moves.some(m => m.id === newMove.id)) continue;
-      learned.push({ move: newMove.id, ...await learnOne({ view, lang: langOf(ctx), shown, moves, newMove, inEvolution: true }) });
+      const shown = { ...target, dexNumber: plan.dexNumber };
+      for (const newMove of plan.newMoves) {
+        if (moves.some(m => m.id === newMove.id)) continue;
+        result.learned.push({ move: newMove.id, ...await learnOne({ view, lang: langOf(ctx), shown, moves, newMove, inEvolution: true }) });
+      }
     }
-    return { evolved: true, learned };
-  } finally {
     await view.endEvolution();
+  } catch (error) {
+
+    if (!view.closed) throw error;
   }
+  return result;
 }

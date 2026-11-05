@@ -1,8 +1,48 @@
+import { norm } from './blocks.mjs';
+
+export const COMPAT_LINES = Object.freeze({
+  party: 'Own Pokémon', allied: 'Allied Pokémon', opposing: 'Opposing Pokémon',
+  storageAdd: 'Pokémon Storage Add', storageRemove: 'Pokémon Storage Remove', intention: 'Battle Intention',
+});
+const NUMBERED = new Set(['party', 'allied', 'opposing']);
+
 export const COMPAT_ENTRIES = Object.freeze([
-  { name: '👾 Pokémon Status', mark: '[Own Pokémon' },
-  { name: '💻 Pokémon Storage', mark: '[Pokémon Storage Add' },
-  { name: '📣 Battle Intention', mark: '[Battle Intention' },
-]);
+  { name: '👾 Pokémon Status', lines: ['party', 'allied', 'opposing'] },
+  { name: '💻 Pokémon Storage', lines: ['storageAdd', 'storageRemove'] },
+  { name: '📣 Battle Intention', lines: ['intention'] },
+].map(entry => Object.freeze({ ...entry, lines: Object.freeze(entry.lines), mark: `[${COMPAT_LINES[entry.lines[0]]}` })));
+
+export const compatFold = text => norm(String(text ?? '').normalize('NFD').replace(/\p{M}/gu, ''));
+
+export const COMPAT_LINE_RE = /\[([^[\]\n]*)\]/g;
+
+export const COMPAT_FIELD_SEP = /[|｜]/;
+
+const heads = Object.entries(COMPAT_LINES).map(([line, head]) => [line, compatFold(head)]).sort((a, b) => b[1].length - a[1].length);
+
+export function compatHead(head) {
+  const key = compatFold(head);
+  for (const [line, folded] of heads) {
+    if (!key.startsWith(folded)) continue;
+    const rest = key.slice(folded.length);
+    if (rest === '') return { line, slot: null };
+    if (NUMBERED.has(line) && /^\d+$/.test(rest)) return { line, slot: Number(rest) };
+  }
+  return null;
+}
+
+const TAKEN = new Set(COMPAT_ENTRIES.flatMap(entry => entry.lines));
+const taken = inner => TAKEN.has(compatHead(inner.split(COMPAT_FIELD_SEP)[0].trim())?.line);
+
+export function dropTaken(text) {
+  const all = String(text ?? '');
+  const lines = all.split('\n');
+  const kept = lines.flatMap(line => {
+    const rest = line.replace(COMPAT_LINE_RE, (whole, inner) => (taken(inner) ? '' : whole));
+    return rest === line ? [line] : rest.trim() ? [rest] : [];
+  });
+  return kept.length === lines.length && kept.every((line, i) => line === lines[i]) ? all : kept.join('\n');
+}
 
 export const COMPAT_VAR = 'pkb_compat';
 
@@ -27,7 +67,6 @@ export const compatTrainerGender = chat => compatVar(chat, COMPAT_TRAINER_GENDER
 const OPEN = `{{#when::keep::{{getvar::${COMPAT_VAR}}}::isnot::1}}`;
 const CLOSE = '{{/when}}';
 
-// Text -> { head: @@ decorator lines (with trailing newline), body }
 function split(content) {
   const lines = String(content ?? '').split('\n');
   let n = 0;

@@ -6,6 +6,7 @@
   "command-ui-handler.run": "도망간다",
   "command-ui-handler.actionMessage": "{{pokemonName}}[[는]]\n무엇을 할까?",
   "command-ui-handler.ballCancel": "취소",
+  "fight-ui-handler.pp": "PP",
   "fight-ui-handler.power": "위력",
   "fight-ui-handler.accuracy": "명중률",
   "fight-ui-handler.abilityFlyInText": " {{pokemonName}}의\n{{passive}}{{abilityName}}",

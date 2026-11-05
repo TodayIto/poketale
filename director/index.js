@@ -15,28 +15,36 @@ import { effectText } from './steps-effects.js';
 import { pokemonName } from './bag.js';
 import { moveMenuInfo } from './move-info.js';
 import { replaceMove } from '../engine/exp.mjs';
-import { chooseEnemyItem } from '../engine/bag.mjs';
+import { chooseEnemyParts, hasEnemyItem } from '../engine/bag.mjs';
 import { commitChoice } from '../ai/commit.js';
 import { chooseDouble } from './double.js';
 
 export function partySlots(battle, names, lang, request, { trapped = false, reviving = false, options } = {}) {
   const side = battle.sides[0];
-  return request.side.pokemon.map((pokemon, i) => {
+  const mine = request.side.pokemon.map((pokemon, i) => {
 
     const mon = monView(battle, names, pokemon.ident, pokemon.details, pokemon.condition, side.pokemon[i]?.maxhp);
     const slot = { ...mon, active: !!pokemon.active, fainted: / fnt$/.test(pokemon.condition) };
-
     // Slot menu "check summary" -> summary screen values (not shown in the menu without an engine Pokemon)
     if (side.pokemon[i]) slot.summary = summaryView(battle, names, pokemon, side.pokemon[i], options, lang);
-
-    if (side.pokemon[i]?.m.partner) return { ...slot, partner: side.pokemon[i].m.partner, blocked: ownText('own.partnerPokemon', {}, lang) };
 
     if (reviving) { if (!slot.fainted) slot.blocked = text('party-ui-handler.hasEnergy', { pokemonName: mon.name }, lang); }
     else if (slot.fainted) slot.blocked = text('party-ui-handler.noEnergy', { pokemonName: mon.name }, lang);
     else if (trapped && !slot.active) slot.blocked = text('battle.noEscapeSwitch', {}, lang);
     return slot;
   });
+
+  const partner = battle.sides[2]?.pokemon.filter(p => p.m.partner);
+  if (!partner?.length) return mine;
+  const theirs = battle.sides[2].getRequestData().pokemon.map((pokemon, i) => ({
+    ...monView(battle, names, pokemon.ident, pokemon.details, pokemon.condition, battle.sides[2].pokemon[i]?.maxhp),
+    active: !!pokemon.active, fainted: / fnt$/.test(pokemon.condition), partner: battle.sides[2].name, blocked: ownText('own.partnerPokemon', {}, lang) }));
+  return [mine[0], ...theirs.filter(slot => slot.active), ...mine.slice(1), ...theirs.filter(slot => !slot.active)];
 }
+
+export const requestIndex = (party, slot) => party.slice(0, slot).filter(p => !p.partner).length;
+
+export const partyIndex = (party, index) => party.findIndex((p, i) => !p.partner && requestIndex(party, i) === index);
 
 export { isReviving };
 
@@ -46,7 +54,7 @@ function switchChoice(choice, party, { reviving = false } = {}) {
     || (reviving ? !slot.fainted : slot.active || slot.fainted)) {
     throw new Error('Invalid player choice');
   }
-  return `switch ${choice.slot + 1}`;
+  return `switch ${requestIndex(party, choice.slot) + 1}`;
 }
 
 const DENIED = {
@@ -124,7 +132,6 @@ export function buildEngine(sim, spec, options, names, lang) {
     const wild = isWild(spec);
 
     const bag = createBag({ sim, battle, names, spec: spec.bag, wild, lang });
-
     // Command menu "Run" (engine/run.mjs). In a trainer battle, a forfeit confirmation
     const run = createRun({ sim, battle, names, wild, lang });
     return { battle, wild, bag, run };
@@ -184,7 +191,9 @@ export function applyInput({ battle, bag, run }, input) {
   const [who, choice] = input;
   if (who === 'p1') return run.owns(choice) ? run.commit(choice) : bag?.owns(choice) ? bag.commit(choice) : battle.choose('p1', choice);
 
-  if (who === 'p2') return /^item /.test(choice) ? chooseEnemyItem(battle, { item: choice.slice(5) }).ok : battle.choose('p2', choice);
+  if ((who === 'p2' || who === 'p4') && hasEnemyItem(choice)) return chooseEnemyParts(battle, choice, who).ok;
+
+  if (who === 'p2' || who === 'p3' || who === 'p4') return battle.choose(who, choice);
   if (who === 'learn') { replaceMove(battle, input[1], input[2], input[3]); return true; }
   throw new Error(`Unknown snapshot input: ${who}`);
 }
@@ -193,11 +202,16 @@ function filledSpec(battle, spec) {
   const copy = JSON.parse(JSON.stringify(spec));
   copy.seed = battle.prngSeed;
 
-  for (const [i, key, offset] of [[0, 'p1', 0], [1, 'p2', 0], ...(copy.partner ? [[0, 'partner', copy.p1.team.length]] : [])]) {
-    copy[key].team = copy[key].team.map((member, j) => {
-      const set = JSON.parse(JSON.stringify(battle.sides[i].team[offset + j]));
+  for (const [key, half] of [['p1', 0], ['p2', 1], ['partner', 0], ['foePartner', 1]]) {
+    if (!copy[key]) continue;
+    const engine = battle.sides.filter(side => side.n % 2 === half).flatMap(side => side.pokemon)
+      .filter(p => (key === 'partner' ? !!p.m.partner : key === 'foePartner' ? !!p.m.trainer || (p.side.n === 3 && !p.m.split) : !p.m.partner && !p.m.trainer && (p.side.n < 2 || p.m.split)));
+    const waiting = key === 'foePartner' ? battle.storyWaiting : null;
+    copy[key].team = copy[key].team.map((member, i) => {
+      const pokemon = engine.find(p => p.m.uid === member.uid);
+      if (!pokemon && !waiting) return member;
 
-      Object.assign(set, battle.sides[i].pokemon.find(p => p.set === battle.sides[i].team[offset + j]).m.start);
+      const set = pokemon ? { ...JSON.parse(JSON.stringify(pokemon.set)), ...pokemon.m.start } : JSON.parse(JSON.stringify(waiting[i]));
 
       set.shiny = !!set.shiny;
       return { ...member, set };
@@ -224,7 +238,6 @@ export function checkSnapshot(from) {
 
 export const isWild = spec => !!(spec?.wild ?? spec?.bag?.wild);
 
-// Stand-in view used while re-reading past logs on resume: every presentation finishes immediately
 export const silentView = new Proxy({}, { get: (_, key) => (key === 'then' ? undefined : async () => undefined) });
 
 export async function runBattle({ sim, spec, options = {}, view, names, lang = DEFAULT_LANG, enemyAI = simpleAI,
@@ -273,10 +286,12 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
       warnings.push(kind);
       if (development) console.warn(`[director] Unhandled protocol: ${kind}`);
     };
+
+    const moveInfo = (moveId, user, target) => moveMenuInfo(battle, moveId, user, target, { sim, abilityShown: uid => step.abilityShown(uid) });
     async function choosePlayer(request) {
 
       if (battle.activePerHalf > 1) {
-        return chooseDouble({ battle, view, names, lang, run, gimmicks, switchChoice, moveDeniedText,
+        return chooseDouble({ battle, view, names, lang, run, bag, gimmicks, switchChoice, moveDeniedText, moveInfo,
           partySlots: (req, extra) => partySlots(battle, names, lang, req, { ...extra, options: battleOptions }) }, request);
       }
       if (request.forceSwitch) {
@@ -287,7 +302,6 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
       }
       const options = request.active?.[0]?.moves;
       if (!options?.length) throw new Error('No player move request');
-
       // A locked turn: no menu (showing it would stall - with no pp the view blocks that slot as "no PP")
       if (lockedTurn(request.active[0])) return 'move 1';
       const moves = options.map(option => ({
@@ -297,7 +311,7 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
 
         ...(option.disabled || (option.pp ?? 1) <= 0 ? { blocked: moveDeniedText(battle, names, option, lang) } : {}),
 
-        ...moveMenuInfo(battle, option.id, battle.sides[0].active[0], battle.sides[1].active[0]),
+        ...moveInfo(option.id, battle.sides[0].active[0], battle.sides[1].active[0]),
       }));
       const party = partySlots(battle, names, lang, request, { trapped: !!request.active[0].trapped, options: battleOptions });
 
@@ -341,7 +355,6 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
       }
       await step.flush();
       if (battle.ended) {
-
         // The single final result. After the evolution screens modify it, progress() publishes this same object
         const result = { ...extractResult(sim, battle), log: [...battle.log] };
 
@@ -357,7 +370,8 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
       }
       if (++turns > 1000) throw new Error('Battle did not finish within 1000 choices');
       const request = battle.sides[0].activeRequest;
-      const enemyRequest = battle.sides[1].activeRequest;
+
+      const others = battle.sides.slice(1).filter(side => side.activeRequest && !side.activeRequest.wait).map(side => side.id);
 
       if (request && !request.wait && !request.forceSwitch && request.active) {
         latest = takeSnapshot();
@@ -380,12 +394,13 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
         continue;
       }
 
-      const enemyChoice = enemyRequest && !enemyRequest.wait ? await enemyAI(battle, 'p2') : undefined;
-      if (!playerChoice && !enemyChoice) throw new Error('Both sides are waiting without an update');
+      const otherChoices = [];
+      for (const id of others) otherChoices.push([id, await enemyAI(battle, id)]);
+      if (!playerChoice && !otherChoices.length) throw new Error('Both sides are waiting without an update');
 
       if (playerChoice && !input(['p1', playerChoice])) {
 
-        const parts = typeof playerChoice === 'string' ? playerChoice.split(', ') : [];
+        const parts = typeof playerChoice === 'string' ? playerChoice.split(', ') : (playerChoice.parts ?? []).map(part => (typeof part === 'string' ? part : ''));
         const retried = battle.sides[0].activeRequest?.active ?? [];
         const trapped = parts.findIndex((part, i) => part.startsWith('switch') && retried[i]?.trapped);
         if (trapped >= 0) {
@@ -403,8 +418,10 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
       }
 
       if (playerChoice) commitChoice(battle, 'p1', playerChoice);
-      if (enemyChoice && !input(['p2', enemyChoice])) throw new Error(`Engine rejected enemy choice: ${enemyChoice}`);
-      if (enemyChoice) commitChoice(battle, 'p2', enemyChoice);
+      for (const [id, choice] of otherChoices) {
+        if (!input([id, choice])) throw new Error(`Engine rejected ${id === 'p3' ? 'partner' : 'enemy'} choice: ${choice}`);
+        commitChoice(battle, id, choice);
+      }
     }
   } finally {
 

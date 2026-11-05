@@ -4,19 +4,22 @@ import { loadLevelUp, EXP_TABLE } from '../battle/level-tables.js';
 import { PHONE_CSS, isPhone, layoutOf, mountPhoneLayout } from '../battle/phone.js';
 import { mountScreenButtons } from '../battle/screen-buttons.js';
 import { mountLoading } from '../battle/loading.js';
-import { UI_VARS, CARD_FRAME, BAND_CSS, rowButtonsCss, crossIcon } from '../battle/ui-css.js';
+import { UI_VARS, CARD_FRAME, BAND_CSS, rowButtonsCss, stripX } from '../battle/ui-css.js';
 import { BOX_NAME_MAX } from '../../story/rules.mjs';
 import { sayer } from '../../story/screen-text.mjs';
 import { esc } from '../../story/card.mjs';
 
 function whenShown(view, shown) {
-  const { showSummary, startPartyScene, startEvolution } = view;
+  const { showSummary, startPartyScene, startEvolution, chooseRememberMove } = view;
   if (showSummary) view.showSummary = (slot, options = {}) => showSummary(slot, { ...options, onOpen: () => { shown(); options.onOpen?.(); } });
+  if (chooseRememberMove) view.chooseRememberMove = (options = {}) => chooseRememberMove({ ...options, onOpen: () => { shown(); options.onOpen?.(); } });
   for (const [name, original] of [['startPartyScene', startPartyScene], ['startEvolution', startEvolution]]) {
     if (original) view[name] = async (...args) => { const result = await original(...args); shown(); return result; };
   }
   return view;
 }
+
+export const WITH_X = new Set(['summary', 'evolution', 'rememberMove']);
 
 const openBattleView = async options => (await import('../../view/index.js')).createBattleView(options);
 
@@ -29,10 +32,6 @@ const CSS = `
   ${BAND_CSS}
   .poke-battle.pkb-outside .screen { position:relative; width:100%; aspect-ratio:16 / 9; overflow:hidden; background:#000; }
   .poke-battle.pkb-outside .stage { position:absolute; inset:0; }
-  /* Phone: no strip row (the pad is below) - the strip lies over the top of the view with only the X while loading */
-  .poke-battle.pkb-outside.pkb-portrait .band { position:absolute; top:0; left:0; right:0; z-index:3; height:auto; padding:5px 2px; pointer-events:none; }
-  .poke-battle.pkb-outside.pkb-portrait .band button { pointer-events:auto; }
-  .poke-battle.pkb-outside.pkb-portrait { justify-content:flex-start; }
   .poke-battle.pkb-outside.pkb-landscape { flex-direction:row; }
   /* Box rename — a small window in the card style */
   .poke-battle.pkb-outside.pkb-dialog { background:rgba(15,24,34,.78); padding:16px; }
@@ -50,32 +49,36 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), lang, sh
   let busy = false;
 
   function mountHost(shown) {
-    const close = esc(sayer(shown)('screen.close'));
     const root = document.createElement('section');
     root.className = 'poke-battle pkb-outside';
     root.innerHTML = `<style>${CSS}</style>`
-      + `<div class="frame"><div class="band"><button type="button" class="leave" aria-label="${close}" title="${close}">${crossIcon(2.6)}</button><span class="grow"></span></div>`
+      + `<div class="frame"><div class="band">${stripX(esc(sayer(shown)('screen.close')))}<span class="grow"></span></div>`
       + '<div class="screen"><div class="stage"></div></div></div>';
     document.body.append(root);
     const press = key => { try { host.view?.pressKey?.(key); } catch {                     } };
     const layout = layoutOf({ phone });
-    const takeDown = mountPhoneLayout(root, layout, { press, band: false, lang: shown });
+    const takeDown = mountPhoneLayout(root, layout, { press, lang: shown });
     const leave = root.querySelector('.leave'), ball = mountLoading(root.querySelector('.screen'), { lang: shown });
     const buttons = mountScreenButtons(root.querySelector('.band'), { press, lang: shown });
 
+    let loadingNow = true, screen = null;
+    const drawX = () => { leave.hidden = !loadingNow && !WITH_X.has(screen); };
     // Loading: the ball and the X. Back and the page arrows only once the screen shows (PC only)
     const loading = {
-      show() { ball.show(); leave.hidden = false; buttons.show(false); },
-      hide() { ball.hide(); leave.hidden = true; buttons.show(layout === 'desktop'); },
+      show() { ball.show(); loadingNow = true; drawX(); buttons.show(false); },
+      hide() { ball.hide(); loadingNow = false; drawX(); buttons.show(layout === 'desktop'); },
     };
     const host = { root, stage: root.querySelector('.stage'), view: null, loading, left: false, onLeave: null,
+
+      opening(name) { screen = name; drawX(); },
       watch(view) { view.watchButtons?.(buttons.set); }, remove() { takeDown(); root.remove(); } };
 
     leave.addEventListener('click', () => {
       if (host.left) return;
       host.left = true;
+      const open = !!host.view && !host.view.closed;
       host.view?.destroy();
-      host.onLeave();
+      host.onLeave(open);
     });
     return host;
   }
@@ -106,14 +109,16 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), lang, sh
       await show(owner);
       const screens = await screensFor(host, shown);
       const parent = host.stage;
+      const screen = (name, opening) => (...args) => { host.opening(name); return opening(...args); };
       const working = work({
-        summary: (mon, onRename, customItems) => screens.openSummary({ parent, mon, customItems, ...(onRename ? { onRename } : {}) }),
-        learnMove: (mon, move, party) => screens.openLearnMove({ parent, mon, move, party }),
-        evolution: (mon, into, learn) => screens.openEvolution({ parent, mon, into, learn }),
+        summary: screen('summary', (mon, onRename, customItems) => screens.openSummary({ parent, mon, customItems, ...(onRename ? { onRename } : {}) })),
+        learnMove: screen('learnMove', (mon, move, party) => screens.openLearnMove({ parent, mon, move, party })),
+        evolution: screen('evolution', (mon, into, learn) => screens.openEvolution({ parent, mon, into, learn })),
+        rememberMove: screen('rememberMove', (mon, moves, party) => screens.openRememberMove({ parent, mon, moves, party })),
       });
 
-      // When closed with X, drop the remaining work (waiting on the closed screen)
-      return await Promise.race([working, left.then(() => { working.catch(() => {}); return undefined; })]);
+      const settled = working.catch(error => { if (host.left) return undefined; throw error; });
+      return await Promise.race([settled, left.then(viewOpen => (viewOpen ? settled : undefined))]);
     } finally {
       host?.remove();
       busy = false;

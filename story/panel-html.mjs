@@ -4,13 +4,15 @@ import { say } from './screen-text.mjs';
 import { moneyText } from './diary.mjs';
 import { COMPAT_TABS } from './compat.mjs';
 
-const SPRITE = (id, shiny) => `https://play.pokemonshowdown.com/sprites/gen5${shiny ? '-shiny' : ''}/${encodeURIComponent(id)}.png`;
+export const panelSpriteUrl = (id, shiny) => `https://play.pokemonshowdown.com/sprites/gen5${shiny ? '-shiny' : ''}/${encodeURIComponent(id)}.png`;
+const directPicture = slot => panelSpriteUrl(slot.spriteId, slot.shiny);
+
+const monImg = src => `<img${src === null ? '' : ` src="${esc(src)}"`} alt="" loading="lazy">`;
 
 const PR_ITEMS = 'https://raw.githubusercontent.com/pagefaultgames/pokerogue-assets/37789817134f881da0a038af21991ccc93a66372/images/items.png';
 const SD_ITEMS = 'https://play.pokemonshowdown.com/sprites/itemicons-sheet.png';
 
 export const ICON = {
-
   // Poke Ball for the party tab; box and bag icons
   party: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#fff" stroke="#23435f" stroke-width="2"/>'
     + '<path d="M2 12a10 10 0 0 1 20 0z" fill="#e84d4d" stroke="#23435f" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="#fff" stroke="#23435f" stroke-width="2"/></svg>',
@@ -36,7 +38,6 @@ export const ICON = {
   heal: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13.6L2.7 8.4A3.1 3.1 0 0 1 8 4.3a3.1 3.1 0 0 1 5.3 4.1z" fill="currentColor"/></svg>',
 };
 const tabLabel = (tab, lang) => esc(say(lang, `panel.tab.${tab}`));
-
 // Tab colours: party red; box blue; bag yellow
 export const TAB_COLOR = { party: '#d8434d', box: '#3d7196', bag: '#c98a1d' };
 
@@ -66,8 +67,7 @@ const CSS = [
   `${C}-tab svg{display:block;width:24px;height:24px;}`,
   `${C}-tab:active{transform:translateY(2px);box-shadow:-2px 1px 0 #1a3247;}`,
   `${C}-open ${C}-tab${C}-cur{width:46px;margin-right:-2.5px;}`,
-
-  // Task alert mark: a yellow "!"
+    // Task alert mark: a yellow "!"
   `${C}-bang{position:absolute;top:-7px;left:-6px;padding:0 4px;border:1.5px solid #c09a2c;border-radius:8px;background:#ffd84a;color:#6b4a00;font:10px/1.4 sans-serif;}`,
 
   `${C}-sheet{position:relative;z-index:1;visibility:hidden;pointer-events:none;transition:visibility 0s .2s;}`,
@@ -174,8 +174,7 @@ const CSS = [
   `${C}-opt${C}-off{color:#a9b5be;cursor:default;}`,
   `${C}-opt${C}-off:hover{background:transparent;}`,
   `${C}-opt${C}-off:hover::before{display:none;}`,
-
-  // Toss count: left-arrow, x n, right-arrow, with how many are in the bag
+    // Toss count: left-arrow, x n, right-arrow, with how many are in the bag
   `${C}-cnt{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:6px;}`,
   `${C}-cntn{min-width:56px;padding:2px 8px;border:2px solid #789db7;border-radius:7px;background:#f4f9fc;color:#14304a;font-size:15px;text-align:center;}`,
   `${C}-cntof{font-size:11px;color:#5d7486;}`,
@@ -223,7 +222,7 @@ const shell = (tabs, sheet, states = []) => `<div><style>${CSS}</style><div clas
 
 export const panelShell = () => shell('', '', [PANEL_STATES.gone]);
 
-export function renderPanel(model, { compat = false, aux = null } = {}) {
+export function renderPanel(model, { compat = false, aux = null, picture = directPicture } = {}) {
   const { lang } = model;
   const t = key => esc(say(lang, key));
   const hits = [];
@@ -259,8 +258,8 @@ export function renderPanel(model, { compat = false, aux = null } = {}) {
       + `<span class="x-risu-pkbp-hdr">${esc(right)}</span>${model.heal !== null && model.tab === 'party' ? healButton(model, hit) : ''}${model.add ? addButton(model, hit) : ''}`
       + `<button type="button" class="${cls('x-risu-pkbp-fold', hit({ t: 'fold' }))}" aria-label="${t('panel.fold')}" title="${t('panel.fold')}">${ICON.fold}</button></div>`);
     out.push('<div class="x-risu-pkbp-bd">');
-    if (model.tab === 'party') out.push(partyHtml(model, hit));
-    else if (model.tab === 'box') out.push(boxHtml(model, hit));
+    if (model.tab === 'party') out.push(partyHtml(model, hit, picture));
+    else if (model.tab === 'box') out.push(boxHtml(model, hit, picture));
     else out.push(bagHtml(model, hit));
     out.push('</div>');
     if (model.window) out.push(windowHtml(model.window, hit, lang));
@@ -289,7 +288,6 @@ function healButton(model, hit) {
     : `<span class="x-risu-pkbp-add x-risu-pkbp-off" aria-disabled="true" title="${label}"><span>${ICON.heal}${debug}</span></span>`;
 }
 
-// Held item mark in a party slot: a custom item's emoji, else a small dot. Its name on hover
 const heldMark = (held, lang) => {
   const title = esc(say(lang, 'panel.held', { item: held.name }));
   return held.emoji ? `<span class="x-risu-pkbp-emo x-risu-pkbp-heldemo" title="${title}">${esc(held.emoji)}</span>` : `<span class="x-risu-pkbp-held" title="${title}"></span>`;
@@ -297,7 +295,7 @@ const heldMark = (held, lang) => {
 
 const genderMark = g => (g === 'M' ? '<span class="x-risu-pkbp-g x-risu-pkbp-gm">♂</span>' : g === 'F' ? '<span class="x-risu-pkbp-g x-risu-pkbp-gf">♀</span>' : '');
 
-function partyHtml(model, hit) {
+function partyHtml(model, hit, picture) {
   const { lang } = model;
   const t = key => esc(say(lang, key));
   const cells = model.party.map((slot, i) => {
@@ -307,7 +305,7 @@ function partyHtml(model, hit) {
       : slot.status ? `<span class="x-risu-pkbp-st x-risu-pkbp-st${slot.status}">${esc(statusShort(slot.status, lang))}</span>` : '';
     const width = slot.maxhp ? Math.round(slot.hp / slot.maxhp * 1000) / 10 : 0;
     const slotHtml = `<button type="button" class="x-risu-pkbp-slot${i === 0 ? ' x-risu-pkbp-lead' : ''}${slot.fainted ? ' x-risu-pkbp-fnt' : ''}${picked ? ' x-risu-pkbp-picked' : ''} ${hit({ t: 'slot', where: 'party', uid: slot.uid })}">`
-      + `<span class="x-risu-pkbp-pic"><img src="${esc(SPRITE(slot.spriteId, slot.shiny))}" alt="" loading="lazy"></span>`
+      + `<span class="x-risu-pkbp-pic">${monImg(picture(slot))}</span>`
       + '<span class="x-risu-pkbp-info">'
       + `<span class="x-risu-pkbp-nm"><span class="x-risu-pkbp-nmt">${esc(slot.name)}</span>${genderMark(slot.gender)}</span>`
       + `<span class="x-risu-pkbp-hpbar"><span class="x-risu-pkbp-hpfill x-risu-pkbp-hp${slot.hpClass}" style="width:${width}%"></span></span>`
@@ -326,7 +324,7 @@ function partyHtml(model, hit) {
   return `${bring}<div class="x-risu-pkbp-party">${cells.join('')}</div>`;
 }
 
-function boxHtml(model, hit) {
+function boxHtml(model, hit, picture) {
   const { box, lang } = model;
   const t = key => esc(say(lang, key));
   const nav = d => `<button type="button" class="x-risu-pkbp-nav ${hit({ t: 'boxnav', d })}" aria-label="${t(d < 0 ? 'panel.boxPrev' : 'panel.boxNext')}">${d < 0 ? ICON.prev : ICON.next}</button>`;
@@ -335,7 +333,7 @@ function boxHtml(model, hit) {
   const head = `<div class="x-risu-pkbp-boxhd">${nav(-1)}${name()}${nav(1)}</div>`;
   const cells = box.cells.map(slot => (slot
     ? `<button type="button" class="x-risu-pkbp-bc${slot.fainted ? ' x-risu-pkbp-fnt' : ''}${model.picked === slot.uid ? ' x-risu-pkbp-picked' : ''} ${hit({ t: 'slot', where: 'box', uid: slot.uid })}" title="${esc(`${slot.name} Lv${slot.level}`)}">`
-      + `<img src="${esc(SPRITE(slot.spriteId, slot.shiny))}" alt="" loading="lazy"></button>`
+      + `${monImg(picture(slot))}</button>`
     : '<span class="x-risu-pkbp-bc x-risu-pkbp-bce"></span>'));
   return `${head}<div class="x-risu-pkbp-grid">${cells.join('')}</div><div class="x-risu-pkbp-boxn">${esc(`${box.index + 1} / ${box.count}`)}</div>`;
 }

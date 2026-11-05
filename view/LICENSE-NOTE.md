@@ -2,7 +2,7 @@
 
 Portions of this project are adapted from [PokeRogue](https://github.com/pagefaultgames/pokerogue), revision `7d7da4a829258b19e3f1615185fc6dd4d3d815f7`, Copyright 2024-2026 Pagefault Games, licensed under AGPL-3.0-only.
 
-Modified for PokeTale; modification notice date: 2026-10-30. Original source paths are listed below and retained in the corresponding source file headers. Full license and asset attribution information is in [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+Modified for PokeTale; modification notice date: 2026-11-05. Original source paths are listed below and retained in the corresponding source file headers. Full license and asset attribution information is in [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
 
 ## Changes
 
@@ -15,11 +15,13 @@ Modified for PokeTale; modification notice date: 2026-10-30. Original source pat
 
 - Four field positions, double-battle target selection and tag-battle presentation were added to the adapted UI.
 
+- Per-sprite color matrices replace shared post-processing targets for trainer silhouettes and move effects. A move information overlay supports the out-of-battle move reminder. Double and tag battles share the opponent scoring, switching and item handling.
+
 ## Adapted source files
 
 | File | Original PokeRogue path or component |
 |---|---|
-| `ai/index.js` | `src/phases/enemy-command-phase.ts, src/field/pokemon.ts (getNextMove), src/field/trainer.ts` |
+| `ai/index.js` | `src/phases/enemy-command-phase.ts, src/field/pokemon.ts (getNextMove, getNextTargets), src/field/trainer.ts` |
 | `ai/matchup.js` | `src/field/pokemon.ts, src/field/trainer.ts, src/data/arena-tag.ts` |
 | `ai/move-score.js` | `src/data/moves/move.ts, src/field/pokemon.ts` |
 | `tools/build-bag-data.mjs` | `locales/{ko,en}/*.json` |
@@ -32,40 +34,42 @@ Modified for PokeTale; modification notice date: 2026-10-30. Original source pat
 | `view/anims/geometry.js` | `src/data/battle-anims.ts` |
 | `view/anims/player.js` | `src/data/battle-anims.ts` |
 | `view/anims/stat-stage.js` | `src/phases/stat-stage-change-phase.ts` |
-| `view/arena.js` | `src/field/arena-base.ts`<br>`src/field/arena.ts (getBiomeKey, getBiomeHasProps)`<br>`src/battle-scene.ts (launchBattle arenaBg, loadBiomeAssets, base positions in reset)`<br>`src/enums/biome-id.ts` |
-| `view/audio.js` | `src/audio/audio-manager.ts`<br>`src/audio/background-music.ts` |
-| `view/ball-throw.js` | `src/phases/attempt-capture-phase.ts`<br>`src/data/pokeball.ts (doPokeballBounceAnim, getPokeballTintColor)`<br>`src/animations.ts (addPokeballOpenParticles, addPokeballCaptureStars)` |
-| `view/bgm.js` | `src/battle.ts (getBgmOverride)`<br>`src/data/trainers/trainer-config.ts (battleBgm / victoryBgm defaults)` |
-| `view/effects.js` | `src/phases/quiet-form-change-phase.ts`<br>`src/phases/pokemon-transform-phase.ts`<br>`src/phases/pokemon-anim-phase.ts`<br>`src/field/pokemon.ts`<br>`src/ui-inputs.ts` |
-| `view/encounter.js` | `src/phases/encounter-phase.ts (doEncounter, doEncounterCommon)`<br>`src/phases/battle-phase.ts (hideEnemyTrainer)`<br>`src/phases/summon-phase.ts (preSummon's player ball throw)`<br>`src/field/trainer.ts (sprites, tint/untint, playAnim)`<br>`src/data/trainers/trainer-config.ts (loadAssets anims)` |
-| `view/evolution.js` | `src/phases/evolution-phase.ts`<br>`src/ui/handlers/evolution-scene-ui-handler.ts`<br>`src/phases/end-evolution-phase.ts`<br>`src/animations.ts (doSpiralUpward; doArcDownward; doCycle; doCircleInward; doSpray)` |
-| `view/flow-extras.js` | `src/phases/battle-phase.ts (showEnemyTrainer)`<br>`src/phases/attempt-capture-phase.ts (hideInfo after the catch is confirmed)` |
-| `view/game-speed.js` | `src/system/game-speed.ts`<br>`src/utils/common.ts (FixedInt, fixedInt)` |
-| `view/index.js` | `src/main.ts`<br>`src/scene-base.ts` |
-| `view/level.js` | `src/phases/exp-phase.ts`<br>`src/phases/show-party-exp-bar-phase.ts`<br>`src/phases/level-up-phase.ts` |
-| `view/positions.js` | `src/field/pokemon.ts (getFieldPositionOffset)`<br>`src/ui/battle-info/battle-info.ts (setOffset)`<br>`src/ui/battle-info/player-battle-info.ts (setMini)` |
-| `view/run-away.js` | `src/phases/attempt-run-phase.ts`<br>`src/phases/command-phase.ts (handleRunCommand, queueShowText)` |
-| `view/scene.js` | `src/battle-scene.ts`<br>`src/field/arena.ts`<br>`src/field/arena-base.ts`<br>`src/phases/summon-phase.ts`<br>`src/phases/switch-summon-phase.ts`<br>`src/phases/faint-phase.ts`<br>`src/phases/damage-anim-phase.ts` |
+| `view/arena.js` | `src/field/arena-base.ts` |
+| `view/audio.js` | `src/audio/audio-manager.ts` |
+| `view/ball-throw.js` | `src/phases/attempt-capture-phase.ts` |
+| `view/bgm.js` | `src/battle.ts (getBgmOverride)` |
+| `view/color-matrix.js` | `src/pipelines/field-sprite.ts (onBind uniforms, flush per object)` |
+| `view/effects.js` | `src/phases/quiet-form-change-phase.ts` |
+| `view/encounter.js` | `src/phases/encounter-phase.ts (doEncounter, doEncounterCommon)` |
+| `view/evolution.js` | `src/phases/evolution-phase.ts` |
+| `view/flow-extras.js` | `src/phases/battle-phase.ts (showEnemyTrainer)` |
+| `view/game-speed.js` | `src/system/game-speed.ts` |
+| `view/index.js` | `src/main.ts` |
+| `view/level.js` | `src/phases/exp-phase.ts` |
+| `view/positions.js` | `src/field/pokemon.ts (getFieldPositionOffset)` |
+| `view/run-away.js` | `src/phases/attempt-run-phase.ts` |
+| `view/scene.js` | `src/battle-scene.ts` |
 | `view/sprites/pokemon.js` | `src/field/pokemon.ts` |
-| `view/tera.js` | `src/pipelines/glsl/sprite-frag-shader.frag`<br>`src/pipelines/sprite.ts`<br>`src/phases/tera-phase.ts`<br>`src/ui/battle-info/battle-info.ts`<br>`src/data/type.ts` |
-| `view/ui/ability-bar.js` | `src/ui/containers/ability-bar.ts`<br>`src/phases/show-ability-phase.ts`<br>`src/phases/hide-ability-phase.ts` |
-| `view/ui/action-menu.js` | `src/ui/handlers/command-ui-handler.ts`<br>`src/ui/handlers/fight-ui-handler.ts`<br>`src/ui/handlers/target-select-ui-handler.ts`<br>`src/ui/handlers/battle-message-ui-handler.ts`<br>`src/ui/text.ts`<br>`src/ui/ui-theme.ts` |
-| `view/ui/bag.js` | `src/ui/handlers/ball-ui-handler.ts`<br>`src/ui/handlers/command-ui-handler.ts` |
-| `view/ui/battle-info.js` | `src/ui/battle-info/battle-info.ts`<br>`src/ui/battle-info/player-battle-info.ts`<br>`src/ui/battle-info/enemy-battle-info.ts` |
-| `view/ui/battle-stats.js` | `src/ui/battle-info/battle-info.ts`<br>`src/ui/battle-info/player-battle-info.ts`<br>`src/ui/battle-info/enemy-battle-info.ts` |
-| `view/ui/exp-bar.js` | `src/ui/battle-info/player-battle-info.ts`<br>`src/ui/battle-info/battle-info.ts (setLevelDisplay)`<br>`src/ui/containers/party-exp-bar.ts` |
-| `view/ui/keys.js` | `src/configs/inputs/cfg-keyboard-qwerty.ts`<br>`src/ui/ui.ts (playSelect / playError)` |
-| `view/ui/learn-move.js` | `src/ui/handlers/base-option-select-ui-handler.ts`<br>`src/ui/handlers/confirm-ui-handler.ts`<br>`src/ui/handlers/summary-ui-handler.ts (SummaryUiMode.LEARN_MOVE, Page.MOVES)`<br>`src/ui/text.ts (SUMMARY*, WINDOW*, colours)`<br>`src/ui/ui.ts (fadeOut/fadeIn transition)` |
+| `view/tera.js` | `src/pipelines/glsl/sprite-frag-shader.frag` |
+| `view/ui/ability-bar.js` | `src/ui/containers/ability-bar.ts` |
+| `view/ui/action-menu.js` | `src/ui/handlers/command-ui-handler.ts` |
+| `view/ui/bag.js` | `src/ui/handlers/ball-ui-handler.ts` |
+| `view/ui/battle-info.js` | `src/ui/battle-info/battle-info.ts` |
+| `view/ui/battle-stats.js` | `src/ui/battle-info/battle-info.ts` |
+| `view/ui/exp-bar.js` | `src/ui/battle-info/player-battle-info.ts` |
+| `view/ui/keys.js` | `src/configs/inputs/cfg-keyboard-qwerty.ts` |
+| `view/ui/learn-move.js` | `src/ui/handlers/base-option-select-ui-handler.ts` |
 | `view/ui/level-up.js` | `src/ui/handlers/battle-message-ui-handler.ts (levelUpStatsContainer, promptLevelUpStats)` |
-| `view/ui/mega-tera.js` | `src/ui/handlers/command-ui-handler.ts`<br>`src/ui/handlers/fight-ui-handler.ts` |
+| `view/ui/mega-tera.js` | `src/ui/handlers/command-ui-handler.ts` |
 | `view/ui/message-codes.js` | `src/ui/handlers/message-ui-handler.ts (showTextInternal @c/@d/@s/@f codes)` |
-| `view/ui/message.js` | `src/ui/handlers/message-ui-handler.ts`<br>`src/ui/handlers/battle-message-ui-handler.ts`<br>`src/phases/message-phase.ts` |
-| `view/ui/party-icons.js` | `src/data/pokemon-species.ts (getIconAtlasKey/getIconId)`<br>`src/battle-scene.ts (addPokemonIcon)` |
-| `view/ui/party.js` | `src/ui/handlers/party-ui-handler.ts`<br>`src/ui/utils/pokemon-icon-anim-helper.ts`<br>`src/ui/handlers/message-ui-handler.ts (showPrompt)` |
-| `view/ui/rename-form.js` | `src/ui/handlers/rename-form-ui-handler.ts`<br>`src/ui/handlers/form-modal-ui-handler.ts`<br>`src/ui/handlers/modal-ui-handler.ts`<br>`src/ui/text.ts (TOOLTIP_CONTENT, SETTINGS_LABEL, addTextInputObject)` |
-| `view/ui/summary.js` | `src/ui/handlers/summary-ui-handler.ts (SummaryUiMode.DEFAULT, Page.PROFILE/STATS/MOVES)`<br>`src/ui/handlers/party-ui-handler.ts (processSummaryOption)` |
-| `view/ui/text.js` | `src/ui/text.ts`<br>`src/ui/handlers/summary-ui-handler.ts (getStatKey order)` |
-| `view/ui/theme.js` | `src/ui/text.ts (getTextColor isLegacyTheme branch)`<br>`src/ui/ui-theme.ts (addWindow borders, legacy images)`<br>`src/scene-base.ts (loadImage: images/ui -> images/ui/legacy)` |
+| `view/ui/message.js` | `src/ui/handlers/message-ui-handler.ts` |
+| `view/ui/move-info.js` | `src/ui/containers/move-info-overlay.ts` |
+| `view/ui/party-icons.js` | `src/data/pokemon-species.ts (getIconAtlasKey/getIconId)` |
+| `view/ui/party.js` | `src/ui/handlers/party-ui-handler.ts` |
+| `view/ui/rename-form.js` | `src/ui/handlers/rename-form-ui-handler.ts` |
+| `view/ui/summary.js` | `src/ui/handlers/summary-ui-handler.ts (SummaryUiMode.DEFAULT, Page.PROFILE/STATS/MOVES)` |
+| `view/ui/text.js` | `src/ui/text.ts` |
+| `view/ui/theme.js` | `src/ui/text.ts (getTextColor isLegacyTheme branch)` |
 | `view/ui/window.js` | `src/ui/ui-theme.ts` |
 
 ## Fonts and assets

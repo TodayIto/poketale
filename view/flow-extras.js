@@ -1,6 +1,6 @@
 // from pokerogue src/phases/battle-phase.ts (showEnemyTrainer) @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
 // from pokerogue src/phases/attempt-capture-phase.ts (hideInfo after the catch is confirmed) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { tween, delay } from './lifetime.js';
 import { checkPosition } from './positions.js';
@@ -8,8 +8,8 @@ import { checkPosition } from './positions.js';
 export async function showTrainer(scene) {
   const trainer = scene.encounter?.enemyTrainer;
   if (!trainer || trainer.container.visible) return;
-  const { container, sprite, tintSprite } = trainer;
-  sprite.setVisible(true).clearTint(); tintSprite.setVisible(false).clearTint();
+  const { container, sprite, tintSprite, partner } = trainer;
+  for (const one of [{ sprite, tintSprite }, partner].filter(Boolean)) { one.sprite.setVisible(true).clearTint(); one.tintSprite.setVisible(false).clearTint(); }
   container.setVisible(true).setAlpha(0);
   await tween(scene, { targets: container, x: '-=16', y: '+=16', alpha: 1, ease: 'Sine.easeInOut', duration: 750 });
 }

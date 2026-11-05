@@ -38,15 +38,52 @@ export function revive(battle, pokemon, hp) {
 	pokemon.hp = hp;
 }
 
+export const sideLead = side => side.active.find(pokemon => pokemon && !pokemon.fainted) ?? side.active[0];
+
 const SWITCH_ORDER = 103;
 
-export function chooseEventAction(battle, side, event) {
+export function chooseEventAction(battle, side, event, position = 0) {
 	side.clearChoice();
-	side.choice.actions.push({ choice: 'event', event, order: SWITCH_ORDER, priority: 0, pokemon: side.active[0], side });
 
-	// The side's other Pokemon on the field do nothing this turn (a run or item takes the whole side's turn)
-	for (const pokemon of side.active.slice(1)) side.choice.actions.push({ choice: 'pass', pokemon, side });
+	side.active.forEach((pokemon, i) => side.choice.actions.push(i === position
+		? { choice: 'event', event, order: SWITCH_ORDER, priority: 0, pokemon, side } : { choice: 'pass', pokemon, side }));
 	if (battle.allChoicesDone()) battle.commitChoices();
+}
+
+export function chooseParts(battle, side, parts) {
+	if (!side.requestState || side.choice.cantUndo) return false;
+	side.clearChoice();
+	const made = choosePartsIn(side, parts);
+	if (!made) { const { error } = side.choice; side.clearChoice(); side.choice.error = error; return false; }
+	if (battle.allChoicesDone()) battle.commitChoices();
+	return true;
+}
+
+function choosePartsIn(side, parts) {
+	return chooseEach(side, parts) && side.isChoiceDone();
+}
+
+export function chooseEach(side, parts) {
+	for (const part of parts) {
+		if (typeof part === 'object') {
+			const index = side.getChoiceIndex();
+			if (index >= side.active.length) return false;
+			side.choice.actions.push({ choice: 'event', event: part.event, order: SWITCH_ORDER, priority: 0, pokemon: side.active[index], side });
+			continue;
+		}
+		const [kind, ...rest] = part.trim().split(' ');
+		let ok;
+		if (kind === 'move') {
+			const words = [...rest];
+			const event = ['mega', 'terastallize'].includes(words.at(-1)) ? words.pop() : '';
+			const targetLoc = words.length > 1 ? Number(words.pop()) : undefined;
+			ok = side.chooseMove(words[0], targetLoc, event);
+		} else if (kind === 'switch') ok = side.chooseSwitch(rest[0]);
+		else if (kind === 'pass') ok = side.choosePass();
+		else throw new Error(`Unsupported choice part: ${part}`);
+		if (!ok || side.choice.error) return false;
+	}
+	return true;
 }
 
 export function findTrap(battle, pokemon) {

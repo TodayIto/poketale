@@ -4,10 +4,10 @@ import { createBattleView } from '../../view/index.js';
 import { createBattleSession, isWild } from './flow.js';
 import { mark, clearBattleMarks } from './marks.js';
 import { END_CSS, END_GUARD_MS, mountEndScreen, flyAway, shake, PLANE } from './end-screen.js';
-import { UI_VARS, CARD_FRAME, BAND_CSS, rowButtonsCss, crossIcon } from './ui-css.js';
+import { UI_VARS, CARD_FRAME, BAND_CSS, rowButtonsCss, stripX } from './ui-css.js';
 import { PHONE_CSS, isPhone, layoutOf, mountPhoneLayout, choiceCursor } from './phone.js';
 import { mountScreenButtons } from './screen-buttons.js';
-import { ENTRY_CSS, mountEntry, backToChat, entryNamed, STAMP_SOUND } from './entry.js';
+import { ENTRY_CSS, mountEntry, backToChat, entryNamed, fadeScreen, STAMP_SOUND } from './entry.js';
 import { entryPictures, entrySound } from './entry-art.js';
 import { PLAYER_NAME } from '../../story/state.mjs';
 import { mountLoading } from './loading.js';
@@ -21,9 +21,7 @@ import { battleNamesIn } from './names.js';
 import { DEFAULT_LANG } from '../../director/lang.js';
 import { DEFAULT_SPEED, nextSpeed } from '../../view/game-speed.js';
 
-// Our UI icons (icons only, no text)
 const ICON = {
-  leave: crossIcon(2.6),
   send: PLANE,
   fold: '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2.5 5h11L8 12z"/></svg>',
 
@@ -96,7 +94,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     .poke-battle.pkb-portrait .end .btns button:focus, .poke-battle.pkb-landscape .end .btns button:focus { outline:3px solid #ffd35c; outline-offset:2px; }
   </style><div class="frame">
     <div class="band">
-      <button class="close leave" type="button" aria-label="${say(lang, 'window.leave')}" title="${say(lang, 'window.leave')}">${ICON.leave}</button>
+      ${stripX(say(lang, 'window.leave'))}
       <span class="savenote" role="status" hidden></span>
       <span class="grow"></span>
       <button class="speed" type="button" title="${say(lang, 'window.speed')}" hidden></button>
@@ -199,7 +197,6 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     if ((mode === 'running' || mode === 'result') && !paused) await backToChat(root).catch(() => {});
     try { await onClose(); root.remove(); takeDown(); }
     catch (error) {
-
       // If hiding itself fails, keep the error and a close button to retry.
       closed = false; root.classList.remove('pkb-clear'); root.querySelector('.pkb-veil')?.remove(); showError(error);
     }
@@ -271,7 +268,6 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
       showNote(failureText(WHAT.send, error, lang));
     } finally { sending = false; stage.focus?.({ preventScroll: true }); }
   };
-
   // Speed: each press moves to the next speed, for this battle and (onSpeed) the next ones
   let speed = extraViewOptions.speed ?? DEFAULT_SPEED;
   const drawSpeed = () => {
@@ -363,10 +359,8 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
 
     progress() { return session?.progress?.() ?? null; },
 
-    // Snapshot at the start of the last turn (checkpoint) | null
     snapshot() { return session?.snapshot?.() ?? null; },
 
-    // While a choice is being asked: { point, snapshot } of exactly now | null
     position() { return session?.position?.() ?? null; },
 
     screen() { return session?.screen?.() ?? { lines: [], marks: {} }; },
@@ -377,21 +371,35 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
       clearBattleMarks();
       try {
         entry?.shown();
-        const spec = startSpec;
 
         const options = loadLevelUp().then(levelUp => { mark('pb:levelup'); return { levelUp, exp: EXP_TABLE }; });
-        session = createBattleSession({ sim, spec, options, createView, lang,
-          viewOptions: { ...extraViewOptions, parent: stage, fetchBytes, bgm },
-          from: story?.from ?? undefined, commands: story?.commands, onTurn: story?.onTurn && autosave,
-          onPrepared: async () => {
-            await loaded();
-            preparing.hide();
 
-            if (entry) await entry.open().revealed;
-            session.watchButtons(screenButtons.set);
-            setMode('running');
-          }, development });
-        const result = await session.run().finally(() => { hideConfirm(); });
+        const runOne = (spec, { from, commands, reveal }) => {
+          session = createBattleSession({ sim, spec, options, createView, lang,
+            viewOptions: { ...extraViewOptions, parent: stage, fetchBytes, bgm, speed },
+            from, commands, onTurn: story?.onTurn && autosave,
+            onPrepared: async () => {
+              await loaded();
+              preparing.hide();
+              await reveal();
+              session.watchButtons(screenButtons.set);
+              setMode('running');
+            }, development });
+          if (paused) session.pause();
+          return session.run().finally(() => { hideConfirm(); });
+        };
+
+        let result = await runOne(startSpec, { from: story?.from ?? undefined, commands: story?.commands, reveal: async () => { if (entry) await entry.open().revealed; } });
+
+        for (let next; result && !closed && (next = await story?.nextStage?.({ result, spec: session.snapshot()?.spec ?? startSpec }));) {
+          if (!await session.waitDismiss() || closed) return;
+          const fade = fadeScreen(screenBox, preparing);
+          await fade.out();
+          if (closed) return;
+          session.close();
+          story.onStage?.(next);
+          result = await runOne(next, { reveal: () => fade.in() });
+        }
         if (!result || closed) return;
         setMode('result');
         showEnd(result);

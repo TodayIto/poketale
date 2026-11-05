@@ -1,4 +1,4 @@
-import { createStoryBattle, extractResult } from '../../engine/core.mjs';
+import { createStoryBattle, extractResult, waitingTrainer } from '../../engine/core.mjs';
 import { runBattle, isWild } from '../../director/index.js';
 import { createEnemyAI } from '../../ai/index.js';
 import { battleNames, battleNamesIn } from './names.js';
@@ -9,9 +9,11 @@ export function previewBattle(sim, spec, options, names = battleNames) {
   const preview = createStoryBattle(sim, spec, options);
   try {
     const team = extractResult(sim, preview).sides.flatMap(side => side.team.map(mon => ({ side: side.id === 'p1' ? 'player' : 'enemy', mon })));
+
+    const shown = new Map(preview.sides.flatMap(side => side.pokemon.map(p => [p.m.uid, p.species])));
     return {
       mons: team.map(({ side, mon }) => {
-        const species = sim.Dex.species.get(mon.species);
+        const species = shown.get(mon.uid);
         return { side, speciesId: species.id, spriteId: species.spriteid, name: names.species(species.id),
           level: mon.level, gender: mon.gender, shiny: mon.shiny, hp: mon.hp, maxhp: mon.maxhp, status: mon.status };
       }),
@@ -76,7 +78,6 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
 
     pause() { if (paused) return; paused = true; view?.suspend?.(); },
 
-    // Reopen: continues from where it paused
     resume() { if (!paused) return; paused = false; view?.resume?.(); },
     get paused() { return paused; },
 
@@ -90,7 +91,6 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
 
     diagnostics() { return [...aiNotes]; },
 
-    // Send to story: sentences shown on screen so far and turn start positions (copy)
     screen() { return { lines: [...screen], marks: { ...marks } }; },
 
     warmUp() { return wait(() => view.warmUp()); },
@@ -130,7 +130,9 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
 
         await wait(() => view.preload({ ...preview, biome: battleSpec.biome ?? 'plains',
           enemyTrainer: battleSpec.p2?.trainerSprite, enemyBlack: !!battleSpec.p2?.trainerSilhouette,
-          playerTrainer: battleSpec.p1?.trainerSprite, playerBlack: !!battleSpec.p1?.trainerSilhouette }));
+          playerTrainer: battleSpec.p1?.trainerSprite, playerBlack: !!battleSpec.p1?.trainerSilhouette,
+
+          ...(battleSpec.foePartner && !waitingTrainer(battleSpec) ? { enemyTrainer2: battleSpec.foePartner.trainerSprite ?? battleSpec.p2?.trainerSprite, enemyBlack2: !!battleSpec.foePartner.trainerSilhouette } : {}) }));
         mark('pb:preload');
 
         let menuShown = false, revealed = null;

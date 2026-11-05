@@ -1,12 +1,11 @@
 // from pokerogue src/ui/text.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (getStatKey order) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { loadFont as loadEmbeddedFont } from '../fonts.js';
 import { themeColors } from './theme.js';
 import { STATS } from '../../engine/mon.mjs';
 
-// Battle font (CSS font-family). The nickname input field (HTML) uses the same font
 export const FONT_FAMILY = 'BattleViewEmerald, sans-serif';
 
 export function addTextObject(scene, x, y, content, style = 'message', extra = {}) {
@@ -37,6 +36,8 @@ const STYLES = {
   SUMMARY_STATS: style('#f8f8f8', '#636363', 5, 5), SUMMARY_STATS_PINK: style(...GENDER_COLORS.F, 5, 5), SUMMARY_STATS_BLUE: style(...GENDER_COLORS.M, 5, 5),
   SUMMARY_STATS_GOLD: style('#e8e8a8', '#a0a060', 5, 5), SUMMARY_RED: style('#e70808', '#ffbd73', 3, 3), SUMMARY_DEX_NUM_GOLD: style('#e8e8a8', '#a0a060', 5, 5),
   GENDER_M: style(...GENDER_COLORS.M, 4, 5), GENDER_F: style(...GENDER_COLORS.F, 4, 5),
+
+  MOVE_INFO_CONTENT: style('#f8f8f8', '#6b5a73', 3, 3, { size: 56, theme: 'WINDOW' }),
 
   PARTY: style('#f8f8f8', '#707070', 4, 5, { size: 48, padding: { top: 2, bottom: 16 }, lineSpacing: 0 }),
 

@@ -71,7 +71,7 @@ const KO = {
   'own.forfeitQuestion': '정말로 도망칠까요?',
   'own.forfeitNote': '패배로 기록됩니다',
 
-  'own.alreadyChosen': '{{pokemonName}}[[는]]\n이미 교체하기로 골랐다!',
+  'own.alreadyChosen': '{{pokemonName}}[[는]]\n이미 교체하기로 했다!',
   'own.partnerPokemon': '동료의 포켓몬은 고를 수 없다!',
   'own.swap': '{{pokemonNameWithAffix}}[[와]] {{targetName}}[[는]]\n자리를 바꿨다!',
 
@@ -142,8 +142,6 @@ const EN = {
   'own.partnerPokemonWithAffix': '{{trainerName}}\'s {{pokemonName}}',
 };
 
-// Own text per language, same keys
 export const OWN = Object.freeze({ ko: KO, en: EN });
 
-// Template of an own text in a language (undefined if not an own.* key or missing)
 export const ownTemplate = (key, lang = DEFAULT_LANG) => (Object.hasOwn(OWN[checkLang(lang)], key) ? OWN[lang][key] : undefined);

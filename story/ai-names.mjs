@@ -21,3 +21,18 @@ export function createNamer({ lang = 'ko', en = null, ko = tableKo } = {}) {
   };
   return { species: name('species'), moves: name('moves'), items: name('items'), abilities: name('abilities'), seen };
 }
+
+export const STATUS_EN = { '': 'Normal', par: 'Paralyzed', brn: 'Burned', slp: 'Asleep', frz: 'Frozen', psn: 'Poisoned', tox: 'Badly Poisoned', fnt: 'Fainted' };
+
+export const nicknamed = (nick, species) => (nick ? `${nick} the ${species}` : species);
+
+const SPEAKER = { user: '{{user}}', char: 'Story' };
+export const sceneLines = messages => messages.map(m => `[${SPEAKER[m.role] ?? SPEAKER.char}]\n${m.text}`).join('\n\n');
+
+export const trainerName = battle => battle?.name || battle?.trainerClass || 'Trainer';
+export const secondName = battle => battle?.foePartner?.name || 'Trainer';
+export const partnerName = battle => battle?.partner?.name || 'Partner';
+
+export const stageTrainer = (battle, stage = 1) => (stage > 1 ? secondName(battle) : trainerName(battle));
+
+export const battleKind = result => (!result?.double ? 'single' : result.partner?.length ? 'tag' : 'double');

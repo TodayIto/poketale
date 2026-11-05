@@ -5,6 +5,7 @@ import { STATS } from '../engine/mon.mjs';
 import { BOX_SIZE } from './rules.mjs';
 import storyNames from '../data/story-names.json' with { type: 'json' };
 import { customText } from './custom-items.mjs';
+import { sideParts } from './blocks.mjs';
 
 const LETTER_BATCHIM = { L: 'l', R: 'l', M: true, N: true };
 function batchim(word) {
@@ -30,7 +31,6 @@ export function josa(word, pair) {
   return `${word}${has ? a : b}`;
 }
 
-// In Korean the word with its particle (josa), in a language without particles the word as is
 export const withParticle = (lang, word, pair) => (lang === 'ko' ? josa(word, pair) : word);
 
 const quoted = (lang, name, [a, b]) => (lang === 'ko' ? `"${name}"${batchim(name) === true ? a : b}` : `"${name}"`);
@@ -38,7 +38,6 @@ const quoted = (lang, name, [a, b]) => (lang === 'ko' ? `"${name}"${batchim(name
 export const statName = (stat, lang) => (STAT_KEYS.has(stat) ? say(lang, `stat.${stat}`) : stat);
 const STAT_KEYS = new Set([...STATS, 'accuracy']);
 
-// Words joined into one list in lang (A/B / A, B)
 export const listOf = (words, lang) => words.join(say(lang, 'diary.listSep'));
 const statList = (list, lang) => (list?.length === STATS.length ? say(lang, 'diary.allStats') : listOf((list ?? []).map(s => statName(s, lang)), lang));
 
@@ -90,7 +89,6 @@ export const boxOf = (state, position) => {
   return { n: index + 1, name: state?.boxNames?.[index] || '' };
 };
 
-// Default name of box n (from 1) in lang
 export const boxLabel = (n, lang) => say(lang, 'box.default', { n });
 const boxSent = (box, lang) => (box?.n
   ? say(lang, 'diary.toBox', { box: withParticle(lang, box.name ? `"${box.name}"` : boxLabel(box.n, lang), '으로/로') })
@@ -222,7 +220,6 @@ export const DIARY_CSS = [
   `.x-risu-pkb-fgsub{display:block;font-size:10px;opacity:.85;}`,
 ].join(' ');
 
-// The notebook icon and its paper (closed). rows = the lines' HTML, bad = whether some could not be applied
 function logHtml(rows, bad, lang) {
   const bang = bad ? '<span class="x-risu-pkb-bang">!</span>' : '';
   const label = esc(say(lang, bad ? 'diary.logBad' : 'diary.log'));
@@ -243,7 +240,7 @@ export function renderDiary({ events = [], errors = [], forge = null }, lang, na
   return `\n\n<div class="x-risu-pkb-logrow">${log}{{#if {{equal::{{chat_index}}::${forge.at}}}}}${slot}{{/if}}</div>\n\n`;
 }
 
-const COMMAND_WHY = new Set(['noMove', 'noPp', 'disabled', 'noSwitch', 'trapped', 'noItem', 'cantUse', 'cantRun']);
+const COMMAND_WHY = new Set(['noMove', 'noPp', 'disabled', 'noSwitch', 'trapped', 'noItem', 'cantUse', 'cantRun', 'noCommand']);
 
 function commandWords(c, lang, names) {
   if (!c) return '';
@@ -252,7 +249,10 @@ function commandWords(c, lang, names) {
   const target = to => (to?.slot ? t('diary.cmd.slot', { n: to.slot }) : to?.species ? k.sp(to.species) : to?.name ?? '');
   if (c.kind === 'move') {
     const move = c.move ? k.move(c.move) : c.raw ?? '';
-    return c.gimmick ? t(`diary.cmd.${c.gimmick}`, { move }) : move;
+    const used = c.gimmick ? t(`diary.cmd.${c.gimmick}`, { move }) : move;
+
+    const aim = typeof c.at === 'string' ? t(`diary.cmd.pos.${c.at}`) : c.at?.who ? target(c.at.who) : '';
+    return aim ? t('diary.cmd.at', { move: used, target: aim }) : used;
   }
   if (c.kind === 'switch') return t('diary.cmd.switch', { target: target(c.target) });
   if (c.kind === 'item') {
@@ -268,8 +268,10 @@ export function commandLines(turns, results, lang, names) {
   turns.forEach((turn, i) => {
     const result = results?.[i];
     if (result?.state !== 'done' && result?.state !== 'rejected') return;
-    const me = commandWords(turn.me, lang, names);
-    const line = turn.foe ? say(lang, 'diary.cmd.lineFoe', { me, foe: commandWords(turn.foe, lang, names) }) : say(lang, 'diary.cmd.line', { me });
+
+    const both = side => sideParts(turn, side).map(([, c]) => commandWords(c, lang, names)).join(' · ');
+    const me = both('me'), foe = both('foe');
+    const line = foe ? say(lang, 'diary.cmd.lineFoe', { me, foe }) : say(lang, 'diary.cmd.line', { me });
     if (result.state === 'done') out.plain.push(line);
     else out.errors.push(say(lang, 'diary.cmd.rejected', { line, why: say(lang, `diary.cmd.why.${COMMAND_WHY.has(result.reason) ? result.reason : 'other'}`) }));
   });

@@ -5,7 +5,6 @@ const ENTRY_FONT = 'PkbPixel';
 
 export const entryNamed = spec => (isNamedSprite(spec?.p2?.trainerSprite) ? { name: spec.p2.name ?? '' } : null);
 
-// Animation timings (ms, press = 0). Change them only here
 export const ENTRY_MS = Object.freeze({
   plateAt: 30, plate: 320,
   hit: 330, flash: 300,
@@ -24,6 +23,7 @@ export const ENTRY_MS = Object.freeze({
   wildEnd: 1300, wildReveal: 350,
   ballAfter: 1000, ballOut: 150,
   exit: 500,
+  between: 400,
 });
 
 const closedAt = kind => (kind === 'wild' ? ENTRY_MS.barsAt + ENTRY_MS.barStagger + ENTRY_MS.bars : ENTRY_MS.plateAt + ENTRY_MS.plate);
@@ -94,6 +94,8 @@ export const ENTRY_CSS = `
   .poke-battle.pkb-clear > :not(.pkb-entry):not(.pkb-veil) { visibility:hidden; }
   /* Staying more than 1 second longer brings the strip's X above the panels (so preparing can be cancelled) */
   .poke-battle.pkb-entry-slow .band, .poke-battle.pkb-entry-slow .side.left { position:relative; z-index:7; } /* phone landscape: the X is in the left column */
+  /* Between battles back to back (fadeScreen): the loading ball over the black, without its own background */
+  .poke-battle .pkb-loading.pkb-veiled { background:transparent; }
 `;
 
 const VS_SVG = `<svg class="vs" viewBox="0 0 200 110" aria-hidden="true"><g transform="skewX(-10) translate(14 0)"
@@ -101,7 +103,6 @@ const VS_SVG = `<svg class="vs" viewBox="0 0 200 110" aria-hidden="true"><g tran
   <polygon points="0,4 30,4 50,66 70,4 100,4 64,106 36,106"/>
   <path d="M190 4 H118 L106 16 V52 L118 64 H160 V80 H104 V106 H178 L190 94 V58 L178 46 H136 V30 H190 Z"/></g></svg>`;
 
-// VS stamp sound (only when sound is on in the settings - runtime.js)
 export const STAMP_SOUND = 'se/hit_strong.wav';
 
 export function mountEntry(root, { kind = 'trainer', boss = false, named = null, names = {}, foeBlack = false, meBlack = true, reduced = false, start = performance.now(),
@@ -142,7 +143,6 @@ export function mountEntry(root, { kind = 'trainer', boss = false, named = null,
     ballIn.finished.then(() => root.classList.add('pkb-entry-slow'), () => {});
   };
 
-  // Clears the ball too at clear time (at). If not shown yet, it never shows
   const ballAway = at => {
     if (at > ballAt) tween(ball, [{ opacity: 1 }, { opacity: 0 }], at, ENTRY_MS.ballOut, 'ease', 'forwards');
     else ballIn?.cancel();
@@ -267,4 +267,25 @@ export async function backToChat(root) {
   await veil.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ENTRY_MS.exit, easing: 'ease-in', fill: 'forwards' }).finished;
   root.classList.add('pkb-clear');
   await veil.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ENTRY_MS.exit, easing: 'ease-out', fill: 'forwards' }).finished;
+}
+
+export function fadeScreen(screen, loading) {
+  const veil = document.createElement('div');
+  veil.className = 'pkb-between';
+  veil.style.cssText = 'position:absolute;inset:0;z-index:2;background:#000;pointer-events:none;opacity:0';
+  screen.insertBefore(veil, loading.element);
+  const fade = (from, to, easing) => veil.animate([{ opacity: from }, { opacity: to }], { duration: ENTRY_MS.between, easing, fill: 'forwards' }).finished;
+  return {
+    async out() {
+      await fade(0, 1, 'ease-in');
+      loading.element.classList.add('pkb-veiled');
+      loading.show();
+    },
+    async in() {
+      loading.hide();
+      loading.element.classList.remove('pkb-veiled');
+      await fade(1, 0, 'ease-out');
+      veil.remove();
+    },
+  };
 }

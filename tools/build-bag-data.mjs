@@ -1,5 +1,5 @@
 // from pokerogue locales/{ko,en}/*.json @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { LANGS } from '../director/lang.js';
@@ -9,7 +9,7 @@ const load = async path => JSON.parse(await readFile(new URL(path, PR), 'utf8'))
 
 const keys = {
 
-  battle: ['singleWildAppeared', 'pokemonCaught', 'pokemonBrokeFree', 'noPokeballTrainer', 'noPokeballForce', 'regainHealth', 'ppHealBerry'],
+  battle: ['singleWildAppeared', 'pokemonCaught', 'pokemonBrokeFree', 'noPokeballTrainer', 'noPokeballForce', 'noPokeballMulti', 'regainHealth', 'ppHealBerry'],
 
   'party-ui-handler': ['anyEffect', 'hasEnergy'],
   'status-effect': ['poison.heal', 'toxic.heal', 'paralysis.heal', 'sleep.heal', 'freeze.heal', 'burn.heal'],
@@ -54,7 +54,6 @@ const ITEM_FRAMES = {
   modestmint: 'mint_spatk', mildmint: 'mint_spatk', rashmint: 'mint_spatk', quietmint: 'mint_spatk',
   calmmint: 'mint_spdef', gentlemint: 'mint_spdef', carefulmint: 'mint_spdef', sassymint: 'mint_spdef',
   timidmint: 'mint_spd', hastymint: 'mint_spd', jollymint: 'mint_spd', naivemint: 'mint_spd', seriousmint: 'mint_neutral',
-
   // TMs: one per move type (the panel looks up tm_<type> by the move's type)
   ...Object.fromEntries(['normal', 'fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug', 'rock',
     'ghost', 'dragon', 'dark', 'steel', 'fairy'].map(type => [`tm_${type}`, `tm_${type}`])),

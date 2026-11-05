@@ -1,7 +1,6 @@
 export const UI_VARS = '--navy:#315a77; --navy-dark:#23435f; --red:#d8434d; --red-dark:#8e2835; --ink:#1d3347;'
   + ' --paper:linear-gradient(135deg,#ffffff 0%,#f3f8fc 55%,#e2eef7 100%); --red-fill:linear-gradient(to bottom,#ec5a64,#d8434d);';
 
-// Border, shadow and background of card-style windows (size and overflow set per use)
 export const CARD_FRAME = 'border:2.5px solid var(--navy); border-radius:12px; box-shadow:0 4px 0 var(--navy-dark); background:var(--paper);';
 
 export const BAND_CSS = `
@@ -25,3 +24,5 @@ export const rowButtonsCss = row => `
 
 export const crossIcon = (width = 2.6) =>
   `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="${width}" stroke-linecap="round"/></svg>`;
+
+export const stripX = label => `<button type="button" class="leave" aria-label="${label}" title="${label}">${crossIcon(2.6)}</button>`;

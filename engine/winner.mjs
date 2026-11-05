@@ -3,7 +3,8 @@ export function installWinner(battle) {
 	battle.win = function (side) {
 		const target = side && typeof side === 'string' ? this.getSide(side) : side && this.sides.includes(side) ? side : null;
 		const ended = win.call(this, side);
-		if (ended) this.storyWinner = target ? target.id : null;
+
+		if (ended) this.storyWinner = target ? (target.n % 2 ? 'p2' : 'p1') : null;
 		return ended;
 	};
 }

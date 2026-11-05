@@ -3,6 +3,7 @@ import { parseHealth } from './parse.js';
 import { sideOf, positionOf, fieldPositions, isIdent, identName, uidOf } from './read.js';
 import { pokemonName } from './bag.js';
 import { toID } from '../engine/mon.mjs';
+import { abilityTrigger } from './ability-trigger.js';
 
 const BOOSTS = ['atk', 'def', 'spa', 'spd', 'spe', 'accuracy', 'evasion'];
 
@@ -14,12 +15,14 @@ export function createLedger({ battle, names }) {
   const pokemon = new Map();
   const field = Object.fromEntries(fieldPositions(battle).map(position => [position, null]));
 
-  for (const [i, side] of ['player', 'enemy'].entries()) {
-    for (const p of battle.sides[i]?.pokemon ?? []) {
+  for (const [i, engineSide] of (battle.sides ?? []).entries()) {
+    const side = i % 2 ? 'enemy' : 'player';
+    for (const p of engineSide?.pokemon ?? []) {
       pokemon.set(p.m.uid, { uid: p.m.uid, side, speciesId: p.species.id, spriteId: p.species.spriteid, name: pokemonName(names, p),
         level: p.level, gender: p.gender || '', shiny: !!p.set.shiny, hp: p.hp, maxhp: p.maxhp, status: p.fainted ? '' : p.status || '',
         ball: p.pokeball, boosts: {}, substitute: false, semiInvulnerable: null, disabled: null, fainted: !!p.fainted,
-        ...(p.m.partner ? { partner: p.m.partner } : {}) });
+        ...(p.m.partner ? { partner: p.m.partner } : {}),
+        ...(p.m.trainer ? { trainer: p.m.trainer } : {}) });
     }
   }
   let current = null;
@@ -80,7 +83,6 @@ export function createLedger({ battle, names }) {
       break;
     }
     case 'replace': {
-
       // Illusion broken: the real look of the same Pokemon (uid). The engine does not attach HP
       const health = a[2] ?? `${entry.hp}/${entry.maxhp}${entry.status ? ` ${entry.status}` : ''}`;
       Object.assign(entry, monView(battle, names, a[0], a[1], health, entry.maxhp));
@@ -147,6 +149,9 @@ export function createLedger({ battle, names }) {
     }
     }
     if (entry) semiInvulnerable(event, entry);
+
+    const shown = abilityTrigger(event);
+    if (shown) get(shown.ident).abilityShown = true;
     return result;
   }
 
@@ -157,10 +162,11 @@ export function createLedger({ battle, names }) {
 
     atField,
 
-    // Whether ident's Pokemon is on the field now (false when benched)
     onField: ident => isIdent(ident) && Object.values(field).includes(get(ident).uid),
 
     positionOfUid: uid => Object.keys(field).find(position => field[position] === uid) ?? null,
+
+    abilityShown: uid => !!pokemon.get(uid)?.abilityShown,
 
     view: entry => Object.fromEntries(VIEW_KEYS.filter(key => entry[key] !== undefined).map(key => [key, entry[key]])),
   };

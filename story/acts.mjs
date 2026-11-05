@@ -9,11 +9,11 @@ import { boxOf } from './diary.mjs';
 import { itemId, customInfo } from './custom-items.mjs';
 import { say } from './screen-text.mjs';
 import { commandsIn } from './commands.mjs';
-import { answeredLine, ACT_PROMPT } from './act-prompts.mjs';
+import { answeredLine } from './act-prompts.mjs';
+import { dropTaken } from './compat.mjs';
 
 export const QUEUE_VAR = '$pkb_queue';
 
-// How long a plugin-inserted OOC goes to the AI (last n turns - counted in player messages)
 export const OOC_TURNS = 3;
 
 const tagText = tag => `<pkb#${tag}>`;
@@ -46,7 +46,6 @@ export function writeQueue(chat, queue) {
 const tagsInChat = chat => new Set((chat?.message ?? []).flatMap(m => findTags(m?.data ?? '').map(t => t.key)));
 
 export function runAction(state, action, ctx, { normalize = false } = {}) {
-
   // An action is all or nothing: if any op fails, nothing is applied
   let cur = state;
   const ops = [], steps = [], errors = [], notes = [];
@@ -133,7 +132,6 @@ export function attachQueue(chat, ctx, { salt = '', uptoIndex } = {}) {
   return tag;
 }
 
-// Next player message: the first player message after since that has no action tag yet. -1 if none
 export function nextOwnMessage(chat, queue = readQueue(chat), table = null) {
   const messages = chat?.message ?? [];
   if (!queue.actions.length || !queue.since) return -1;
@@ -226,7 +224,6 @@ export function eventOf({ op, before, after }, sim) {
     case 'noevolve': { const w = refWho(op.ref); return { kind: 'noevolve', who: w, species: pair(w)[0]?.pending?.evolve ?? null }; }
     case 'pp': return { kind: 'pp', who: refWho(op.ref), move: op.move ? toID(op.move) : null };
     case 'boxname': return { kind: 'boxname', box: Number(op.box), name: String(op.name ?? '').trim() };
-
     // Items outside battle: vitamins, Exp. Candy, Ability Capsule/Patch, Mints, Bottle Caps
     case 'evs': {
       const w = refWho(op.ref); const [b, a] = pair(w);
@@ -258,7 +255,6 @@ export function eventOf({ op, before, after }, sim) {
   }
 }
 
-// Action tags of a player message -> { events, errors } (null if no tags)
 export function actsIn(text, table) {
   const acts = findTags(text).map(t => table?.acts?.[t.key]).filter(Boolean);
   if (!acts.length) return null;
@@ -334,13 +330,13 @@ function guided(ooc, guide) {
 const END_SLOT = '\uE000';
 const oocEnd = text => text.replace(/\)(\s*(?:<\/pkb-story\s*>)?\s*)$/, `${END_SLOT})$1`);
 
-export function promptText(text, chat, table, { names = null, lang = 'ko', guide = null } = {}) {
+export function promptText(text, chat, table, { names = null, lang = 'ko', guide = null, commands: taking = false, moved = false } = {}) {
   const messages = chat?.message ?? [];
   let out = String(text ?? '');
   const latest = messages.findLastIndex(m => m?.role === 'user');
   const latestText = latest >= 0 ? String(messages[latest].data ?? '') : null;
 
-  const commands = ACT_PROMPT && latestText === String(text ?? '') ? commandsIn(messages[latest], latest) : [];
+  const commands = taking && latestText === String(text ?? '') ? commandsIn(messages[latest], latest) : [];
   const line = commands.length ? answeredLine(commands.every(block => block.own)) : null;
   let slot = !!line;
   const covered = coveredIn(chat);
@@ -361,7 +357,7 @@ export function promptText(text, chat, table, { names = null, lang = 'ko', guide
   else if (!own.length && latestText !== null && latestText === String(text ?? '') && nextOwnMessage(chat, readQueue(chat), table) === latest) {
     events = readQueue(chat).actions.flatMap(a => a.events ?? []);
   }
-  out = stripForPrompt(out);
+  out = stripForPrompt(moved ? dropTaken(out) : out);
   if (line) out = out.includes(END_SLOT) ? out.replace(END_SLOT, `\n${line}`) : `${out}\n(OOC: ${line})`;
   const log = pkbLog(events, { lang, en: names });
   return log ? `${out}\n${log}` : out;

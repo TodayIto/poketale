@@ -1,15 +1,16 @@
 // from pokerogue src/phases/encounter-phase.ts (doEncounter, doEncounterCommon) @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
 // from pokerogue src/phases/battle-phase.ts (hideEnemyTrainer) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/summon-phase.ts (preSummon's player ball throw) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/field/trainer.ts (sprites, tint/untint, playAnim) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/data/trainers/trainer-config.ts (loadAssets anims) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { tween, delay } from './lifetime.js';
 import { fieldAtlases, atlasJson, animFrames } from './field-atlases.js';
 import { PokemonSprite } from './sprites/pokemon.js';
 import { BattleInfo } from './ui/battle-info.js';
 import { checkPosition, teamOf, infoLayout } from './positions.js';
+import { setColorMatrix, BLACK } from './color-matrix.js';
 import { SHOWDOWN_TRAINER } from '../story/named.mjs';
 
 export const DEFAULT_TRAINER = 'ace_trainer_m';
@@ -28,18 +29,18 @@ export const showdownTrainerId = name => (typeof name === 'string' && name.start
 
 export const trainerKey = name => typeof name === 'string' ? name.trim().toLowerCase().replace(/\.(png|json)$/, '').replace(/[\s-]+/g, '_') : '';
 
-// Whether a sprite can be used as an enemy: any images/trainer sprite (except the player back sprites)
 export const isEnemyTrainer = (trainers, key) => !!trainers[key] && !/_back(_pb)?$/.test(key);
 
 export class BattleEncounter {
   constructor(scene) {
     this.scene = scene; this.diagnostics = [];
     this.enemyKey = DEFAULT_TRAINER; this.playerKey = PLAYER_TRAINERS[0]; this.enemyBlack = false; this.playerBlack = false;
+    this.enemyKey2 = null; this.enemyBlack2 = false;
     this.enemyTrainer = null; this.playerTrainer = null;
   }
 
-  async preload({ enemyTrainer, enemyBlack = false, playerTrainer, playerBlack = false } = {}) {
-    this.enemyBlack = enemyBlack; this.playerBlack = playerBlack;
+  async preload({ enemyTrainer, enemyBlack = false, playerTrainer, playerBlack = false, enemyTrainer2, enemyBlack2 = false } = {}) {
+    this.enemyBlack = enemyBlack; this.playerBlack = playerBlack; this.enemyBlack2 = enemyBlack2;
     const { trainers } = await fieldAtlases();
     const pick = (name, ok, fallback, what) => {
       if (name == null) return fallback;
@@ -49,8 +50,9 @@ export class BattleEncounter {
       return fallback;
     };
 
-    this.enemyKey = showdownTrainerId(enemyTrainer) ? enemyTrainer
-      : pick(enemyTrainer, key => isEnemyTrainer(trainers, key), DEFAULT_TRAINER, 'trainer');
+    const enemyPick = name => (showdownTrainerId(name) ? name : pick(name, key => isEnemyTrainer(trainers, key), DEFAULT_TRAINER, 'trainer'));
+    this.enemyKey = enemyPick(enemyTrainer);
+    this.enemyKey2 = enemyTrainer2 == null ? null : enemyPick(enemyTrainer2);
     this.playerKey = pick(playerTrainer, key => PLAYER_TRAINERS.includes(key) || ['m', 'f'].includes(key), PLAYER_TRAINERS[0], 'player trainer');
     if (['m', 'f'].includes(this.playerKey)) this.playerKey = `trainer_${this.playerKey}_back`;
     const enemy = enemyTrainer != null || this.scene.options.wild === false;
@@ -58,15 +60,19 @@ export class BattleEncounter {
   }
 
   async loadEnemy() {
-    const id = showdownTrainerId(this.enemyKey);
-    if (!id) return this.load(this.enemyKey);
+    await Promise.all([this.loadEnemyKey('enemyKey'), this.enemyKey2 ? this.loadEnemyKey('enemyKey2') : null]);
+  }
+
+  async loadEnemyKey(field) {
+    const id = showdownTrainerId(this[field]);
+    if (!id) return this.load(this[field]);
     try {
-      await this.loadShowdown(this.enemyKey, id);
+      await this.loadShowdown(this[field], id);
     } catch (error) {
       this.scene.assets.life.check();
       this.diagnostics.push(`showdown trainer unavailable: ${id} (${error?.message ?? error})`);
-      this.enemyKey = DEFAULT_TRAINER;
-      await this.load(this.enemyKey);
+      this[field] = DEFAULT_TRAINER;
+      await this.load(this[field]);
     }
   }
 
@@ -111,22 +117,31 @@ export class BattleEncounter {
   }
 
   makeFigure(key, x, y, shadow = null) {
+    const container = this.scene.add.container(x, y);
+    return { container, ...this.addFigure(container, key, 0, shadow) };
+  }
+
+  addFigure(container, key, x, shadow = null) {
     const s = this.scene;
-    const container = s.add.container(x, y);
-    const sprite = s.add.sprite(0, 0, key).setOrigin(0.5, 1);
-    const back = shadow ? s.add.sprite(shadow.x, shadow.y, key).setOrigin(0.5, 1).setTintFill(0).setAlpha(BLACK_SHADOW.alpha) : null;
-    if (back) sprite.preFX.addColorMatrix().brightness(0);
+    const sprite = s.add.sprite(x, 0, key).setOrigin(0.5, 1);
+    const back = shadow ? s.add.sprite(x + shadow.x, shadow.y, key).setOrigin(0.5, 1).setTintFill(0).setAlpha(BLACK_SHADOW.alpha) : null;
+    if (back) setColorMatrix(sprite, BLACK);
     const figures = back ? [back, sprite] : [sprite];
     container.add(figures);
-    return { container, sprite, figures };
+    return { sprite, figures };
   }
 
   makeEnemyTrainer() {
-    const s = this.scene, key = this.enemyKey;
-    const trainer = this.makeFigure(key, -72, 80, this.enemyBlack ? BLACK_SHADOW.enemy : null);
-    const tintSprite = s.add.sprite(0, 0, key).setOrigin(0.5, 1).setVisible(false);
-    trainer.container.add(tintSprite); trainer.figures.push(tintSprite);
-    return { ...trainer, tintSprite };
+    const s = this.scene, key = this.enemyKey, pair = !!this.enemyKey2;
+    const container = s.add.container(-72, 80);
+    const trainer = { container, ...this.addFigure(container, key, pair ? -4 : 0, this.enemyBlack ? BLACK_SHADOW.enemy : null) };
+    const tintSprite = s.add.sprite(pair ? -4 : 0, 0, key).setOrigin(0.5, 1).setVisible(false);
+    container.add(tintSprite); trainer.figures.push(tintSprite);
+    if (!pair) return { ...trainer, tintSprite };
+    const partner = { key: this.enemyKey2, ...this.addFigure(container, this.enemyKey2, 28, this.enemyBlack2 ? BLACK_SHADOW.enemy : null) };
+    partner.tintSprite = s.add.sprite(28, 0, this.enemyKey2).setOrigin(0.5, 1).setVisible(false);
+    container.add(partner.tintSprite); partner.figures.push(partner.tintSprite);
+    return { ...trainer, tintSprite, partner };
   }
 
   async encounter({ kind = 'trainer', enemy, others = [] } = {}) {
@@ -149,7 +164,7 @@ export class BattleEncounter {
     if (kind === 'trainer') {
       const trainer = this.enemyTrainer = this.makeEnemyTrainer();
       s.field.addAt(trainer.container, s.field.getIndex(player.container) + 1);
-      trainer.tintSprite.setTintFill(0).setVisible(true).setAlpha(0.5);
+      for (const tint of [trainer.tintSprite, trainer.partner?.tintSprite].filter(Boolean)) tint.setTintFill(0).setVisible(true).setAlpha(0.5);
       enemyTargets.push(trainer.container);
     } else {
 
@@ -168,11 +183,14 @@ export class BattleEncounter {
       tween(s, { targets: [arenaPlayer, player.container], x: `-=${ENTER_DISTANCE}`, duration: 2000 }),
     ]);
     if (kind === 'trainer') {
-      const { tintSprite, figures } = this.enemyTrainer;
+      const { tintSprite, figures, partner } = this.enemyTrainer;
 
-      for (const target of figures) if (this.scene.anims.exists(this.enemyKey)) target.play({ key: this.enemyKey, repeat: 0, startFrame: 0 });
-      await tween(s, { targets: tintSprite, alpha: 0, duration: 100, ease: 'Sine.easeOut' });
-      tintSprite.setVisible(false).setAlpha(1);
+      for (const [key, targets] of [[this.enemyKey, figures], ...(partner ? [[partner.key, partner.figures]] : [])]) {
+        for (const target of targets) if (this.scene.anims.exists(key)) target.play({ key, repeat: 0, startFrame: 0 });
+      }
+      const tints = [tintSprite, partner?.tintSprite].filter(Boolean);
+      await tween(s, { targets: partner ? tints : tintSprite, alpha: 0, duration: 100, ease: 'Sine.easeOut' });
+      for (const tint of tints) tint.setVisible(false).setAlpha(1);
     } else {
 
       for (const { position, mon } of wild) { s.audio.cry(mon).catch(() => {}); s.info[position].show().catch(() => {}); }
@@ -193,9 +211,12 @@ export class BattleEncounter {
     s.life.check();
     this.enemyTrainer?.container.destroy();
     const trainer = this.enemyTrainer = this.makeEnemyTrainer();
-    const last = s.anims.get(this.enemyKey)?.frames.at(-1)?.textureFrame;
-    if (last !== undefined) for (const target of trainer.figures) target.setFrame(last);
-    trainer.tintSprite.setVisible(false);
+
+    for (const [key, targets] of [[this.enemyKey, trainer.figures], ...(trainer.partner ? [[trainer.partner.key, trainer.partner.figures]] : [])]) {
+      const last = s.anims.get(key)?.frames.at(-1)?.textureFrame;
+      if (last !== undefined) for (const target of targets) target.setFrame(last);
+    }
+    trainer.tintSprite.setVisible(false); trainer.partner?.tintSprite.setVisible(false);
     const { container } = trainer;
     container.setPosition(container.x + ENTER_DISTANCE + TRAINER_STEP, container.y - TRAINER_STEP).setAlpha(0).setVisible(false);
     s.field.addAt(container, s.field.getIndex(s.biomeObjects[2]) + 1);

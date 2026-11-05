@@ -1,11 +1,11 @@
 // from pokerogue src/battle-scene.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
 // from pokerogue src/field/arena.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/field/arena-base.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/summon-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/switch-summon-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/faint-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/damage-anim-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 import Phaser from 'phaser';
 import { Assets, prefetchImages } from './assets.js';
 import { BattleAudio } from './audio.js';
@@ -74,13 +74,13 @@ export class BattleScene extends Phaser.Scene {
     this.encounter = new BattleEncounter(this);
     this.stopTapBack = installTapBack(this);
   }
-  async prepare({ mons, moves = [], biome, biomeProps, enemyTrainer, enemyBlack, playerTrainer, playerBlack, double = false }) {
+  async prepare({ mons, moves = [], biome, biomeProps, enemyTrainer, enemyBlack, playerTrainer, playerBlack, enemyTrainer2, enemyBlack2, double = false }) {
     this.double = !!double;
 
     const arena = biomeKey(biome) ?? DEFAULT_BIOME;
     if (biome != null && !biomeKey(biome)) this.assets.diagnostics.push({ unknownBiome: String(biome) });
     await Promise.all([this.assets.preload(mons, arena, this.double), loadFont(this.assets.base), this.audio.preload(mons), this.effects.preload(), this.tera.preload(), this.levels.preload(),
-      this.encounter.preload({ enemyTrainer, enemyBlack, playerTrainer, playerBlack }),
+      this.encounter.preload({ enemyTrainer, enemyBlack, playerTrainer, playerBlack, enemyTrainer2, enemyBlack2 }),
       this.assets.image('pb_particles', 'images/effects/pb_particles.png', BAG_ICONS.pb_particles)]);
     this.life.check();
     this.prefetched = null;
@@ -93,7 +93,6 @@ export class BattleScene extends Phaser.Scene {
 
   async warmUp() {
     this.requireReady();
-
     // With move animations off, anim files are not decoded (they never play - view/anims/player.js playFile)
     const files = !this.animations.enabled ? []
       : [...this.moves.flatMap(id => [moveFile(id), chargeFile(id)]), ...COMMON_ANIMS.map(name => `common-${name}.json`)].filter(hasAnimation);
@@ -107,10 +106,8 @@ export class BattleScene extends Phaser.Scene {
       ...this.mons.filter(mon => mon.side !== 'enemy').map(mon => this.assets.mon(mon, false))]).catch(() => {});
   }
 
-  // Positions of this battle: 'player', 'enemy' (+ 'player2', 'enemy2' in a double battle)
   get positions() { return fieldPositions(this.double); }
 
-  // Info box for a position (double layout: small player box, right-slot offset)
   makeInfo(side) { return new BattleInfo(this, isPlayerSide(side), infoLayout(this.double, side)); }
   async summon(side, mon, { fromBall = true, ball } = {}) {
     this.requireReady();
@@ -269,7 +266,6 @@ export class BattleScene extends Phaser.Scene {
     return this.messages.waitForInput();
   }
 
-  // After returning from the evolution screen, shows the ending text + down-arrow again (not awaited)
   showEnd() {
     if (!this.ending) throw new Error('Call end before showEnd');
     this.messages.bg.setVisible(true); this.messages.container.setVisible(true);

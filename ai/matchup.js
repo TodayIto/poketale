@@ -1,7 +1,8 @@
 // from pokerogue src/field/pokemon.ts, src/field/trainer.ts, src/data/arena-tag.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
 
 import table from './pokerogue-moves.json' with { type: 'json' };
+import { trainerOf } from '../engine/seats.mjs';
 
 const LEGENDARY = new Set(table.legendary);
 
@@ -68,16 +69,16 @@ export function hazardMultiplier(battle, pokemon) {
   return result;
 }
 
-// The part of canSetStatus(POISON, quiet) used for switch decisions: no status yet and not type-immune
 function canBePoisoned(pokemon) {
   return !pokemon.status && pokemon.runStatusImmunity('psn');
 }
 
-export function partyMatchupScores(battle, side, forSwitch) {
-  const opponents = side.foe.active.filter(p => p && !p.fainted && p.hp > 0);
+export function partyMatchupScores(battle, side, forSwitch, position = 0, taken = new Set()) {
+  const opponents = side.foes();
+  const trainer = trainerOf(side.active[position]);
   const scores = [];
   side.pokemon.forEach((pokemon, i) => {
-    if (pokemon.isActive || pokemon.fainted || pokemon.hp <= 0) return;
+    if (pokemon.isActive || pokemon.fainted || pokemon.hp <= 0 || trainerOf(pokemon) !== trainer || taken.has(i + 1)) return;
     let score = 0;
     if (opponents.length) {
       for (const opponent of opponents) {

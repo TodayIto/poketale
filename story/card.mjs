@@ -1,5 +1,5 @@
 import { namesIn } from '../names/index.js';
-import { PARTY_MAX } from './rules.mjs';
+import { PARTY_MAX, PAIR_TEAM_MAX } from './rules.mjs';
 import { WHAT, failureText } from './failure.mjs';
 import { say } from './screen-text.mjs';
 
@@ -12,7 +12,6 @@ const TIMES = new Set(['day', 'night']);
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '{': '&#123;', '}': '&#125;' };
 
-// Text safe for HTML + CBS.
 export const esc = value => String(value ?? '').replace(/[&<>"'{}]/g, c => ESC[c]);
 const safeKey = key => String(key ?? '').toLowerCase().replace(/[^a-z0-9]/g, '') || 'none';
 const safeUrl = url => (typeof url === 'string' && /^(https?:\/\/|data:image\/)/i.test(url.trim()) ? url.trim() : '');
@@ -27,14 +26,24 @@ const timeName = (time, lang) => (TIMES.has(time) ? say(lang, `time.${time}`) : 
 const speciesName = (species, lang) => namesIn(lang).species(species);
 const subLine = (spec, lang) => [placeName(spec.place, lang), timeName(spec.time, lang)].filter(Boolean).join(' · ');
 
+function wildPair(spec, lang) {
+  if (!spec?.wild || !(spec.team?.length > 1)) return null;
+  return { lead: say(lang, 'card.title.wildLead'), join: say(lang, 'card.title.wildJoin'),
+    mons: spec.team.slice(0, 2).map(m => ({ name: speciesName(m.species, lang), level: m.level })) };
+}
+
 export function battleTitle(spec, lang, { level = true } = {}) {
   if (!spec) return say(lang, 'card.title.battle');
   if (spec.wild) {
     const mon = spec.team?.[0];
     if (!mon) return say(lang, 'card.title.wildNone');
+    const pair = wildPair(spec, lang);
+    if (pair) return `${pair.lead} ${pair.mons.map(m => `${m.name}${level && m.level ? ` Lv${m.level}` : ''}`).join(` ${pair.join} `)}`;
     return `${say(lang, 'card.title.wild', { species: speciesName(mon.species, lang) })}${level && mon.level ? ` Lv${mon.level}` : ''}`;
   }
-  return spec.name || spec.trainerClass || say(lang, 'card.title.trainer');
+  const first = spec.name || spec.trainerClass || say(lang, 'card.title.trainer');
+
+  return spec.foePartner ? `${first} & ${spec.foePartner.name || say(lang, 'spec.foePartner')}` : first;
 }
 
 const LOOKS = {
@@ -47,7 +56,6 @@ const LOOKS = {
 };
 
 const band = (look, lang) => say(lang, `card.band.${look}`);
-
 // Result stamp colour per outcome (label: screen text card.outcome.<outcome>); stop = ended by the story
 const OUTCOME_CLS = { win: 'win', lose: 'lose', forfeit: 'gray', run: 'gray', capture: 'cap', stop: 'gray' };
 
@@ -83,7 +91,10 @@ export const CARD_CSS = [
   `.x-risu-pkb-l-error{color:#23435f;}`,
 
   `.x-risu-pkb-hd{display:flex;align-items:center;gap:7px;min-height:31px;padding:5px 8px 5px 11px;color:#fff;font-size:13px;background:var(--pkb-band);border-bottom:2.5px solid var(--pkb-edge);}`,
+  `.x-risu-pkb-hdt{flex:1 1 auto;min-width:0;}`,
   `.x-risu-pkb-hdr{margin-left:auto;font-size:12px;white-space:nowrap;}`,
+
+  `.x-risu-pkb-dbl{display:flex;flex:none;align-items:center;height:21px;padding:0 6px;border:1.5px solid var(--pkb-edge);border-radius:6px;background:#fff;color:var(--pkb-band);font-size:11.5px;line-height:1;box-shadow:0 1.5px 0 var(--pkb-edge);}`,
   `.x-risu-pkb-pb{display:inline-block;flex:none;width:15px;height:15px;border-radius:50%;border:1.5px solid #18242e;box-shadow:0 0 0 1.5px rgba(255,255,255,.75);background:radial-gradient(circle closest-side,#fff 0 26%,#18242e 26% 44%,transparent 44%),linear-gradient(to bottom,#e3343f 0 43%,#18242e 43% 57%,#fff 57%);}`,
   `.x-risu-pkb-bd{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;padding:11px 12px;}`,
   `.x-risu-pkb-tail{display:contents;}`,
@@ -101,10 +112,23 @@ export const CARD_CSS = [
   `.x-risu-pkb-facesheet span{position:absolute;display:block;overflow:hidden;}`,
   `.x-risu-pkb-facesheet img{position:absolute;max-width:none;max-height:none;object-fit:fill;margin:0;padding:0;}`,
   `.x-risu-pkb-dim{filter:grayscale(1);opacity:.7;}`,
+  `.x-risu-pkb-flip{transform:scaleX(-1);}`,
+
+  `.x-risu-pkb-face2{width:98px;}`,
+  `.x-risu-pkb-face2 .x-risu-pkb-facein{position:absolute;width:56px;height:64px;}`,
+  `.x-risu-pkb-f1{left:0;top:0;}`,
+  `.x-risu-pkb-f2{left:42px;top:8px;box-shadow:0 0 0 2px rgba(255,255,255,.92);}`,
   `.x-risu-pkb-info{flex:1 1 0;min-width:0;}`,
   `.x-risu-pkb-title{display:flex;align-items:center;flex-wrap:wrap;gap:2px 6px;font-size:15px;line-height:1.3;color:#14304a;}`,
   `.x-risu-pkb-l-locked .x-risu-pkb-title{color:#55636f;}`,
   `.x-risu-pkb-name{overflow-wrap:anywhere;}`,
+
+  `.x-risu-pkb-pair{display:flex;align-items:baseline;gap:0 .3em;min-width:0;}`,
+  `.x-risu-pkb-pair > :first-child{flex:none;white-space:nowrap;}`,
+  `.x-risu-pkb-units{display:flex;flex-wrap:wrap;min-width:0;}`,
+  `.x-risu-pkb-unit{white-space:nowrap;}`,
+  `.x-risu-pkb-lv{margin-left:1px;font-size:.65em;vertical-align:-.15em;}`,
+  `.x-risu-pkb-join{margin:0 .35em;}`,
   `.x-risu-pkb-badge{display:inline-block;flex:none;padding:0 5px;border-radius:4px;font-size:10px;line-height:16px;color:#fff;background:#d8434d;}`,
   `.x-risu-pkb-badgecls{color:#315a77;background:#e4edf4;box-shadow:inset 0 0 0 1px #a8bccc;}`,
   `.x-risu-pkb-sub{margin-top:2px;font-size:11px;color:#5d7486;}`,
@@ -115,17 +139,32 @@ export const CARD_CSS = [
   `.x-risu-pkb-ballst{background:radial-gradient(circle closest-side,#fff 0 24%,#18242e 24% 42%,transparent 42%),linear-gradient(to bottom,#ecbc2c 0 43%,#18242e 43% 57%,#fff8dc 57%);box-shadow:0 0 0 2px rgba(236,188,44,.45);}`,
   `.x-risu-pkb-ballft{border-color:#6f7a84;background:radial-gradient(circle closest-side,#e4e8eb 0 24%,#6f7a84 24% 42%,transparent 42%),linear-gradient(to bottom,#a3adb5 0 43%,#6f7a84 43% 57%,#dde2e6 57%);opacity:.9;}`,
   `.x-risu-pkb-ballnone{border:1.5px dashed #8ea5b7;background:rgba(255,255,255,.4);}`,
-  `.x-risu-pkb-l-locked .x-risu-pkb-ball{filter:grayscale(1);opacity:.6;}`,
+  `.x-risu-pkb-l-locked .x-risu-pkb-ball,.x-risu-pkb-l-locked .x-risu-pkb-ballsep{filter:grayscale(1);opacity:.6;}`,
+
+  `.x-risu-pkb-ballsep{flex:none;align-self:center;width:1.5px;height:14px;margin:0 2px;border-radius:1px;background:#a8bccc;}`,
   `.x-risu-pkb-rows{display:flex;flex-direction:column;gap:4px;margin-top:7px;}`,
   `.x-risu-pkb-row{display:flex;align-items:center;gap:4px;}`,
   `.x-risu-pkb-lbl{flex:none;width:26px;font-size:11px;color:#5d7486;}`,
-
   // Result stamp (lower part of the face, -14 deg, small)
   `.x-risu-pkb-stamp{position:absolute;left:50%;bottom:7px;z-index:1;padding:1px 6px;border:2.5px solid currentColor;border-radius:6px;font-size:13px;line-height:1.3;white-space:nowrap;background:rgba(255,255,255,.85);transform:translateX(-50%) rotate(-14deg);}`,
   `.x-risu-pkb-stwin{color:#c8302b;border-color:#d8a12a;}`,
   `.x-risu-pkb-stlose{color:#3e5468;}`,
   `.x-risu-pkb-stgray{color:#6b7a86;border-color:#8a97a2;}`,
   `.x-risu-pkb-stcap{color:#2f7a4c;}`,
+
+  `.x-risu-pkb-ally{display:flex;align-items:center;gap:5px;min-width:0;font-size:11.5px;line-height:1.3;color:#23435f;}`,
+  `.x-risu-pkb-allyface{position:relative;flex:none;width:22px;height:22px;border:1.5px solid #23435f;border-radius:50%;overflow:hidden;background:#dbe8f2;}`,
+  `.x-risu-pkb-allyface > img{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 0;image-rendering:pixelated;}`,
+  `.x-risu-pkb-allyface svg{display:block;width:100%;height:100%;}`,
+  `.x-risu-pkb-allyt{min-width:0;}`,
+  `.x-risu-pkb-nw{white-space:nowrap;}`,
+
+  `.x-risu-pkb-bdally{display:grid;grid-template-columns:auto 1fr 150px;align-items:center;row-gap:7px;}`,
+  `.x-risu-pkb-bdally > .x-risu-pkb-face{grid-column:1;grid-row:1 / span 2;}`,
+  `.x-risu-pkb-bdally > .x-risu-pkb-info{grid-column:2;grid-row:1 / span 2;}`,
+  `.x-risu-pkb-bdally > .x-risu-pkb-ally{grid-column:3;grid-row:1;align-self:end;}`,
+  `.x-risu-pkb-bdally .x-risu-pkb-act{grid-column:3;grid-row:2;align-self:start;}`,
+  `.x-risu-pkb-bdally .x-risu-pkb-err,.x-risu-pkb-bdally .x-risu-pkb-note{grid-column:1 / -1;}`,
 
   `.x-risu-pkb-act{flex:none;width:150px;display:flex;flex-direction:column;gap:7px;}`,
   `.x-risu-pkb-btn{position:relative;display:flex;align-items:center;justify-content:center;gap:5px;width:100%;margin:0;padding:8px 8px 7px;border:2px solid #922837;border-radius:9px;background:#e84d4d;color:#fff;font-family:inherit;font-weight:400;font-size:13px;line-height:1.25;letter-spacing:0;white-space:nowrap;box-shadow:0 3px 0 #922837;cursor:pointer;}`,
@@ -167,6 +206,21 @@ export const CARD_CSS = [
     + ` .x-risu-pkb-act > *{flex:1 1 0;min-width:0;}`
     + ` .x-risu-pkb-act > .x-risu-pkb-lock,.x-risu-pkb-act > .x-risu-pkb-duo{flex:1 1 100%;}`
     + ` .x-risu-pkb-act > .x-risu-pkb-sec{order:-1;}`
+
+    + ` .x-risu-pkb-bdally{grid-template-columns:auto 1fr auto;row-gap:0;}`
+    + ` .x-risu-pkb-bdally > .x-risu-pkb-face{grid-row:1 / span 3;}`
+    + ` .x-risu-pkb-bdally > .x-risu-pkb-info{display:contents;}`
+    + ` .x-risu-pkb-bdally .x-risu-pkb-info > *{grid-column:2;}`
+    + ` .x-risu-pkb-bdally .x-risu-pkb-info > .x-risu-pkb-title{grid-column:2 / 4;grid-row:1;}`
+    + ` .x-risu-pkb-bdally > .x-risu-pkb-ally{grid-column:3;grid-row:2 / span 2;}`
+    + ` .x-risu-pkb-bdally .x-risu-pkb-act{grid-column:1 / -1;grid-row:auto;margin-top:10px;}`
+    + ` .x-risu-pkb-bdally .x-risu-pkb-err,.x-risu-pkb-bdally .x-risu-pkb-note{margin-top:10px;}`
+    + ` .x-risu-pkb-allyt > span{display:block;}`
+    + ` .x-risu-pkb-allyt > .x-risu-pkb-allysep{display:none;}`
+
+    + ` .x-risu-pkb-l-progress .x-risu-pkb-bdally > .x-risu-pkb-ally{grid-column:2 / 4;grid-row:3;margin-top:6px;}`
+    + ` .x-risu-pkb-l-progress .x-risu-pkb-allyt > span{display:inline;}`
+    + ` .x-risu-pkb-l-progress .x-risu-pkb-allyt > .x-risu-pkb-allysep{display:inline;}`
     + ` }`,
 ].join(' ');
 
@@ -185,39 +239,53 @@ function silhouette(gender) {
   return `<svg viewBox="0 0 58 66" width="58" height="66" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${parts}</svg>`;
 }
 
-const FACE_W = 61, FACE_H = 69;
+const FACE_IN = [61, 69], PAIR_IN = [53, 61], ALLY_IN = [19, 19];
 const px = n => `${Math.round(n * 10) / 10}px`;
-function sheetFace({ url, rect }, alt) {
+
+function sheetFace({ url, rect }, alt, [boxW, boxH]) {
   const src = safeUrl(url);
   const [x, y, w, h, atlasW, atlasH] = Array.isArray(rect) ? rect.map(Number) : [];
   if (!src || ![x, y, w, h, atlasW, atlasH].every(Number.isFinite) || !(w > 0 && h > 0 && atlasW > 0 && atlasH > 0) || x < 0 || y < 0 || x + w > atlasW || y + h > atlasH) return '';
-  const k = Math.min(FACE_W / w, FACE_H / h);
-  const l = (FACE_W - w * k) / 2, t = 0;
+  const k = Math.min(boxW / w, boxH / h);
+  const l = (boxW - w * k) / 2, t = 0;
   return `<span style="left:${px(l)};top:${px(t)};width:${px(w * k)};height:${px(h * k)}">`
     + `<img src="${esc(src)}" alt="${esc(alt)}" loading="lazy" style="left:${px(-x * k)};top:${px(-y * k)};width:${px(atlasW * k)};height:${px(atlasH * k)}"></span>`;
 }
 
-function faceBox({ url, rect = null, sheet = null, trainer = false, black = false, gender = null, alt = '', dim = false, stamp = '' }) {
+function faceIn({ url, rect = null, sheet = null, trainer = false, black = false, gender = null, alt = '', dim = false, flip = false }, size = FACE_IN, cls = '') {
   const src = safeUrl(url);
-  const cut = src && trainer && rect ? sheetFace({ url: src, rect }, alt) : !src && sheet ? sheetFace(sheet, alt) : '';
+  const cut = src && trainer && rect ? sheetFace({ url: src, rect }, alt, size) : !src && sheet ? sheetFace(sheet, alt, size) : '';
   const inner = cut || (src
     ? `<img src="${esc(src)}" alt="${esc(alt)}" loading="lazy">`
     : silhouette(gender));
   const kind = cut ? 'x-risu-pkb-facesheet' : src ? (trainer ? 'x-risu-pkb-facetr' : 'x-risu-pkb-facemon') : '';
-  const cls = ['x-risu-pkb-facein', kind, black ? 'x-risu-pkb-faceblack' : '', dim ? 'x-risu-pkb-dim' : ''].filter(Boolean).join(' ');
-  return `<div class="x-risu-pkb-face"><div class="${cls}">${inner}</div>${stamp}</div>`;
+  const all = [cls || 'x-risu-pkb-facein', kind, black ? 'x-risu-pkb-faceblack' : '', dim ? 'x-risu-pkb-dim' : '', flip ? 'x-risu-pkb-flip' : ''].filter(Boolean).join(' ');
+  return `<div class="${all}">${inner}</div>`;
 }
 
-function opponentFace(view, lang, opts = {}) {
+function faceBox(first, second = null, stamp = '') {
+  if (!second) return `<div class="x-risu-pkb-face">${faceIn(first)}${stamp}</div>`;
+  return `<div class="x-risu-pkb-face x-risu-pkb-face2">${faceIn(first, PAIR_IN, 'x-risu-pkb-facein x-risu-pkb-f1')}${faceIn(second, PAIR_IN, 'x-risu-pkb-facein x-risu-pkb-f2')}${stamp}</div>`;
+}
+
+const trainerPicture = (face, alt) => ({ url: face?.trainerUrl, rect: face?.trainerRect, sheet: face?.trainerSheet, trainer: true, black: !!face?.trainerSilhouette,
+  gender: face?.trainerGender ?? null, alt: alt ?? '' });
+
+const samePicture = (a, b) => ['url', 'sheet', 'black', 'gender'].every(k => JSON.stringify(a[k] ?? null) === JSON.stringify(b[k] ?? null));
+
+function opponentFace(view, lang, { dim = false, stamp = '', species: shown } = {}) {
   const spec = view.spec;
-  if (!spec) return faceBox({ ...opts });
+  const mon = species => ({ url: species ? callUrl(view, species) : '', alt: species ? speciesName(species, lang) : '', dim });
+  if (!spec) return faceBox({ dim }, null, stamp);
   if (spec.wild) {
-    const species = opts.species ?? spec.team?.[0]?.species;
-    return faceBox({ url: species ? callUrl(view, species) : '', alt: species ? speciesName(species, lang) : '', ...opts });
+    const pair = wildPair(spec, lang);
+    if (pair) return faceBox(mon(spec.team[0].species), mon(spec.team[1].species), stamp);
+    return faceBox(mon(shown ?? spec.team?.[0]?.species), null, stamp);
   }
-  if (opts.species) return faceBox({ url: callUrl(view, opts.species), alt: speciesName(opts.species, lang), ...opts });
-  return faceBox({ url: view.faces?.trainerUrl, rect: view.faces?.trainerRect, sheet: view.faces?.trainerSheet, trainer: true, black: !!view.faces?.trainerSilhouette,
-    gender: view.faces?.trainerGender ?? null, alt: spec.name ?? '', ...opts });
+  const first = { ...trainerPicture(view.faces, spec.name), dim };
+  if (!spec.foePartner) return faceBox(first, null, stamp);
+  const second = { ...trainerPicture(view.faces?.foePartner, spec.foePartner.name), dim };
+  return faceBox(first, { ...second, flip: samePicture(first, second) }, stamp);
 }
 function callUrl(view, species) {
   try { return view.faces?.speciesUrl?.(species) ?? ''; } catch { return ''; }
@@ -227,10 +295,16 @@ const ball = state => {
   const extra = { ok: '', status: ' x-risu-pkb-ballst', fainted: ' x-risu-pkb-ballft', empty: ' x-risu-pkb-ballnone' }[state] ?? ' x-risu-pkb-ballnone';
   return `<span class="x-risu-pkb-ball${extra}"></span>`;
 };
-const balls = list => {
-  const slots = Array.from({ length: PARTY_MAX }, (_, i) => list?.[i] ?? 'empty');
-  return slots.map(ball).join('');
-};
+
+const slots = (list, n) => Array.from({ length: n }, (_, i) => ball(list?.[i] ?? 'empty')).join('');
+const balls = list => slots(list, PARTY_MAX);
+
+function foeBalls(spec, foes) {
+  if (!spec.foePartner) return balls(foes?.theirs);
+  return `${slots(foes?.theirs, PAIR_TEAM_MAX)}<span class="x-risu-pkb-ballsep"></span>${slots(foes?.foePartner, PAIR_TEAM_MAX)}`;
+}
+
+export const blockBalls = spec => ({ theirs: (spec.team ?? []).map(() => 'ok'), ...(spec.foePartner ? { foePartner: spec.foePartner.team.map(() => 'ok') } : {}) });
 
 export const ICON_PLANE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2.5 20.5 22 12 2.5 3.5l.02 6.6L16 12 2.52 13.9z"/></svg>';
 const ICON_X = '<svg viewBox="0 0 10 10" aria-hidden="true"><path stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M1.5 1.5l7 7M8.5 1.5l-7 7"/></svg>';
@@ -240,8 +314,9 @@ function btn(key, action, inner, { cls = '', label = '' } = {}) {
     + `${label ? ` aria-label="${esc(label)}" title="${esc(label)}"` : ''}>${inner}</button>`;
 }
 
-function header(lang, left, right = '', discardKey = null) {
-  return `<div class="x-risu-pkb-hd"><span class="x-risu-pkb-pb"></span><span>${esc(left)}</span>`
+function header(lang, spec, left, right = '', discardKey = null) {
+  return `<div class="x-risu-pkb-hd"><span class="x-risu-pkb-pb"></span><span class="x-risu-pkb-hdt">${esc(left)}</span>`
+    + (spec?.double ? `<span class="x-risu-pkb-dbl">${esc(say(lang, 'card.double'))}</span>` : '')
     + (right ? `<span class="x-risu-pkb-hdr">${esc(right)}</span>` : '')
     + (discardKey != null ? btn(discardKey, 'discard', ICON_X, { cls: 'x-risu-pkb-x', label: say(lang, 'card.discardLabel') }) : '') + '</div>';
 }
@@ -254,15 +329,31 @@ function titleRow(spec, lang) {
       badge = `<span class="x-risu-pkb-badge x-risu-pkb-badgecls">${esc(spec.trainerClass)}</span>`;
     }
   }
-  return `<div class="x-risu-pkb-title"><span class="x-risu-pkb-name">${esc(battleTitle(spec, lang))}</span>${badge}</div>`;
+  return `<div class="x-risu-pkb-title">${titleName(spec, lang)}${badge}</div>`;
+}
+
+function titleName(spec, lang) {
+  const pair = wildPair(spec, lang);
+  if (!pair) return `<span class="x-risu-pkb-name">${esc(battleTitle(spec, lang))}</span>`;
+  const unit = (m, i) => `<span class="x-risu-pkb-unit">${esc(m.name)}${m.level ? `<span class="x-risu-pkb-lv">Lv${esc(m.level)}</span>` : ''}`
+    + `${i < pair.mons.length - 1 ? `<span class="x-risu-pkb-join">${esc(pair.join)}</span>` : ''}</span>`;
+  return `<span class="x-risu-pkb-name x-risu-pkb-pair"><span>${esc(pair.lead)}</span><span class="x-risu-pkb-units">${pair.mons.map(unit).join('')}</span></span>`;
+}
+
+function partnerRow(view, lang) {
+  const partner = view.spec?.partner;
+  if (!partner) return '';
+  const who = [say(lang, 'card.partner'), partner.name].filter(Boolean).join(' ');
+  const mons = partner.team.map(m => `<span class="x-risu-pkb-nw">${esc(`${speciesName(m.species, lang)} Lv${m.level}`)}</span>`).join(', ');
+  return `<div class="x-risu-pkb-ally">${faceIn(trainerPicture(view.faces?.partner, partner.name), ALLY_IN, 'x-risu-pkb-allyface')}`
+    + `<span class="x-risu-pkb-allyt"><span class="x-risu-pkb-nw">${esc(who)}</span><span class="x-risu-pkb-allysep"> · </span><span>${mons}</span></span></div>`;
 }
 const subRow = (spec, lang) => {
   const sub = spec ? subLine(spec, lang) : '';
   return sub ? `<div class="x-risu-pkb-sub">${esc(sub)}</div>` : '';
 };
-
 // Ball row = number of opponent Pokemon (no opponent Pokemon list). Wild battles have no ball row
-const teamBalls = spec => (spec.wild ? '' : `<div class="x-risu-pkb-balls">${balls((spec.team ?? []).map(() => 'ok'))}</div>`);
+const teamBalls = spec => (spec.wild ? '' : `<div class="x-risu-pkb-balls">${foeBalls(spec, blockBalls(spec))}</div>`);
 
 function errorBox(errors, lang) {
   const items = (errors.length ? errors : [say(lang, 'card.unreadBlock')]).map(e => `<div>· ${esc(e)}</div>`).join('');
@@ -302,7 +393,6 @@ export function renderCardTail(view, lang) {
   } else {
     act = btn(key, 'open', t('card.open'));
   }
-
   // Popup over the card: discard? (red x); retry? (retry on a card whose story continued after the result)
   const ask = view.ask === 'discard'
     ? `<div class="x-risu-pkb-pop"><div class="x-risu-pkb-dlg"><div class="x-risu-pkb-ask">${t('card.discardAsk')}</div>`
@@ -323,7 +413,7 @@ export function renderBattleCard(view, lang) {
   const key = view?.key;
 
   if (!spec) {
-    return wrapCard('error', 'error', header(lang, say(lang, 'card.blockError'))
+    return wrapCard('error', 'error', header(lang, null, say(lang, 'card.blockError'))
       + `<div class="x-risu-pkb-bd">${errorBox(errors, lang)}</div>`);
   }
   if (status === 'discarded') return renderDiscarded(view, lang);
@@ -334,32 +424,34 @@ export function renderBattleCard(view, lang) {
 
     const p = view.progress ?? {};
     look = 'progress';
-    head = header(lang, band('progress', lang), '', discard);
+    head = header(lang, spec, band('progress', lang), '', discard);
     face = opponentFace(view, lang);
     info = titleRow(spec, lang) + `<div class="x-risu-pkb-rows"><div class="x-risu-pkb-row"><span class="x-risu-pkb-lbl">${esc(say(lang, 'card.mine'))}</span>${balls(p.mine)}</div>`
-      + `<div class="x-risu-pkb-row"><span class="x-risu-pkb-lbl">${esc(say(lang, 'card.theirs'))}</span>${balls(p.theirs)}</div></div>`;
+      + `<div class="x-risu-pkb-row"><span class="x-risu-pkb-lbl">${esc(say(lang, 'card.theirs'))}</span>${foeBalls(spec, p)}</div></div>`;
   } else if (status === 'done') {
 
     const r = view.result ?? {};
     const stamp = `<span class="x-risu-pkb-stamp x-risu-pkb-st${OUTCOME_CLS[r.outcome] ?? 'gray'}">${esc(outcomeLabel(r.outcome, lang))}</span>`;
     const species = spec.wild ? (r.faceSpecies ?? spec.team?.[0]?.species) : undefined;
     look = 'done';
-    head = header(lang, band('done', lang), !r.storyEnded && r.turns ? say(lang, 'card.turn', { n: r.turns }) : '');
+    head = header(lang, spec, band('done', lang), !r.storyEnded && r.turns ? say(lang, 'card.turn', { n: r.turns }) : '');
     face = opponentFace(view, lang, { stamp, species });
     info = titleRow(spec, lang) + subRow(spec, lang) + (r.storyEnded ? `<span class="x-risu-pkb-ended">${esc(say(lang, 'card.storyEnded'))}</span>` : '');
   } else if (status === 'locked') {
 
     look = 'locked';
-    head = header(lang, band('locked', lang), '', discard);
+    head = header(lang, spec, band('locked', lang), '', discard);
     face = opponentFace(view, lang, { dim: true });
     info = titleRow(spec, lang) + subRow(spec, lang) + teamBalls(spec);
   } else {
     look = spec.wild ? 'wild' : 'trainer';
-    head = header(lang, band(look, lang), '', discard);
+    head = header(lang, spec, band(look, lang), '', discard);
     face = opponentFace(view, lang);
     info = titleRow(spec, lang) + subRow(spec, lang) + teamBalls(spec);
   }
-  const body = `<div class="x-risu-pkb-bd">${face}<div class="x-risu-pkb-info">${info}</div>${tailBox(key, renderCardTail({ ...view, status, errors }, lang))}</div>`;
+  const ally = partnerRow(view, lang);
+  const body = `<div class="x-risu-pkb-bd${ally ? ' x-risu-pkb-bdally' : ''}">${face}<div class="x-risu-pkb-info">${info}</div>${ally}`
+    + `${tailBox(key, renderCardTail({ ...view, status, errors }, lang))}</div>`;
   return wrapCard(status, look, head + body, key);
 }
 

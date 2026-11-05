@@ -58,7 +58,6 @@ const SUBCLASSES = {
   SacrificialFullRestoreAttr: ['export class SacrificialFullRestoreAttr extends SacrificialAttr', () => ['SacrificialFullRestore']],
   MatchHpAttr: ['/*getUserBenefitScore(user: Pokemon, target: Pokemon, move: Move): number {', () => null],
 };
-
 // Decided by name alone, no arguments
 const SIMPLE = {
   HighCritAttr: 'HighCrit', CritOnlyAttr: 'CritOnly', TargetHalfHpDamageAttr: 'TargetHalfHp', SurviveDamageAttr: 'SurviveDamage',

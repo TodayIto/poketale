@@ -28,20 +28,29 @@ export function expForLevel(growth, level) {
 	throw new Error(`모르는 경험치 그룹 "${growth}"`);
 }
 
-// Level (1-100) for a total experience
 export function levelForExp(growth, exp) {
 	let level = 1;
 	while (level < MAX_LEVEL && expForLevel(growth, level + 1) <= exp) level++;
 	return level;
 }
 
+export const EXP_RATES = Object.freeze([0.5, 1, 1.5, 2, 3]);
+export const DEFAULT_EXP_RATE = 1;
+
+export const EXP_RATE_DIGITS = Object.freeze({ ints: 2, decimals: 1 });
+const RATE_SCALE = 10 ** EXP_RATE_DIGITS.decimals;
+export const EXP_RATE_MIN = 1 / RATE_SCALE;
+export const EXP_RATE_MAX = (10 ** (EXP_RATE_DIGITS.ints + EXP_RATE_DIGITS.decimals) - 1) / RATE_SCALE;
+
+export const isExpRate = value => typeof value === 'number' && value >= EXP_RATE_MIN && value <= EXP_RATE_MAX && Math.round(value * RATE_SCALE) / RATE_SCALE === value;
+
 const mod4096 = (value, numerator) => Math.floor((value * numerator + 2047) / 4096);
 
-export function calcExpGain({ baseExp, level, victorLevel, shared = false, luckyEgg = false, canEvolve = false, multipliers = [] }) {
+export function calcExpGain({ baseExp, level, victorLevel, shared = false, luckyEgg = false, canEvolve = false, multipliers = [], rate = DEFAULT_EXP_RATE }) {
 	const s = shared ? 2 : 1;
 	const base = Math.floor(baseExp * level / (5 * s));
 	let exp = Math.floor(base * ((2 * level + 10) / (level + victorLevel + 10)) ** 2.5) + 1;
-	for (const m of [...multipliers, luckyEgg ? 6144 : 4096, canEvolve ? 4915 : 4096]) exp = mod4096(exp, m);
+	for (const m of [...multipliers, luckyEgg ? 6144 : 4096, canEvolve ? 4915 : 4096, Math.round(rate * 4096)]) exp = mod4096(exp, m);
 	return exp;
 }
 
@@ -50,7 +59,7 @@ export function attachExperience(sim, battle, spec, { exp: table, levelUp }) {
 	if (!levelUp) throw new Error('경험치를 쓰려면 레벨업 기술 표(options.levelUp)도 필요합니다');
 
 	const effort = formatRules(sim, battle.format).effort && Array.isArray(table.effort);
-	const state = { sim, table, levelUp, effort, share: spec.expShare !== false, faced: new Map(), awarded: new Set(), learnQueue: [] };
+	const state = { sim, table, levelUp, effort, share: spec.expShare !== false, rate: spec.expRate ?? DEFAULT_EXP_RATE, faced: new Map(), awarded: new Set(), learnQueue: [] };
 	states.set(battle, state);
 	const [p1] = battle.sides;
 	const members = new Map(spec.p1.team.map(m => [m.uid, m]));
@@ -77,7 +86,7 @@ export function attachExperience(sim, battle, spec, { exp: table, levelUp }) {
 	};
 
 	battle.onEvent('Faint', battle.format, -1e9, function (target) {
-		if (target.side === battle.sides[1]) awardExperience(battle, state, target);
+		if (target.side.n % 2) awardExperience(battle, state, target);
 	});
 	return state;
 }
@@ -98,8 +107,8 @@ export function growthOf(table, species) {
 }
 
 function recordFacing(battle, state) {
-	const [p1, p2] = battle.sides;
-	for (const foe of p2.active) {
+	const p1 = battle.sides[0];
+	for (const foe of battle.sides.filter(side => side.n % 2).flatMap(side => side.active)) {
 		if (!foe || foe.hp <= 0) continue;
 		let set = state.faced.get(foe);
 		if (!set) state.faced.set(foe, set = new Set());
@@ -114,7 +123,6 @@ function awardExperience(battle, state, foe) {
 	const row = state.table.species[speciesOf(battle, foe).num];
 	if (!row) return;
 	const faced = state.faced.get(foe) || new Set();
-
 	// EVs first, then experience (gainEffort below - on level-up the new stats include this battle's EVs)
 	if (state.effort) {
 		const yieldOf = effortYield(state.table, speciesOf(battle, foe));
@@ -129,7 +137,7 @@ function awardExperience(battle, state, foe) {
 	for (const r of recipients) {
 		r.gain = calcExpGain({
 			baseExp: row[0], level: foe.level, victorLevel: r.pokemon.level, shared: !r.participant,
-			luckyEgg: r.pokemon.item === 'luckyegg', canEvolve: pastEvolutionLevel(battle, r.pokemon),
+			luckyEgg: r.pokemon.item === 'luckyegg', canEvolve: pastEvolutionLevel(battle, r.pokemon), rate: state.rate,
 		});
 	}
 	for (const { pokemon, gain, participant } of recipients) gainExperience(battle, state, pokemon, gain, participant);
@@ -163,7 +171,6 @@ export function effortYield(table, species) {
 	return Object.fromEntries(order.map((s, i) => [s, Number(digits[i]) || 0]));
 }
 
-// Adds EVs to pokemon.set.evs (held item modifiers and caps). Returns what was added { stat: amount }
 function gainEffort(pokemon, base) {
 	if (!base) return {};
 	const item = pokemon.item;
@@ -249,7 +256,6 @@ function refreshRequest(battle, side, pokemon) {
 	side.emitRequest(request);
 }
 
-// Pending move learning [{uid, move, level}]
 export function getLearnQueue(battle) {
 	return (states.get(battle)?.learnQueue || []).map(q => ({ uid: q.pokemon.m.uid, move: q.move, level: q.level }));
 }

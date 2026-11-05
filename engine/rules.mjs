@@ -1,7 +1,6 @@
 import { ppUpCount } from './pp.mjs';
 import { STATS, MAX_IV } from './mon.mjs';
 
-// Mainline rules: custom game (mainline level, IV and EV formulas, mainline PP Ups)
 export const MAINLINE_FORMAT = 'gen9customgame@@@!Team Preview';
 
 export const CHAMPIONS_FORMAT = 'gen9championscustomgame@@@!Team Preview,Level Clause Mod';
@@ -13,6 +12,29 @@ export function doublesFormat(format) {
 	const doubles = id.replace(/^gen9(champions)?customgame$/, 'gen9$1doublescustomgame');
 	if (doubles === id) throw new Error(`No double-battle format for ${format}`);
 	return rules === undefined ? doubles : `${doubles}@@@${rules}`;
+}
+
+export function multiFormat(sim, format) {
+	const [id, rules] = doublesFormat(format).split('@@@');
+	const multi = id.replace('doubles', 'multi');
+	const formats = sim.Dex.formats;
+	if (!formats.rulesetCache.has(multi)) {
+		const doubles = sim.Dex.data.Rulesets[id];
+		if (!doubles) throw new Error(`No doubles custom game for ${format}`);
+		const data = {
+			name: doubles.name.replace('Doubles', 'Multi'), mod: doubles.mod, gameType: 'multi', debug: doubles.debug, battle: doubles.battle,
+			ruleset: [...doubles.ruleset], banlist: [...doubles.banlist], restricted: [...doubles.restricted], unbanlist: [...doubles.unbanlist],
+			searchShow: false, section: doubles.section, column: doubles.column,
+		};
+
+		const made = new (formats.get(id).constructor)(data);
+		made.effectType = 'Format';
+		made.baseRuleset = data.ruleset.slice();
+		if (made.id !== multi) throw new Error(`Multi format id mismatch: ${made.id}`);
+		formats.rulesetCache.set(multi, made);
+		sim.Dex.data.Rulesets[multi] = { ...made, ruleTable: null };
+	}
+	return rules === undefined ? multi : `${multi}@@@${rules}`;
 }
 
 export const EV_STAT_MAX = 252, EV_TOTAL_MAX = 510;

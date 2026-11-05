@@ -1,10 +1,10 @@
 import { hashKey } from './blocks.mjs';
 import { hpPercentOf, trainersOf } from './state.mjs';
-import { createNamer } from './ai-names.mjs';
-import { outcomeText } from './prompts.mjs';
+import { createNamer, STATUS_EN, nicknamed, battleKind } from './ai-names.mjs';
+import { outcomeText, opponentText, partnerField, BACK_TO_BACK } from './prompts.mjs';
 import { COMPAT_VAR } from './compat.mjs';
 import { customText } from './custom-items.mjs';
-import { battleStatusLines, ACT_RULES, ACT_PROMPT } from './act-prompts.mjs';
+import { battleStatusLines, actRules } from './act-prompts.mjs';
 
 export const BATTLE_ENTRY = `@@depth 0
 
@@ -22,6 +22,11 @@ class: class
 rank: normal|boss
 place: place
 time: day|night
+format: single|double
+partner: name
+partner pokemon: Species Lv{n} | field value | …
+foe partner: name
+foe partner pokemon: Species Lv{n} | field value | …
 pokemon: Species Lv{n} | field value | …
 </pkb-battle>
 \`\`\`
@@ -31,7 +36,10 @@ pokemon: Species Lv{n} | field value | …
 - Give every Trainer a personal name, even minor ones (e.g., Bug Catcher Tim).
 - rank: boss for Gym Leaders, Elite Four members, Champions, and other climactic battles; otherwise normal.
 - place: One of: town, plains, grass, tall grass, metropolis, forest, sea, swamp, beach, lake, seabed, mountain, badlands, cave, desert, ice cave, meadow, power plant, volcano, graveyard, dojo, factory, ruins, wasteland, abyss, space, construction site, jungle, fairy cave, temple, slum, snowy forest, island, laboratory.
-- pokemon: One line per Pokémon in sending-out order; 1 for a wild Pokémon, up to 6 for a Trainer. Species and level are required. Optional fields: ability, moves, item, nature, gender, shiny, tera, nickname (in the story's language), hp (e.g., 60%), status (par, brn, slp, frz, psn, tox). Anything left out is filled in automatically.
+- format: double when two Pokémon on each side battle at once, such as a Double Battle or two wild Pokémon appearing together. Leave it out otherwise.
+- partner: The name of a Trainer fighting on {{user}}'s side (a Tag Battle), written like name. One partner pokemon line per Pokémon, up to 6.
+- foe partner: The name of a second Trainer fighting beside the opponent, such as the other of a pair of twins, written like name. One foe partner pokemon line per Pokémon, up to 3.
+- pokemon: One line per Pokémon in sending-out order; 1 for a wild Pokémon (2 in a double battle), up to 6 for a Trainer (3 when there is a foe partner). Species and level are required. Optional fields: ability, moves, item, nature, gender, shiny, tera, ivs (e.g., 6V or 31/31/31/31/31/0 in HP/Atk/Def/SpA/SpD/Spe order), nickname (in the story's language), hp (e.g., 60%), status (par, brn, slp, frz, psn, tox). Anything left out is filled in automatically.
 - Use official English names for species, moves, items, abilities, and natures.
 
 ### Battle Results
@@ -89,7 +97,7 @@ teach: #N Move | #N Move forget Move
 - Output only the lines that apply, one change per line.
 - #N is the number in Current Party; box N is the number in Current Storage.
 - HP is a percentage of max HP; 0% means fainted. Status is Normal, Paralyzed, Burned, Asleep, Frozen, Poisoned, Badly Poisoned, or Fainted.
-- add: A new Pokémon joins {{user}}; it goes to storage when the party is full or with box. Its ability, moves, and other details are filled in automatically.
+- add: A new Pokémon joins {{user}}; it goes to storage when the party is full or with box. It takes the same optional fields as a Battle Block pokemon line; anything left out is filled in automatically.
   ot is the original trainer's name, only when {{user}} receives a Pokémon someone else raised (e.g., a trade).
 - heal: Restores HP fully or by a percentage, cures status only, or revives a fainted Pokémon (e.g., a Pokémon Center visit → heal: all).
 - teach: Adds a move; with forget, it replaces that move. Without forget, {{user}} chooses later which move to forget.
@@ -106,7 +114,6 @@ add: Pidgey Lv7
 </pkb-change>
 \`\`\``;
 
-// One "### name" section of an entry text, heading included, up to the next "### " heading
 const section = (text, name) => {
   const start = text.indexOf(`### ${name}\n`);
   const next = text.indexOf('\n### ', start + 1);
@@ -136,7 +143,6 @@ export function setLore(chat, on, { newId = newUuid } = {}) {
   const before = chat.localLore ?? [];
   chat.localLore = on ? [...before.filter(entry => !isFixed(entry)), ...LORE_ENTRIES.map((e, i) => ({ key: '', secondkey: '', insertorder: LORE_INSERT_ORDER - i, comment: e.comment, mode: 'normal',
     alwaysActive: true, selective: false, useRegex: false, id: newId(), content: e.content }))] : before.filter(entry => !isOurs(entry));
-
   // Compatibility-mode marker: entries wrapped in the bot card (story/compat.mjs) are dropped in this chat
   chat.scriptstate ??= {};
   if (on) chat.scriptstate[COMPAT_KEY] = '1';
@@ -183,19 +189,25 @@ export function writeTrainerLore(chat, entries, { newId = newUuid } = {}) {
 }
 
 export const VARS = { party: '$pkb_party', storage: '$pkb_storage', bag: '$pkb_bag' };
-const STATUS_EN = { '': 'Normal', par: 'Paralyzed', brn: 'Burned', slp: 'Asleep', frz: 'Frozen', psn: 'Poisoned', tox: 'Badly Poisoned', fnt: 'Fainted' };
+
+const KIND_LABEL = { double: ['Double Battle'], tag: ['Tag Battle'] };
 
 export function varTexts(state, { sim, battle = null, lang = 'ko', en = null } = {}) {
   const namer = createNamer({ lang, en });
   const item = id => customText(state, id) ?? namer.items(id);
   const party = [];
   if (battle) {
-    const opponent = battle.wild ? `Wild ${namer.species(battle.species)}${battle.level ? ` Lv${battle.level}` : ''}` : battle.opponent || 'Trainer';
-    if (battle.pending) party.push(`[Battle Pending | Opponent: ${opponent}]`);
+    const { spec } = battle;
+    const opponent = `Opponent: ${opponentText(spec, namer)}`;
+    if (battle.pending) party.push(`[Battle Pending | ${opponent}]`);
     else {
-      party.push(`[Battle In Progress | Opponent: ${opponent}${Number.isInteger(battle.turn) && battle.turn > 0 ? ` | Turn: ${battle.turn}` : ''}]`);
+      const kind = battleKind(battle.now);
+      const turn = Number.isInteger(battle.turn) && battle.turn > 0 ? [`Turn: ${battle.turn}`] : [];
+      party.push(`[${['Battle In Progress', ...(KIND_LABEL[kind] ?? []), opponent, ...partnerField(spec, kind), ...turn].join(' | ')}]`);
 
-      if (battle.status && ACT_PROMPT) party.push(...battleStatusLines(battle.status, namer), ACT_RULES);
+      if (battle.stage > 1) party.push(BACK_TO_BACK.defeatedLine(spec, battle.stage));
+
+      if (battle.commands && battle.now) party.push(...battleStatusLines(battle.now, namer, spec), actRules(battle.now));
     }
   }
   (state?.party ?? []).forEach((mon, i) => {
@@ -210,7 +222,7 @@ export function varTexts(state, { sim, battle = null, lang = 'ko', en = null } =
     party.push(`[${fields.join(' | ')}]`);
   });
   if (!(state?.party ?? []).length) party.push('[Own Pokémon | None]');
-  const storage = (state?.box ?? []).map((mon, i) => `${i + 1}: ${mon.set.name ? `${mon.set.name} the ` : ''}${namer.species(mon.set.species)}`);
+  const storage = (state?.box ?? []).map((mon, i) => `${i + 1}: ${nicknamed(mon.set.name, namer.species(mon.set.species))}`);
   const items = Object.entries(state?.bag ?? {}).filter(([, n]) => n > 0).map(([id, n]) => `${item(id)} ×${n}`);
   return {
     party: party.join('\n'),

@@ -1,6 +1,5 @@
 import { rgbaBounds, unionBounds } from './placement.js';
 import { opaquePixels, median } from './pixels.js';
-import { LoadError, missingFile } from '../retry.js';
 import { FEMALE_SPRITES } from './showdown-female.js';
 
 const ROOT = 'https://play.pokemonshowdown.com/sprites/';
@@ -9,15 +8,13 @@ const FEMALE = Object.fromEntries(Object.entries(FEMALE_SPRITES).map(([set, side
 
 export const femaleSprite = (mon, back, set) => mon.gender === 'F' && FEMALE[set][back ? 'back' : 'front'].has(mon.spriteId.replaceAll('-', ''));
 
-// Whether this mon/direction can get a sprite different from the male one (splits the sprite cache key)
 export const hasFemaleSprite = (mon, back) => femaleSprite(mon, back, 'ani') || femaleSprite(mon, back, 'gen5');
 
-export function spriteCandidates(mon, back) {
+export function showdownUrl(mon, back, set) {
   if (!/^[a-z0-9-]+$/.test(mon.spriteId)) throw new Error(`Invalid spriteId: ${mon.spriteId}`);
   const suffix = `${back ? '-back' : ''}${mon.shiny ? '-shiny' : ''}`;
-  const name = set => `${mon.spriteId}${femaleSprite(mon, back, set) ? '-f' : ''}`;
-  return [`ani${suffix}/${name('ani')}.gif`, `gen5ani${suffix}/${name('gen5')}.gif`, `gen5${suffix}/${name('gen5')}.png`]
-    .map(path => ROOT + path);
+  const name = `${mon.spriteId}${femaleSprite(mon, back, set === 'ani' ? 'ani' : 'gen5') ? '-f' : ''}`;
+  return `${ROOT}${set}${suffix}/${name}.${set === 'gen5' ? 'png' : 'gif'}`;
 }
 
 export function imageKind(bytes) {
@@ -104,54 +101,30 @@ export function canvasMetrics(canvas) {
   return { bounds: rgbaBounds(data, width, height), opaquePixels: opaquePixels(data) };
 }
 
-const CACHE_SIZE = 24;
-const cache = new Map();
-
-export async function loadShowdown(assets, mon, back, key) {
-  const candidates = spriteCandidates(mon, back), id = candidates[0];
-  const hit = cache.get(id);
-  if (hit) {
-    cache.delete(id); cache.set(id, hit);
-    return showdownSprite(assets, mon, back, key, hit.url, hit.bytes, [], true);
-  }
-  const failures = [];
-  for (const url of candidates) {
-    let bytes;
-    try { bytes = await assets.fetchBytes(url); }
-    catch (error) {
-      assets.life.check();
-      failures.push({ url, error: String(error.message ?? error) });
-
-      if (missingFile(error)) continue;
-      break;
-    }
-    try {
-      assets.life.check();
-      const result = await showdownSprite(assets, mon, back, key, url, bytes, failures, false);
-      cache.set(id, { url, bytes });
-      if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value);
-      return result;
-    } catch (error) {
-      assets.life.check();
-      failures.push({ url, error: String(error.message ?? error) });
-    }
-  }
-  throw new LoadError(`No Showdown sprite for ${mon.spriteId}: ${JSON.stringify(failures)}`);
+async function imageGrid(assets, src) {
+  const img = await assets.loadImage(src);
+  const grid = { ...frameGrid(img.width, img.height, 1), durations: [100] };
+  grid.context.drawImage(img, 0, 0);
+  return grid;
 }
 
-async function showdownSprite(assets, mon, back, key, url, bytes, failures, cached) {
+export async function showdownSprite(assets, mon, back, key, url, bytes, failures, cached) {
   const kind = imageKind(bytes);
   const png = url.endsWith('.png');
   if (kind !== (png ? 'image/png' : 'image/gif')) throw new Error('Unexpected image signature (404 or non-image response)');
   let grid;
   if (png) {
     const objectUrl = URL.createObjectURL(new Blob([bytes], { type: kind }));
-    try {
-      const img = await assets.loadImage(objectUrl);
-      grid = { ...frameGrid(img.width, img.height, 1), durations: [100] };
-      grid.context.drawImage(img, 0, 0);
-    } finally { URL.revokeObjectURL(objectUrl); }
+    try { grid = await imageGrid(assets, objectUrl); } finally { URL.revokeObjectURL(objectUrl); }
   } else grid = await decodeGif(bytes);
+  return sheetSprite(assets, mon, back, key, url, grid, failures, cached);
+}
+
+export async function imageSprite(assets, mon, back, key, url, failures) {
+  return sheetSprite(assets, mon, back, key, url, await imageGrid(assets, url), failures, false);
+}
+
+function sheetSprite(assets, mon, back, key, url, grid, failures, cached) {
   assets.life.check();
   const { width: w, height: h, durations } = grid;
   const metrics = frameMetrics(grid);

@@ -38,7 +38,7 @@ export function sendRange({ sent = { upto: -1 }, log = [], to = log.length, ende
 export function buildOoc(format, source, range, { screenFrom = 0, screenTo, lang = 'ko', en = null, guide = false } = {}) {
   const ended = !!source.result;
   const text = storyOoc(format, { battle: source.battle, result: source.result, ended, first: range.first, read: range.read,
-    screen: (source.screen ?? []).slice(screenFrom, screenTo), lang, en });
+    screen: (source.screen ?? []).slice(screenFrom, screenTo), stage: source.stage, lang, en });
   const span = turnSpan(range.read);
   return { text, info: { battle: source.key ?? '', turns: span ? [span.fromTurn, span.toTurn] : null, result: ended ? outcomeOf(source.result) : '', ...(guide ? { form: format } : {}) } };
 }

@@ -156,6 +156,10 @@ into `dist/poke-battle.js`, and this project does not relicense them.
   `gen5`, `trainers`, `itemicons-sheet.png`). These images are not covered by Pokémon Showdown's
   MIT code license; they belong to their respective owners (Nintendo, Creatures Inc.,
   GAME FREAK inc., and the sprite artists credited by Pokémon Showdown).
+- **PokéAPI sprites** — `https://raw.githubusercontent.com/PokeAPI/sprites/1dd55c0436d2a5b6e324c0b780e1b1b416fbfb64/sprites/pokemon/`:
+  Pokémon battle images, used when the animated Pokémon Showdown images are not available. These
+  images are not covered by the PokéAPI data license (section 1.7); they belong to their respective
+  owners (Nintendo, Creatures Inc., GAME FREAK inc.).
 
 ---
 

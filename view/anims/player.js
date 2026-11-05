@@ -1,5 +1,5 @@
 // from pokerogue src/data/battle-anims.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
 
 import Phaser from 'phaser';
 import { animation, moveFile } from './data.js';
@@ -7,6 +7,12 @@ import { framePosition } from './geometry.js';
 import { delay } from '../lifetime.js';
 import { LoadError } from '../retry.js';
 import { isPlayerSide, firstOnSide } from '../positions.js';
+import { setColorMatrix } from '../color-matrix.js';
+
+export function toneMatrix([r, g, b, gray]) {
+  const q = gray / 255, a = 1 - q;
+  return [a + .299*q,.587*q,.114*q,0,r, .299*q,a+.587*q,.114*q,0,g, .299*q,.587*q,a+.114*q,0,b, 0,0,0,1,0];
+}
 
 const PRIORITY = {
   0: ({ front }) => ['moveBelow', front],
@@ -155,12 +161,7 @@ export class AnimationPlayer {
           sprite.setAlpha((frame.opacity ?? 0) / 255).setVisible(!!frame.visible && (kind === 2 || shown[kind]));
           sprite.setBlendMode(frame.blendType === 1 ? Phaser.BlendModes.ADD : frame.blendType === 2 ? Phaser.BlendModes.DIFFERENCE : Phaser.BlendModes.NORMAL);
 
-          if (frame.tone?.some(Boolean)) {
-            if (!sprite.toneFX) sprite.toneFX = sprite.preFX.addColorMatrix();
-            const [r, g, b, gray] = frame.tone;
-            const q = gray / 255, a = 1 - q;
-            sprite.toneFX.set([a + .299*q,.587*q,.114*q,0,r, .299*q,a+.587*q,.114*q,0,g, .299*q,.587*q,a+.114*q,0,b, 0,0,0,1,0]);
-          } else if (sprite.toneFX) { sprite.preFX.remove(sprite.toneFX); sprite.toneFX = null; }
+          setColorMatrix(sprite, frame.tone?.some(Boolean) ? toneMatrix(frame.tone) : null);
           sprite.setData('locked', !!frame.locked);
           if (kind === 2 && priorities[i] !== frame.priority) { priorities[i] = frame.priority; setPriority(sprite, frame); }
         }
@@ -171,7 +172,6 @@ export class AnimationPlayer {
         if (frameMs) await delay(scene, frameMs);
         tail = Math.max(0, tail - 1);
       }
-
       // Fast sweep still presents one rendered state per variant; all data frames used the same renderer path.
       await delay(scene, frameMs ? tail * frameMs : 17);
       for (const error of await Promise.all(sounds)) if (error) throw error;

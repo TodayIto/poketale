@@ -1,19 +1,19 @@
 import * as sim from '../../engine/browser-engine.mjs';
 import { findBlocks, findTags, findMarks, markText, parseBattle, parseAct, actBlock, actsIn, hashKey, messageId, battlesIn, battlesInText, stripForPrompt } from '../../story/blocks.mjs';
-import { readTable, writeTable, tableStatus, createFolds, applyBattleResult, toEngineSpec, pruneTable, stateVars } from '../../story/state.mjs';
+import { readTable, writeTable, tableStatus, createFolds, applyBattles, toEngineSpec, pruneTable, stateVars, computeState, nextStageSpec, battlesBefore, stageOf, backToBack, battleRecord } from '../../story/state.mjs';
 import { unreadableLine, isUnreadable } from '../../story/stored.mjs';
 import { WHAT, failed, refused, failureNote, failureText, ruleText } from '../../story/failure.mjs';
 import { LOCK_FREE } from '../../story/panel.mjs';
-import { personaName } from './persona.js';
-import { renderBattleCard, renderCardTail, renderCollapsed, renderDiscarded, wrapRecent, renderStoryChip, battleTitle, SEND_MS } from '../../story/card.mjs';
+import { personaName, userName } from './persona.js';
+import { renderBattleCard, renderCardTail, renderCollapsed, renderDiscarded, wrapRecent, renderStoryChip, battleTitle, blockBalls, SEND_MS } from '../../story/card.mjs';
 import { MARK, surveyBattles, battlePhase, cardResult, setMark, setFollow, setOpenedAt, hasFollowMarks, findBlockMessage, removeResult, placeResult, resultPlace,
   lostResult, restoreResult, takeBackResult, putBackResult, undoable, storyEndFixes, recordStoryEnds, readLast, writeLast, findOocs, unwrapOocs } from '../../story/chat.mjs';
 import { chainFrom, nextUnplanned, rewindOf, addPlan, rewindPlans, tellPlans, untold } from '../../story/commands.mjs';
 import { failedLines, failedOoc, auxRequest, battleStatusLines } from '../../story/act-prompts.mjs';
-import { createNamer } from '../../story/ai-names.mjs';
+import { createNamer, battleKind } from '../../story/ai-names.mjs';
 import * as acts from '../../story/acts.mjs';
 import { renderDiary, resultEvents, renderForge, commandLines } from '../../story/diary.mjs';
-import { forgeKey, forgeAt, mayForge, forgeRequest, runForge, appendBattle, FORGE_MODE } from '../../story/forge.mjs';
+import { forgeKey, forgeAt, mayForge, forgeRequest, runForge, appendBattle, FORGE_MODE, withUserName } from '../../story/forge.mjs';
 import { showToast } from './toast.js';
 import { turnSpan } from '../../story/narrate.mjs';
 import { resultLine, RESULT_LINE_RE } from '../../story/prompts.mjs';
@@ -22,19 +22,20 @@ import { readSave, saveStatus, freshAttempt, retryAttempt, startSpec, setAuto, l
 import { sendRange, buildOoc, insertOoc, markOoc, oocAhead, replyTo, sendWait } from '../../story/send.mjs';
 import { withGuide } from '../../story/guide.mjs';
 import { setLore, loreInLine, varTexts, writeVars, trainerLore, writeTrainerLore } from '../../story/lore.mjs';
-import { applyCompat, compatLang, statusMoney } from '../../story/compat.mjs';
+import { applyCompat, compatLang, statusMoney, dropTaken } from '../../story/compat.mjs';
 import { victoryChoices } from '../../story/settlement.mjs';
 import { rerollSnapshot, restartSpec, snapshotResult } from '../../director/index.js';
+import { waitingTrainer } from '../../engine/core.mjs';
 import { loadLevelUp, EXP_TABLE } from './level-tables.js';
 import { createFetchBytes } from './fetch-bytes.js';
 import { showFrame, frameHidden } from './stage.js';
-import { DEFAULT_SETTINGS, settingsUnreadable, LANG_OPEN, hostLang, loadSettings, saveSettings, mountSettings, mountPreparing, botEnabled, botKey, botsSwitched, ruleFormat, lookOf, chosenGender, adoptOldLook } from './settings.js';
+import { DEFAULT_SETTINGS, settingsUnreadable, LANG_OPEN, hostLang, loadSettings, saveSettings, mountSettings, mountPreparing, botEnabled, botKey, botsSwitched, ruleFormat, lookOf, chosenGender, adoptOldLook, commandsOn, auxOn } from './settings.js';
 import { mountImportScreen } from './import-screen.js';
-import { makeDraft, importOffer, commitImport, commitDebugHeal, readImports, cancelImport, newMonDraft, currentMonDraft, DEBUG_KIND } from '../../story/import.mjs';
+import { makeDraft, importOffer, importTurn, handBack, commitImport, commitDebugHeal, readImports, cancelImport, inForce, newMonDraft, currentMonDraft } from '../../story/import.mjs';
 import { loadPicture, savePicture, adoptOldPicture, entryMe } from './my-picture.js';
 import { storyCss, sheetCss, SHEET_CLASS } from '../../story/style.mjs';
 import { cardBounds } from '../../story/named.mjs';
-import { opponentPicture, opponentGender } from '../../story/trainer-look.mjs';
+import { opponentPictureWithGender, foePartnerPicture, partnerPicture } from '../../story/trainer-look.mjs';
 import { DEFAULT_ASSET_BASE } from '../../view/assets.js';
 import { battleNamesIn } from './names.js';
 import { say } from '../../story/screen-text.mjs';
@@ -54,7 +55,6 @@ export const currentSettings = () => settings;
 
 export const currentLang = chat => (LANG_OPEN ? settings.lang ?? compatLang(chat) ?? hostLang() : 'ko');
 
-// The language now in the chat open now (for places that have no chat read)
 export const openLang = async () => currentLang((await sharedPass())?.chat);
 
 const battleLang = (origin, chat) => origin.lang ?? currentLang(chat);
@@ -100,6 +100,8 @@ function makePass(charIndex, chatIndex, chat, character, seq) {
     get text() { return memo('text', () => textKey(chat)); },
     get unreadable() { return memo('unreadable', () => unreadableChat(chat)); },
 
+    get moved() { return memo('moved', () => importTurn(chat).moved); },
+
     get texts() { return memo('texts', () => new Map((chat.message ?? []).map((m, i) => [String(m?.data ?? ''), i]))); },
 
     has(text) { return this.texts.has(text); },
@@ -108,7 +110,6 @@ function makePass(charIndex, chatIndex, chat, character, seq) {
 
     grows(text) { const bottom = String(chat.message?.at(-1)?.data ?? ''); return text.startsWith(bottom) && (bottom !== '' || quietIn(this.id) > 0); },
 
-    // Key the panel uses to decide on redrawing: message texts + our chat variable values as is
     get key() {
       return memo('key', () => JSON.stringify([this.id, this.text,
         Object.entries(chat.scriptstate ?? {}).filter(([k]) => k.startsWith('$pkb_')).sort(([a], [b]) => (a < b ? -1 : 1))]));
@@ -179,7 +180,7 @@ let auxFor = null;
 
 function auxSwitch(where) {
   const { key } = battleIn(where);
-  if (!settings.aux || !key) return null;
+  if (!auxOn(settings) || !key) return null;
   return { on: auxFor?.id === where.id && auxFor.key === key };
 }
 
@@ -259,12 +260,16 @@ function battleIn(where) {
 }
 
 function faces(spec, key, chat) {
-  const { face, sheet, silhouette } = opponentPicture(spec, pictureOptions(key, chat));
-  return { trainerUrl: face ? TRAINER(face) : undefined, trainerRect: face ? cardBounds(face) : null, trainerGender: opponentGender(spec, chat),
-    trainerSheet: sheet ? { url: `${DEFAULT_ASSET_BASE}images/trainer/${sheet.key}.png`, rect: sheet.rect } : undefined,
-    trainerSilhouette: silhouette,
+  const options = pictureOptions(key, chat);
+  return { ...trainerFace(opponentPictureWithGender(spec, options)),
+    ...(spec?.foePartner ? { foePartner: trainerFace(foePartnerPicture(spec, options)) } : {}),
+    ...(spec?.partner ? { partner: trainerFace(partnerPicture(spec)) } : {}),
     speciesUrl: species => SPRITE(sim.Dex.species.get(species).spriteid) };
 }
+const trainerFace = ({ face, sheet, silhouette, gender }) => ({ trainerUrl: face ? TRAINER(face) : undefined,
+  trainerRect: face ? cardBounds(face) : null, trainerGender: gender ?? null,
+  trainerSheet: sheet ? { url: `${DEFAULT_ASSET_BASE}images/trainer/${sheet.key}.png`, rect: sheet.rect } : undefined,
+  trainerSilhouette: silhouette });
 
 const pictureOptions = (key, chat) => ({ key, silhouette: settings.silhouette, chat });
 
@@ -285,11 +290,15 @@ async function personaLook() {
 }
 
 const ballOf = mon => (mon.fainted || mon.hp === 0 ? 'fainted' : mon.status && mon.status !== 'fnt' ? 'status' : 'ok');
-const ballsOf = side => (side?.team ?? []).map(ballOf);
-function progressBalls(progress) {
-  const sides = progress?.result?.sides ?? progress?.sides;
-  if (!Array.isArray(sides)) return undefined;
-  return { mine: ballsOf(sides.find(s => s.id === 'p1') ?? sides[0]), theirs: ballsOf(sides.find(s => s.id === 'p2') ?? sides[1]) };
+const ballsOf = team => (team ?? []).map(ballOf);
+const teamOf = (result, id) => result.sides.find(s => s.id === id)?.team;
+
+function progressBalls(progress, origin) {
+  const result = progress?.result ?? progress;
+  if (!Array.isArray(result?.sides)) return undefined;
+  const foes = [...battlesBefore(origin.stage).map(b => ballsOf(teamOf(b.result, 'p2'))), ballsOf(teamOf(result, 'p2')),
+    ...(result.foePartner ? [ballsOf(result.foePartner)] : waitingTrainer(origin.stage) ? [blockBalls(origin.battle).foePartner] : [])];
+  return { mine: ballsOf(teamOf(result, 'p1')), theirs: foes[0], ...(foes[1] ? { foePartner: foes[1] } : {}) };
 }
 
 function cardView(pass, key, body) {
@@ -319,15 +328,18 @@ function cardView(pass, key, body) {
 
 const SHOWN_RESULT_RE = new RegExp(String.raw`\s*${RESULT_LINE_RE.source}(?=\s*<pkb#[a-z0-9]+>)`, 'g');
 
+const takenOut = (pass, text) => (pass.moved ? dropTaken(text) : text);
+
 async function onDisplay(text) {
   if (typeof text !== 'string') return undefined;
   if (/<(?:div|details)\b[^>]*\bclass=["'][^"']*\bx-risu-pkb-log(?:row)?\b/.test(text)) return undefined;
   if (!text.includes('<pkb')) return plainDisplay(text);
-  const shown = text.replace(SHOWN_RESULT_RE, '');
-  const found = findBlocks(shown), tags = findTags(shown), marks = findMarks(shown), stories = findOocs(shown);
-  if (!found.length && !tags.length && !marks.length && !stories.length) return plainDisplay(text);
+  const marked = text.replace(SHOWN_RESULT_RE, '');
+  if (!findBlocks(marked).length && !findTags(marked).length && !findMarks(marked).length && !findOocs(marked).length) return plainDisplay(text);
   const pass = await sharedPass(text);
   if (!isOn(pass)) return undefined;
+  const shown = takenOut(pass, marked);
+  const found = findBlocks(shown), tags = findTags(shown), marks = findMarks(shown), stories = findOocs(shown);
 
   const at = pass.at(text);
   const blocks = [...battlesInText(shown, messageId(pass.chat.message?.[at], at)), ...found.filter(b => b.kind !== 'battle')];
@@ -368,7 +380,8 @@ async function plainDisplay(text) {
   if (!isOn(pass)) return undefined;
   const lang = currentLang(pass.chat);
   const html = renderDiary({ forge: forgeSlot(pass, pass.at(text), text) }, lang, screenNames(lang));
-  return html ? withSheet(text.replace(/\s+$/, '') + html) : undefined;
+  const shown = takenOut(pass, text);
+  return html ? withSheet(shown.replace(/\s+$/, '') + html) : shown !== text ? shown : undefined;
 }
 
 const withSheet = (out, drew = true) => (sheetReady || !drew ? out : `${out.replace(/\s+$/, '')}\n\n<style>${storyCss({ scope: '' })}</style>\n\n`);
@@ -415,7 +428,6 @@ async function diaryHtml(text, pass, at) {
 
 let writes = Promise.resolve();
 
-// Runs work after every earlier write (our writes never overlap)
 function inLine(work) {
   const run = writes.then(work);
   writes = run.catch(() => {});
@@ -454,9 +466,14 @@ async function writeRecords(found, change, { vars, result: commits = false }) {
   return result;
 }
 
-async function clearDerived(found) {
-  if (setLore(found.chat, false)) await land(found, null);
+async function clearDerived(found, { messages = true } = {}) {
+  const lore = setLore(found.chat, false);
+  const ctx = messages && handsBack(found.chat) ? await storyCtx() : null;
+  const back = !!ctx && handBack(found.chat, computeState(found.chat, ctx).state, ctx, { lang: currentLang(found.chat) });
+  if (lore || back) await land(found, null);
 }
+
+const handsBack = chat => importTurn(chat).moved && !unreadableChat(chat) && !isUnreadable(settingsStatus);
 
 async function land(found, inLine) {
   await risuai.setChatToIndex(found.charIndex, found.chatIndex, found.chat);
@@ -720,7 +737,6 @@ async function showNotice(press, note) {
   await drawNotice(press, pass);
 }
 
-// Redraws the card's line from this read (its notice as it is now in notices)
 async function drawNotice(press, pass) {
   const view = viewFor(pass, press.key);
   if (view?.status === 'discarded') await swapCard(pass.id, press.key, drawnHtml(view), press.index);
@@ -793,7 +809,7 @@ async function forgeBattle(press, pass) {
     const asked = forgeRequest({ chat: pass.chat, key: press.key, quiet: !quietIn(pass.id), state: await pass.state(), sim, naming: naming(lang) });
     if (asked.why) throw failed(asked.why);
     await refreshForge(pass);
-    const made = await runForge(args => risuai.runLLMModel(args), asked.messages);
+    const made = await runForge(askAux, asked.messages);
     if (made.why) throw Object.assign(failed(made.why), { cause: made.error });
     const ctx = await storyCtx();
 
@@ -915,7 +931,7 @@ async function forfeitCard(press, pass) {
   }
   const { auto } = pass.save.attempt;
   const block = battleBlock(pass, press.key);
-  const origin = { ...pass.target, key: press.key, battle: parseBattle(block.body).spec, start: auto.spec.p1.team, phase: 'parked' };
+  const origin = { ...pass.target, key: press.key, battle: parseBattle(block.body).spec, stage: auto.spec, phase: 'parked' };
   const played = playedAt(auto, await storyCtx());
   await saveForfeit(origin, { turn: auto.turn, result: played?.result });
 }
@@ -973,6 +989,9 @@ async function prepareBattle(press, mode, retryOf, owner) {
 
   let from = null, start = null;
   let commands = null;
+
+  const first = mode === 'retry' ? startSpec(save, key) : null;
+  const restart = !!first && backToBack(first);
   if (mode === 'resume') {
     from = save.attempt.auto;
 
@@ -980,27 +999,24 @@ async function prepareBattle(press, mode, retryOf, owner) {
     if (chain?.entries.length) commands = (await planner()).commandQueue(chain.entries);
   }
   else if (mode === 'retry') {
-    from = retryAttempt(structuredClone(pass.chat), key, retryOf);
+    from = retryAttempt(structuredClone(pass.chat), key, retryOf, { restart });
 
     if (from) from = rerollSnapshot(from, freshSeed());
-    else start = startSpec(save, key);
+    else start = first;
   }
   const persona = await personaLook();
   let spec, startBalls = mode === 'resume' ? save.attempt.balls ?? undefined : undefined;
   if (!from) {
 
-    let forState = pass.chat;
-    if (mode === 'retry') { forState = structuredClone(pass.chat); removeResult(forState, key, pass.table); }
-
-    const { state } = acts.pendingState(forState, ctx);
+    const { state } = mode === 'retry' ? encounterBase(structuredClone(pass.chat), key, ctx, pass.table) : acts.pendingState(pass.chat, ctx);
     if (!state.party.length) throw failed('emptyParty');
     if (!state.party.some(m => m.hp !== 0)) throw failed('allFainted');
 
     const playerName = persona.name;
 
     spec = start ? restartSpec(start, freshSeed()) : toEngineSpec(state, battle, { ...ctx, playerName, lang: currentLang(pass.chat) },
-      { seed: freshSeed(), formatid: ruleFormat(settings.rule), expShare: settings.expShare, picture: pictureOptions(key, pass.chat), player: playerOptions(persona.look) });
-    startBalls = { mine: state.party.map(ballOf), theirs: battle.team.map(() => 'ok') };
+      { seed: freshSeed(), formatid: ruleFormat(settings.rule), expShare: settings.expShare, expRate: settings.expRate, picture: pictureOptions(key, pass.chat), player: playerOptions(persona.look) });
+    startBalls = { mine: state.party.map(ballOf), ...blockBalls(battle) };
   }
 
   const { difficulty } = settings;
@@ -1010,14 +1026,14 @@ async function prepareBattle(press, mode, retryOf, owner) {
   const { myPicture } = persona.look;
   const me = entryMe(myPicture, myPicture === 'image' ? await loadPicture(risuai.pluginStorage, persona.name) : null);
 
-  const origin = { ...pass.target, index: at, key, battle, startBalls, phase: 'starting', start: (spec ?? from?.spec)?.p1?.team ?? null, lang: currentLang(pass.chat) };
+  const origin = { ...pass.target, index: at, key, battle, startBalls, phase: 'starting', stage: spec ?? from.spec, lang: currentLang(pass.chat) };
   if (active) await parkActive();
 
   const markOpen = () => writeChat(origin, chat => {
     if (findBlockMessage(chat, key) < 0) throw failed('blockGone');
 
     if (mode === 'retry' && retryOf === 'record' && !mayUndo({ id: idOf(origin), chat }, key)) throw failed('storyOn');
-    if (mode === 'retry') { retryAttempt(chat, key, retryOf); if (from) setAuto(chat, key, from); }
+    if (mode === 'retry') { retryAttempt(chat, key, retryOf, { restart }); if (from) setAuto(chat, key, from); }
     else if (mode === 'new') freshAttempt(chat, key);
     setMark(chat, key, MARK.open);
 
@@ -1042,7 +1058,9 @@ async function prepareBattle(press, mode, retryOf, owner) {
 
       onSend: options => (origin.phase === 'saved' ? sendCommitted(origin, options) : sendLive(origin, options)),
       onRetry: () => retryFromEnd(origin, press),
-      onForfeit: progress => saveForfeit(origin, progress) },
+      onForfeit: progress => saveForfeit(origin, progress),
+      nextStage: ended => nextStage(origin, ended),
+      onStage: next => { origin.stage = next; } },
   });
   return { app, origin, markOpen };
 }
@@ -1059,6 +1077,19 @@ async function retryFromEnd(origin, press) {
   const took = await startBattle({ ...press, key: origin.key }, { mode: 'retry', retryOf: 'attempt', owner }).catch(error => { failure = error; return false; });
   if (!took) await hideWindow(owner).catch(() => {});
   if (failure) await onButtonError(press, failure);
+}
+
+function encounterBase(chat, key, ctx, table) {
+  removeResult(chat, key, table);
+  return acts.pendingState(chat, ctx);
+}
+
+async function nextStage(origin, { result, spec }) {
+  if (!waitingTrainer(spec)) return null;
+  const found = await locate(origin);
+  if (!found) throw failed('blockGone');
+  const ctx = await storyCtx();
+  return nextStageSpec(spec, result, encounterBase(structuredClone(found.chat), origin.key, ctx).state, ctx, { seed: freshSeed() });
 }
 
 async function finish(origin) {
@@ -1083,12 +1114,11 @@ async function collapse() {
   active.collapsed = true;
   active.app.pause();
   active.app.storyDot(false);
-  active.progress = progressBalls(active.app.progress()) ?? active.progress;
+  active.progress = progressBalls(active.app.progress(), active.origin) ?? active.progress;
   await hideWindow(active.window);
   await refreshCard(active.press).catch(() => {});
 }
 
-// Whether the battle's chat has its bot on (by the name last read for that bot)
 const battleOn = origin => isOn({ bot: botNames.get(origin.chaId) });
 
 async function fitActive() {
@@ -1164,17 +1194,20 @@ async function writeResult(origin, { outcome, result, apply }) {
     if (origin.phase === 'saved') return false;
     if (findBlockMessage(chat, origin.key) < 0) throw failed('blockGone');
     if (surveyBattles(chat, readTable(chat)).battles.get(origin.key)?.phase === 'story') { ended = true; return false; }
-    removeResult(chat, origin.key);
 
-    const { state: before, table, added } = acts.pendingState(chat, ctx);
+    const { state: before, table, added } = encounterBase(chat, origin.key, ctx);
 
-    const after = apply ? applyBattleResult(before, apply, ctx, { battle: origin.battle, outcome, start: origin.start }) : before;
+    const battles = [...battlesBefore(origin.stage), ...(apply ? [battleRecord(origin.stage, apply, outcome)] : [])];
+    const after = applyBattles(before, battles, ctx, { battle: origin.battle });
     const tag = hashKey(`${origin.key}:${Date.now()}`);
 
     const caughtMon = result.captured ? [...after.party, ...after.box].find(m => ![...before.party, ...before.box].some(b => b.uid === m.uid)) : null;
     const caught = caughtMon ? { species: caughtMon.set.species, storage: after.box.includes(caughtMon) ? after.box.indexOf(caughtMon) + 1 : null } : null;
-    const evolutions = (result.evolutions ?? []).filter(e => e?.evolved === true && !e.unsupported).map(e => ({ from: e.from, to: e.to, evolved: true }));
-    const line = resultLine({ outcome, battle: origin.battle, caught, evolutions, ...naming(battleLang(origin, chat)) });
+    const evolutions = [...battlesBefore(origin.stage).map(b => b.result), result].flatMap(r => r.evolutions ?? [])
+      .filter(e => e?.evolved === true && !e.unsupported).map(e => ({ from: e.from, to: e.to, evolved: true }));
+
+    const stages = backToBack(origin.stage) ? [...battlesBefore(origin.stage).map(b => outcomeOf(b.result)), outcome] : null;
+    const line = resultLine({ outcome, battle: origin.battle, kind: battleKind(apply), caught, evolutions, stages, ...naming(battleLang(origin, chat)) });
     const place = resultPlace(chat, placeResult(chat, { blockKey: origin.key, line, tag }));
     table.snaps[tag] = after;
 
@@ -1186,7 +1219,8 @@ async function writeResult(origin, { outcome, result, apply }) {
 
     writeLast(chat, { blockKey: origin.key, tag, outcome, battle: origin.battle, line, place,
       result: { turn: result.turn ?? 0, outcome: result.outcome ?? null, winner: result.winner ?? null, captured: result.captured ?? null,
-        forfeited: !!result.forfeited, playerName: result.sides?.[0]?.name ?? null, log: result.log ?? [], screen: result.screen ?? [], evolutions } });
+        forfeited: !!result.forfeited, playerName: result.sides?.[0]?.name ?? null, log: result.log ?? [], screen: result.screen ?? [], evolutions,
+        ...(stageOf(origin.stage) > 1 ? { stage: stageOf(origin.stage) } : {}) } });
     commitAttempt(chat, origin.key);
     return true;
   }, { vars: true, missing: true, result: true });
@@ -1211,10 +1245,11 @@ function battleForVars(where) {
   const survey = where.survey ?? surveyBattles(chat, readTable(chat));
   const save = 'save' in where ? where.save : readSave(chat);
   const now = battleIn({ id: where.id, seq: where.seq, chat, survey, save });
-  let key = now.key, turn = null, battle = null, pending = false;
-  if (now.phase === 'parked') turn = save.attempt.auto?.turn ?? null;
+  let key = now.key, turn = null, battle = null, pending = false, stage = 1;
+  if (now.phase === 'parked') { turn = save.attempt.auto?.turn ?? null; stage = stageOf(save.attempt.auto?.spec); }
   else if (key) {
     battle = active.origin.battle;
+    stage = stageOf(active.origin.stage);
     turn = (() => { try { return active.app.progress()?.turn ?? null; } catch { return null; } })();
   } else {
     key = [...survey.battles.values()].filter(info => !info.attempt && now.card(info.key) === 'ready').sort((a, b) => a.at - b.at).at(-1)?.key ?? null;
@@ -1226,17 +1261,15 @@ function battleForVars(where) {
     battle = block ? parseBattle(block.body).spec : null;
   }
   if (!battle) return null;
-  const mon = battle.team?.[0];
 
-  let status = null;
+  let result = null;
   if (!pending) {
     const chain = save?.attempt?.plans?.length ? chainIn({ id: where.id, seq: where.seq, chat, survey, save }) : null;
-    if (chain?.end) status = statusAt(chain.end);
-    else if (now.phase === 'parked') status = statusAt(save.attempt.auto);
-    else status = (() => { try { return active.app.progress()?.result ?? null; } catch { return null; } })();
+    const at = chain?.end ?? (now.phase === 'parked' ? save.attempt.auto : null);
+    if (at) turn = at.turn ?? turn;
+    result = at ? statusAt(at) : (() => { try { return active.app.progress()?.result ?? null; } catch { return null; } })();
   }
-  return { wild: !!battle.wild, opponent: battle.name || battle.trainerClass || '', species: mon?.species, level: mon?.level,
-    turn: status?.turn ?? turn, pending, ...(status ? { status } : {}) };
+  return { spec: battle, turn: result?.turn ?? turn, pending, ...(stage > 1 ? { stage } : {}), ...(result ? { now: result } : {}), ...(commandsOn(settings) ? { commands: true } : {}) };
 }
 
 const statusMemo = new Map();
@@ -1296,7 +1329,7 @@ function followMoves(pass) {
 }
 
 async function pendingFixes(pass) {
-  if (!isOn(pass)) return { lore: !loreInLine(pass.chat, false) };
+  if (!isOn(pass)) return { lore: !loreInLine(pass.chat, false), handBack: handsBack(pass.chat) };
   if (pass.unreadable) return {};
   const lore = !loreInLine(pass.chat, true);
   const { state, changed: fills } = await pass.computed();
@@ -1312,7 +1345,9 @@ async function pendingFixes(pass) {
 function playedAt(snapshot, ctx) {
   try {
     const result = snapshotResult(sim, snapshot, { levelUp: ctx.levelUp, exp: ctx.exp });
-    return { result, start: snapshot.spec.p1.team.map(({ uid, set, exp }) => ({ uid, set, exp })) };
+
+    const before = battlesBefore(snapshot.spec);
+    return { ...battleRecord(snapshot.spec, result), ...(before.length ? { before } : {}) };
   } catch (error) {
     if (!error?.unresumable) throw error;
     console.warn('[poke-battle] 이야기로 끝난 배틀의 자동 저장을 다시 넣지 못함', error);
@@ -1332,7 +1367,7 @@ function storyEndFailed(pass, key) {
   return !!auto && !canPlay(auto);
 }
 
-const MESSAGE_FIXES = ['follow', 'lost', 'ends'];
+const MESSAGE_FIXES = ['follow', 'lost', 'ends', 'handBack'];
 const needsWrite = (fixes, { messages = true } = {}) => Object.entries(fixes).some(([name, on]) => on && (messages || !MESSAGE_FIXES.includes(name)));
 
 function writeFixes(pass, fixes, { messages = true, attach = null } = {}) {
@@ -1354,7 +1389,7 @@ function writeFixes(pass, fixes, { messages = true, attach = null } = {}) {
         setFollow(chat, battleIn({ id: pass.id, chat }).key);
       }
     }, { vars: !!(fixes.vars || fixes.lore || (messages && (fixes.lost || fixes.ends))) });
-    if (wrote === HELD) await clearDerived(found);
+    if (wrote === HELD) await clearDerived(found, { messages });
     return { attached };
   });
 }
@@ -1371,20 +1406,20 @@ function sendPiece(chat, target, what) {
   const got = what(chat);
   if (!got) return null;
   const { source, at, notes = [] } = got;
-  const point = sentPoint(chat, key, { ended: at.ended });
+  const point = sentPoint(chat, key, { ended: at.ended, stage: source.stage });
   const range = sendRange({ sent: point, log: source.log ?? [], to: at.to, ended: at.ended });
 
   if (!range) {
     if (!notes.length) return null;
     const logEnd = point.logEnd ?? 0;
     return { text: failedOoc(notes), info: { battle: key, turns: null, result: '' },
-      send: { upto: Math.max(point.upto, 0), logFrom: logEnd, logEnd, screenEnd: point.screenEnd, ended: false, snapshot: at.snapshot ?? null } };
+      send: { upto: Math.max(point.upto, 0), logFrom: logEnd, logEnd, screenEnd: point.screenEnd, ended: false, snapshot: at.snapshot ?? null, stage: source.stage } };
   }
   const built = buildOoc(settings.sendFormat, { ...source, key }, range,
     { screenFrom: range.first ? 0 : point.screenEnd, screenTo: at.screenEnd, ...naming(battleLang(target, chat)), guide: settings.oocTrial });
   const text = notes.length ? built.text.replace(/\)$/, `\n${notes.join('\n')})`) : built.text;
   const upto = at.ended ? at.endTurn ?? 0 : turnSpan(range.read)?.toTurn ?? Math.max(point.upto, 0);
-  return { text, info: built.info, send: { upto, logFrom: range.from, logEnd: range.to, screenEnd: at.screenEnd, ended: at.ended, snapshot: at.snapshot ?? null } };
+  return { text, info: built.info, send: { upto, logFrom: range.from, logEnd: range.to, screenEnd: at.screenEnd, ended: at.ended, snapshot: at.snapshot ?? null, stage: source.stage } };
 }
 
 async function sendOnce(target, what, { onWait, acts: told = [] } = {}) {
@@ -1431,7 +1466,6 @@ async function sendChatOn(target, mark, lang) {
 
 const awaited = new Map();
 
-// The screen watch's look at this read for the replies awaited in its chat
 function seeReply(pass) {
   for (const [mark, id] of awaited) {
     if (id !== pass.id) continue;
@@ -1454,7 +1488,7 @@ function liveWhat(origin) {
   const screen = live.app.screen();
   const shown = Number.isInteger(progress.shown) ? progress.shown : progress.log.length;
   const snapshot = live.app.snapshot();
-  return () => ({ source: { battle: origin.battle, result: null, log: progress.log, screen: screen.lines },
+  return () => ({ source: { battle: origin.battle, result: null, log: progress.log, screen: screen.lines, stage: stageOf(origin.stage) },
     at: { to: shown, ended: false, screenEnd: screen.lines.length, snapshot } });
 }
 
@@ -1475,7 +1509,7 @@ function sendCommitted(target, options) {
     const info = surveyBattles(chat, readTable(chat)).battles.get(target.key);
     if (!last || last.blockKey !== target.key || info?.committed !== 'done' || info.result.tag !== last.tag) throw failed('noRecord');
     const screen = last.result.screen ?? [], log = last.result.log ?? [];
-    return { source: { battle: last.battle, result: last.result, log, screen },
+    return { source: { battle: last.battle, result: last.result, log, screen, stage: last.result.stage },
       at: { to: log.length, ended: true, endTurn: last.result.turn ?? 0, screenEnd: screen.length, snapshot: null } };
   }, options);
 }
@@ -1513,7 +1547,7 @@ async function autosave(origin, snapshot) {
   if (origin.phase !== 'running') return undefined;
   origin.autoLatest = snapshot;
   const live = active?.origin === origin ? active : null;
-  const balls = live ? progressBalls(live.app.progress()) : undefined;
+  const balls = live ? progressBalls(live.app.progress(), origin) : undefined;
   if (live && balls) live.progress = balls;
   return writeChat(origin, chat => origin.autoLatest === snapshot && origin.phase === 'running'
     && setAuto(chat, origin.key, snapshot, balls ?? live?.progress ?? null), { vars: true });
@@ -1546,7 +1580,7 @@ function chainIn(where) {
 
 async function checkPlans(pass) {
 
-  if (!pass.chat.message?.some(m => String(m?.data ?? '').includes('<pkb-act')) && !pass.save?.attempt?.plans?.length) return;
+  if (!(commandsOn(settings) && pass.chat.message?.some(m => String(m?.data ?? '').includes('<pkb-act'))) && !pass.save?.attempt?.plans?.length) return;
   let where = pass;
   for (let round = 0; round < PLAN_ROUNDS; round++) {
     if (!where || where.id !== pass.id || !isOn(where) || where.unreadable) return;
@@ -1565,7 +1599,7 @@ async function checkPlans(pass) {
 
       if (wrote === true && position.live && active?.key === position.key) await dropActive();
     } else {
-      const next = nextUnplanned(where.chat, attempt, position.point);
+      const next = commandsOn(settings) ? nextUnplanned(where.chat, attempt, position.point) : null;
       if (!next) return;
       const lang = langOf(where, position.key);
       const plan = await (await planner()).workOut(next.from, next.block.turns, { options: await planOptions(), lang });
@@ -1596,6 +1630,12 @@ async function replayPlanned() {
   return true;
 }
 
+function battleSpecOf(where, key) {
+  if (active?.key === key) return active.origin.battle;
+  const block = battleBlock(where, key);
+  return block ? parseBattle(block.body).spec : null;
+}
+
 async function plannedWhat(where, extra = null) {
   const chain = chainIn(where);
   if (!chain) return null;
@@ -1605,8 +1645,7 @@ async function plannedWhat(where, extra = null) {
   const end = extra?.to ?? chain.end;
   const lang = langOf(where, position.key);
   const read = await (await planner()).readAt(end, { options: await planOptions(), lang });
-  const block = battleBlock(where, position.key);
-  const battle = active?.key === position.key ? active.origin.battle : block ? parseBattle(block.body).spec : null;
+  const battle = battleSpecOf(where, position.key);
   const tell = untold(where.chat, rows);
   const notes = failedLines(tell, naming(lang));
 
@@ -1614,7 +1653,7 @@ async function plannedWhat(where, extra = null) {
   const what = chat => {
     const again = chainIn({ id: where.id, chat });
     if (!again || again.end?.check !== chain.end?.check || !samePoint(again.position.point, position.point)) return null;
-    return { source: { battle, result: over, log: read.log, screen: read.lines }, notes,
+    return { source: { battle, result: over, log: read.log, screen: read.lines, stage: stageOf(end.spec) }, notes,
       at: { to: read.log.length, ended: false, screenEnd: read.lines.length, snapshot: end } };
   };
   return { target: { ...where.target, key: position.key, lang }, what, acts: tell.map(row => row.act) };
@@ -1627,6 +1666,10 @@ function auxRecent(chat, n) {
   return (chat?.message ?? []).slice(-n).map(m => ({ role: m.role, text: stripForPrompt(unwrapOocs(m?.data ?? '')).slice(-AUX_CHARS) })).filter(m => m.text);
 }
 
+async function askAux(args) {
+  return risuai.runLLMModel({ ...args, messages: withUserName(args.messages, await userName(risuai)) });
+}
+
 async function auxCommand(pass, input) {
   const chain = chainIn(pass);
   const from = chain?.end ?? chain?.position.snapshot;
@@ -1634,10 +1677,11 @@ async function auxCommand(pass, input) {
   const lang = langOf(pass, chain.position.key);
   const plan = await planner();
   const options = await planOptions();
-  const status = battleStatusLines(statusAt(from), createNamer(naming(lang)));
-  const messages = auxRequest({ status, recent: auxRecent(pass.chat, settings.auxRecent ?? AUX_RECENT), input: String(input).slice(-AUX_CHARS) });
+  const now = statusAt(from);
+  const status = battleStatusLines(now, createNamer(naming(lang)), battleSpecOf(pass, chain.position.key));
+  const messages = auxRequest({ status, recent: auxRecent(pass.chat, settings.auxRecent ?? AUX_RECENT), input: String(input).slice(-AUX_CHARS), double: battleKind(now) !== 'single' });
   let answer;
-  try { answer = await risuai.runLLMModel({ messages, mode: FORGE_MODE, allowPlugins: true }); }
+  try { answer = await askAux({ messages, mode: FORGE_MODE, allowPlugins: true }); }
   catch (error) { console.warn('[poke-battle] 보조 모델이 명령을 뽑지 못함', error); return null; }
   const body = findBlocks(String(answer?.result ?? '')).find(b => b.kind === 'act')?.body;
   const turns = body ? parseAct(body).turns : [];
@@ -1687,7 +1731,7 @@ async function onInput(text) {
     const fixes = await pendingFixes(pass);
 
     if (!isOn(pass) || pass.unreadable) {
-      if (needsWrite(fixes)) await writeFixes(pass, fixes);
+      if (needsWrite(fixes, { messages: false })) await writeFixes(pass, fixes, { messages: false });
       return undefined;
     }
 
@@ -1723,8 +1767,8 @@ async function onPrompt(text) {
   const pass = await sharedPass(text);
   if (!isOn(pass)) return undefined;
 
-  if (!text.includes('<pkb') && !acts.readQueue(pass.chat).actions.length) return undefined;
-  return acts.promptText(text, pass.chat, pass.table, { names: dexName, lang: currentLang(pass.chat), guide: settings.oocTrial ? withGuide : null });
+  if (!text.includes('<pkb') && !acts.readQueue(pass.chat).actions.length && !(pass.moved && dropTaken(text) !== text)) return undefined;
+  return acts.promptText(text, pass.chat, pass.table, { names: dexName, lang: currentLang(pass.chat), guide: settings.oocTrial ? withGuide : null, commands: commandsOn(settings), moved: pass.moved });
 }
 
 let settingsApp;
@@ -1737,9 +1781,10 @@ export function saveSettingsInOrder(next) {
 
 export function changeSettings(next) {
   const switched = botsSwitched(settings, next);
+  const commands = commandsOn(settings) !== commandsOn(next);
   settings = next;
   changed();
-  if (switched.length) watchSoon();
+  if (switched.length || commands) watchSoon();
   return Promise.all(switched.map(s => reconcileBot(s.name, s.on)));
 }
 
@@ -1782,7 +1827,7 @@ let importApp;
 
 const importsOf = chat => {
   const { status, imports } = readImports(chat);
-  return { status, list: imports.filter(imp => imp.kind !== DEBUG_KIND).map(imp => ({ id: imp.id, time: imp.time, count: imp.mons.length })) };
+  return { status, list: imports.filter(imp => !imp.kind && inForce(imp)).map(imp => ({ id: imp.id, time: imp.time, count: imp.mons.length })) };
 };
 
 const importLock = (found, chat = found.chat) => { if (battleIn({ id: idOf(found.target), chat }).key) throw failed('inBattle'); };
@@ -1870,16 +1915,20 @@ const askedList = () => askedChats ??= (async () => {
 const importAllowed = x => isOn(x) && !x.unreadable && !battleIn(x).key;
 let offerSeen = null;
 
+const askedKey = (id, chat) => { const back = importTurn(chat).back; return back ? `${id}:${back.id}` : id; };
+
 async function offerOf(pass) {
   const allowed = importAllowed(pass);
   const key = JSON.stringify([pass.key, allowed]);
   if (offerSeen?.key !== key) offerSeen = { key, offer: !!importOffer(pass.chat, await pass.state(), await storyCtx(), { allowed }) };
-  return offerSeen.offer ? { note: !(await askedList()).includes(pass.id), button: true } : null;
+  return offerSeen.offer ? { note: !(await askedList()).includes(askedKey(pass.id, pass.chat)), button: true } : null;
 }
 
 async function markAsked(target) {
   const list = await askedList();
-  const id = idOf(target);
+  const found = await locate(target);
+  if (!found) return;
+  const id = askedKey(idOf(target), found.chat);
   if (list.includes(id)) return;
   list.push(id);
   list.splice(0, Math.max(0, list.length - ASKED_MAX));

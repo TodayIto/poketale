@@ -21,10 +21,13 @@ export function engineMember(mon, customItems = null) {
 const isCount = value => Number.isFinite(value) && value >= 0;
 
 export function checkSpec(dex, spec) {
-	for (const key of ['p1', 'p2']) {
+
+	const uidsOf = { p1: new Set(), p2: new Set() };
+	for (const [key, half] of [['p1', 'p1'], ['p2', 'p2'], ['partner', 'p1'], ['foePartner', 'p2']]) {
+		if (key.length > 2 && spec?.[key] === undefined) continue;
 		const team = spec?.[key]?.team;
 		if (!Array.isArray(team) || !team.length) throw new Error(`${key}: 팀이 비었습니다`);
-		const uids = new Set();
+		const uids = uidsOf[half];
 		team.forEach((member, i) => {
 			const where = `${key} ${i + 1}번째`;
 			const { uid, set } = member ?? {};

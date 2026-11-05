@@ -1,4 +1,5 @@
 import { moveTargets } from './targets.js';
+import { trainerOf } from '../engine/seats.mjs';
 
 export const isReviving = request => !!request?.forceSwitch && !!request.side?.pokemon?.some(p => p.active && p.reviving);
 
@@ -10,9 +11,11 @@ export function simpleAI(battle, sideId) {
 
   if (request?.forceSwitch) {
     const reviving = isReviving(request), used = new Set();
-    const picks = request.forceSwitch.map(asked => {
+    const picks = request.forceSwitch.map((asked, slot) => {
       if (!asked) return 'pass';
-      const index = request.side.pokemon.findIndex((p, i) => !used.has(i) && !p.active && / fnt$/.test(p.condition) === reviving);
+      const trainer = trainerOf(side.active[slot]);
+      const index = request.side.pokemon.findIndex((p, i) => !used.has(i) && !p.active && / fnt$/.test(p.condition) === reviving
+        && trainerOf(side.pokemon[i]) === trainer);
       if (index < 0) return 'pass';
       used.add(index);
       return `switch ${index + 1}`;
@@ -26,12 +29,6 @@ export function simpleAI(battle, sideId) {
     if (!pokemon || pokemon.fainted || !slot?.moves?.length) return 'pass';
     return moveChoice(battle, sideId, pokemon, slot.moves);
   }).join(', ');
-}
-
-// The move choice of one field position i ('move N [loc]') - a tag partner's command (director/double.js)
-export function slotMove(battle, sideId, i) {
-  const side = battle.getSide(sideId);
-  return moveChoice(battle, sideId, side.active[i], side.activeRequest.active[i].moves);
 }
 
 function moveChoice(battle, sideId, pokemon, moves) {

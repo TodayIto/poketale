@@ -1,4 +1,4 @@
-import { installBag, checkBagItem, chooseBagItem, BAG_ITEMS, isBall } from '../engine/bag.mjs';
+import { installBag, checkBagItem, chooseBagItem, chooseBagParts, BAG_ITEMS, isBall } from '../engine/bag.mjs';
 import { BALLS } from '../engine/capture.mjs';
 import catchRates from '../data/catch-rates.json' with { type: 'json' };
 import ko from './text-bag-ko.json' with { type: 'json' };
@@ -40,46 +40,51 @@ export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG 
     case 'semiinvulnerable': return { blocked: bagText('own.ballNoTarget', {}, lang) };
     case 'norate': case 'nofoe': return { blocked: bagText('battle.noPokeballForce', {}, lang) };
 
+    case 'twofoes': return { blocked: bagText('battle.noPokeballMulti', {}, lang) };
+
     default: return { blocked: bagText('party-ui-handler.anyEffect', {}, lang) };
     }
   };
 
   const targetKind = id => isBall(id) ? 'enemy' : BAG_ITEMS[id].boost || BAG_ITEMS[id].crit ? 'active' : 'party';
-  function itemView(id) {
-    const base = { id, name: names.item(id), count: counts.get(id), target: targetKind(id) };
-    if (base.target === 'enemy') return { ...base, ...reason(checkBagItem(battle, { item: id })) };
-    const active = side.active[0];
-    if (base.target === 'active') return { ...base, ...reason(checkBagItem(battle, { item: id, target: active.m.uid }), active) };
+
+  const left = (id, taken) => counts.get(id) - (taken?.get(id) ?? 0);
+  function itemView(id, position, taken) {
+    const base = { id, name: names.item(id), count: left(id, taken), target: targetKind(id) };
+    if (base.target === 'enemy') return { ...base, ...reason(checkBagItem(battle, { item: id, position })) };
+    const active = side.active[position];
+    if (base.target === 'active') return { ...base, ...reason(checkBagItem(battle, { item: id, target: active.m.uid, position }), active) };
 
     const slots = side.pokemon.map(pokemon => {
       const target = pokemon.m.uid;
-      if (!BAG_ITEMS[id].oneMove) return reason(checkBagItem(battle, { item: id, target }), pokemon);
+      if (!BAG_ITEMS[id].oneMove) return reason(checkBagItem(battle, { item: id, target, position }), pokemon);
 
       return { moves: pokemon.moveSlots.map(slot => ({ name: names.move(slot.id), pp: slot.pp, maxpp: slot.maxpp,
-        ...reason(checkBagItem(battle, { item: id, target, move: slot.id }), pokemon) })) };
+        ...reason(checkBagItem(battle, { item: id, target, move: slot.id, position }), pokemon) })) };
     });
     return { ...base, slots };
   }
   return {
     counts,
 
-    menu() {
+    menu(position = 0, taken = null) {
 
-      const probe = checkBagItem(battle, { item: 'potion', target: side.active[0]?.m.uid });
+      const probe = checkBagItem(battle, { item: 'potion', target: side.active[position]?.m.uid, position });
       const locked = !probe.ok && ['ended', 'notyourturn', 'locked'].includes(probe.reason);
       return {
         pockets: POCKETS.map(pocket => ({ id: pocket.id, name: bagText(`own.pocket.${pocket.id}`, {}, lang),
-          items: pocket.items.filter(id => counts.get(id) > 0).map(itemView) })),
+          items: pocket.items.filter(id => left(id, taken) > 0).map(id => itemView(id, position, taken)) })),
         ...(locked ? { blocked: bagText('own.bagLocked', {}, lang) } : {}),
       };
     },
 
-    choice(choice) {
+    choice(choice, position = 0, taken = null) {
       const id = choice.item;
-      if (!(counts.get(id) > 0)) throw new Error('Invalid player choice');
-      const pick = { item: id, target: null, move: null };
+      if (!(left(id, taken) > 0)) throw new Error('Invalid player choice');
+
+      const pick = { item: id, target: null, move: null, ...(position && !isBall(id) ? { position } : {}) };
       const kind = targetKind(id);
-      if (kind === 'active') pick.target = side.active[0]?.m.uid;
+      if (kind === 'active') pick.target = side.active[position]?.m.uid;
       else if (kind === 'party') {
         const pokemon = side.pokemon[choice.slot];
         if (!Number.isInteger(choice.slot) || !pokemon) throw new Error('Invalid player choice');
@@ -93,8 +98,10 @@ export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG 
       if (!checkBagItem(battle, pick).ok) throw new Error('Invalid player choice');
       return { bag: pick };
     },
-    owns: choice => typeof choice === 'object' && !!choice?.bag,
-    commit: choice => chooseBagItem(battle, choice.bag).ok,
+
+    owns: choice => typeof choice === 'object' && (!!choice?.bag || Array.isArray(choice?.parts)),
+    commit: choice => (choice.bag ? chooseBagItem(battle, choice.bag)
+      : chooseBagParts(battle, choice.parts.map(part => (typeof part === 'string' ? part : part.bag)))).ok,
 
     spend(id) { if (counts.get(id) > 0) counts.set(id, counts.get(id) - 1); },
     left: () => Object.fromEntries(counts),

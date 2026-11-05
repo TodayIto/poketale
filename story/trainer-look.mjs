@@ -58,11 +58,25 @@ const faceOf = sprite => Object.values(LOOK_PICTURES).flat().find(row => row[0] 
 export function opponentPicture(battle, { key = null, silhouette = false, chat = null } = {}) {
   if (!battle || battle.wild) return { sprite: null, face: null };
   const named = namedTrainer(battle);
-  if (named) {
-    const face = cardFace(named);
-    return face ? { sprite: named, face } : { sprite: named, face: null, sheet: cardSheet(named) };
-  }
+  if (named) return namedPicture(named);
   const picture = lookPicture(battle, { key, table: silhouette ? SILHOUETTE_PICTURES : LOOK_PICTURES });
   const sprite = picture?.sprite ?? plainTrainerSprite(opponentGender(battle, chat));
   return silhouette ? { sprite, face: picture?.face ?? faceOf(sprite), silhouette: true } : { sprite, face: picture?.face ?? null };
+}
+
+function namedPicture(named) {
+  const face = cardFace(named);
+  return face ? { sprite: named, face } : { sprite: named, face: null, sheet: cardSheet(named) };
+}
+
+export const opponentPictureWithGender = (battle, options = {}) => ({ ...opponentPicture(battle, options), gender: opponentGender(battle, options.chat) });
+
+export function foePartnerPicture(battle, options = {}) {
+  const named = namedTrainer({ name: battle.foePartner.name });
+  return named ? { ...namedPicture(named), gender: namedGender(named) } : opponentPictureWithGender(battle, options);
+}
+
+export function partnerPicture(battle) {
+  const named = namedTrainer({ name: battle.partner.name });
+  return named ? { ...namedPicture(named), gender: namedGender(named) } : { sprite: null, face: null, gender: null };
 }

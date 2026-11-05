@@ -16,7 +16,6 @@ function readSaveRaw(chat) {
 export const saveStatus = chat => readSaveRaw(chat).status;
 
 const startOf = s => (s?.spec ? { blockKey: s.blockKey, spec: s.spec } : null);
-
 // A committed record keeps what its story commands did (act, turns) for the message log
 const recordOf = r => (r ? { blockKey: r.blockKey, sends: r.sends ?? [], ...(r.plans?.length ? { plans: r.plans.map(p => ({ act: p.act, turns: p.turns })) } : {}) } : null);
 const placeOf = o => (typeof o?.on === 'string' ? { on: o.on, above: typeof o.above === 'string' ? o.above : null } : null);
@@ -56,7 +55,9 @@ export function liveSends(chat, sends) {
   return (sends ?? []).filter(send => send && (send.mark ? marks.has(send.mark) : ids.has(send.chatId)));
 }
 
-const progress = send => [send.upto ?? -1, Number.isInteger(send.logEnd) ? send.logEnd : Infinity, send.ended ? 1 : 0];
+const stageOfSend = send => send.stage ?? 1;
+
+const progress = send => [stageOfSend(send), send.upto ?? -1, Number.isInteger(send.logEnd) ? send.logEnd : Infinity, send.ended ? 1 : 0];
 
 function ahead(a, b) {
   const x = progress(a), y = progress(b);
@@ -66,7 +67,6 @@ function ahead(a, b) {
 
 const furthest = sends => sends.reduce((best, send) => (best && ahead(send, best) < 0 ? best : send), null);
 
-// This block's committed record ('record') or current attempt ('attempt') | null
 export const partFor = (save, blockKey, which) => (save?.[which]?.blockKey === blockKey ? save[which] : null);
 
 export const latestCheckpoint = (chat, of) => (of ? furthest(liveSends(chat, of.sends).filter(send => send.snapshot)) : null);
@@ -76,10 +76,10 @@ export function freshAttempt(chat, blockKey) {
   writeSave(chat, { start: null, record: save.record, attempt: attemptOf({ blockKey, opened: openedHere(chat) }) });
 }
 
-export function retryAttempt(chat, blockKey, of = 'record') {
+export function retryAttempt(chat, blockKey, of = 'record', { restart = false } = {}) {
   const save = readSave(chat) ?? empty;
   const source = partFor(save, blockKey, of);
-  const checkpoint = latestCheckpoint(chat, source);
+  const checkpoint = restart ? null : latestCheckpoint(chat, source);
   const base = { blockKey, balls: source?.balls ?? null, opened: openedHere(chat) };
   if (!checkpoint) {
     writeSave(chat, { ...save, attempt: attemptOf(base) });
@@ -126,13 +126,14 @@ export function addSend(chat, blockKey, send) {
   const of = partFor(save, blockKey, which) ?? (send.ended ? recordOf({ blockKey }) : attemptOf({ blockKey }));
   const line = { chatId: send.chatId ?? null, ...(send.mark ? { mark: send.mark } : {}), upto: send.upto,
     ...(Number.isInteger(send.logFrom) ? { logFrom: send.logFrom } : {}), ...(Number.isInteger(send.logEnd) ? { logEnd: send.logEnd } : {}),
-    screenEnd: send.screenEnd ?? 0, ended: !!send.ended, snapshot: send.snapshot ?? null };
+    screenEnd: send.screenEnd ?? 0, ended: !!send.ended, snapshot: send.snapshot ?? null, ...(send.stage > 1 ? { stage: send.stage } : {}) };
   writeSave(chat, { ...save, [which]: { ...of, sends: [...of.sends, line] } });
 }
 
-export function sentPoint(chat, blockKey, { ended = false } = {}, save = readSave(chat)) {
+export function sentPoint(chat, blockKey, { ended = false, stage = 1 } = {}, save = readSave(chat)) {
   const live = liveSends(chat, partFor(save, blockKey, ended ? 'record' : 'attempt')?.sends);
   const last = furthest(live);
+  if (last && stageOfSend(last) < stage) return { upto: -1, logEnd: 0, screenEnd: 0, ended: false, count: live.length };
   return last ? { upto: last.upto, logEnd: Number.isInteger(last.logEnd) ? last.logEnd : null, screenEnd: last.screenEnd ?? 0, ended: !!last.ended, count: live.length }
     : { upto: -1, logEnd: null, screenEnd: 0, ended: false, count: 0 };
 }
@@ -144,7 +145,7 @@ export function coveredMarks(chat, goes, save = readSave(chat)) {
   for (const part of [save?.record, save?.attempt]) {
     const rows = liveSends(chat, part?.sends).filter(s => s.mark && at.has(s.mark) && Number.isInteger(s.logFrom) && Number.isInteger(s.logEnd));
     for (const a of rows) {
-      const inside = b => b !== a && b.logFrom <= a.logFrom && b.logEnd >= a.logEnd && (!a.ended || b.ended);
+      const inside = b => b !== a && stageOfSend(b) === stageOfSend(a) && b.logFrom <= a.logFrom && b.logEnd >= a.logEnd && (!a.ended || b.ended);
       const wider = b => b.logFrom < a.logFrom || b.logEnd > a.logEnd || at.get(b.mark) < at.get(a.mark);
       if (rows.some(b => inside(b) && wider(b))) covered.add(a.mark);
     }

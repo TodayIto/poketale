@@ -1,8 +1,8 @@
 import { BAG_ITEMS } from '../engine/bag.mjs';
 import { BALLS } from '../engine/capture.mjs';
 import { expForLevel, growthOf } from '../engine/exp.mjs';
-import { STATS, evolutionTargets, holdsEverstone, displayName } from '../engine/mon.mjs';
-import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty } from './state.mjs';
+import { STATS, evolutionTargets, holdsEverstone, displayName, heldItemForm } from '../engine/mon.mjs';
+import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty, rememberableMoves } from './state.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, BOX_SIZE } from './rules.mjs';
 import { MAX_PP_UPS } from '../engine/pp.mjs';
 import { OUTSIDE_ITEMS, VITAMIN_EVS, HYPER_TRAIN_LEVEL, isTm } from './items.mjs';
@@ -22,7 +22,6 @@ const refOf = mon => ({ uid: mon.uid });
 
 const namesCache = new WeakMap();
 
-// The name lookups of lang (one per engine Dex and language)
 export function namesFor(lang, sim) {
   let byLang = namesCache.get(sim.Dex);
   if (!byLang) namesCache.set(sim.Dex, byLang = {});
@@ -73,7 +72,6 @@ const USABLE = new Set(['medicine', 'candy', 'stone', 'train', 'tm', 'evolve']);
 const BAG_ONLY = new Set(['ball', 'battle', 'field', 'key']);
 
 const NOT_HOLDABLE = new Set([...BAG_ONLY, 'tm']);
-
 // Key items cannot be thrown away
 const NOT_TOSSABLE = new Set(['key']);
 
@@ -237,7 +235,6 @@ export function useOps(mon, itemId, { sim }, { move, stat } = {}) {
   return ops;
 }
 
-// Bag items that can be held (balls, battle and field items only show a description; TMs cannot be held)
 export function holdableItems(state, sim) {
   return Object.entries(state.bag ?? {}).filter(([id, n]) => n > 0 && !NOT_HOLDABLE.has(itemKind(id, sim))).map(([id]) => id);
 }
@@ -297,6 +294,10 @@ export function stoneAction(mon, item, { into, evolved, learned = [] }, { consum
   return { type: 'use', item: toID(item), ops };
 }
 
+export function rememberAction(mon, result) {
+  return result?.learned ? { type: 'learn', ops: [learnOp(mon, result.move, result)] } : null;
+}
+
 export function teachAction(mon, item, move, result) {
   if (!result?.learned) return null;
   return { type: 'use', item: toID(item), ops: [learnOp(mon, move, result), { op: 'item', item: toID(item), delta: -1, fromBag: true }] };
@@ -304,17 +305,17 @@ export function teachAction(mon, item, move, result) {
 
 const opt = (id, label, disabled = false, extra = {}) => ({ id, label, disabled: !!disabled, ...extra });
 
-// A menu row whose label is screen text panel.menu.<word> in lang
 const row = lang => (id, word, disabled = false, values = {}) => opt(id, say(lang, `panel.menu.${word}`, values), disabled);
 
 const debugRows = (debug, locked, lang) => (debug ? [row(lang)('debugEdit', 'debugEdit', locked)] : []);
 
-export function partyMenu(mon, { state, locked = false, sim, debug = false }, lang) {
+export function partyMenu(mon, { state, ctx, locked = false, debug = false }, lang) {
   const r = row(lang);
   const list = [r('summary', 'summary')];
   if (pendingCount(mon)) list.push(r('levelup', 'levelUp', locked, { n: levelBadge(mon) }));
+  list.push(r('remember', 'remember', locked || !rememberableMoves(ctx, mon).length));
   list.push(r('order', 'order', locked || state.party.length < 2));
-  list.push(r('give', 'give', locked || !holdableItems(state, sim).length));
+  list.push(r('give', 'give', locked || !holdableItems(state, ctx.sim).length));
   if (mon.set.item) list.push(r('take', 'take', locked));
 
   list.push(r('deposit', 'deposit', locked || state.party.length <= 1));
@@ -356,7 +357,7 @@ function expRatio(ctx, mon) {
 export function slotView(mon, ctx, state, lang) {
   const { sim } = ctx;
   const names = namesFor(lang, sim);
-  const species = sim.Dex.species.get(mon.set.species);
+  const species = sim.Dex.species.get(heldItemForm(sim.Dex, mon.set).species);
   const max = maxHp(sim, mon.set);
   const hp = mon.hp === null || mon.hp === undefined ? max : Math.max(0, mon.hp);
   const ratio = max ? hp / max : 0;
@@ -431,8 +432,7 @@ function windowOf(ui, lang, sim) {
   const cancel = { hit: { t: 'opt', id: 'cancel' }, label: t('panel.menu.cancel') };
   if (ui.ask) return { text: ui.ask.text, options: [{ hit: { t: 'yes' }, label: t('panel.yes') }, { hit: { t: 'no' }, label: t('panel.no') }] };
   if (ui.moves) {
-
-    // PP restore greys out full moves, PP Up greys out moves that cannot be raised (useCheck's disabled)
+        // PP restore greys out full moves, PP Up greys out moves that cannot be raised (useCheck's disabled)
     const names = namesFor(lang, sim);
     return { text: ui.moves.prompt ?? selectMove(lang), options: [...ui.moves.list.map(m => ({ hit: { t: 'move', move: m.id }, label: `${names.move(m.id)} ${m.pp}/${m.maxpp}`, disabled: !!m.disabled })),
       cancel] };
@@ -571,8 +571,7 @@ function useAfter(mon, id, { sim }, w, { stat, move } = {}) {
   if (outside.ability) return t('panel.usedAbility', { mon: who, ability: p(w.names.ability(abilityChange(sim, mon, id)), '으로/로') });
   if (outside.mint) return t('panel.usedMint', { mon: who, nature: natureName(outside.mint, lang) });
   if (outside.hyper) return t('panel.usedHyper', { mon: p(who, '은/는'), stats: outside.hyper === 'all' ? t('diary.allStats') : statName(stat, lang) });
-
-  // Same text for PP Max
+    // Same text for PP Max
   if (outside.ppUp) return t('panel.usedPpUp', { move: w.names.move(move) });
   return t('panel.used', { mon: who, item: p(itemName(id, w.names), '을/를') });
 }
@@ -622,7 +621,7 @@ function slotPress(ui, hit, { state, ctx, locked, debug, w }) {
       default: return { ui: calm(ui), effect: null };
     }
   }
-  return { ui: { ...calm(ui), menu: { where: 'party', uid: mon.uid, text: t('panel.partyAsk'), options: partyMenu(mon, { state, locked, sim, debug }, w.lang) } }, effect: null };
+  return { ui: { ...calm(ui), menu: { where: 'party', uid: mon.uid, text: t('panel.partyAsk'), options: partyMenu(mon, { state, ctx, locked, debug }, w.lang) } }, effect: null };
 }
 
 function optionPress(ui, hit, { state, ctx, w }) {
@@ -643,6 +642,7 @@ function optionPress(ui, hit, { state, ctx, w }) {
     switch (hit.id) {
       case 'summary': return { ui: calm(ui), effect: { kind: 'summary', uid: mon.uid } };
       case 'levelup': return { ui: calm(ui), effect: { kind: 'levelup', uid: mon.uid } };
+      case 'remember': return { ui: calm(ui), effect: { kind: 'remember', uid: mon.uid } };
       case 'order': return { ui: { ...calm(ui), select: { mode: 'order', uid: mon.uid, text: t('panel.orderAsk') } }, effect: null };
       case 'give': {
         const options = [...holdableItems(state, sim).map(id => opt('pick', `${w.label(id)} ×${state.bag[id]}`, false, { item: id })), opt('cancel', t('panel.menu.cancel'))];

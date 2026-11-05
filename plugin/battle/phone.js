@@ -1,11 +1,12 @@
 import { say } from '../../story/screen-text.mjs';
 
 export const PHONE_SIZES = Object.freeze({ tap: Object.freeze([44, 60]), tapShare: 0.1, bandRoom: 4, sideRoom: 20, pad: 210, minScreen: 160, bandSpan: 6,
-  cell: Object.freeze([40, 80]), lift: Object.freeze([16, 56]), liftShare: 0.05, edge: Object.freeze([14, 64]), edgeShare: 0.06 });
+  cell: Object.freeze([40, 80]), lift: Object.freeze([16, 56]), liftShare: 0.05, edge: Object.freeze([14, 64]), edgeShare: 0.06, gap: 0.9, spareAbove: 0.5 });
 
-export const PAD_CELLS = Object.freeze({ across: 7.2, down: 3.9 });
+export const PAD_CELLS = Object.freeze({ across: 7.2 });
 
-// Whether this is a phone (touch-only device). Devices with a mouse, or without matchMedia, are PC
+export const DPAD_CELLS = 3, DPAD_GAP = 3;
+
 export function isPhone(win = globalThis) {
   try { return !!win.matchMedia?.('(hover: none) and (pointer: coarse)').matches; } catch { return false; }
 }
@@ -24,12 +25,13 @@ export function phoneLayout({ width, height, layout, band: hasBand = true, sizes
   const padHeight = portrait ? Math.floor(Math.max(0, h - band - screen * 9 / 16)) : 0;
   const lift = portrait ? clamp(Math.round(h * sizes.liftShare), sizes.lift) : 0;
   const edge = portrait ? clamp(Math.round(w * sizes.edgeShare), sizes.edge) : 0;
-  const cell = portrait ? Math.floor(clamp(Math.min(w / PAD_CELLS.across, (padHeight - lift) / PAD_CELLS.down), sizes.cell)) : 0;
-  return { tap, band, side, screen, padHeight, cell, lift, edge };
+  const cell = portrait ? Math.floor(clamp(Math.min(w / PAD_CELLS.across, (padHeight - lift) / (DPAD_CELLS + sizes.gap)), sizes.cell)) : 0;
+  const empty = portrait ? Math.max(0, padHeight - lift - (DPAD_CELLS * cell + (DPAD_CELLS - 1) * DPAD_GAP)) : 0;
+  const gap = portrait ? Math.max(Math.min(Math.round(sizes.gap * cell), empty), empty - Math.round(empty * sizes.spareAbove)) : 0;
+  return { tap, band, side, screen, padHeight, cell, lift, edge, gap };
 }
 
-// CSS properties followPhoneLayout writes on the root (PHONE_CSS reads them)
-const SIZE_VARS = Object.freeze({ tap: '--tap', band: '--band', side: '--side', screen: '--screen-w', cell: '--cell', lift: '--lift', edge: '--edge' });
+const SIZE_VARS = Object.freeze({ tap: '--tap', band: '--band', side: '--side', screen: '--screen-w', cell: '--cell', lift: '--lift', edge: '--edge', gap: '--gap' });
 
 function followPhoneLayout(root, layout, { band = true, sizes = PHONE_SIZES } = {}) {
   const apply = () => {
@@ -152,13 +154,14 @@ export const PHONE_CSS = `
   .poke-battle.pkb-portrait .end .word, .poke-battle.pkb-landscape .end .word, .poke-battle.pkb-portrait .end .hint, .poke-battle.pkb-landscape .end .hint,
   .poke-battle.pkb-portrait .end .btns, .poke-battle.pkb-landscape .end .btns { position:static; transform:none; }
   .poke-battle.pkb-portrait .end .word, .poke-battle.pkb-landscape .end .word { align-self:stretch; }
-  /* Portrait pad: at the bottom, --lift above the window bottom (the space up to the battle screen stays empty).
+  /* Portrait pad: at the bottom, --lift above the window bottom; the band + battle view sit --gap above it and the rest of the height goes above the band.
      Spans the window width: D-pad --edge from the left side, A/B --edge from the right side */
-  .poke-battle .pad { flex:none; margin:auto 0 var(--lift); width:100%; display:flex; align-items:center; justify-content:space-between;
+  .poke-battle.pkb-portrait .frame { margin-top:auto; }
+  .poke-battle .pad { flex:none; margin:var(--gap) 0 var(--lift); width:100%; display:flex; align-items:center; justify-content:space-between;
     padding:0 var(--edge); touch-action:none; }
   .poke-battle[data-mode="preparing"] .pad, .poke-battle[data-mode="error"] .pad { opacity:.45; }
   .poke-battle .pad button { touch-action:none; -webkit-touch-callout:none; padding:0; font:inherit; cursor:pointer; }
-  .poke-battle .pad .dpad { display:grid; grid-template-columns:repeat(3, var(--cell)); grid-template-rows:repeat(3, var(--cell)); gap:3px; }
+  .poke-battle .pad .dpad { display:grid; grid-template-columns:repeat(3, var(--cell)); grid-template-rows:repeat(3, var(--cell)); gap:${DPAD_GAP}px; }
   .poke-battle .pad .dpad button { display:flex; align-items:center; justify-content:center; border:2.5px solid var(--navy); border-radius:10px;
     background:var(--paper); color:var(--navy); box-shadow:0 4px 0 var(--navy-dark); }
   .poke-battle .pad .dpad svg { width:44%; height:44%; display:block; }

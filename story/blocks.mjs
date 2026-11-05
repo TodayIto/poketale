@@ -3,7 +3,7 @@ import movesTable from '../data/names/moves.json' with { type: 'json' };
 import abilitiesTable from '../data/names/abilities.json' with { type: 'json' };
 import itemsTable from '../data/names/items.json' with { type: 'json' };
 import storyNames from '../data/story-names.json' with { type: 'json' };
-import { PARTY_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, OT_NAME_MAX } from './rules.mjs';
+import { PARTY_MAX, PAIR_TEAM_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, OT_NAME_MAX } from './rules.mjs';
 import { STATS } from '../engine/mon.mjs';
 import { toID } from '../names/index.js';
 import { DEFAULT_EMOJI, customItemId, splitEmoji } from './custom-items.mjs';
@@ -33,10 +33,12 @@ function buildReverse(kind) {
   return reverse[kind] = { names, aliases };
 }
 
-export function lookupId(kind, raw) {
+const NON_LATIN = /(?=\p{L})\P{Script=Latin}/u;
+
+export function lookupId(kind, raw, { allLetters = false } = {}) {
   const table = TABLES[kind];
   if (!table) throw new TypeError(`모르는 이름표: ${kind}`);
-  const id = toID(raw);
+  const id = allLetters && NON_LATIN.test(String(raw ?? '')) ? '' : toID(raw);
   if (id && Object.hasOwn(table, id)) return id;
   const { names, aliases } = reverse[kind] ?? buildReverse(kind);
   const k = norm(raw);
@@ -131,12 +133,10 @@ export function findBlocks(text) {
 
 export const messageId = (message, index) => message?.chatId ?? `#${index}`;
 
-// Battle key = message id + index of the battle block within the message (from 0) + block content
 export const battleKey = (id, n, body) => hashKey(`${id}\n${n}\n${hashKey(String(body ?? '').trim())}`);
 
 export const battlesInText = (text, id) => findBlocks(text).filter(b => b.kind === 'battle').map((b, n) => ({ ...b, hash: b.key, key: battleKey(id, n, b.body) }));
 
-// Battle blocks in a message
 export const battlesIn = (message, index) => battlesInText(message?.data ?? '', messageId(message, index));
 
 export const actsIn = (message, index) => findBlocks(message?.data ?? '').filter(b => b.kind === 'act').map((b, n) => {
@@ -178,7 +178,16 @@ const BATTLE_KEYS = words({
   opponent: ['opponent', 'type', 'battle', 'vs', '상대', '종류', '배틀'], name: ['name', 'trainer', 'trainername', '이름', '트레이너이름'],
   gender: ['gender', 'sex', '성별'], look: ['look', 'looks', 'appearance', '모습', '외모', '겉모습'], class: ['class', 'trainerclass', 'job', '직업'], rank: ['rank', 'tier', '등급'],
   place: ['place', 'biome', 'location', 'area', '장소', '바이옴', '지형'], time: ['time', '시간', '시간대'], pokemon: ['pokemon', 'mon', '포켓몬'],
+  format: ['format', 'battleformat', 'battlestyle', 'style', '형식', '배틀형식', '방식'],
+  partner: ['partner', 'ally', 'partnername', 'allyname', '동료', '파트너', '동료이름'],
+  partnerPokemon: ['partnerpokemon', 'allypokemon', 'partnermon', 'allymon', '동료포켓몬', '파트너포켓몬'],
+
+  foePartner: ['foepartner', 'opponent2', 'trainer2', 'name2', 'secondtrainer', '상대동료', '상대2', '둘째상대', '이름2'],
+  foePartnerPokemon: ['foepartnerpokemon', 'opponent2pokemon', 'trainer2pokemon', 'pokemon2', 'foepartnermon', '상대동료포켓몬', '상대2포켓몬', '둘째상대포켓몬', '포켓몬2'],
 });
+const FORMAT = words({ single: ['single', 'singles', 'singlebattle', '1v1', '싱글', '싱글배틀'], double: ['double', 'doubles', 'doublebattle', '2v2', '더블', '더블배틀'] });
+
+const WILD_DOUBLE_MAX = 2;
 const SET_KEYS = words({
   ability: ['ability', '특성'], moves: ['moves', 'move', '기술', '기술들'], item: ['item', 'helditem', 'hold', '도구', '지닌도구', '지닌물건'],
   nature: ['nature', '성격'], gender: ['gender', 'sex', '성별'], shiny: ['shiny', '이로치', '색이다름'], tera: ['tera', 'teratype', '테라', '테라타입'],
@@ -287,7 +296,6 @@ function parseSet(value, errors, dest, warnings = errors) {
     } else if (k === 'ability') {
       const id = need('abilities', v, errors); if (id) set.ability = id;
     } else if (k === 'item') {
-
       // A name-table item, else a custom item under the name as written (the same reading as item / hold lines)
       const { emoji, rest: name } = splitEmoji(v);
       const item = itemOf(name, emoji, v, errors);
@@ -327,12 +335,15 @@ export function parseBattle(body) {
   const errors = [];
   let fatal = false;
   const spec = { wild: null, name: null, gender: null, look: null, trainerClass: null, boss: null, place: 'plains', time: 'day', team: [] };
+
+  let format = null, partnerName = null, foePartnerName = null;
+  const partnerTeam = [], foePartnerTeam = [];
   for (const { key, value, line } of lines(body, errors)) {
     const k = BATTLE_KEYS.get(key);
     if (!k) { errors.push(note('unknownKey', { line })); continue; }
-    if (k === 'pokemon') {
+    if (k === 'pokemon' || k === 'partnerPokemon' || k === 'foePartnerPokemon') {
       const r = parseSet(value, errors, false);
-      if (r) spec.team.push(r.set); else fatal = true;
+      if (r) ({ pokemon: spec.team, partnerPokemon: partnerTeam, foePartnerPokemon: foePartnerTeam })[k].push(r.set); else fatal = true;
       continue;
     }
     if (!value) { errors.push(note('noValue', { text: line })); continue; }
@@ -356,14 +367,37 @@ export function parseBattle(body) {
     } else if (k === 'time') {
       const t = TIME.get(norm(value));
       if (t) spec.time = t; else errors.push(note('timeWord', { value }));
-    }
+    } else if (k === 'format') {
+      const f = FORMAT.get(norm(value));
+      if (f) format = f; else errors.push(note('formatWord', { value }));
+    } else if (k === 'partner') partnerName = value;
+    else if (k === 'foePartner') foePartnerName = value;
   }
   if (spec.wild == null) { errors.push(note('noSide')); fatal = true; }
   const n = spec.team.length;
   if (!n && !fatal) { errors.push(note('noMons')); fatal = true; }
-  if (spec.wild === true && n > 1) { errors.push(note('wildOne', { n })); fatal = true; }
+  if (partnerName && !partnerTeam.length) errors.push(note('partnerNoMons', { name: partnerName }));
+  if (partnerTeam.length > PARTY_MAX) { errors.push(note('partnerMax', { max: PARTY_MAX, n: partnerTeam.length })); fatal = true; }
+
+  const foePartner = spec.wild !== true && foePartnerTeam.length > 0;
+  if (spec.wild === true && (foePartnerName || foePartnerTeam.length)) errors.push(note('foePartnerWild'));
+  else if (foePartnerName && !foePartnerTeam.length) errors.push(note('foePartnerNoMons', { name: foePartnerName }));
+  if (foePartnerTeam.length > PARTY_MAX) { errors.push(note('partnerMax', { max: PARTY_MAX, n: foePartnerTeam.length })); fatal = true; }
+
+  const double = partnerTeam.length > 0 || foePartner || format === 'double';
+  if (double) {
+    spec.double = true;
+    if (partnerTeam.length) spec.partner = { name: partnerName, team: partnerTeam };
+    if (foePartner) spec.foePartner = { name: foePartnerName, team: foePartnerTeam };
+  }
+  if (spec.wild === true && n > (double ? WILD_DOUBLE_MAX : 1)) { errors.push(double ? note('wildTwo', { max: WILD_DOUBLE_MAX, n }) : note('wildOne', { n })); fatal = true; }
   if (spec.wild === false && n > PARTY_MAX) { errors.push(note('trainerMax', { max: PARTY_MAX, n })); fatal = true; }
 
+  if (foePartner) {
+    for (const [team, rule] of [[spec.team, 'pairFoeMax'], [foePartnerTeam, 'pairPartnerMax']]) {
+      if (team.length > PAIR_TEAM_MAX) { errors.push(note(rule, { max: PAIR_TEAM_MAX, n: team.length })); team.length = PAIR_TEAM_MAX; }
+    }
+  }
   // Without a rank, guess from the class (else the name)
   if (spec.boss == null) spec.boss = !spec.wild && BOSS_CLASS.test(`${spec.trainerClass ?? ''} ${spec.name ?? ''}`);
 
@@ -580,16 +614,52 @@ const ACT_VERBS = words({ switch: ['switch', 'swap', 'change', 'go', 'send', '�
   run: ['run', 'flee', 'escape', 'forfeit', '도망', '도주', '항복'], move: ['move', 'attack', '기술', '공격'] });
 const GIMMICKS = words({ tera: ['tera', 'terastallize', 'terastal', '테라', '테라스탈'], mega: ['mega', 'megaevolve', '메가', '메가진화'] });
 
+const ACT_SLOTS = words({ '': ['left', '1', '왼쪽', '왼', '첫째'], 2: ['right', '2', '오른쪽', '오른', '둘째'] });
+const ACT_ALLY = words({ ally: ['ally', 'partner', '아군', '동료', '짝', '옆'], self: ['self', 'itself', 'myself', '자신', '자기', '자기자신'] });
+const TARGET_RE = /\s*(?:>|→|->|@)\s*/;
+
+const nameOf = s => ({ species: lookupId('species', s), name: s });
+
 function actTarget(raw) {
   const s = String(raw ?? '').trim();
   if (!s) return null;
   const slot = /^#\s*(\d+)(?:번)?$/.exec(s);
   if (slot) return { slot: Number(slot[1]) };
-  return { species: lookupId('species', s), name: s };
+  return nameOf(s);
 }
 
-// One side's part of a turn ("switch Bulbasaur") -> command, with errors for names the tables do not know
-function actPart(rest, side, errors) {
+export const sameName = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+
+export function collidingPositions(actives) {
+  const standing = actives.map(p => (p && !p.fainted ? p : null));
+  return standing.flatMap((p, i) => (p && standing.some((q, j) => q && j !== i && sameName(p.name, q.name)) ? [i] : []));
+}
+
+function sideOf(text) {
+  const toks = String(text).trim().split(/\s+/).filter(Boolean);
+  const head = norm(toks[0]);
+  const attached = /^(.+?)([12])$/.exec(head);
+  let side = ACT_SIDES.get(head), slot = null, used = 1;
+  if (!side && attached && ACT_SIDES.has(attached[1])) [side, slot] = [ACT_SIDES.get(attached[1]), attached[2] === '2' ? '2' : ''];
+  if (!side) return null;
+  if (slot == null && toks.length > 1 && ACT_SLOTS.has(norm(toks[1]))) { slot = ACT_SLOTS.get(norm(toks[1])); used = 2; }
+  return { side, key: `${side}${slot ?? ''}`, slotted: slot != null, rest: toks.slice(used).join(' ') };
+}
+
+const otherOf = key => (key.endsWith('2') ? key.slice(0, -1) : `${key}2`);
+
+function targetOf(text, side, user, errors) {
+  const relative = rel => (user ? (rel === 'self' ? user : otherOf(user)) : { rel });
+  const ally = ACT_ALLY.get(norm(text));
+  if (ally) return relative(ally);
+  const where = sideOf(text);
+  if (!where) { errors.push(note('act.badTarget', { text })); return null; }
+  if (where.slotted) return where.key;
+  if (where.rest) return { side: where.side, who: nameOf(where.rest) };
+  return where.side === side ? relative('ally') : null;
+}
+
+function actPart(rest, side, errors, key = side, names = lookupId) {
   const toks = rest.trim().split(/\s+/).filter(Boolean);
   const verb = ACT_VERBS.get(norm(toks[0]));
   const after = toks.slice(verb ? 1 : 0).join(' ');
@@ -602,36 +672,55 @@ function actPart(rest, side, errors) {
   if (verb === 'item') {
     const m = /^(.*?)\s*(?:(#\s*\d+(?:번)?)|(?:\b(?:on|to)\b|에게|→|->)\s*(.+))?$/i.exec(after);
     const name = (m?.[1] ?? after).trim();
-    const item = lookupId('items', name);
+    const item = names('items', name);
     if (!item) errors.push(note('unknown.items', { name }));
     const target = actTarget(m?.[2] ?? m?.[3]);
     return { kind: 'item', item, ...(target ? { target } : {}) };
   }
 
-  const words = after.split(/\s+/).filter(Boolean);
+  const [what, aim] = after.split(TARGET_RE, 2);
+  const words = what.split(/\s+/).filter(Boolean);
   const gimmick = words.length > 1 ? GIMMICKS.get(norm(words.at(-1))) : undefined;
   const name = (gimmick ? words.slice(0, -1) : words).join(' ');
-  const move = lookupId('moves', name);
+  const move = names('moves', name);
   if (!move) errors.push(note('unknown.moves', { name }));
-  return { kind: 'move', move, ...(gimmick ? { gimmick } : {}), ...(move ? {} : { raw: name }) };
+  const at = aim === undefined ? null : targetOf(aim, side, key, errors);
+  return { kind: 'move', move, ...(gimmick ? { gimmick } : {}), ...(move ? {} : { raw: name }), ...(at ? { at } : {}) };
 }
 
+function namedPart(rest, side) {
+  const toks = rest.trim().split(/\s+/);
+  const what = rest.split(TARGET_RE, 1)[0].trim().split(/\s+/);
+  const reads = text => { const errors = []; actPart(text, side, errors, null, (kind, name) => lookupId(kind, name, { allLetters: true })); return !errors.length; };
+  if (reads(what.join(' '))) return null;
+  for (let i = 1; i < what.length; i++) {
+    if (reads(what.slice(i).join(' '))) return { who: nameOf(toks.slice(0, i).join(' ')), action: toks.slice(i).join(' ') };
+  }
+  return null;
+}
+
+const namedKey = (side, name) => `${side}:${name.trim().toLowerCase()}`;
+
+export const sideParts = (turn, side) => [[side, turn[side]], [`${side}2`, turn[`${side}2`]], ...Object.entries(turn).filter(([key]) => key.startsWith(`${side}:`))]
+  .filter(([, command]) => command);
+
 export function parseAct(body) {
-  const errors = [], turns = [], labels = [];
+  const errors = [], turns = [];
   for (const { key, value, line } of lines(body, errors)) {
     if (key === 'id') continue;
     if (ACT_KEYS.get(key.replace(/\d+$/, '')) !== 'turn') { errors.push(note('unknownKey', { line })); continue; }
-    const turn = { me: null, foe: null }, label = { me: '', foe: '' };
+    const turn = { me: null, foe: null };
     for (const part of value.split('|').map(p => p.trim()).filter(Boolean)) {
-      const m = /^(\S+)\s+(.+)$/.exec(part);
-      const side = m && ACT_SIDES.get(norm(m[1]));
-      if (!side) { errors.push(note('act.badSide', { part })); continue; }
-      turn[side] = actPart(m[2], side, errors);
-      label[side] = m[2].trim();
+      const where = sideOf(part);
+      if (!where || !where.rest) { errors.push(note('act.badSide', { part })); continue; }
+      const named = namedPart(where.rest, where.side);
+      const byName = named && !where.slotted;
+      const at = byName ? namedKey(where.side, named.who.name) : where.key;
+      const command = actPart(named?.action ?? where.rest, where.side, errors, byName ? null : at);
+      turn[at] = byName && command ? { ...command, who: named.who } : command;
     }
-    if (!turn.me) { errors.push(note('act.noMine', { line })); continue; }
+    if (!sideParts(turn, 'me').length) { errors.push(note('act.noMine', { line })); continue; }
     turns.push(turn);
-    labels.push(label);
   }
-  return { turns, labels, errors };
+  return { turns, errors };
 }

@@ -1,5 +1,6 @@
-import { panelModel, reduce, initialUi, levelUpPlan, levelUpAction, evolutionMoves, stoneAction, teachAction, actions, boxName,
+import { panelModel, reduce, initialUi, levelUpPlan, levelUpAction, evolutionMoves, stoneAction, teachAction, rememberAction, actions, boxName,
   pendingCount } from '../../story/panel.mjs';
+import { rememberableMoves } from '../../story/state.mjs';
 import { renderPanel, panelShell, PANEL_STATES } from '../../story/panel-html.mjs';
 import { unreadableLine } from '../../story/stored.mjs';
 import { WHAT, failureText } from '../../story/failure.mjs';
@@ -9,7 +10,7 @@ import { statusMoney } from '../../story/compat.mjs';
 const clone = value => JSON.parse(JSON.stringify(value));
 
 export async function startPanel({ doc, read, queueAction, screens, changes = () => () => {}, resume = async () => {}, toggleAux = async () => null, debugAdd = async () => {}, debugEdit = async () => {}, debugHeal = async () => {},
-  quickImport = async () => {}, importLater = async () => {} }) {
+  quickImport = async () => {}, importLater = async () => {}, pictures = null }) {
   const body = await doc.querySelector('body');
   if (!body) return null;
   const root = await doc.createElement('div');
@@ -46,7 +47,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     const battle = cur?.battle ?? { key: null, phase: null };
     const chatScreen = !!(await doc.querySelector(CHAT_SCREEN));
 
-    const sig = JSON.stringify([cur?.key ?? null, cur?.lang ?? null, !!cur?.on, battle.phase, chatScreen, !!cur?.compat, !!cur?.debug, cur?.aux?.on ?? null, cur?.offer ?? null]);
+    const sig = JSON.stringify([cur?.key ?? null, cur?.lang ?? null, !!cur?.on, battle.phase, chatScreen, !!cur?.compat, !!cur?.debug, cur?.aux?.on ?? null, cur?.offer ?? null, pictures?.route() ?? null]);
     if (!force && sig === lastSig) return;
     if ((cur?.id ?? null) !== chatId) {
       if (chatId !== undefined) ui = { ...initialUi(), open: ui.open };
@@ -66,7 +67,6 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     lastSig = sig;
   }
 
-  // Syncs the outer element's classes (open, locked, hidden)
   async function setStates(states) {
     const key = states.join(' ');
     if (key === shown.states) return;
@@ -94,6 +94,14 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     drawing = next.catch(() => {});
     return next;
   }
+
+  let picturesDue = false;
+  function picturesArrived() {
+    if (picturesDue) return;
+    picturesDue = true;
+    const next = drawing.then(() => { picturesDue = false; return drawNow(); });
+    drawing = next.catch(error => console.warn('[poke-battle] 패널', error));
+  }
   async function drawNow() {
     if (stopped) return;
     if (!now?.show) {
@@ -103,7 +111,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     }
 
     const shownUi = now.unreadable && !ui.message ? { ...ui, message: { text: unreadableLine(now.lang), error: true } } : ui;
-    const view = renderPanel(panelModel({ state: now.state, ctx: now.ctx, lang: now.lang, locked: now.locked, resume: now.resume, debug: now.debug, offer: now.offer, ui: shownUi, money: now.money }), { compat: now.low, aux: now.aux });
+    const view = renderPanel(panelModel({ state: now.state, ctx: now.ctx, lang: now.lang, locked: now.locked, resume: now.resume, debug: now.debug, offer: now.offer, ui: shownUi, money: now.money }), { compat: now.low, aux: now.aux, picture: pictures?.src });
     const states = [view.open && PANEL_STATES.open, view.locked && PANEL_STATES.locked, now.low && PANEL_STATES.low].filter(Boolean);
 
     if (view.open && view.sheet !== shown.sheet) { await fill(sheetBox, view.sheet, view.hits); shown.sheet = view.sheet; }
@@ -190,13 +198,26 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
           return;
         }
         case 'teachTm': {
-
           // TM: out-of-battle learn-move screen (over the party screen). If not learned, the TM stays
           const mon = findMon(effect.uid);
           if (!mon) return;
           const party = now.state.party;
           const result = await screens.session(open => open.learnMove(mon, effect.move, party));
           const action = teachAction(mon, effect.item, effect.move, result);
+          if (action) await queue(action, undefined, target, lang);
+          else await refresh({ force: true });
+          return;
+        }
+        case 'remember': {
+
+          const mon = findMon(effect.uid);
+          if (!mon) return;
+          const party = now.state.party, moves = rememberableMoves(now.ctx, mon);
+          const result = await screens.session(async open => {
+            const move = await open.rememberMove(mon, moves, party);
+            return move ? { move, ...await open.learnMove(mon, move, party) } : null;
+          });
+          const action = rememberAction(mon, result);
           if (action) await queue(action, undefined, target, lang);
           else await refresh({ force: true });
           return;
@@ -283,9 +304,10 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     } catch (error) { console.warn('[poke-battle] 패널', error); }
   }, true);
   const unlisten = changes(() => { refresh(); });
+  const unpictures = pictures?.onChange(picturesArrived) ?? (() => {});
   return {
     refresh: () => refresh({ force: true }),
-    stop: async () => { stopped = true; unlisten(); try { await doc.removeEventListener('pointerdown', outside); await root.remove(); } catch {                    } },
+    stop: async () => { stopped = true; unlisten(); unpictures(); try { await doc.removeEventListener('pointerdown', outside); await root.remove(); } catch {                    } },
     get ui() { return ui; },
   };
 }

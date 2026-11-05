@@ -12,6 +12,7 @@ const steps = [
   "tools/build-names.mjs",
   "tools/build-pokerogue-boxes.mjs",
   "tools/extract-director-text.mjs",
+  "tools/build-pokeapi-sprites.mjs",
   "tools/build-catch-rates.mjs",
   "ai/build-pokerogue-moves.mjs",
   "tools/extract-effects-text.mjs",

@@ -7,6 +7,9 @@ import { GAME_SPEEDS, DEFAULT_SPEED } from '../../view/game-speed.js';
 import { QUALITIES as QUALITY_IDS } from '../../view/quality.js';
 import { MAINLINE_FORMAT, CHAMPIONS_FORMAT } from '../../engine/rules.mjs';
 import { EXP_SHARE_MODES } from '../../story/items.mjs';
+import { EXP_RATES, DEFAULT_EXP_RATE, EXP_RATE_DIGITS, EXP_RATE_MIN, EXP_RATE_MAX, isExpRate } from '../../engine/exp.mjs';
+import { numberPadCss, openNumberPad } from './number-pad.js';
+import { PICTURE_ROUTES, DEFAULT_PICTURE_ROUTE } from '../panel/pictures.js';
 import { shrinkPicture } from './my-picture.js';
 import { loadFont } from '../../view/fonts.js';
 import { FONT, noteRule } from '../../story/card.mjs';
@@ -17,7 +20,6 @@ import { TAB_COLOR, ICON as PANEL_ICON } from '../../story/panel-html.mjs';
 
 export const SETTINGS_KEY = 'pkb_settings';
 
-// Languages (list order = settings row order). Labels are each language's own name
 export const LANGS = [['ko', '한국어'], ['en', 'English']];
 
 export const LANG_OPEN = false;
@@ -27,8 +29,8 @@ const OLD_LANG = 'ko';
 export const langOf = tag => (/^ko\b/i.test(String(tag ?? '')) ? 'ko' : 'en');
 
 export const hostLang = () => langOf(globalThis.navigator?.language);
-export const DEFAULT_SETTINGS = Object.freeze({ iron: false, sound: false, sendFormat: 'key', theme: DEFAULT_THEME, orientation: 'portrait', lang: null, autoSend: false, aux: false, auxRecent: 8, oocTrial: false, difficulty: 'normal',
-  rule: 'mainline', expShare: 'always', speed: DEFAULT_SPEED, typeHints: false, moveAnims: true, quality: 'high', silhouette: true,
+export const DEFAULT_SETTINGS = Object.freeze({ iron: false, sound: false, sendFormat: 'key', theme: DEFAULT_THEME, orientation: 'portrait', lang: null, autoSend: false, commands: false, aux: false, auxRecent: 8, oocTrial: false, difficulty: 'normal',
+  rule: 'mainline', expShare: 'always', expRate: DEFAULT_EXP_RATE, speed: DEFAULT_SPEED, typeHints: false, moveAnims: true, quality: 'high', panelPicture: DEFAULT_PICTURE_ROUTE, silhouette: true,
   looks: Object.freeze({}), oldLook: null, debug: false,
   bots: Object.freeze([]), botsOff: Object.freeze([]) });
 
@@ -48,14 +50,20 @@ export const DIFFICULTIES = labelled(DIFFICULTY_IDS, 'settings.difficulty');
 const RULE_FORMATS = { mainline: MAINLINE_FORMAT, champions: CHAMPIONS_FORMAT };
 export const RULES = labelled(RULE_IDS, 'settings.rule');
 export const EXP_SHARES = labelled(EXP_SHARE_MODES, 'settings.expShare');
+export const EXP_RATE_CHOICES = perLang(t => Object.freeze(EXP_RATES.map(rate => Object.freeze([rate, t('settings.expRate', { rate })]))));
+
+export const EXP_RATE_TYPED = perLang(t => Object.freeze({
+  unset: t('settings.expRateTyped'), label: rate => t('settings.expRate', { rate }),
+  range: t('settings.expRateRange', { min: EXP_RATE_MIN, max: EXP_RATE_MAX }), digits: EXP_RATE_DIGITS, valid: isExpRate,
+}));
 export const ruleFormat = rule => RULE_FORMATS[rule];
 export const SPEEDS = perLang(t => Object.freeze(GAME_SPEEDS.map(speed => Object.freeze([speed, t('settings.speed', { speed })]))));
 export const QUALITIES = labelled(QUALITY_IDS, 'settings.quality');
+export const PANEL_PICTURES = labelled(PICTURE_ROUTES, 'settings.panelPicture');
 
 export const LOOKS = labelled(LOOK_IDS, 'settings.look');
 export const PICTURE_LOOKS = labelled(PICTURE_LOOK_IDS, 'settings.look');
 
-// My gender = m/f of the protagonist sprites (back and front)
 export const GENDERS = labelled(GENDER_IDS, 'settings.gender');
 
 export const pictureLocked = look => look.myPicture !== 'image';
@@ -67,29 +75,34 @@ const LANG_HELP = '화면과 AI 글의 언어\nLanguage of screens and AI text';
 const AUX_RECENT_COUNTS = [4, 8, 12, 24];
 export const AUX_RECENTS = perLang(t => Object.freeze(AUX_RECENT_COUNTS.map(count => Object.freeze([count, t('settings.auxRecent', { count })]))));
 
+export const commandsOn = settings => settings?.commands === true;
+
+export const auxOn = settings => commandsOn(settings) && settings.aux === true;
+
 export const ON_OFF = perLang(t => Object.freeze([Object.freeze([true, t('settings.on')]), Object.freeze([false, t('settings.off')])]));
 
 export const SETTING_TABS = perLang((t, lang) => {
   const row = (key, options, extra = {}) => ({ key, label: t(`settings.row.${key}`), ...(options ? { options } : {}), ...('help' in extra ? {} : { help: t(`settings.help.${key}`) }), ...extra });
   const onOff = ON_OFF(lang);
+  const underCommands = { needs: commandsOn, needsHelp: t('settings.needsCommands') };
   return Object.freeze([
-    { id: 'battle', rows: [row('rule', RULES(lang)), row('expShare', EXP_SHARES(lang)), row('iron', onOff), row('difficulty', DIFFICULTIES(lang)), row('speed', SPEEDS(lang)), row('typeHints', onOff)] },
+    { id: 'battle', rows: [row('rule', RULES(lang)), row('expShare', EXP_SHARES(lang)), row('expRate', EXP_RATE_CHOICES(lang), { typed: EXP_RATE_TYPED(lang) }), row('iron', onOff), row('difficulty', DIFFICULTIES(lang)), row('speed', SPEEDS(lang)), row('typeHints', onOff)] },
     { id: 'screen', rows: [
       ...(LANG_OPEN ? [row('lang', LANGS, { help: LANG_HELP })] : []),
       row('sound', onOff), row('moveAnims', onOff),
       row('silhouette', LOOKS(lang), { get: s => (s.silhouette ? 'silhouette' : 'color'), set: id => ({ silhouette: id === 'silhouette' }) }),
       row('persona'),
       row('gender', GENDERS(lang), { look: true }), row('myBack', LOOKS(lang), { look: true }), row('myPicture', PICTURE_LOOKS(lang), { look: true }),
-      row('theme', THEMES(lang)), row('quality', QUALITIES(lang)),
+      row('theme', THEMES(lang)), row('quality', QUALITIES(lang)), row('panelPicture', PANEL_PICTURES(lang)),
     ] },
-    { id: 'story', rows: [row('sendFormat', SEND_FORMATS(lang), { help: SEND_FORMAT_NOTES(lang) }), row('autoSend', onOff, { permission: 'sendChat' }), row('aux', onOff), row('auxRecent', AUX_RECENTS(lang)), row('oocTrial', onOff), row('debug', onOff)] },
+    { id: 'story', rows: [row('sendFormat', SEND_FORMATS(lang), { help: SEND_FORMAT_NOTES(lang) }), row('autoSend', onOff, { permission: 'sendChat' }),
+      row('commands', onOff), row('aux', onOff, underCommands), row('auxRecent', AUX_RECENTS(lang), underCommands), row('oocTrial', onOff), row('debug', onOff)] },
     { id: 'bot', rows: [row('bot', onOff, { help: undefined }), row('bots'), row('import')] },
   ].map(tab => Object.freeze({ ...tab, label: t(`settings.tab.${tab.id}`) })));
 });
 
 export const rowValue = (row, values, inUse = {}) => (row.get ? row.get(values) : values[row.key]) ?? inUse[row.key];
 
-// Value chosen in a row -> settings patch
 export const rowPatch = (row, id) => (row.set ? row.set(id) : { [row.key]: id });
 
 export const POKE_BALL_ICON = '<svg viewBox="-9 -9 18 18" width="100%" height="100%" aria-hidden="true">'
@@ -120,16 +133,19 @@ export function normalizeSettings(raw) {
     orientation: 'portrait',
     lang: pick(s.lang, LANGS.map(([id]) => id), null),
     autoSend: s.autoSend === true,
+    commands: s.commands === true,
     aux: s.aux === true,
     auxRecent: pick(s.auxRecent, AUX_RECENT_COUNTS, DEFAULT_SETTINGS.auxRecent),
     oocTrial: s.oocTrial === true,
     difficulty: pick(s.difficulty, DIFFICULTY_IDS, DEFAULT_SETTINGS.difficulty),
     rule: pick(s.rule, RULE_IDS, DEFAULT_SETTINGS.rule),
     expShare: pick(s.expShare, EXP_SHARE_MODES, DEFAULT_SETTINGS.expShare),
+    expRate: isExpRate(s.expRate) ? s.expRate : DEFAULT_SETTINGS.expRate,
     speed: pick(s.speed, GAME_SPEEDS, DEFAULT_SETTINGS.speed),
     typeHints: s.typeHints === true,
     moveAnims: s.moveAnims !== false,
     quality: pick(s.quality, QUALITY_IDS, DEFAULT_SETTINGS.quality),
+    panelPicture: pick(s.panelPicture, PICTURE_ROUTES, DEFAULT_SETTINGS.panelPicture),
     silhouette: s.silhouette !== false,
     debug: s.debug === true,
     looks: lookMap(s.looks),
@@ -146,7 +162,6 @@ export const lookOf = (settings, name) => {
   return look ? { ...look, gender: look.gender ?? DEFAULT_LOOK.gender } : DEFAULT_LOOK;
 };
 
-// This persona's chosen gender ('m' | 'f'), null when not chosen or the name is unknown
 export const chosenGender = (settings, name) => storedLook(settings, name)?.gender ?? null;
 
 export const shownLook = (settings, name) => ({ ...lookOf(settings, name), gender: chosenGender(settings, name) });
@@ -176,7 +191,6 @@ function nameList(value) {
 }
 const hasName = (list, name) => list.some(other => botKey(other) === botKey(name));
 
-// Whether the features are enabled for the bot with this name
 export function botEnabled(settings, name) {
   if (!botKey(name)) return false;
   const s = normalizeSettings(settings);
@@ -262,7 +276,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     .pkb-settings * { box-sizing:border-box; }
     .pkb-settings button { font:inherit; }
     .pkb-settings button:focus-visible { outline:2px solid #ffcf4a; outline-offset:2px; }
-    .pkb-settings .card { width:min(420px, 100%); height:640px; max-height:100%; display:flex; flex-direction:column; overflow:hidden; ${CARD_FRAME} }
+    .pkb-settings .card { position:relative; width:min(420px, 100%); height:640px; max-height:100%; display:flex; flex-direction:column; overflow:hidden; ${CARD_FRAME} }
     .pkb-settings .hd { flex:none; display:flex; align-items:center; gap:8px; min-height:36px; padding:6px 8px 6px 12px; background:var(--navy); color:#fff; border-bottom:2.5px solid var(--navy-dark); }
     .pkb-settings .hd .pb { flex:none; width:18px; height:18px; margin:0 -1.5px; } /* 15px ball + 1.5px white rim (takes only the ball's room) */
     .pkb-settings .hd .pb svg { display:block; }
@@ -294,6 +308,12 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     .pkb-settings .opt[aria-checked="true"] { color:#fff; background:var(--red); box-shadow:0 2px 0 var(--red-dark); }
     .pkb-settings .opt:disabled { cursor:default; }
     .pkb-settings .row.off .opt[aria-checked="true"] { opacity:.45; }
+    /* Rows under another (row.needs): indented right below it, joined to it by a line on the left, no dashes inside the group; greyed while it is off */
+    .pkb-settings .row.joined { border-bottom-color:transparent; }
+    .pkb-settings .row.sub { position:relative; min-height:42px; padding-left:22px; }
+    .pkb-settings .row.sub::before { content:""; position:absolute; left:10px; top:0; bottom:8px; width:2.5px; border-radius:2px; background:#9fbbd0; }
+    .pkb-settings .row.sub.joined::before { bottom:-1.5px; } /* through the (clear) dashes into the next row's line */
+    .pkb-settings .row.sub.off::before { background:#d3dfe8; }
     /* Buttons (picture field, adding a bot name) */
     .pkb-settings .btn { flex:none; padding:5px 9px 4px; border:2px solid var(--navy); border-radius:7px; background:#fff; color:#23435f; font-size:12px;
       box-shadow:0 2px 0 var(--navy-dark); cursor:pointer; }
@@ -342,6 +362,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     .pkb-settings .terms { display:grid; grid-template-columns:auto 1fr; gap:5px 8px; margin:0; white-space:normal; }
     .pkb-settings .terms dt { color:var(--red); -webkit-text-stroke:.35px var(--red); }
     .pkb-settings .terms dd { margin:0; min-width:0; }
+    ${numberPadCss('.pkb-settings')}
     @keyframes pkb-settings-blink { 50% { opacity:0; } }
     @media (prefers-reduced-motion:reduce) { .pkb-settings .msg::after { animation:none; } .pkb-settings .tab { transition:none; } }
     /* Phones: the window fills the screen, only the list scrolls, the message window at the bottom */
@@ -357,7 +378,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     <div class="msg" aria-live="polite"></div>
   </div>`;
   parent.append(root);
-  const tabBar = root.querySelector('.tabs'), list = root.querySelector('.list'), msg = root.querySelector('.msg');
+  const card = root.querySelector('.card'), tabBar = root.querySelector('.tabs'), list = root.querySelector('.list'), msg = root.querySelector('.msg');
   if (notice) {
     const line = document.createElement('p'); line.className = 'notice'; line.setAttribute('role', 'alert'); line.textContent = notice;
     tabBar.before(line);
@@ -392,15 +413,34 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     page.append(r);
     return r;
   };
-  const setChoice = (group, id) => { for (const b of group.children) b.setAttribute('aria-checked', String(b.dataset.id === String(id))); };
+  const setChoice = (group, id) => {
+    group.drawTyped?.(id);
+    for (const b of group.children) b.setAttribute('aria-checked', String(b.dataset.id === String(id)));
+  };
 
-  const choices = (list, value, label, change, disabled = false) => {
+  const choices = (list, value, label, change, { disabled = false, typed = null } = {}) => {
     const g = document.createElement('div'); g.className = 'opts'; g.setAttribute('role', 'radiogroup'); g.setAttribute('aria-label', label);
-    for (const [id, name] of list) {
+    const choice = (name, id, press) => {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'opt'; b.setAttribute('role', 'radio');
-      b.textContent = name; b.dataset.id = String(id); b.disabled = disabled;
-      b.onclick = () => { setChoice(g, id); change(id); };
+      b.textContent = name; b.dataset.id = String(id); b.disabled = disabled; b.onclick = press;
       g.append(b);
+      return b;
+    };
+    const select = id => { setChoice(g, id); change(id); };
+    for (const [id, name] of list) choice(name, id, () => select(id));
+    if (typed) {
+      const fixed = id => list.some(([other]) => other === id);
+      let shown = null;
+      const b = choice('', '', () => openNumberPad({
+        parent: card, title: label, range: typed.range, format: typed.label, text: shown === null ? '' : String(shown), digits: typed.digits,
+        accepts: text => typed.valid(Number(text)), words: { ok: t('settings.padOk'), cancel: t('settings.padCancel'), delete: t('settings.padDelete') },
+        onConfirm: text => { select(Number(text)); b.focus(); }, onCancel: () => b.focus(),
+      }));
+      g.drawTyped = id => {
+        shown = fixed(id) ? null : id;
+        b.textContent = shown === null ? typed.unset : typed.label(shown);
+        b.dataset.id = shown === null ? '' : String(shown);
+      };
     }
     setChoice(g, value);
     return g;
@@ -408,7 +448,16 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
   const button = (label, press) => {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.textContent = label; b.onclick = press; return b;
   };
-  const commit = next => { current = next; Promise.resolve(onChange(current)).catch(console.error); };
+  const commit = next => { current = next; Promise.resolve(onChange(current)).catch(console.error); drawUnder(); };
+
+  const under = [];
+  function drawUnder() {
+    for (const { r, group, needs } of under) {
+      const usable = needs(current);
+      r.classList.toggle('off', !usable);
+      for (const b of group.children) b.disabled = !usable;
+    }
+  }
 
   const pic = document.createElement('div'); pic.className = 'pic';
   const preview = document.createElement('span'); preview.className = 'preview';
@@ -557,7 +606,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     list.append(page); pages.set(tab.id, page);
     for (const row of tab.rows) {
       if (row.key === 'bot') {
-        botChoices = choices(row.options, enabledNow(), row.label, on => changeBots(setBotEnabled(current, bot.name, on)), !bot?.name);
+        botChoices = choices(row.options, enabledNow(), row.label, on => changeBots(setBotEnabled(current, bot.name, on)), { disabled: !bot?.name });
         line(page, row.label, botHelp(botSub), botChoices).classList.toggle('off', !bot?.name);
       } else if (row.key === 'bots') {
         line(page, row.label, botHelp(row.help)).append(form, names);
@@ -570,7 +619,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
         const r = line(page, row.label, () => row.help, choices(row.options, rowValue(row, shownLook(current, persona)), row.label, id => {
           commit(setLook(current, persona, rowPatch(row, id)));
           if (row.key === 'myPicture') drawPicture();
-        }, !persona));
+        }, { disabled: !persona }));
         r.classList.toggle('off', !persona);
         if (row.key === 'myPicture') r.append(pic);
       } else {
@@ -580,8 +629,14 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
             return;
           }
           commit(normalizeSettings({ ...current, ...rowPatch(row, id) }));
-        });
-        line(page, row.label, () => row.help, group);
+        }, { typed: row.typed });
+        const above = page.children[page.children.length - 1];
+        const r = line(page, row.label, () => (row.needs && !row.needs(current) ? row.needsHelp : row.help), group);
+        if (row.needs) {
+          above?.classList.add('joined');
+          r.classList.add('sub');
+          under.push({ r, group, needs: row.needs });
+        }
       }
     }
   }
@@ -594,6 +649,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
   drawPicture();
   drawBots();
   drawImports();
+  drawUnder();
   showTab(SETTING_TABS(lang)[0].id);
 
   let closed = false;

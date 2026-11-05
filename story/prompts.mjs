@@ -1,4 +1,4 @@
-import { createNamer } from './ai-names.mjs';
+import { createNamer, trainerName, secondName, partnerName, stageTrainer } from './ai-names.mjs';
 import { outcomeOf } from './outcome.mjs';
 import { STATS } from '../engine/mon.mjs';
 import { keyLines, summaryLine, turnSpan } from './narrate.mjs';
@@ -8,14 +8,30 @@ export const OUTCOME_EN = { win: 'Win', lose: 'Loss', forfeit: 'Forfeit (loss)',
 
 export const outcomeText = outcome => OUTCOME_EN[outcome] ?? outcome;
 
-const speciesOf = battle => battle?.team?.[0]?.species ?? 'Pokémon';
-const trainerOf = battle => battle?.name || battle?.trainerClass || 'Trainer';
+const wildMons = battle => (battle.team?.length ? battle.team : [{ species: 'Pokémon' }]);
 
-export function resultLine({ outcome, battle, caught = null, evolutions = [], lang = 'ko', en = null }) {
+const trainersText = (battle, join) => (battle?.foePartner ? `${trainerName(battle)}${join}${secondName(battle)}` : trainerName(battle));
+
+export function opponentText(battle, namer) {
+  if (battle?.wild) return wildMons(battle).map(mon => `Wild ${namer.species(mon.species)}${mon.level ? ` Lv${mon.level}` : ''}`).join(' & ');
+  return trainersText(battle, ' & ');
+}
+
+export const partnerField = (battle, kind) => (kind === 'tag' && battle?.partner?.name ? [`Partner: ${battle.partner.name}`] : []);
+
+export const BACK_TO_BACK = {
+
+  resultField: (battle, outcomes) => `Battles: ${outcomes.map((outcome, i) => `${outcomeText(outcome)} against ${stageTrainer(battle, i + 1)}`).join(', ')}`,
+
+  defeatedLine: (battle, stage) => `[Won against ${Array.from({ length: stage - 1 }, (_, i) => stageTrainer(battle, i + 1)).join(', ')} | Now battling ${stageTrainer(battle, stage)}]`,
+
+  oocLine: battle => `{{user}} won the first battle against ${stageTrainer(battle, 1)} one-on-one. What follows is the second battle, against ${stageTrainer(battle, 2)}.`,
+};
+
+export function resultLine({ outcome, battle, kind, caught = null, evolutions = [], stages = null, lang = 'ko', en = null }) {
   const namer = createNamer({ lang, en });
-  const mon = battle?.team?.[0];
-  const opponent = battle?.wild ? `Wild ${namer.species(speciesOf(battle))}${mon?.level ? ` Lv${mon.level}` : ''}` : trainerOf(battle);
-  const parts = [`Opponent: ${opponent}`, `Outcome: ${outcomeText(outcome)}`];
+  const parts = [`Opponent: ${opponentText(battle, namer)}`, ...partnerField(battle, kind), ...(stages ? [BACK_TO_BACK.resultField(battle, stages)] : []),
+    `Outcome: ${outcomeText(outcome)}`];
   if (caught?.species) parts.push(`Caught: ${namer.species(caught.species)} → ${caught.storage ? 'Storage' : 'Party'}`);
   const evolved = (evolutions ?? []).filter(e => e?.evolved === true);
   if (evolved.length) parts.push(`Evolved: ${evolved.map(e => `${namer.species(e.from)} → ${namer.species(e.to)}`).join(', ')}`);
@@ -26,13 +42,14 @@ export const RESULT_LINE_RE = /\[Battle (?:Result \||result:)[^\]\n]*\]/;
 
 const turnsText = span => (span.fromTurn === span.toTurn ? `turn ${span.fromTurn}` : `turns ${span.fromTurn}–${span.toTurn}`);
 
-export function storyOoc(format, { battle, result = null, ended = false, first = true, read, screen = [], lang = 'ko', en = null }) {
+export function storyOoc(format, { battle, result = null, ended = false, first = true, read, screen = [], stage = 1, lang = 'ko', en = null }) {
   const namer = createNamer({ lang, en });
-  const opponent = battle?.wild ? `the wild ${namer.species(speciesOf(battle))}` : trainerOf(battle);
+  const opponent = battle?.wild ? `the wild ${wildMons(battle).map(mon => namer.species(mon.species)).join(' and ')}` : trainersText(battle, ' and ');
   const summary = format === 'summary';
   const span = turnSpan(read);
   const outcome = ended ? ` Result: ${outcomeText(outcomeOf(result))}.` : '';
-  const sides = { theirs: trainerOf(battle), wild: !!battle?.wild };
+  const sides = { theirs: stageTrainer(battle, stage), wild: !!battle?.wild, partner: battle?.partner ? partnerName(battle) : null,
+    second: battle?.foePartner && stage === 1 ? secondName(battle) : null };
   const below = summary ? '' : ' below';
   const facts = (summary ? '. Fill in the details yourself, keeping to these facts' : ', keeping to the facts')
     + (ended ? '.' : ", and stop there. The battle isn't over yet.");
@@ -50,10 +67,11 @@ export function storyOoc(format, { battle, result = null, ended = false, first =
   }
   const body = summary ? summaryLine(read, namer, { evolutions: ended ? result?.evolutions : [], sides })
     : format === 'log' ? (screen ?? []).join('\n') : keyLines(read, namer, sides).join('\n');
-  return body ? `(OOC: ${head}\n${body})` : `(OOC: ${head})`;
+  if (!body) return `(OOC: ${head})`;
+  const told = stage > 1 && first ? [BACK_TO_BACK.oocLine(battle)] : [];
+  return `(OOC: ${[head, ...told, body].join('\n')})`;
 }
 
-// My side's name: inserted literally (the host replaces it with the persona name when sending to the AI)
 export const USER = '{{user}}';
 
 const STAT_EN = { hp: 'HP', atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe: 'Spe' };
@@ -74,7 +92,6 @@ export function logLine(event, namer = createNamer({ lang: 'en' })) {
     if (e.kind === 'level') return `Lv${e.from} → ${e.to}`;
     if (e.kind === 'evolve') return `evolved into ${namer.species(e.species)}`;
     if (e.kind === 'teach') return `learned ${namer.moves(e.move)}`;
-
     // Out-of-battle items
     if (e.kind === 'evs') return `${STAT_EN[e.stat] ?? e.stat} EVs +${e.to - e.from}`;
     if (e.kind === 'exp') return `+${e.amount} EXP${e.to > e.from ? `, Lv${e.from} → ${e.to}` : ''}`;

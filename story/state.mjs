@@ -1,28 +1,28 @@
 import { findBlocks, findTags, parseChange, hashKey, speciesName, messageId, norm } from './blocks.mjs';
-import { expForLevel, calcExpGain, growthOf as growthOfSpecies } from '../engine/exp.mjs';
+import { expForLevel, calcExpGain, growthOf as growthOfSpecies, DEFAULT_EXP_RATE } from '../engine/exp.mjs';
 import { STATS, STATUS_IDS, completeSet, levelEvolution, toID } from '../engine/mon.mjs';
 import { engineMember } from '../engine/input.mjs';
 import { BAG_ITEMS, isBall } from '../engine/bag.mjs';
 import { ppUpCount } from '../engine/pp.mjs';
 import { DEFAULT_FORMAT, formatRules } from '../engine/rules.mjs';
+import { waitingTrainer } from '../engine/core.mjs';
 import { HYPER_TRAIN_LEVEL, expShareOn } from './items.mjs';
 import { say } from './screen-text.mjs';
 import { isCustomItem, itemId, customInfo, addCustomItem, tidyCustomItems } from './custom-items.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, OT_NAME_MAX, BOX_NAME_MAX, PLAYER_NAME } from './rules.mjs';
 import { bossBgm, personalName } from './named.mjs';
 import { outcomeOf } from './outcome.mjs';
-import { opponentPicture } from './trainer-look.mjs';
+import { opponentPicture, foePartnerPicture } from './trainer-look.mjs';
 import { readStored, isRecord } from './stored.mjs';
 import { ruleError } from './failure.mjs';
 import { surveyBattles } from './chat.mjs';
 import { SAVE_VAR } from './save.mjs';
 import { QUEUE_VAR, runAction } from './acts.mjs';
-import { IMPORT_VAR, readImports, applyImport, importPlace } from './import.mjs';
+import { IMPORT_VAR, readImports, applyImport, importPlace, inForce } from './import.mjs';
 
 export const TABLE_VAR = '$pkb_states';
 
 export { DEFAULT_FORMAT };
-
 // Fallback when the player's name is unknown (story/rules.mjs - engine p1 name, summary-screen OT, AI text)
 export { PLAYER_NAME };
 
@@ -98,7 +98,6 @@ function foldList(folds, chat) {
   return list;
 }
 
-// Name of one change block in a message: message index + which change block in that message (heldChanges)
 export const changeAt = (index, n) => `${index}:${n}`;
 
 export function heldChanges(chat, table = readTable(chat)) {
@@ -129,7 +128,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const heldIn = i => (held.size ? findBlocks(parts[i]).filter(b => b.kind === 'change').map((_, n) => n).filter(n => held.has(changeAt(i, n))).join(',') : '');
 
   const imports = new Map();
-  for (const imp of readImports(chat).imports) {
+  for (const imp of readImports(chat).imports.filter(inForce)) {
     const at = importPlace(messages, imp);
     imports.set(at, [...imports.get(at) ?? [], imp]);
   }
@@ -165,7 +164,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
         for (const id of reflectedBy(table, event.key)) reflected.add(id);
         if (acted?.v === 2) continue;
         if (!storyEnd) { state = clone(table.snaps[event.key]); continue; }
-        if (storyEnd.engine) state = applyBattleResult(state, storyEnd.engine.result, ctx, { start: storyEnd.engine.start });
+        if (storyEnd.engine) state = applyBattles(state, [...storyEnd.engine.before ?? [], storyEnd.engine], ctx);
         if (storyEnd.who) {
           const outcome = survey.battles.get(blockKey).ended.outcome;
           state = { ...state, trainers: { ...trainersOf(state), [storyEnd.who]: { ...clone(storyEnd.trainer), outcome } } };
@@ -242,8 +241,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       if (mon.hp === 0) mon.status = 'fnt';
 
       if (op.ot) mon.ot = String(op.ot).trim().slice(0, OT_NAME_MAX);
-
-      // A full party sends it to the box
+            // A full party sends it to the box
       (op.to === 'box' || state.party.length >= PARTY_MAX ? state.box : state.party).push(mon);
       markDex(state, sim, mon.set.species, true);
       return;
@@ -492,7 +490,6 @@ function keepHpGain(sim, mon, oldMax, formatid) {
   if (mon.hp >= max) mon.hp = null;
 }
 
-// When the queue (moves to learn, evolution) is empty, the n in "level up up-arrow n" goes to 0 as well
 function settlePending(mon) {
   if (!mon.pending.moves.length && !mon.pending.evolve) mon.pending.levels = 0;
 }
@@ -585,8 +582,20 @@ export function newMon(ctx, set, uid) {
   };
 }
 
+export const levelUpMoves = ({ sim, levelUp }, species) => levelUp?.[sim.Dex.species.get(species).id] ?? [];
+
+export function rememberableMoves(ctx, mon) {
+  const known = new Set(mon.set.moves.map(toID));
+  const lowest = new Map();
+  for (const [level, move] of levelUpMoves(ctx, mon.set.species)) {
+    if (level > mon.set.level || known.has(move)) continue;
+    if (!lowest.has(move) || level < lowest.get(move)) lowest.set(move, level);
+  }
+  return [...lowest].map(([move, level]) => ({ move, level })).sort((a, b) => a.level - b.level);
+}
+
 export function levelUpOutside(mon, delta, ctx, rng, { effort } = {}) {
-  const { sim, levelUp } = ctx;
+  const { sim } = ctx;
   effort ??= formatRules(sim, ctx.formatid || DEFAULT_FORMAT).effort;
   const next = clone(mon);
   const set = next.set;
@@ -595,7 +604,7 @@ export function levelUpOutside(mon, delta, ctx, rng, { effort } = {}) {
   if (to <= from) return next;
   const growth = growthOf(ctx, set.species);
 
-  // Exp: kept as is within the new level, clamped into its range
+    // Exp: kept as is within the new level, clamped into its range
   if (growth) {
     const low = expForLevel(growth, to);
     const high = to < MAX_LEVEL ? expForLevel(growth, to + 1) - 1 : low;
@@ -618,8 +627,7 @@ export function levelUpOutside(mon, delta, ctx, rng, { effort } = {}) {
   if (next.hp !== null && next.hp > 0) next.hp = Math.min(newMax, next.hp + newMax - oldMax);
 
   next.pending.levels += to - from;
-  const speciesId = sim.Dex.species.get(set.species).id;
-  for (const [level, moveid] of levelUp?.[speciesId] ?? []) {
+  for (const [level, moveid] of levelUpMoves(ctx, set.species)) {
     if (level <= from || level > to) continue;
     if (set.moves.includes(moveid) || next.pending.moves.includes(moveid)) continue;
     next.pending.moves.push(moveid);
@@ -650,7 +658,7 @@ function sameSlotAbility(from, ability, to) {
 }
 
 function evolve(ctx, mon, target) {
-  const { sim, levelUp } = ctx;
+  const { sim } = ctx;
   const from = sim.Dex.species.get(mon.set.species);
   const to = sim.Dex.species.get(target);
   if (!to.exists) fail('unknownSpecies', { species: target });
@@ -658,7 +666,7 @@ function evolve(ctx, mon, target) {
   mon.set.species = to.name;
   mon.pending.evolve = null;
 
-  for (const [level, moveid] of levelUp?.[to.id] ?? []) {
+  for (const [level, moveid] of levelUpMoves(ctx, to.name)) {
     if (level !== 0 || mon.set.moves.includes(moveid) || mon.pending.moves.includes(moveid)) continue;
     mon.pending.moves.push(moveid);
   }
@@ -740,12 +748,15 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
     const ppUps = ppUpsFromSlots(foe.moves, null);
     if (ppUps) mon.ppUps = ppUps;
     if (caught.ball) mon.ball = caught.ball;
-
-    // The actual box slot is decided here: last
+        // The actual box slot is decided here: last
     (caught.toBox || state.party.length >= PARTY_MAX ? state.box : state.party).push(mon);
     markDex(state, sim, set.species, true);
   }
   return state;
+}
+
+export function applyBattles(before, battles, ctx, { battle = null } = {}) {
+  return battles.reduce((state, { start, result, outcome }, i) => applyBattleResult(state, result, ctx, { battle: i ? null : battle, outcome, start }), before);
 }
 
 function gainLevel(ctx, mon, end, from) {
@@ -791,7 +802,32 @@ export function storyEndTrainer(battle, outcome, team = null) {
   return { who, trainer: { name: battle.name, personal: personalName(battle), outcome, team: team ?? battle.team.map(({ species, level }) => ({ species, level })) } };
 }
 
-export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, player, expShare } = {}) {
+export const battleRecord = (spec, result, outcome) => ({ start: spec.p1.team.map(({ uid, set, exp }) => ({ uid, set, exp })), result,
+  ...(outcome === undefined ? {} : { outcome }) });
+
+export const battlesBefore = spec => spec?.before ?? [];
+
+export const stageOf = spec => battlesBefore(spec).length + 1;
+
+export const backToBack = spec => battlesBefore(spec).length > 0 || !!waitingTrainer(spec);
+
+export function nextStageSpec(spec, result, state, ctx, { seed }) {
+  const waiting = waitingTrainer(spec);
+  if (!waiting || outcomeOf(result) !== 'win') return null;
+  const { log, screen, ...ended } = result;
+  const before = [...battlesBefore(spec), battleRecord(spec, ended)];
+  const now = applyBattles(state, before, ctx);
+  const { foePartner, double, partner, ...same } = spec;
+  return { ...same, seed: [...seed], p1: { ...spec.p1, team: playerTeam(now) }, p2: waiting,
+    ...(spec.bag ? { bag: { ...spec.bag, items: battleBag(now), caughtSpecies: [...now.dex.caught] } } : {}), teraOrb: hasTeraOrb(now), before };
+}
+
+const playerTeam = state => state.party.map(mon => engineMember(mon, state.customItems));
+
+const battleBag = state => Object.fromEntries(Object.entries(state.bag).filter(([id]) => BAG_ITEMS[id] || isBall(id)));
+const hasTeraOrb = state => (state.bag.teraorb ?? 0) > 0;
+
+export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, player, expShare, expRate = DEFAULT_EXP_RATE } = {}) {
   if (!state.party.length) fail('noParty');
   if (!state.party.some(m => m.hp !== 0)) fail('allFainted');
   const { sim } = ctx;
@@ -799,20 +835,18 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
   const { sprite, silhouette } = opponentPicture(battle, picture);
   const bgm = bossBgm({ wild: battle.wild, boss: battle.boss, sprite, name: battle.name, trainerClass: battle.trainerClass });
 
-  const p1 = state.party.map(mon => engineMember(mon, state.customItems));
+  const p1 = playerTeam(state);
 
   const past = pairPast(sim, battle.team, trainersOf(state)[trainerKey(battle)]?.team ?? []);
-  const p2 = battle.team.map((teamSet, i) => {
-    const { hpPercent, status, ppUps, ...blockSet } = clone(teamSet);
-    const set = past[i] ? continuePast(sim, blockSet, past[i]) : blockSet;
+  const p2 = battle.team.map((teamSet, i) => blockMember(sim, teamSet, `foe-${i + 1}`, past[i]));
 
-    if (isCustomItem(set.item)) set.item = '';
-    const member = { uid: `foe-${i + 1}`, set };
-    if (ppUps) member.ppUps = ppUps;
-    if (hpPercent !== undefined) member.hpPercent = hpPercent;
-    if (status) member.status = status;
-    return member;
-  });
+  const partner = battle.partner && { name: battle.partner.name || say(ctx.lang, 'spec.partner'),
+    team: battle.partner.team.map((teamSet, i) => blockMember(sim, teamSet, `ally-${i + 1}`, null)) };
+
+  const second = battle.foePartner && foePartnerPicture(battle, picture);
+  const foePartner = battle.foePartner && { name: battle.foePartner.name || say(ctx.lang, 'spec.foePartner'),
+    team: battle.foePartner.team.map((teamSet, i) => blockMember(sim, teamSet, `foe2-${i + 1}`, null)),
+    ...(second.sprite ? { trainerSprite: second.sprite } : {}), ...(second.silhouette ? { trainerSilhouette: true } : {}) };
   return {
     ...(seed ? { seed: [...seed] } : {}),
     formatid: formatid || ctx.formatid || DEFAULT_FORMAT,
@@ -825,16 +859,29 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
 
     ...(bgm ? { bgm } : {}),
     bag: {
-
-      items: Object.fromEntries(Object.entries(state.bag).filter(([id]) => BAG_ITEMS[id] || isBall(id))), wild: !!battle.wild, caughtSpecies: [...state.dex.caught],
+      items: battleBag(state), wild: !!battle.wild, caughtSpecies: [...state.dex.caught],
       env: { night: battle.time === 'night', cave: CAVE_BIOMES.has(place), water: WATER_BIOMES.has(place) },
     },
     wild: !!battle.wild,
     boss: !battle.wild && !!battle.boss,
     ...(expShareOn(expShare, state.bag) ? {} : { expShare: false }),
-    teraOrb: (state.bag.teraorb ?? 0) > 0,
+    ...(expRate === DEFAULT_EXP_RATE ? {} : { expRate }),
+    teraOrb: hasTeraOrb(state),
     biome: place,
+    ...(battle.double ? { double: true } : {}), ...(partner ? { partner } : {}), ...(foePartner ? { foePartner } : {}),
   };
+}
+
+function blockMember(sim, teamSet, uid, past) {
+  const { hpPercent, status, ppUps, ...blockSet } = clone(teamSet);
+  const set = past ? continuePast(sim, blockSet, past) : blockSet;
+
+  if (isCustomItem(set.item)) set.item = '';
+  const member = { uid, set };
+  if (ppUps) member.ppUps = ppUps;
+  if (hpPercent !== undefined) member.hpPercent = hpPercent;
+  if (status) member.status = status;
+  return member;
 }
 
 function pairPast(sim, team, pastTeam) {

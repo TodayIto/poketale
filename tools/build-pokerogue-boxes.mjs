@@ -198,7 +198,6 @@ export async function buildTables() {
     const definitions = forms.get(enumName) ?? [];
     let wanted = Object.hasOwn(aliases, s.id) ? aliases[s.id] : form;
     if (wanted === 'Gmax') wanted = 'gigantamax';
-
     // Names differ in punctuation only: Mega-X/megax, Rapid-Strike/rapidstrike.
     const match = definitions.find(f => toID(f.form) === toID(wanted)) ?? (!wanted ? definitions[0] : null);
     const num = ids.get(enumName);

@@ -1,6 +1,6 @@
 import { battleNamesIn } from './names.js';
 import { DEFAULT_LANG } from '../../director/lang.js';
-import { showOutsideSummary, learnMoveOutside, evolveOutside } from '../../director/outside.js';
+import { showOutsideSummary, learnMoveOutside, evolveOutside, rememberMoveOutside } from '../../director/outside.js';
 
 export function createOutsideScreens({ sim, createView, fetchBytes, levelUp, exp, lang = DEFAULT_LANG, viewOptions = {}, trainer, formatid } = {}) {
   if (!sim?.Battle || typeof createView !== 'function') throw new TypeError('sim and createView are required');
@@ -8,7 +8,6 @@ export function createOutsideScreens({ sim, createView, fetchBytes, levelUp, exp
   const context = async () => ({ sim, names, lang, exp, formatid, trainer: typeof trainer === 'function' ? await trainer() : trainer,
     levelUp: typeof levelUp === 'function' ? await levelUp() : await levelUp });
 
-  // Opens a view in parent, runs work(view, ctx), and closes it when done (even on error)
   async function withView({ parent, theme }, work) {
     if (!parent) throw new TypeError('parent is required');
     const ctx = await context();
@@ -22,5 +21,7 @@ export function createOutsideScreens({ sim, createView, fetchBytes, levelUp, exp
     openLearnMove: ({ parent, mon, move, party, theme }) => withView({ parent, theme }, (view, ctx) => learnMoveOutside({ view, ctx, mon, move, party })),
 
     openEvolution: ({ parent, mon, into, learn, theme }) => withView({ parent, theme }, (view, ctx) => evolveOutside({ view, ctx, mon, into, learn })),
+
+    openRememberMove: ({ parent, mon, moves, party, theme }) => withView({ parent, theme }, (view, ctx) => rememberMoveOutside({ view, ctx, mon, moves, party })),
   };
 }

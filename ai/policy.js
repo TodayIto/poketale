@@ -5,7 +5,6 @@ const freeze = value => {
 
 export const DEFAULT_POLICY = freeze({
 
-  // Boss healing items (gym leaders: Super/Hyper Potion; Elite Four/champion: Full Restore)
   bossHeal: {
 
     hpBelow: 0.25,
@@ -24,6 +23,8 @@ export const DEFAULT_POLICY = freeze({
   aceSlot: teamSize => teamSize - 1,
 
   forcedSwitches: 4,
+
+  partner: { difficulty: 'hard' },
 });
 
 export function bossHealItems(levels, policy = DEFAULT_POLICY) {

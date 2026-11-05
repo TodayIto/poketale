@@ -2,16 +2,24 @@ import { canvasBounds } from './showdown.js';
 import { unionBounds } from './placement.js';
 import STILL from './pokerogue-still.json' with { type: 'json' };
 
-export async function loadPokerogueStill(assets, mon, back, key, reference) {
+export const pokerogueSheetPath = (mon, back, reference) => `images/pokemon/${back ? 'back/' : ''}${mon.shiny ? 'shiny/' : ''}${reference.key}.png`;
+
+export function pokerogueStillCanvas(img, mon, back, reference) {
   const direction = back ? 'b' : 'f', frames = STILL[reference.key];
   const [x, y, w, h, sx, sy] = (mon.shiny && frames[`s${direction}`]) || frames[direction];
-  const url = assets.url(`images/pokemon/${back ? 'back/' : ''}${mon.shiny ? 'shiny/' : ''}${reference.key}.png`);
-  const img = await assets.loadImage(url);
-  assets.life.check();
-  const [width, height, left, top, boxW, boxH] = reference.values;
+  const [width, height] = reference.values;
   const canvas = document.createElement('canvas');
   canvas.width = width; canvas.height = height;
   canvas.getContext('2d').drawImage(img, x, y, w, h, sx, sy, w, h);
+  return canvas;
+}
+
+export async function loadPokerogueStill(assets, mon, back, key, reference) {
+  const url = assets.url(pokerogueSheetPath(mon, back, reference));
+  const img = await assets.loadImage(url);
+  assets.life.check();
+  const [width, height, left, top, boxW, boxH] = reference.values;
+  const canvas = pokerogueStillCanvas(img, mon, back, reference);
   assets.scene.textures.addCanvas(key, canvas).add(0, 0, 0, 0, width, height);
   assets.scene.anims.create({ key, frames: [{ key, frame: 0 }], repeat: -1 });
 
