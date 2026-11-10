@@ -10,6 +10,10 @@ export function setLevel(battle, pokemon, level) {
 	pokemon.set.level = level;
 	pokemon.level = level;
 	pokemon.details = pokemon.getUpdatedDetails();
+	refreshStats(battle, pokemon);
+}
+
+function refreshStats(battle, pokemon) {
 	const species = pokemon.transformed ? pokemon.baseSpecies : pokemon.species;
 	const stats = battle.spreadModify(species.baseStats, pokemon.set);
 	if (species.maxHP) stats.hp = species.maxHP;
@@ -22,6 +26,33 @@ export function setLevel(battle, pokemon, level) {
 	pokemon.baseMaxhp = stats.hp;
 	pokemon.maxhp = pokemon.volatiles['dynamax'] ? 2 * stats.hp : stats.hp;
 	if (pokemon.hp > 0) pokemon.hp = Math.max(1, pokemon.hp + pokemon.maxhp - oldMax);
+}
+
+const ENGINE_IV_MAX = 31, ENGINE_EV_MAX = 255;
+const SPREAD_STATS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
+
+const beyondEngine = set => SPREAD_STATS.some(s => (set?.ivs?.[s] ?? 0) > ENGINE_IV_MAX || (set?.evs?.[s] ?? 0) > ENGINE_EV_MAX);
+
+export function restoreSpread(battle, pokemon, given) {
+	if (!beyondEngine(given)) return;
+	Object.assign(pokemon.set.ivs, given.ivs);
+	Object.assign(pokemon.set.evs, given.evs);
+	const hiddenPower = battle.dex.getHiddenPower(pokemon.set.ivs);
+	pokemon.hpType = pokemon.baseHpType = pokemon.set.hpType || hiddenPower.type;
+	pokemon.hpPower = pokemon.baseHpPower = hiddenPower.power;
+	refreshStats(battle, pokemon);
+}
+
+export function battleFromJSON(sim, json) {
+	const state = JSON.parse(json);
+	const given = state.sides.map(side => side.pokemon.map(p => (beyondEngine(p.set) ? { ivs: { ...p.set.ivs }, evs: { ...p.set.evs } } : null)));
+	const battle = sim.Battle.fromJSON(state);
+	battle.sides.forEach((side, i) => side.pokemon.forEach((pokemon, j) => {
+		if (!given[i][j]) return;
+		Object.assign(pokemon.set.ivs, given[i][j].ivs);
+		Object.assign(pokemon.set.evs, given[i][j].evs);
+	}));
+	return battle;
 }
 
 export function newMoveSlot(move, pp) {

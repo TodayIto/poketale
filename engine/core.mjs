@@ -21,12 +21,10 @@ export function createStoryBattle(sim, given, options = {}) {
 		send: given.send,
 	});
 
-	const context = { spec: given, options, seats: shape.seats };
+	const context = { spec: given, options, seats: shape.seats, sets: {} };
 	installExtensions(sim, battle, 'create', context);
 
 	const rng = new sim.PRNG(given.seed);
-
-	context.sets = {};
 	for (const [key, seat] of Object.entries(shape.seats)) {
 		context.sets[key] = seat.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid }));
 		battle.setPlayer(key, { name: seat.name, team: sim.Teams.pack(context.sets[key].map(set => heldItemForm(sim.Dex, set))) });

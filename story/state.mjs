@@ -30,7 +30,7 @@ import { SETTING_CHANGES_VAR, foldCtxAt, foldSettings } from './setting-changes.
 import { enjoymentOf, setEnjoyment, friendshipFor, afterMessage, ENJOY_STEP, canEat, fullnessOf, setFullness, FULL_PER_FOOD, foodFriendship, parsePuff, puffFriendship,
   FREE_GRADE, puffCount, addPuffs, eatsFood } from './amie.mjs';
 import { eggChance, breedEgg, giftEgg, eggCycles, hatchSpeed, HATCH_FRIENDSHIP } from '../engine/breeding.mjs';
-import { evGain, clearBags, bagOf, traineeOf, setTrainee, isHungBag, setHungBag, refillEnergy } from './training.mjs';
+import { evGain, statRoom, clearBags, bagOf, traineeOf, setTrainee, isHungBag, setHungBag, refillEnergy } from './training.mjs';
 
 export const TABLE_VAR = '$pkb_states';
 
@@ -1129,12 +1129,7 @@ function gainLevel(ctx, mon, end, from) {
 
 function addEffort(now, end, from) {
   const out = Object.fromEntries(STATS.map(s => [s, now?.[s] ?? 0]));
-  let total = STATS.reduce((sum, s) => sum + out[s], 0);
-  for (const s of STATS) {
-    const gain = Math.min(Math.max(0, (end[s] ?? 0) - (from?.[s] ?? 0)), EV_STAT_MAX - out[s], EV_TOTAL_MAX - total);
-    out[s] += gain;
-    total += gain;
-  }
+  for (const s of STATS) out[s] += Math.min(Math.max(0, (end[s] ?? 0) - (from?.[s] ?? 0)), statRoom(out, s));
   return out;
 }
 

@@ -6,6 +6,8 @@ export const MAX_MOVES = 4;
 
 export const MAX_IV = 31;
 
+export const DEBUG_STAT_MAX = 999;
+
 export const SHINY_ODDS = 4096;
 
 export const STATS = Object.freeze(['hp', 'atk', 'def', 'spa', 'spd', 'spe']);

@@ -9,7 +9,7 @@ import { say, sayer, perLang } from '../../story/screen-text.mjs';
 import { TAB_COLOR, panelSpriteUrl } from '../../story/panel-html.mjs';
 import { itemName, bagItemName, itemLabel, namesFor } from '../../story/panel.mjs';
 import { natureName, statName, moneyText } from '../../story/diary.mjs';
-import { editMon, setAction, setBag, refillMon, draftProblems, draftPartyCount, bagDraft, canTake, DEBUG_FIELDS } from '../../story/import.mjs';
+import { editMon, setAction, setBag, refillMon, draftProblems, draftPartyCount, bagDraft, canTake, DEBUG_FIELDS, typedRange, pastMainline } from '../../story/import.mjs';
 import { EGG_SPRITE } from '../../engine/breeding.mjs';
 import { isCustomItem, customText, DEFAULT_EMOJI, CUSTOM_TAGS } from '../../story/custom-items.mjs';
 import { learnableTms } from '../../story/item-info.mjs';
@@ -344,6 +344,11 @@ const CSS = `
   .pkb-import .f .ctl { min-width:0; display:flex; flex-direction:column; gap:4px; }
   .pkb-import .f .note { font-size:11.5px; color:#5b768b; }
   .pkb-import .f .note.bad { color:var(--red); }
+  /* Editor: the one warning that a value goes past the mainline caps - red, with "!", fixed under the header (it stays while the body scrolls) */
+  .pkb-import .cap { flex:none; display:flex; align-items:center; gap:7px; margin:0; padding:7px 12px; color:var(--red); font-size:13px;
+    background:#fff4f4; border-bottom:2px solid #f0c4c7; }
+  .pkb-import .cap[hidden] { display:none; }
+  .pkb-import .cap b { flex:none; width:18px; height:18px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:var(--red); color:#fff; font-size:12px; font-weight:400; }
   .pkb-import .lockrow { display:flex; align-items:stretch; justify-content:flex-start; gap:6px; }
   .pkb-import .lockrow input { flex:none; width:6.5em; }
   .pkb-import .lock { flex:none; width:36px; min-height:32px; padding:0; display:flex; align-items:center; justify-content:center; border:2px solid var(--navy); border-radius:7px;
@@ -449,13 +454,14 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
   root.innerHTML = `<style>${CSS}</style><div class="card" role="dialog" aria-labelledby="${id}-title">
     <div class="hd"><button class="back" type="button" aria-label="${t('import.toList')}" title="${t('import.toList')}" hidden>${BACK}</button><b id="${id}-title">${text.title}</b>
       <button class="x" type="button" aria-label="${t('import.close')}" title="${t('import.close')}">${crossIcon(2.8)}</button></div>
+    <p class="cap" hidden></p>
     <div class="body"></div>
     <div class="ft"><span class="sum" aria-live="polite"></span><button class="apply" type="button">${text.apply}</button></div>
   </div>`;
   parent.append(root);
   ringOnKeys(root);
   const card = root.querySelector('.card'), body = root.querySelector('.body'), sum = root.querySelector('.ft .sum'), applyButton = root.querySelector('.apply'), back = root.querySelector('.hd .back');
-  const heading = root.querySelector('.hd b'), foot = root.querySelector('.ft');
+  const heading = root.querySelector('.hd b'), foot = root.querySelector('.ft'), cap = root.querySelector('.cap');
 
   const mon = key => draft.mons.find(m => m.key === key);
   const change = next => { draft = next; failure = ''; draw(); };
@@ -667,6 +673,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     refill.hidden = !Object.values(m.from).includes('auto');
     const s = m.set;
     const evTotal = STATS.reduce((n, stat) => n + (s.evs?.[stat] ?? 0), 0);
+    const range = typedRange(draft);
     const controls = {
       species: () => pickButton(lists.species.label(s.species), { label: fieldLabel.species, placeholder: t('import.pickSpecies'), open: () => openPicker({
         title: t('import.pickSpeciesTitle'), value: s.species, groups: [{ label: t('import.pokemon'), entries: lists.species.options }], pick: v => edit(m.key, 'species', v) }) }),
@@ -691,14 +698,14 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       status: () => select(STATUS_CHOICES(lang), m.status ?? '', fieldLabel.status, v => edit(m.key, 'status', v)),
       gender: () => choices(genderChoices(sim, s.species, lang), s.gender ?? '', fieldLabel.gender, v => edit(m.key, 'gender', v)),
       shiny: () => choices(SHINY_CHOICES(lang), !!s.shiny, fieldLabel.shiny, v => edit(m.key, 'shiny', v)),
-      ivs: () => statInputs(m, 'ivs', MAX_IV),
-      evs: () => statInputs(m, 'evs', EV_STAT_MAX),
+      ivs: () => statInputs(m, 'ivs', range.iv),
+      evs: () => statInputs(m, 'evs', range.ev),
       teraType: () => select([...(s.teraType ? [] : [['', t('import.notChosen')]]), ...lists.types.filter(([t]) => t !== 'Stellar' || s.teraType === 'Stellar')], s.teraType ?? '',
         fieldLabel.teraType, v => edit(m.key, 'teraType', v)),
     };
     const notes = {
       hpPercent: el('span', { className: 'note', textContent: t('import.hpNote') }),
-      evs: el('span', { className: `note${evTotal > EV_TOTAL_MAX ? ' bad' : ''}`, textContent: t('import.evTotal', { n: evTotal, max: EV_TOTAL_MAX }) }),
+      evs: el('span', { className: `note${evTotal > range.evTotal ? ' bad' : ''}`, textContent: t('import.evTotal', { n: evTotal, max: EV_TOTAL_MAX }) }),
       moves: el('span', { className: 'note', textContent: t('import.movesNote', { max: MAX_MOVES }) }),
       name: el('span', { className: 'note', textContent: t('import.nameNote') }),
     };
@@ -711,6 +718,11 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       el('span', { className: 'what', textContent: t('import.detailsWhat') }), svg(NEXT));
     toggle.setAttribute('aria-expanded', String(details));
     toggle.onclick = () => { details = !details; draw(); };
+
+    const past = pastMainline(s);
+    cap.hidden = !past.ivs && !past.evs;
+    fillWith(cap, cap.hidden ? [] : [el('b', { textContent: '!' }),
+      el('span', { textContent: t(`import.pastMainline.${past.ivs && past.evs ? 'both' : past.ivs ? 'ivs' : 'evs'}`, { iv: MAX_IV, ev: EV_STAT_MAX, total: EV_TOTAL_MAX }) })]);
     fillWith(body,
       el('div', { className: 'ed-top' }, picture(m), el('span', { className: 'who' }, el('b', { textContent: title(m) }), el('span', { className: 'sub', textContent: monSub(m, sim, lang) })), refill),
       m.action !== 'skip' && m.problems.length ? el('ul', { className: 'probs err' }, m.problems.map(p => el('li', { textContent: words(p) }))) : null,
@@ -791,6 +803,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
   function draw() {
     const top = body.scrollTop;
     const quick = mode === 'quick';
+    cap.hidden = true;
     root.classList.toggle('quick', quick);
     foot.hidden = quick;
     heading.textContent = quick ? t('import.quick.title') : text.title;

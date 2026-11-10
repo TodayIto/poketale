@@ -1,5 +1,7 @@
 export { PARTY_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV } from '../engine/mon.mjs';
 
+export { DEBUG_STAT_MAX } from '../engine/mon.mjs';
+
 export { EV_STAT_MAX, EV_TOTAL_MAX } from '../engine/rules.mjs';
 
 export const PAIR_TEAM_MAX = 3;

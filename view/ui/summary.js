@@ -296,7 +296,7 @@ export class SummaryScreen {
       const iv = summary.ivs?.[key], label = s.words(name);
       perm.add([styledText(s, x, 16 * row, label, style).setOrigin(0.5, 0),
         styledText(s, 93 + 93 * col, 16 * row, key === 'hp' ? `${stats.hp ?? mon.hp}/${stats.maxhp ?? mon.maxhp}` : String(stats[key] ?? ''), 'WINDOW_ALT').setOrigin(1, 0)]);
-      ivs.add([styledText(s, x, 16 * row, label, iv === 31 ? 'SUMMARY_STATS_GOLD' : 'SUMMARY_STATS').setOrigin(0.5, 0),
+      ivs.add([styledText(s, x, 16 * row, label, iv >= 31 ? 'SUMMARY_STATS_GOLD' : 'SUMMARY_STATS').setOrigin(0.5, 0),
         styledText(s, 93 + 93 * col, 16 * row, iv === undefined ? '' : `${iv}/31`, 'WINDOW_ALT').setOrigin(1, 0)]);
     });
 

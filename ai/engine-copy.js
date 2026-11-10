@@ -1,5 +1,5 @@
 import { COPY_STRIP_KEYS, installOnCopy } from '../engine/extensions.mjs';
-import { chooseEach } from '../engine/showdown-compat.mjs';
+import { chooseEach, battleFromJSON } from '../engine/showdown-compat.mjs';
 import { enemyItemOf } from '../engine/bag.mjs';
 
 export const FAIL_CHECK_EXEMPT = new Set(['suckerpunch', 'upperhand', 'thunderclap']);
@@ -13,7 +13,8 @@ export function snapshot(battle) {
 export function restore(sim, json, seed) {
   let copy;
   try {
-    copy = sim.Battle.fromJSON(json);
+
+    copy = battleFromJSON(sim, json);
 
     installOnCopy(sim, copy);
     for (const side of copy.sides) side.clearChoice();

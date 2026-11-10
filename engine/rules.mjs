@@ -67,7 +67,7 @@ export function formatRules(sim, format = DEFAULT_FORMAT) {
 	const champions = f.mod === 'champions';
 	const scripts = dex.data.Scripts || {};
 
-	const self = { dex, ruleTable, trunc: dex.trunc, gen: dex.gen };
+	const self = { dex, ruleTable, trunc: f.battle?.trunc ?? dex.trunc, gen: dex.gen };
 	const statModify = scripts.statModify || sim.Battle.prototype.statModify;
 	const calculatePP = scripts.calculatePP || sim.Battle.prototype.calculatePP;
 	const rules = {

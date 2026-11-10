@@ -18,7 +18,7 @@ export const EXTENSIONS = [
 	{ name: 'winner', at: 'create', install: (sim, battle) => installWinner(battle), keys: ['storyWinner'], copy: 'keep',
 		fields: ['outcome', 'winner'], result: winnerResult },
 
-	{ name: 'initial-state', at: 'create', install: (sim, battle, { seats }) => installInitialState(sim, battle, seats), keys: [], copy: 'keep' },
+	{ name: 'initial-state', at: 'create', install: (sim, battle, { seats, sets }) => installInitialState(sim, battle, seats, sets), keys: [], copy: 'keep' },
 
 	{ name: 'field', at: 'create', install: (sim, battle, { spec }) => installField(sim, battle, spec), keys: [], copy: 'keep' },
 

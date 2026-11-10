@@ -1,12 +1,12 @@
 import { applyPpUps } from './pp.mjs';
-import { injectStatus } from './showdown-compat.mjs';
+import { injectStatus, restoreSpread } from './showdown-compat.mjs';
 
-export function installInitialState(sim, battle, seats) {
+export function installInitialState(sim, battle, seats, sets) {
 	const baseFormat = battle.format;
 	battle.format = Object.create(baseFormat, {
 		onBattleStart: {
 			value() {
-				for (const side of battle.sides) applyInitialState(sim, side, seats[side.id].team);
+				for (const side of battle.sides) applyInitialState(sim, side, seats[side.id].team, sets[side.id]);
 				baseFormat.onBattleStart?.call(this);
 			},
 		},
@@ -24,11 +24,13 @@ export function recordStartForms(battle, sets) {
 
 export const startsFainted = member => (member.hp !== undefined ? Math.trunc(member.hp) <= 0 : member.hpPercent !== undefined && member.hpPercent <= 0);
 
-function applyInitialState(sim, side, team) {
+function applyInitialState(sim, side, team, sets) {
 
 	side.pokemon.forEach((pokemon, i) => {
 		const member = team[i];
 		pokemon.m.uid = member.uid;
+
+		restoreSpread(side.battle, pokemon, sets[i]);
 		if (member.partner) pokemon.m.partner = member.partner;
 		if (member.trainer) pokemon.m.trainer = member.trainer;
 		if (member.split) pokemon.m.split = true;
