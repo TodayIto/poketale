@@ -1,5 +1,6 @@
 import { MAX_LEVEL, STATUS_IDS } from './mon.mjs';
 import { isCustomItem, customText } from '../story/custom-items.mjs';
+import { friendshipLocked } from './friendship.mjs';
 
 export function engineMember(mon, customItems = null) {
 	const known = values => Object.fromEntries(Object.entries(values ?? {}).filter(([id]) => mon.set.moves.includes(id)));
@@ -15,6 +16,10 @@ export function engineMember(mon, customItems = null) {
 	if (mon.ball) member.set.pokeball = mon.ball;
 	if (mon.natureOrig) member.natureOrig = mon.natureOrig;
 	if (mon.ot) member.ot = mon.ot;
+	if (mon.friendship !== undefined) member.friendship = mon.friendship;
+	if (mon.friendshipCarry) member.friendshipCarry = mon.friendshipCarry;
+	if (friendshipLocked(mon)) member.friendshipLocked = true;
+	if (mon.counts) member.counts = { ...mon.counts };
 	return member;
 }
 

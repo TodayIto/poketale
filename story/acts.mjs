@@ -1,6 +1,7 @@
 import { findBlocks, findTags, parseChange, hashKey, stripForPrompt, messageId } from './blocks.mjs';
-import { readTable, writeTable, computeState, isReflected, heldChanges, changeAt, applyOps, findMon, hpPercentOf, movePp, toID } from './state.mjs';
+import { readTable, writeTable, computeState, isReflected, heldChanges, changeAt, applyOps, findMon, hpPercentOf, movePp, toID, hatchedParty, storyTick, isEgg, stateFormat } from './state.mjs';
 import { readStored } from './stored.mjs';
+import { foldCtxAt } from './setting-changes.mjs';
 import { refusal, ruleError, ruleText } from './failure.mjs';
 import { findOocs, unwrapOocs } from './chat.mjs';
 import { pkbLog } from './prompts.mjs';
@@ -10,7 +11,7 @@ import { itemId, customInfo } from './custom-items.mjs';
 import { say } from './screen-text.mjs';
 import { commandsIn } from './commands.mjs';
 import { answeredLine } from './act-prompts.mjs';
-import { dropTaken } from './compat.mjs';
+import { dropTaken, statusIn } from './compat.mjs';
 
 export const QUEUE_VAR = '$pkb_queue';
 
@@ -77,36 +78,37 @@ function withUids(state, op, sim) {
   for (const field of REF_FIELDS) {
     const ref = op[field];
     if (!ref || ref === 'all' || typeof ref.uid === 'string') continue;
-    try { out[field] = { uid: findMon(state, ref, sim, { boxFirst: op.op === 'withdraw' }).mon.uid }; } catch {                                            }
+    try { out[field] = { uid: findMon(state, ref, sim, { boxFirst: op.op === 'withdraw', egg: true }).mon.uid }; } catch {                                            }
   }
   return out;
 }
 
 export function pendingState(chat, ctx, { uptoIndex, survey } = {}) {
-  const { state, table, changed, counted, reflected } = computeState(chat, ctx, { uptoIndex, survey });
+  const { state, table, changed, counted, reflected, status } = computeState(chat, ctx, { uptoIndex, survey });
+  const at = { ...ctx, status };
   const added = readQueue(chat).actions.filter(action => !isReflected(action, reflected, counted));
   let cur = state;
   const errors = [];
   for (const action of added) {
-    const result = runAction(cur, action, ctx);
+    const result = runAction(cur, action, at);
     cur = result.state;
     errors.push(...result.errors);
   }
-  return { state: cur, table, errors, changed, added };
+  return { state: cur, table, errors, changed, added, status };
 }
 
 export function queueAction(chat, ctx, input, { now = Date.now(), salt = '' } = {}) {
   if (!input || !Array.isArray(input.ops) || !input.ops.length) throw new Error('행동에 연산이 없습니다.');
   adoptQueue(chat, ctx, { salt: `${now}:${salt}` });
   const queue = readQueue(chat);
-  const { state: base } = pendingState(chat, ctx);
+  const { state: base, status } = pendingState(chat, ctx);
   const type = /^[a-z]{1,16}$/.test(String(input.type ?? '')) ? input.type : 'other';
   const action = { id: hashKey(`${now}:${salt}:${queue.actions.length}:${JSON.stringify(input.ops)}`), type, at: now };
   if (input.item) action.item = itemId(input.item);
-  const result = runAction(base, { ...action, ops: input.ops }, ctx, { normalize: true });
+  const result = runAction(base, { ...action, ops: input.ops }, { ...ctx, status }, { normalize: true });
   if (result.errors.length) throw result.notes.length ? refusal(result.notes, { join: ' / ' }) : new Error(result.errors.join(' / '));
 
-  if (base.party.length && !result.state.party.length) throw ruleError('acts.lastInParty');
+  if (hatchedParty(base).length && !hatchedParty(result.state).length) throw ruleError('acts.lastInParty');
   action.ops = result.ops;
   action.events = result.events;
   const messages = chat.message ?? [];
@@ -157,9 +159,10 @@ export function adoptQueue(chat, ctx, { salt = '' } = {}) {
 export function eventOf({ op, before, after }, sim) {
   const all = state => (state ? [...state.party, ...state.box] : []);
   const byUid = (state, uid) => all(state).find(m => m.uid === uid) ?? null;
-  const who = mon => (mon ? { uid: mon.uid, species: mon.set.species, name: mon.set.name || '' } : null);
+
+  const who = mon => (mon ? (isEgg(mon) ? { uid: mon.uid, egg: true, species: '', name: '' } : { uid: mon.uid, species: mon.set.species, name: mon.set.name || '' }) : null);
   const refWho = (ref, opts) => {
-    try { if (before) return who(findMon(before, ref, sim, opts).mon); } catch {             }
+    try { if (before) return who(findMon(before, ref, sim, { ...opts, egg: true }).mon); } catch {             }
     return { ref: ref?.slot ? `#${ref.slot}` : ref?.box ? `box ${ref.box}` : ref?.name ?? '?' };
   };
   const pair = w => [byUid(before, w?.uid), byUid(after, w?.uid)];
@@ -169,7 +172,8 @@ export function eventOf({ op, before, after }, sim) {
     const found = ids.map(id => [id, customInfo(after, id) ?? customInfo(before, id) ?? fromOp(id)]).filter(([, info]) => info);
     return found.length ? { customItems: Object.fromEntries(found) } : {};
   };
-  const hp = mon => (mon && sim ? hpPercentOf(sim, mon) : null);
+
+  const hp = (mon, state) => (mon && sim ? hpPercentOf(sim, mon, stateFormat(state)) : null);
   switch (op?.op) {
     case 'add': {
       const added = all(after).find(m => !byUid(before, m.uid));
@@ -189,7 +193,7 @@ export function eventOf({ op, before, after }, sim) {
         return revived ? { kind: 'heal', all: true, revivedAll: revived } : { kind: 'heal', all: true };
       }
       const w = refWho(op.ref); const [b, a] = pair(w);
-      return { kind: 'heal', who: w, hpFrom: hp(b), hpTo: hp(a),
+      return { kind: 'heal', who: w, hpFrom: hp(b, before), hpTo: hp(a, after),
         cured: !!(b && a && b.status && b.status !== 'fnt' && !a.status), revived: !!(b && a && b.hp === 0 && a.hp !== 0) };
     }
     case 'item': return { kind: 'item', item: itemId(op.item), delta: op.delta, ...named([itemId(op.item)]) };
@@ -207,8 +211,10 @@ export function eventOf({ op, before, after }, sim) {
       return { kind: 'hold', who: w, item, prev, ...named([item, prev]) };
     }
     case 'evolve': {
+
       const w = refWho(op.ref); const [, a] = pair(w);
-      return { kind: 'evolve', who: w, species: a?.set.species ?? op.species };
+      const joined = before && after ? all(after).filter(m => !byUid(before, m.uid)).map(m => ({ uid: m.uid, species: m.set.species })) : [];
+      return { kind: 'evolve', who: w, species: a?.set.species ?? op.species, ...(joined.length ? { joined } : {}) };
     }
     case 'teach': {
       const w = refWho(op.ref); const [, a] = pair(w);
@@ -224,6 +230,8 @@ export function eventOf({ op, before, after }, sim) {
     case 'noevolve': { const w = refWho(op.ref); return { kind: 'noevolve', who: w, species: pair(w)[0]?.pending?.evolve ?? null }; }
     case 'pp': return { kind: 'pp', who: refWho(op.ref), move: op.move ? toID(op.move) : null };
     case 'boxname': return { kind: 'boxname', box: Number(op.box), name: String(op.name ?? '').trim() };
+
+    case 'friendship': return { kind: 'friendship', who: refWho(op.ref) };
     // Items outside battle: vitamins, Exp. Candy, Ability Capsule/Patch, Mints, Bottle Caps
     case 'evs': {
       const w = refWho(op.ref); const [b, a] = pair(w);
@@ -248,9 +256,27 @@ export function eventOf({ op, before, after }, sim) {
     case 'ppup': {
 
       const w = refWho(op.ref); const [b, a] = pair(w);
-      const move = toID(op.move), max = mon => (mon && sim ? movePp(sim, mon, move).maxpp : null);
-      return { kind: 'ppup', who: w, move, from: max(b), to: max(a) };
+      const move = toID(op.move), max = (mon, state) => (mon && sim ? movePp(sim, mon, move, stateFormat(state)).maxpp : null);
+      return { kind: 'ppup', who: w, move, from: max(b, before), to: max(a, after) };
     }
+
+    case 'amie': return { kind: 'amie', who: refWho(op.ref) };
+
+    case 'feed': {
+      const item = op.puff === undefined && op.item ? itemId(op.item) : null;
+      return { kind: 'feed', who: refWho(op.ref), ...(item ? { item, ...named([item]) } : {}) };
+    }
+
+    case 'train': return { kind: 'train', who: refWho(op.ref) };
+    case 'puff': return { kind: 'puff' };
+
+    case 'egg': {
+      const added = all(after).find(m => !byUid(before, m.uid));
+      const at = added ? after.box.indexOf(added) : -1;
+      return { kind: 'gotEgg', box: added ? (at >= 0 ? boxOf(after, at) : false) : op.to === 'box' };
+    }
+    case 'breed': return op.stop ? { kind: 'breedStop' } : { kind: 'breed', a: refWho(op.a), b: refWho(op.b) };
+    case 'hatched': return { kind: 'hatched', who: refWho(op.ref) };
     default: return { kind: 'other', op: String(op?.op ?? '?') };
   }
 }
@@ -273,8 +299,10 @@ export function changesIn(text, chat, ctx, lang) {
     const own = findBlocks(m?.data ?? '').filter(b => b.kind === 'change').map(b => b.key);
     return keys.every(k => own.includes(k));
   });
-  let state = null, table = null;
-  if (index >= 0 && ctx) ({ state, table } = computeState(chat, ctx, { uptoIndex: index - 1 }));
+  let state = null, table = null, status = null;
+  if (index >= 0 && ctx) ({ state, table, status } = computeState(chat, ctx, { uptoIndex: index - 1 }));
+
+  const at = ctx && { ...(index >= 0 ? foldCtxAt(chat, ctx)(index) : ctx), status: statusIn(messages[index]) ?? status };
   const chatId = index >= 0 ? messageId(messages[index], index) : null;
   const held = index >= 0 ? heldChanges(chat, table ?? readTable(chat)) : new Set();
   const events = [], errors = [];
@@ -283,7 +311,7 @@ export function changesIn(text, chat, ctx, lang) {
     const { ops, errors: unread } = parseChange(block.body);
     errors.push(...unread.map(note => ruleText(note, lang)));
     if (!state) { events.push(...ops.map(op => eventOf({ op, before: null, after: null }, null))); continue; }
-    const result = applyOps(state, ops, ctx, `${chatId}:${block.key}`, table, { trace: true });
+    const result = applyOps(state, ops, at, `${chatId}:${block.key}`, table, { trace: true });
     state = result.state;
     for (const step of result.steps) {
       if (step.error) errors.push(step.notes.length ? step.notes.map(note => ruleText(note, lang)).join(' / ') : step.error);
@@ -291,6 +319,38 @@ export function changesIn(text, chat, ctx, lang) {
     }
   }
   return { events, errors };
+}
+
+export function passingIn(chat, ctx, index) {
+  const message = chat?.message?.[index];
+  if (!ctx || message?.role !== 'char') return [];
+  const { state } = computeState(chat, ctx, { uptoIndex: index - 1 });
+  return storyTick(state, messageId(message, index), foldCtxAt(chat, ctx)(index)).events;
+}
+
+export function passingTold(chat, ctx, index) {
+  const messages = chat?.message ?? [];
+  if (!ctx || !(index >= 0)) return [];
+  try {
+    const from = messages.findLastIndex((m, i) => i < index && m?.role === 'user') + 1;
+    const events = [];
+    for (let i = from; i < index; i++) events.push(...passingIn(chat, ctx, i));
+    return events.filter(e => e?.kind === 'egg' || e?.kind === 'hatch');
+  } catch (error) {
+    console.warn('[poke-battle] story passing left out of <pkb-log>', error);
+    return [];
+  }
+}
+
+export function passingLog(chat, ctx, { names = null, lang = 'ko' } = {}) {
+  const latest = (chat?.message ?? []).findLastIndex(m => m?.role === 'user');
+  return pkbLog(passingTold(chat, ctx, latest), { lang, en: names });
+}
+
+export function isLatestOwn(chat, text) {
+  const messages = chat?.message ?? [];
+  const latest = messages.findLastIndex(m => m?.role === 'user');
+  return latest >= 0 && String(messages[latest].data ?? '') === String(text ?? '');
 }
 
 const inWindow = (messages, index) => messages.slice(index).filter(m => m?.role === 'user').length <= OOC_TURNS;
@@ -330,7 +390,7 @@ function guided(ooc, guide) {
 const END_SLOT = '\uE000';
 const oocEnd = text => text.replace(/\)(\s*(?:<\/pkb-story\s*>)?\s*)$/, `${END_SLOT})$1`);
 
-export function promptText(text, chat, table, { names = null, lang = 'ko', guide = null, commands: taking = false, moved = false } = {}) {
+export function promptText(text, chat, table, { names = null, lang = 'ko', guide = null, commands: taking = false, moved = false, ctx = null } = {}) {
   const messages = chat?.message ?? [];
   let out = String(text ?? '');
   const latest = messages.findLastIndex(m => m?.role === 'user');
@@ -357,6 +417,8 @@ export function promptText(text, chat, table, { names = null, lang = 'ko', guide
   else if (!own.length && latestText !== null && latestText === String(text ?? '') && nextOwnMessage(chat, readQueue(chat), table) === latest) {
     events = readQueue(chat).actions.flatMap(a => a.events ?? []);
   }
+
+  if (ctx && latestText !== null && latestText === String(text ?? '')) events = [...passingTold(chat, ctx, latest), ...events];
   out = stripForPrompt(moved ? dropTaken(out) : out);
   if (line) out = out.includes(END_SLOT) ? out.replace(END_SLOT, `\n${line}`) : `${out}\n(OOC: ${line})`;
   const log = pkbLog(events, { lang, en: names });

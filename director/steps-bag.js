@@ -12,6 +12,10 @@ export const BAG_KINDS = ['-story-item', '-story-pp', '-story-ball'];
 export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAULT_LANG, affix = nameWithAffix(lang) }) {
   const say = (key, values, options = {}) => view.message(bagText(key, values, lang), options);
 
+  const itemName = id => bag?.itemName(id) ?? names.item(id);
+
+  const sourceItem = from => BY_NAME.get(String(from)) ?? bag?.foodOf(from);
+
   let using = null, captured = null;
 
   async function present(event) {
@@ -27,14 +31,14 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
       }
       using = { item, name: ledger.get(ident).name, ppShown: false };
       bag?.spend(item);
-      await say('own.usedItem', { pokemonName: using.name, itemName: names.item(item) });
+      await say('own.usedItem', { pokemonName: using.name, itemName: itemName(item) });
       return;
     }
     case '-story-pp': {
       // One line per restored move - text only once (PP values reach the move menu with the next request)
       if (!using || using.ppShown) return;
       using.ppShown = true;
-      const values = { pokemonNameWithAffix: affix(using.name, 'player'), itemName: names.item(using.item) };
+      const values = { pokemonNameWithAffix: affix(using.name, 'player'), itemName: itemName(using.item) };
       if (BAG_ITEMS[using.item]?.oneMove) await say('battle.ppHealBerry', { ...values, berryName: values.itemName, moveName: names.move(toID(a[2])) });
       else await say('own.ppRestoredAll', values);
       return;
@@ -59,7 +63,7 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
       return;
     }
     case '-heal': {
-      const { hp, maxhp } = ledger.get(a[0]), item = BY_NAME.get(String(kw.from)), name = ledger.get(a[0]).name;
+      const { hp, maxhp } = ledger.get(a[0]), item = sourceItem(kw.from), name = ledger.get(a[0]).name;
       if (sideOf(a[0]) === 'enemy') {
 
         if (!ledger.onField(a[0])) return;
@@ -68,7 +72,7 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
         return;
       }
 
-      if (!ledger.onField(a[0])) { await say(BAG_ITEMS[item].revive ? 'own.revived' : 'battle.regainHealth', { pokemonName: name }); return; }
+      if (!ledger.onField(a[0])) { await say(BAG_ITEMS[item]?.revive ? 'own.revived' : 'battle.regainHealth', { pokemonName: name }); return; }
 
       await view.playCommon('health-up', positionOf(a[0]));
       await view.hpChange(positionOf(a[0]), hp, maxhp, { cause: 'other', effectiveness: 'normal' });
@@ -80,7 +84,7 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
 
       if (!ledger.onField(a[0])) { if (status) await say(`status-effect.${status}.heal`, { pokemonNameWithAffix: affix(name, 'player') }); return; }
       await view.setStatus(positionOf(a[0]), '');
-      await say(`own.cureFromItem.${a[1] === 'tox' ? 'psn' : a[1]}`, { pokemonNameWithAffix: affix(name, 'player'), pokemonName: affix(name, 'player'), itemName: names.item(BY_NAME.get(String(kw.from))) });
+      await say(`own.cureFromItem.${a[1] === 'tox' ? 'psn' : a[1]}`, { pokemonNameWithAffix: affix(name, 'player'), pokemonName: affix(name, 'player'), itemName: itemName(sourceItem(kw.from)) });
       return;
     }
     }
@@ -89,7 +93,7 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
   return {
     present,
 
-    usesBagItem: ({ kind, kwArgs: kw }) => (kind === '-heal' || kind === '-curestatus') && BY_NAME.has(String(kw.from)),
+    usesBagItem: ({ kind, kwArgs: kw }) => (kind === '-heal' || kind === '-curestatus') && sourceItem(kw.from) !== undefined,
 
     caught: () => captured,
     say,

@@ -1,6 +1,8 @@
 import { DEFAULT_ASSET_BASE } from '../../view/assets.js';
 import { fieldAtlases, atlasJson, animFrames } from '../../view/field-atlases.js';
 import { DEFAULT_TRAINER, SHOWDOWN_TRAINER_URL, showdownTrainerId, trainerKey, isEnemyTrainer } from '../../view/encounter.js';
+import { createImageRoute, audioType } from '../../view/image-route.js';
+import { LoadError } from '../../view/retry.js';
 import { clearEdges } from './my-picture.js';
 
 function loadImage(src) {
@@ -8,18 +10,20 @@ function loadImage(src) {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`그림을 받지 못함: ${src}`));
+    img.onerror = () => reject(new LoadError(`그림을 받지 못함: ${src}`));
     img.src = src;
   });
 }
+
+const entryRoute = ({ fetchBytes, pictureWays }) => createImageRoute({ ways: pictureWays, fetchBytes });
 const canvasOf = (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h });
 
-async function pokerogueFrame(key) {
+async function pokerogueFrame(key, route) {
   const { trainers } = await fieldAtlases();
   const json = atlasJson(trainers[key]);
   const name = animFrames(json)[0] ?? json.frames[0].filename;
   const { frame, spriteSourceSize: at, sourceSize } = json.frames.find(f => f.filename === name);
-  const img = await loadImage(`${DEFAULT_ASSET_BASE}images/trainer/${key}.png`);
+  const img = await route.image(`${DEFAULT_ASSET_BASE}images/trainer/${key}.png`, loadImage);
   const full = canvasOf(sourceSize.w, sourceSize.h);
   full.getContext('2d').drawImage(img, frame.x, frame.y, frame.w, frame.h, at.x, at.y, frame.w, frame.h);
   const box = canvasOf(frame.w, frame.h);
@@ -46,19 +50,19 @@ async function showdownFrame(id, fetchBytes) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-async function foeFrame(name, fetchBytes) {
+async function foeFrame(name, fetchBytes, route) {
   const id = showdownTrainerId(name);
   if (id) {
-    try { return await showdownFrame(id, fetchBytes); } catch { return pokerogueFrame(DEFAULT_TRAINER); }
+    try { return await showdownFrame(id, fetchBytes); } catch { return pokerogueFrame(DEFAULT_TRAINER, route); }
   }
   const { trainers } = await fieldAtlases();
   const key = trainerKey(name);
-  return pokerogueFrame(isEnemyTrainer(trainers, key) ? key : DEFAULT_TRAINER);
+  return pokerogueFrame(isEnemyTrainer(trainers, key) ? key : DEFAULT_TRAINER, route);
 }
 
-async function playerFrame(name) {
+async function playerFrame(name, route) {
   const key = trainerKey(name);
-  const { full: figure } = await pokerogueFrame(key === 'f' || key.startsWith('trainer_f') ? 'player_f' : 'player_m');
+  const { full: figure } = await pokerogueFrame(key === 'f' || key.startsWith('trainer_f') ? 'player_f' : 'player_m', route);
   const full = canvasOf(Math.max(80, figure.width), Math.max(80, figure.height));
   full.getContext('2d').drawImage(figure, Math.round((full.width - figure.width) / 2), full.height - figure.height);
   return { full };
@@ -73,16 +77,24 @@ async function pictureFrame(image) {
   return { full };
 }
 
-export function entryPictures(spec, { fetchBytes, wild = false, named = false, image = null } = {}) {
+export function entryPictures(spec, { fetchBytes, wild = false, named = false, image = null, pictureWays } = {}) {
   if (wild) return Promise.resolve({ me: null, foe: null, named: null });
-  const foe = foeFrame(spec?.p2?.trainerSprite, fetchBytes).catch(() => null);
-  const me = named ? Promise.resolve(null) : (image ? pictureFrame(image) : playerFrame(spec?.p1?.trainerSprite)).catch(() => null);
+  const route = entryRoute({ fetchBytes, pictureWays });
+  const foe = foeFrame(spec?.p2?.trainerSprite, fetchBytes, route).catch(() => null);
+  const me = named ? Promise.resolve(null) : (image ? pictureFrame(image) : playerFrame(spec?.p1?.trainerSprite, route)).catch(() => null);
   return Promise.all([me, foe]).then(([mine, theirs]) => ({ me: mine?.full ?? null, foe: named ? null : theirs?.full ?? null, named: named ? theirs?.box ?? null : null }));
 }
 
-export function entrySound(path) {
+export function entrySound(path, { fetchBytes, pictureWays } = {}) {
   const audio = new Audio();
   audio.crossOrigin = 'anonymous'; audio.preload = 'auto'; audio.volume = 0.6;
-  audio.src = `${DEFAULT_ASSET_BASE}audio/${path}`;
+  const url = `${DEFAULT_ASSET_BASE}audio/${path}`, route = entryRoute({ fetchBytes, pictureWays }), left = route.order(url);
+  const next = () => {
+    const way = left.shift();
+    if (way === 'direct') audio.src = url;
+    else if (way === 'host') route.objectUrl(url, () => audioType(url)).then(src => { audio.src = src; }, next);
+  };
+  audio.onerror = next;
+  next();
   return () => { audio.play().catch(() => {}); };
 }

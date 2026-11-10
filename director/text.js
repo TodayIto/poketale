@@ -9,6 +9,8 @@ const BASE = { ko, en };
 
 const pairs = [['은', '는'], ['이', '가'], ['을', '를'], ['으로', '로'], ['과', '와'], ['이랑', '랑']];
 
+const LETTER_FINAL = { L: 'l', R: 'l', M: true, N: true };
+
 export function postposition(word, particle) {
   const pair = pairs.find(p => p.includes(particle));
   if (!pair) throw new Error(`Unknown particle: ${particle}`);
@@ -27,6 +29,12 @@ export function postposition(word, particle) {
       final = plain.includes('.') || !([12, 20, 24, 32, 44].includes(zeros) || zeros >= 52);
     }
     return pair[final ? 0 : 1];
+  }
+
+  const letters = /(?:^|[^A-Za-z])([A-Z]{1,3})$/.exec(plain)?.[1];
+  if (letters) {
+    const final = LETTER_FINAL[letters.at(-1)];
+    return pair[final && !(pair[0] === '으로' && final === 'l') ? 0 : 1];
   }
   if (/[っんッンﾝ]/u.test(last || '')) return pair[0];
   if (/[\u3041-\u309f\u30a0-\u30fa\u31f0-\u31ff\uff66-\uff9c]/u.test(last || '')) return pair[1];
@@ -56,7 +64,6 @@ export function phrase(tables, key, values, lang = DEFAULT_LANG, what = 'text') 
 
 const NO_TABLE = Object.fromEntries(LANGS.map(lang => [lang, {}]));
 
-// Own sentence only (director/own-text.js)
 export const ownText = (key, values, lang = DEFAULT_LANG) => phrase(NO_TABLE, key, values, lang, 'own text');
 
 export function text(key, values, lang = DEFAULT_LANG) {

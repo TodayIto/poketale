@@ -8,19 +8,21 @@ const WHY = {
   disabled: (c, n) => `${n.moves(c.move)} can't be used right now`,
   noSwitch: () => 'no such Pokémon can come in',
   trapped: () => "it can't be switched out",
-  noItem: (c, n) => `there is no ${c.item ? n.items(c.item) : 'such item'} in the bag`,
-  cantUse: (c, n) => `${n.items(c.item)} would have no effect`,
+  noItem: (c, n) => `there is no ${c.item ? itemText(c, n) : 'such item'} in the bag`,
+  cantUse: (c, n) => `${itemText(c, n)} would have no effect`,
   cantRun: () => "there's no running from this battle",
 
   noCommand: (c, n) => `${pokemonText(c.who, n)} is not on the field`,
 };
+
+const itemText = (c, n) => c.raw ?? n.items(c.item);
 
 const pokemonText = (who, n) => (who?.species ? n.species(who.species) : who?.name);
 
 function commandText(c, n) {
   if (c.kind === 'move') return `${c.move ? n.moves(c.move) : c.raw ?? 'a move'}${c.gimmick === 'tera' ? ' (Terastallize)' : c.gimmick === 'mega' ? ' (Mega Evolve)' : ''}`;
   if (c.kind === 'switch') return `switch to ${c.target?.slot ? `party #${c.target.slot}` : pokemonText(c.target, n)}`;
-  if (c.kind === 'item') return `use ${c.item ? n.items(c.item) : 'an item'}`;
+  if (c.kind === 'item') return `use ${c.item ? itemText(c, n) : 'an item'}`;
   return 'run';
 }
 

@@ -1,6 +1,6 @@
 // Display-only settlement tags. The bot's own display rules render its buttons and its Lua handles clicks.
 import { battlesIn, parseBattle } from './blocks.mjs';
-import { SETTLEMENT_BOT } from './compat.mjs';
+import { SETTLEMENT_BOT, hasSettlement } from './compat.mjs';
 import { opponentGender } from './trainer-look.mjs';
 
 const V = SETTLEMENT_BOT.vars;
@@ -31,8 +31,8 @@ async function playerGender(vars, myGender) {
   return (await myGender?.()) ?? null;
 }
 
-export async function victoryChoices({ bot, chat, index, survey, myGender = null }) {
-  if (String(bot ?? '').normalize('NFC').trim().toLowerCase() !== SETTLEMENT_BOT.name) return '';
+export async function victoryChoices({ chat, index, survey, myGender = null }) {
+  if (!hasSettlement(chat)) return '';
   const info = survey?.battles.get(survey.lastBattleKey);
   if (info?.phase !== 'done' || info.result?.outcome !== 'win' || info.result.index !== index) return '';
   const messages = chat?.message ?? [];

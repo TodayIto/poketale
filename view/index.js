@@ -1,5 +1,5 @@
 // from pokerogue src/main.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 // from pokerogue src/scene-base.ts @ 7d7da4a8 (AGPL-3.0-only)
 import Phaser from 'phaser';
 import { BattleScene } from './scene.js';
@@ -10,7 +10,7 @@ import { keyAction } from './ui/keys.js';
 import { showTrainer, hideInfo, pause } from './flow-extras.js';
 import { checkTheme } from './ui/theme.js';
 import { checkLang, DEFAULT_LANG } from '../director/lang.js';
-import { prepareOutside, showSummary, startPartyScene, endPartyScene, chooseRememberMove } from './outside.js';
+import { prepareOutside, showSummary, startPartyScene, endPartyScene, chooseRememberMove, startAmie, startTraining } from './outside.js';
 import { refitScale } from './refit.js';
 import { screenButtons } from './ui/tap-back.js';
 import { GAME_SPEEDS, DEFAULT_SPEED } from './game-speed.js';
@@ -101,7 +101,7 @@ export async function createBattleView(options) {
 
   view.runAway = () => life.run(() => runAway(scene));
 
-  for (const api of ['gainExp', 'partyExp', 'playFanfare', 'updateLevel', 'showLevelUpStats', 'confirm', 'chooseForgetMove', 'startEvolution', 'evolve', 'endEvolution']) {
+  for (const api of ['gainExp', 'partyExp', 'playFanfare', 'updateLevel', 'showLevelUpStats', 'confirm', 'pick', 'chooseForgetMove', 'startEvolution', 'evolve', 'endEvolution']) {
     view[api] = (...args) => life.run(() => scene.levels[api](...args));
   }
 
@@ -132,6 +132,10 @@ export async function createBattleView(options) {
   view.endPartyScene = () => life.run(() => endPartyScene(scene));
 
   view.chooseRememberMove = options => life.run(() => chooseRememberMove(scene, options));
+
+  view.startAmie = options => life.run(() => startAmie(scene, options));
+
+  view.startTraining = options => life.run(() => startTraining(scene, options));
 
   view.pressKey = key => {
     const name = PAD_KEYS[key];

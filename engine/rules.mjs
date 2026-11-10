@@ -7,6 +7,17 @@ export const CHAMPIONS_FORMAT = 'gen9championscustomgame@@@!Team Preview,Level C
 
 export const DEFAULT_FORMAT = MAINLINE_FORMAT;
 
+const RULE_FORMATS = Object.freeze({ mainline: MAINLINE_FORMAT, champions: CHAMPIONS_FORMAT });
+export const RULE_IDS = Object.freeze(Object.keys(RULE_FORMATS));
+export const DEFAULT_RULE = 'mainline';
+export const ruleFormat = (rule = DEFAULT_RULE) => RULE_FORMATS[rule];
+
+export function formatRule(format) {
+	const rule = RULE_IDS.find(id => RULE_FORMATS[id] === format);
+	if (!rule) throw new Error(`No rule for the format ${format}`);
+	return rule;
+}
+
 export function doublesFormat(format) {
 	const [id, rules] = String(format).split('@@@');
 	const doubles = id.replace(/^gen9(champions)?customgame$/, 'gen9$1doublescustomgame');

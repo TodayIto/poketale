@@ -1,9 +1,13 @@
 import { BAG_ITEMS } from '../engine/bag.mjs';
 import { BALLS } from '../engine/capture.mjs';
 import { expForLevel, growthOf } from '../engine/exp.mjs';
-import { STATS, evolutionTargets, holdsEverstone, displayName, heldItemForm } from '../engine/mon.mjs';
-import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty, rememberableMoves } from './state.mjs';
-import { PARTY_MAX, MAX_LEVEL, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, BOX_SIZE } from './rules.mjs';
+import { STATS, displayName, heldItemForm, spriteIdOf } from '../engine/mon.mjs';
+import { itemEvolution, tradeEvolution, tradePair, evolutionItems, spinEvolution, ABSENT_TRADE_EVOLUTION } from '../engine/evolution.mjs';
+import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty, rememberableMoves, friendshipOf, evolutionCheck, isEgg, hatched, hatchedParty, breedingOf, stateFormat } from './state.mjs';
+import { EGG_SPRITE, compatHearts } from '../engine/breeding.mjs';
+import { FRIENDSHIP_MAX, FRIENDSHIP_STEPS } from '../engine/friendship.mjs';
+import { PARTY_MAX, MAX_LEVEL, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, BOX_SIZE, MAX_MOVES } from './rules.mjs';
+import { ruleFormat, DEFAULT_FORMAT } from '../engine/rules.mjs';
 import { MAX_PP_UPS } from '../engine/pp.mjs';
 import { OUTSIDE_ITEMS, VITAMIN_EVS, HYPER_TRAIN_LEVEL, isTm } from './items.mjs';
 import { itemText, tmMove, canLearnTm } from './item-info.mjs';
@@ -12,11 +16,18 @@ import { say } from './screen-text.mjs';
 import { battleNamesIn } from '../plugin/battle/names.js';
 import bagIcons from '../data/bag-icons.json' with { type: 'json' };
 import { CUSTOM_PREFIX, isCustomItem, customInfo, itemId } from './custom-items.mjs';
+import { hungBagOf, effortOn } from './training.mjs';
+import { badgeCaseModel, badgePress } from './badge-case.mjs';
+import { canPet, enjoymentOf, parsePuff, puffId, puffCount, puffFriendship, foodFriendship, FREE_GRADE, PUFF_FLAVORS, PUFF_GRADES } from './amie.mjs';
 
 export { PARTY_MAX, BOX_SIZE };
-export const BOX_COLS = 6;
+
+export const SCREEN_PLACES = Object.freeze(['panel', 'window']);
+export const DEFAULT_SCREEN_PLACE = 'panel';
 export const BOX_COUNT = 32;
-export const TABS = Object.freeze(['party', 'box', 'bag']);
+export const TABS = Object.freeze(['party', 'box', 'bag', 'amie', 'badges']);
+
+const TRAVEL_TAB = 'travel';
 
 const refOf = mon => ({ uid: mon.uid });
 
@@ -46,16 +57,13 @@ export const LOCK_FREE = new Set(['nickname', 'boxname']);
 
 const evolutionItemCache = new WeakMap();
 
-function evolutionItems(sim) {
-  let set = evolutionItemCache.get(sim.Dex);
-  if (!set) {
-    set = new Set(sim.Dex.species.all().filter(s => s.evoType === 'useItem' && s.evoItem).map(s => toID(s.evoItem)));
-    evolutionItemCache.set(sim.Dex, set);
-  }
-  return set;
+function stoneItems(sim, trade) {
+  let byMode = evolutionItemCache.get(sim.Dex);
+  if (!byMode) evolutionItemCache.set(sim.Dex, byMode = {});
+  return byMode[trade] ??= evolutionItems(sim.Dex, trade);
 }
 
-export function itemKind(id, sim) {
+export function itemKind(id, sim, trade = ABSENT_TRADE_EVOLUTION) {
   if (isCustomItem(id)) return 'custom';
   const key = toID(id);
   if (Object.hasOwn(BALLS, key)) return 'ball';
@@ -64,7 +72,7 @@ export function itemKind(id, sim) {
   if (isTm(key)) return 'tm';
   if (Object.hasOwn(OUTSIDE_ITEMS, key)) return OUTSIDE_ITEMS[key].kind;
   if (key === 'rarecandy') return 'candy';
-  if (evolutionItems(sim).has(key)) return 'stone';
+  if (stoneItems(sim, trade).has(key)) return 'stone';
   return 'held';
 }
 const USABLE = new Set(['medicine', 'candy', 'stone', 'train', 'tm', 'evolve']);
@@ -77,17 +85,25 @@ const NOT_TOSSABLE = new Set(['key']);
 
 const medicineOf = id => BAG_ITEMS[id] ?? (OUTSIDE_ITEMS[id]?.kind === 'medicine' ? OUTSIDE_ITEMS[id] : null);
 
-export function stoneEvolution(sim, mon, id) {
-  const key = toID(id);
-  const ready = evolutionTargets(sim.Dex, mon.set, t => t.evoType === 'useItem' && toID(t.evoItem) === key);
-  return ready.length >= 1 ? ready[0].name : null;
+export function stoneEvolution(ctx, mon, id, party = []) {
+  const { mon: evolving, now } = evolutionCheck(ctx, mon, party);
+  return itemEvolution(ctx.sim.Dex, evolving, id, now);
 }
 
-export function tradeEvolution(sim, mon) {
-  const held = toID(mon.set.item);
-  if (holdsEverstone(held)) return null;
-  const ready = evolutionTargets(sim.Dex, mon.set, t => t.evoType === 'trade' && !t.evoCondition && t.isNonstandard !== 'CAP' && (!t.evoItem || toID(t.evoItem) === held));
-  return ready.length ? { into: ready[0].name, consumeHeld: !!ready[0].evoItem } : null;
+export function cordEvolutions(ctx, mon, party = []) {
+  const { mon: evolving, now } = evolutionCheck(ctx, mon, party);
+  const trade = tradeEvolution(ctx.sim.Dex, evolving, now);
+  if (!trade) return null;
+  const first = { uid: mon.uid, into: trade.into, ...(trade.consumeHeld ? { consumeHeld: true } : {}) };
+  const other = trade.with && hatched(party).find(m => m.uid !== mon.uid && toID(ctx.sim.Dex.species.get(m.set.species).name) === toID(trade.with));
+  const into = other && tradePair(ctx.sim.Dex, { species: mon.set.species, item: mon.set.item }, { species: other.set.species, item: other.set.item })?.[1];
+  return into ? [first, { uid: other.uid, into }] : [first];
+}
+
+export function swapEvolutions(ctx, a, b) {
+  if ((ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION) !== 'level' || hatched([a, b]).length < 2) return null;
+  const into = tradePair(ctx.sim.Dex, { species: a.set.species, item: a.set.item }, { species: b.set.species, item: b.set.item });
+  return into && [[a, into[0]], [b, into[1]]].filter(([, to]) => to).map(([mon, to]) => ({ uid: mon.uid, into: to }));
 }
 
 export function abilityChange(sim, mon, id) {
@@ -133,6 +149,7 @@ export function itemDescription(id, sim, lang) {
   if (kind === 'stone' || kind === 'evolve') return t('item.stone');
   const outside = OUTSIDE_ITEMS[key] ?? {};
   if (outside.vitamin) return t('item.vitamin', { stat: statName(outside.vitamin, lang) });
+  if (outside.evBerry) return t('item.evBerry', { stat: statName(outside.evBerry, lang) });
   if (outside.exp) return t('item.expCandy', { n: outside.exp.toLocaleString(lang) });
   if (outside.ability) return t(outside.ability === 'capsule' ? 'item.abilityCapsule' : 'item.abilityPatch');
   if (outside.mint) return t('item.mint', { nature: natureName(outside.mint, lang) });
@@ -146,8 +163,9 @@ const noEffect = lang => say(lang, 'panel.noEffect');
 
 const selectMove = lang => say(lang, 'panel.selectMove');
 
-export function useCheck(mon, itemId, { sim, exp }, lang) {
-  const id = toID(itemId), kind = itemKind(id, sim);
+export function useCheck(mon, itemId, ctx, lang, party = [], format = DEFAULT_FORMAT) {
+  const { sim, exp } = ctx;
+  const id = toID(itemId), kind = itemKind(id, sim, ctx.tradeEvolution);
   const fainted = mon.hp === 0;
   const no = { ok: false, reason: noEffect(lang) };
   const names = namesFor(lang, sim);
@@ -158,18 +176,22 @@ export function useCheck(mon, itemId, { sim, exp }, lang) {
     if (fainted) return no;
     if (item.pp) {
 
-      const moves = mon.set.moves.map(m => { const { pp, maxpp } = movePp(sim, mon, m); return { id: m, pp, maxpp, disabled: pp >= maxpp }; });
+      const moves = mon.set.moves.map(m => { const { pp, maxpp } = movePp(sim, mon, m, format); return { id: m, pp, maxpp, disabled: pp >= maxpp }; });
       if (!moves.some(m => !m.disabled)) return no;
       return item.oneMove ? { ok: true, moves, prompt: selectMove(lang) } : { ok: true };
     }
     let useful = false;
-    if (item.heal) useful ||= mon.hp !== null && mon.hp < maxHp(sim, mon.set);
+    if (item.heal) useful ||= mon.hp !== null && mon.hp < maxHp(sim, mon.set, format);
     if (item.cure) useful ||= !!mon.status && mon.status !== 'fnt' && (item.cure === 'all' || item.cure.includes(mon.status));
     return useful ? { ok: true } : no;
   }
   if (kind === 'candy') return mon.set.level < MAX_LEVEL ? { ok: true } : no;
-  if (kind === 'stone') { const into = stoneEvolution(sim, mon, id); return into ? { ok: true, evolve: into } : no; }
-  if (kind === 'evolve') { const trade = tradeEvolution(sim, mon); return trade ? { ok: true, evolve: trade.into, consumeHeld: trade.consumeHeld } : no; }
+  if (kind === 'stone') { const into = stoneEvolution(ctx, mon, id, party); return into ? { ok: true, evolutions: [{ uid: mon.uid, into }] } : no; }
+  if (kind === 'evolve') {
+
+    const evolutions = (ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION) === 'level' ? null : cordEvolutions(ctx, mon, party);
+    return evolutions ? { ok: true, evolutions } : no;
+  }
   if (kind === 'tm') {
     const move = tmMove(id);
     if (!move) return no;
@@ -186,9 +208,11 @@ export function useCheck(mon, itemId, { sim, exp }, lang) {
     return (evs[item.vitamin] ?? 0) < EV_STAT_MAX && total < EV_TOTAL_MAX ? { ok: true } : no;
   }
 
+  if (item.evBerry) return (mon.set.evs?.[item.evBerry] ?? 0) > 0 || friendshipOf(ctx, mon) < FRIENDSHIP_MAX ? { ok: true } : no;
+
   if (item.ppUp) {
     const moves = mon.set.moves.map(m => {
-      const { pp, maxpp, ppUps } = movePp(sim, mon, m);
+      const { pp, maxpp, ppUps } = movePp(sim, mon, m, format);
       return { id: m, pp, maxpp, ppUps, disabled: ppUps >= MAX_PP_UPS || !!sim.Dex.moves.get(m).noPPBoosts };
     });
     return moves.some(m => !m.disabled) ? { ok: true, moves, prompt: selectMove(lang) } : no;
@@ -223,13 +247,18 @@ export function useOps(mon, itemId, { sim }, { move, stat } = {}) {
       if (item.heal) ops.push(item.heal === 'full' ? { op: 'heal', ref, hpPercent: 100 } : { op: 'heal', ref, hpAdd: item.heal });
       if (item.cure) ops.push({ op: 'heal', ref, statusOnly: true });
     }
+    if (ref && Object.hasOwn(FRIENDSHIP_STEPS, id)) ops.push({ op: 'friendship', ref, source: id });
   } else if (kind === 'candy') ops.push({ op: 'level', ref, delta: 1, candy: true });
-  else if (kind === 'train' && outside.vitamin) ops.push({ op: 'evs', ref, stat: outside.vitamin, amount: VITAMIN_EVS });
+  else if (kind === 'train' && outside.vitamin) ops.push({ op: 'evs', ref, stat: outside.vitamin, amount: VITAMIN_EVS }, { op: 'friendship', ref, source: 'vitamin' });
+  else if (kind === 'train' && outside.evBerry) {
+    if ((mon.set.evs?.[outside.evBerry] ?? 0) > 0) ops.push({ op: 'evs', ref, stat: outside.evBerry, amount: -VITAMIN_EVS });
+    ops.push({ op: 'friendship', ref, source: 'berry' });
+  }
   else if (kind === 'train' && outside.exp) ops.push({ op: 'exp', ref, amount: outside.exp });
   else if (kind === 'train' && outside.ability) ops.push({ op: 'ability', ref, ability: abilityChange(sim, mon, id) });
   else if (kind === 'train' && outside.mint) ops.push({ op: 'nature', ref, nature: outside.mint });
   else if (kind === 'train' && outside.hyper) ops.push({ op: 'hypertrain', ref, stats: outside.hyper === 'all' ? 'all' : [stat] });
-  else if (kind === 'train' && outside.ppUp) ops.push({ op: 'ppup', ref, move, amount: outside.ppUp });
+  else if (kind === 'train' && outside.ppUp) ops.push({ op: 'ppup', ref, move, amount: outside.ppUp }, { op: 'friendship', ref, source: 'vitamin' });
   else throw new Error(`Not an item used outside battle: ${id}`);
   ops.push({ op: 'item', item: id, delta: -1, fromBag: true });
   return ops;
@@ -256,18 +285,29 @@ export const actions = {
   toss: (item, n) => ({ type: 'toss', ops: [{ op: 'item', item: itemId(item), delta: -n, fromBag: true }] }),
   boxName: (box, name) => ({ type: 'boxname', ops: [{ op: 'boxname', box, name: String(name ?? '').trim() }] }),
   use: (mon, item, ctx, options) => ({ type: 'use', item: toID(item), ops: useOps(mon, item, ctx, options) }),
+
+  breed: (a, b) => ({ type: 'breed', ops: [{ op: 'breed', a: refOf(a), b: refOf(b) }] }),
+  unbreed: () => ({ type: 'breed', ops: [{ op: 'breed', stop: true }] }),
 };
+
+export function breedingView(state, ctx, lang) {
+  const now = breedingOf(state, ctx);
+  if (!now) return null;
+  const hearts = compatHearts(now.chance);
+  return { a: now.a.uid, b: now.b.uid, chance: now.chance, ok: now.chance > 0, hearts, reason: now.reason,
+    label: say(lang, now.chance > 0 ? `panel.breed.hearts${hearts}` : 'panel.breed.none'), why: now.chance > 0 ? '' : say(lang, `panel.breed.why.${now.reason}`) };
+}
 
 const learnOp = (mon, move, result) => (result?.learned
   ? { op: 'learn', ref: refOf(mon), move, ...(result.forgot ? { forget: result.forgot } : {}) }
   : { op: 'learn', ref: refOf(mon), move, skip: true });
 
-export const pendingCount = mon => (mon?.pending?.moves?.length ?? 0) + (mon?.pending?.evolve ? 1 : 0);
+export const pendingCount = mon => (mon?.pending?.hatched ? 1 : 0) + (mon?.pending?.moves?.length ?? 0) + (mon?.pending?.evolve ? 1 : 0);
 
 export const levelBadge = mon => (pendingCount(mon) ? Math.max(1, mon.pending.levels || pendingCount(mon)) : 0);
 
 export function levelUpPlan(mon) {
-  return { moves: [...(mon?.pending?.moves ?? [])], evolve: mon?.pending?.evolve ?? null };
+  return { hatch: !!mon?.pending?.hatched, moves: [...(mon?.pending?.moves ?? [])], evolve: mon?.pending?.evolve ?? null };
 }
 
 export function evolutionMoves(ctx, mon, into) {
@@ -276,32 +316,66 @@ export function evolutionMoves(ctx, mon, into) {
   return errors.length ? [] : state.party[0].pending.moves;
 }
 
-export function levelUpAction(mon, { moves = [], evolution = null } = {}) {
-  const ops = moves.map(({ move, result }) => learnOp(mon, move, result));
+export function levelUpAction(mon, { hatched = false, moves = [], evolution = null } = {}) {
+  const ops = [...(hatched ? [{ op: 'hatched', ref: refOf(mon) }] : []), ...moves.map(({ move, result }) => learnOp(mon, move, result))];
   if (evolution) {
     if (evolution.evolved) {
       ops.push({ op: 'evolve', ref: refOf(mon), species: evolution.into });
       for (const learned of evolution.learned ?? []) ops.push(learnOp(mon, learned.move, learned));
     } else ops.push({ op: 'noevolve', ref: refOf(mon) });
   }
-  return ops.length ? { type: evolution?.evolved ? 'evolve' : 'learn', ops } : null;
+  return ops.length ? { type: evolution?.evolved ? 'evolve' : moves.length || evolution ? 'learn' : 'hatch', ops } : null;
 }
 
-export function stoneAction(mon, item, { into, evolved, learned = [] }, { consumeHeld = false } = {}) {
-  if (!evolved) return null;
-  const ops = [{ op: 'evolve', ref: refOf(mon), species: into }, ...(consumeHeld ? [{ op: 'hold', ref: refOf(mon), item: '' }] : []),
-    ...learned.map(l => learnOp(mon, l.move, l)), { op: 'item', item: toID(item), delta: -1, fromBag: true }];
-  return { type: 'use', item: toID(item), ops };
+export function evolveAction({ item = null, before = [] }, done) {
+  const evolved = done.filter(d => d.result?.evolved);
+  const ops = [...before, ...evolved.flatMap(({ mon, step, result }) => [{ op: 'evolve', ref: refOf(mon), species: result.into ?? step.into },
+    ...(step.consumeHeld ? [{ op: 'hold', ref: refOf(mon), item: '' }] : []), ...(result.learned ?? []).map(l => learnOp(mon, l.move, l))])];
+  if (item && evolved.length) ops.push({ op: 'item', item: toID(item), delta: -1, fromBag: true });
+  if (!ops.length) return null;
+  return item && evolved.length ? { type: 'use', item: toID(item), ops } : { type: evolved.length ? 'evolve' : 'order', ops };
 }
 
 export function rememberAction(mon, result) {
   return result?.learned ? { type: 'learn', ops: [learnOp(mon, result.move, result)] } : null;
 }
 
+export function petAction(mon, result) {
+  const ops = result?.spent > 0 ? [{ op: 'amie', ref: refOf(mon), gains: [...result.gains] }] : [];
+  for (const friend of result?.friends ?? []) {
+    if (friend?.uid && friend.uid !== mon.uid && friend.gains?.length) ops.push({ op: 'amie', ref: { uid: friend.uid }, gains: [...friend.gains] });
+  }
+  for (const step of result?.done ?? []) {
+    if (step.fed) ops.push({ op: 'feed', ref: refOf(mon), ...step.fed });
+    const won = (step.won ?? []).filter(id => parsePuff(id)?.grade !== FREE_GRADE);
+    for (const id of new Set(won)) ops.push({ op: 'puff', puff: id, delta: won.filter(w => w === id).length });
+  }
+  const evolution = result?.evolution;
+  if (evolution?.evolved) {
+    ops.push({ op: 'evolve', ref: refOf(mon), species: evolution.into, decoration: mon.set.item }, { op: 'hold', ref: refOf(mon), item: '' },
+      ...(evolution.learned ?? []).map(l => learnOp(mon, l.move, l)));
+  }
+  return ops.length ? { type: evolution?.evolved ? 'evolve' : 'amie', ops } : null;
+}
+
+export function trainAction(mon, result) {
+  const bags = result?.bags ?? [], before = hungBagOf(mon), hung = result?.hung ?? null;
+  const same = (before?.id ?? null) === (hung?.id ?? null) && (before?.hits ?? 0) === (hung?.hits ?? 0);
+  if (!bags.length && (same || result?.hung === undefined)) return null;
+  return { type: 'train', ops: [{ op: 'train', ref: refOf(mon), bags: [...bags], ...(same ? {} : { hung: hung && { id: hung.id, hits: hung.hits } }) }] };
+}
+
+export function spinInto(ctx, mon, spin) {
+  const { mon: evolving, now } = evolutionCheck(ctx, mon);
+  return spinEvolution(ctx.sim.Dex, evolving, spin, now);
+}
+
 export function teachAction(mon, item, move, result) {
   if (!result?.learned) return null;
   return { type: 'use', item: toID(item), ops: [learnOp(mon, move, result), { op: 'item', item: toID(item), delta: -1, fromBag: true }] };
 }
+
+const canRemember = (ctx, mon) => rememberableMoves(ctx, mon).length > 0;
 
 const opt = (id, label, disabled = false, extra = {}) => ({ id, label, disabled: !!disabled, ...extra });
 
@@ -311,25 +385,30 @@ const debugRows = (debug, locked, lang) => (debug ? [row(lang)('debugEdit', 'deb
 
 export function partyMenu(mon, { state, ctx, locked = false, debug = false }, lang) {
   const r = row(lang);
+
+  if (isEgg(mon)) return [r('order', 'order', locked || state.party.length < 2), r('deposit', 'deposit', locked), ...debugRows(debug, locked, lang), r('cancel', 'cancel')];
   const list = [r('summary', 'summary')];
-  if (pendingCount(mon)) list.push(r('levelup', 'levelUp', locked, { n: levelBadge(mon) }));
-  list.push(r('remember', 'remember', locked || !rememberableMoves(ctx, mon).length));
+  if (pendingCount(mon)) list.push(r('levelup', mon.pending.hatched ? 'hatch' : 'levelUp', locked, { n: levelBadge(mon) }));
+  list.push(r('remember', 'remember', locked || !canRemember(ctx, mon)));
   list.push(r('order', 'order', locked || state.party.length < 2));
   list.push(r('give', 'give', locked || !holdableItems(state, ctx.sim).length));
   if (mon.set.item) list.push(r('take', 'take', locked));
+  list.push(r('pet', 'pet', locked || !canPet(mon)));
 
-  list.push(r('deposit', 'deposit', locked || state.party.length <= 1));
+  list.push(r('deposit', 'deposit', locked || hatchedParty(state).length <= 1));
   list.push(...debugRows(debug, locked, lang), r('cancel', 'cancel'));
   return list;
 }
 
 export function boxMenu(mon, { locked = false, debug = false }, lang) {
   const r = row(lang);
+
+  if (isEgg(mon)) return [r('withdraw', 'withdraw', locked), ...debugRows(debug, locked, lang), r('cancel', 'cancel')];
   return [r('withdraw', 'withdraw', locked), r('summary', 'summary'), r('release', 'release', locked), ...debugRows(debug, locked, lang), r('cancel', 'cancel')];
 }
 
-export function bagMenu(id, { locked = false, sim, state }, lang) {
-  const kind = itemKind(id, sim);
+export function bagMenu(id, { locked = false, sim, state, trade }, lang) {
+  const kind = itemKind(id, sim, trade);
   if (NOT_TOSSABLE.has(kind)) return null;
   const r = row(lang);
   const list = [];
@@ -356,16 +435,21 @@ function expRatio(ctx, mon) {
 
 export function slotView(mon, ctx, state, lang) {
   const { sim } = ctx;
+
+  if (isEgg(mon)) {
+    return { uid: mon.uid, egg: true, name: say(lang, 'panel.egg'), speciesId: EGG_SPRITE, spriteId: EGG_SPRITE, shiny: false, gender: '', level: null, hp: 0, maxhp: 0,
+      hpClass: 'high', status: '', fainted: false, exp: null, item: '', badge: 0, pet: false, enjoy: 0, held: null };
+  }
   const names = namesFor(lang, sim);
   const species = sim.Dex.species.get(heldItemForm(sim.Dex, mon.set).species);
-  const max = maxHp(sim, mon.set);
+  const max = maxHp(sim, mon.set, stateFormat(state));
   const hp = mon.hp === null || mon.hp === undefined ? max : Math.max(0, mon.hp);
   const ratio = max ? hp / max : 0;
   return {
-    uid: mon.uid, name: monName(mon, sim, names), speciesId: species.id, spriteId: species.spriteid || species.id, shiny: !!mon.set.shiny,
+    uid: mon.uid, name: monName(mon, sim, names), speciesId: species.id, spriteId: spriteIdOf(species) || species.id, shiny: !!mon.set.shiny,
     gender: mon.set.gender || '', level: mon.set.level, hp, maxhp: max, hpClass: ratio > 0.5 ? 'high' : ratio > 0.2 ? 'mid' : 'low',
     status: hp === 0 ? '' : mon.status && mon.status !== 'fnt' ? mon.status : '', fainted: hp === 0,
-    exp: expRatio(ctx, mon), item: mon.set.item || '', badge: levelBadge(mon),
+    exp: expRatio(ctx, mon), item: mon.set.item || '', badge: levelBadge(mon), pet: canPet(mon), enjoy: enjoymentOf(mon),
     held: mon.set.item ? { name: itemLabel(state, mon.set.item, names), emoji: customInfo(state, mon.set.item)?.emoji ?? '' } : null,
   };
 }
@@ -383,11 +467,11 @@ export function itemIcon(id, sim) {
 const GROUPS = ['medicine', 'ball', 'battle', 'train', 'tm', 'evolve', 'other', 'treasure', 'field', 'key'];
 const GROUP_OF = { candy: 'train', stone: 'evolve', held: 'other', custom: 'other' };
 const ORDER = [...Object.keys(BAG_ITEMS), ...Object.keys(BALLS), 'rarecandy', ...Object.keys(OUTSIDE_ITEMS)];
-export function bagView(state, sim, lang) {
+export function bagView(state, sim, lang, trade) {
   const names = namesFor(lang, sim);
   const rank = id => (ORDER.includes(id) ? ORDER.indexOf(id) : ORDER.length);
   const rows = Object.entries(state.bag ?? {}).filter(([, n]) => n > 0).map(([id, count]) => {
-    const kind = itemKind(id, sim);
+    const kind = itemKind(id, sim, trade);
 
     return { id, count, name: itemLabel(state, id, names, { bag: true }), kind, icon: kind === 'custom' ? { emoji: customInfo(state, id)?.emoji ?? '' } : itemIcon(id, sim),
       group: GROUP_OF[kind] ?? kind };
@@ -395,7 +479,24 @@ export function bagView(state, sim, lang) {
   return GROUPS.map(group => ({ group, label: say(lang, `panel.group.${group}`), items: rows.filter(r => r.group === group) })).filter(g => g.items.length);
 }
 
-export function panelModel({ state, ctx, lang, locked = false, resume = false, debug = false, offer = null, ui, money = state.money === null ? null : state.money ?? 0 }) {
+export function puffFood(id, lang) {
+  const { flavor, grade } = parsePuff(id);
+  return { key: `puff:${id}`, fed: { puff: id }, name: say(lang, `amie.puff.${grade}`, { flavor: say(lang, `amie.flavor.${flavor}`) }), icon: null,
+    count: grade === FREE_GRADE ? null : 1, friendship: puffFriendship(grade), grade, flavor };
+}
+
+export function foodList(state, sim, lang) {
+  const free = PUFF_FLAVORS.map(flavor => puffFood(puffId(flavor, FREE_GRADE), lang));
+  const prizes = PUFF_GRADES.filter(g => g !== FREE_GRADE).flatMap(grade => PUFF_FLAVORS.map(f => puffId(f, grade)).filter(id => puffCount(state, id))
+    .map(id => ({ ...puffFood(id, lang), count: puffCount(state, id) })));
+  const items = bagView(state, sim, lang).flatMap(g => g.items).flatMap(row => {
+    const friendship = foodFriendship(row.id, sim, state);
+    return friendship ? [{ key: `item:${row.id}`, fed: { item: row.id }, name: row.name, icon: row.icon, count: row.count, friendship }] : [];
+  });
+  return [...free, ...prizes, ...items];
+}
+
+export function panelModel({ state, ctx, lang, locked = false, resume = false, debug = false, offer = null, travel = null, ui, screen = null, money = state.money === null ? null : state.money ?? 0 }) {
   const { sim } = ctx;
   const party = Array.from({ length: PARTY_MAX }, (_, i) => (state.party[i] ? slotView(state.party[i], ctx, state, lang) : null));
   const count = boxCount(state);
@@ -404,24 +505,33 @@ export function panelModel({ state, ctx, lang, locked = false, resume = false, d
     const mon = state.box[index * BOX_SIZE + i];
     return mon ? slotView(mon, ctx, state, lang) : null;
   });
+  const tabs = travel ? [...TABS, TRAVEL_TAB] : TABS;
   return {
-    lang, open: !!ui.open, tab: TABS.includes(ui.tab) ? ui.tab : 'party', locked, resume: !!resume,
+    lang, open: !!ui.open, tab: tabs.includes(ui.tab) ? ui.tab : 'party', tabs, travel, locked, resume: !!resume, screen,
     alerts: { party: state.party.some(m => pendingCount(m) > 0), box: false, bag: false },
     party, box: { index, count, name: boxName(state, index, lang), cells },
-    bag: { money, groups: bagView(state, sim, lang) },
-    add: debug ? addable(state, locked) : null,
+    bag: { money, groups: bagView(state, sim, lang, ctx.tradeEvolution) },
+    add: debug ? addable(state, locked) : null, debug: !!debug,
     heal: debug ? !locked : null,
     offer: offer && !locked ? { note: !!offer.note, button: !!offer.button } : null,
+    breeding: breedingView(state, ctx, lang),
+
+    breedPick: ui.select?.mode === 'breed', breedable: !locked && hatchedParty(state).length >= 2,
+
+    breedPill: (!locked && hatchedParty(state).length >= 2) || !!state.breeding,
+    pairShown: !ui.pairHidden || ui.select?.mode === 'breed',
+    badges: badgeCaseModel(state, lang, { gym: ui.gym, debug, locked, icon: id => itemIcon(id, sim), monLabel: mon => displayName(sim.Dex, namesFor(lang, sim), mon.species, mon.name) }),
     picked: ui.ask?.uid ?? ui.menu?.uid ?? ui.select?.uid ?? ui.menu?.item ?? ui.select?.item ?? ui.count?.item ?? null,
-    window: windowOf(ui, lang, sim),
+
+    window: (screen && !ui.message ? screen.window : null) ?? windowOf(ui, lang, sim),
   };
 }
 
 const addable = (state, locked) => ({ party: !locked && state.party.length < PARTY_MAX, box: !locked, bag: !locked });
 
 function healChanges(state, ctx) {
-  const { sim, formatid } = ctx;
-  const look = mon => JSON.stringify([mon.hp ?? maxHp(sim, mon.set, formatid), mon.status || '', mon.set.moves.map(m => movePp(sim, mon, m, formatid).pp)]);
+  const { sim } = ctx, format = stateFormat(state);
+  const look = mon => JSON.stringify([mon.hp ?? maxHp(sim, mon.set, format), mon.status || '', mon.set.moves.map(m => movePp(sim, mon, m, format).pp)]);
   const healed = clone(state);
   healParty(healed, ctx);
   return state.party.some((mon, i) => look(mon) !== look(healed.party[i]));
@@ -452,16 +562,51 @@ function windowOf(ui, lang, sim) {
   return null;
 }
 
-export const initialUi = () => ({ open: false, tab: 'party', box: 0, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null });
-const calm = ui => ({ ...ui, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null });
+export const initialUi = () => ({ open: false, tab: 'party', box: 0, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null, gym: null, screen: null, pairHidden: false });
+
+const calm = ui => ({ ...ui, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null, gym: null });
 const findIn = (list, uid) => list.find(m => m.uid === uid) ?? null;
 
-export function reduce(ui, hit, { state, ctx, lang, locked = false, debug = false }) {
-  const out = reduceRaw(ui, hit, { state, ctx, locked, debug, w: wordsOf(lang, ctx.sim, state) });
+const fold = ui => ({ ui: { ...ui, open: false }, effect: null });
 
-  if (locked && out.effect && !['summary', 'renameBox', 'resume'].includes(out.effect.kind)) return { ui: out.ui, effect: null };
+export function backStep(ui) {
+  if (!ui.open) return null;
+  if (ui.message) return { t: 'msg' };
+  if (ui.ask) return { t: 'no' };
+  if (ui.moves || ui.stats || ui.count || ui.menu || ui.select) return { t: 'opt', id: 'cancel' };
+  if (ui.gym) return { t: 'gymClose' };
+  if (ui.screen) return { t: 'scBack' };
+  return { t: 'fold' };
+}
+
+export function menuCloses(ui, hit) {
+  const menu = ui.menu;
+  if (!menu || ui.select || ui.ask || ui.screen || ui.moves || ui.stats || ui.count || ui.message) return false;
+  switch (hit?.t) {
+    case 'blank': return true;
+    case 'opt': return hit.id === 'cancel';
+    case 'item': return menu.where === 'bag' && menu.item === hit.item;
+    case 'slot': return !!menu.uid && menu.uid === hit.uid && (hit.where === 'box' ? menu.where === 'box' : ['party', 'give'].includes(menu.where));
+    default: return false;
+  }
+}
+
+const breedPick = (uid, w) => ({ mode: 'breed', uid, text: w.t('panel.breed.pick', { n: uid ? 1 : 0 }) });
+
+export function reduce(ui, hit, { state, ctx, lang, locked = false, debug = false, place = DEFAULT_SCREEN_PLACE }) {
+  if (hit?.t === 'back') {
+    const step = backStep(ui);
+    return step ? reduce(ui, step, { state, ctx, lang, locked, debug, place }) : { ui, effect: null };
+  }
+  const env = { state, ctx, locked, debug, panel: place === 'panel', w: wordsOf(lang, ctx.sim, state) };
+  const out = hit?.t?.startsWith('gym') ? badgePress(ui, hit, { state, lang, debug, locked })
+    : hit?.t?.startsWith('sc') ? screenPress(ui, hit, env) : reduceRaw(ui, hit, env);
+
+  if (locked && out.effect && !LOCK_FREE_EFFECTS.has(out.effect.kind)) return { ui: out.ui, effect: null };
   return out;
 }
+
+const LOCK_FREE_EFFECTS = new Set(['summary', 'rename', 'renameBox', 'resume']);
 
 function wordsOf(lang, sim, state) {
   const names = namesFor(lang, sim);
@@ -471,15 +616,24 @@ function wordsOf(lang, sim, state) {
   };
 }
 
-function reduceRaw(ui, hit, { state, ctx, locked, debug, w }) {
+function reduceRaw(ui, hit, env) {
+  const { state, ctx, locked, debug, panel, w } = env;
   const { sim } = ctx;
   const same = { ui, effect: null };
   const party = state.party, box = state.box;
+  if (menuCloses(ui, hit)) return { ui: { ...ui, menu: null }, effect: null };
   switch (hit?.t) {
     case 'tab':
-      if (ui.open && ui.tab === hit.tab) return { ui: { ...calm(ui), open: false }, effect: null };
-      return { ui: { ...calm(ui), open: true, tab: hit.tab }, effect: null };
-    case 'fold': return { ui: { ...calm(ui), open: false }, effect: null };
+
+      if (ui.open && ui.tab === hit.tab) return ui.screen ? { ui: { ...calm(ui), screen: null }, effect: null } : fold(ui);
+
+      if (ui.tab === hit.tab) return { ui: { ...ui, open: true }, effect: null };
+      return { ui: { ...calm(ui), open: true, tab: hit.tab, screen: null }, effect: null };
+    case 'fold': return fold(ui);
+    case 'lvnext': {
+      const mon = findIn(party, hit.uid);
+      return mon && !locked ? levelUpNext(ui, mon) : same;
+    }
     case 'resume': return { ui: { ...calm(ui), open: false }, effect: { kind: 'resume' } };
     case 'msg': return { ui: { ...ui, message: null }, effect: null };
     case 'no': return { ui: { ...ui, ask: null }, effect: null };
@@ -492,7 +646,7 @@ function reduceRaw(ui, hit, { state, ctx, locked, debug, w }) {
     case 'badge': {
       const mon = findIn(party, hit.uid);
       if (locked || !mon || !pendingCount(mon)) return same;
-      return { ui: calm(ui), effect: { kind: 'levelup', uid: mon.uid } };
+      return panel ? levelUpNext(calm(ui), mon) : { ui: calm(ui), effect: { kind: 'levelup', uid: mon.uid } };
     }
     case 'yes': {
       const ask = ui.ask;
@@ -525,7 +679,24 @@ function reduceRaw(ui, hit, { state, ctx, locked, debug, w }) {
       return { ui: calm(ui), effect: { kind: 'debugAdd', where: hit.where } };
     }
     case 'offer': return locked ? same : { ui: calm(ui), effect: { kind: 'quickImport', asked: !!hit.asked } };
+    case 'pet': {
+      const mon = findIn(party, hit.uid);
+      if (locked || !mon || !canPet(mon)) return same;
+      return { ui: calm(ui), effect: { kind: 'pet', uid: mon.uid } };
+    }
+
+    case 'breed': {
+
+      if (state.breeding && ui.select?.mode !== 'breed') return { ui: { ...calm(ui), pairHidden: !ui.pairHidden }, effect: null };
+      if (locked || hatchedParty(state).length < 2) return same;
+      if (ui.select?.mode === 'breed') return { ui: calm(ui), effect: null };
+      return { ui: { ...calm(ui), pairHidden: false, select: breedPick(null, w) }, effect: null };
+    }
+    case 'rebreed': return locked || !state.breeding || hatchedParty(state).length < 2 ? same : { ui: { ...calm(ui), pairHidden: false, select: breedPick(null, w) }, effect: null };
+    case 'unbreed': return locked || !state.breeding ? same : { ui: { ...calm(ui), pairHidden: false }, effect: { kind: 'queue', action: actions.unbreed() } };
     case 'later': return locked ? same : { ui: calm(ui), effect: { kind: 'importLater' } };
+    case 'botSet': return locked ? same : { ui: calm(ui), effect: { kind: 'botTravel', change: { key: hit.key, on: !!hit.on } } };
+    case 'guideClear': return locked ? same : { ui: calm(ui), effect: { kind: 'botTravel', change: { clear: 'guide' } } };
     case 'heal': {
       if (!debug || locked) return same;
       if (!healChanges(state, ctx)) return { ui: { ...calm(ui), message: { text: noEffect(w.lang) } }, effect: null };
@@ -544,13 +715,13 @@ function reduceRaw(ui, hit, { state, ctx, locked, debug, w }) {
       return { ui: calm(ui), effect: { kind: 'queue', action: actions.toss(pick.item, n), after: w.t('panel.tossed', { item: w.p(w.label(pick.item), '을/를'), n }) } };
     }
     case 'item': {
-      const menu = bagMenu(hit.item, { locked, sim, state }, w.lang);
+      const menu = bagMenu(hit.item, { locked, sim, state, trade: ctx.tradeEvolution }, w.lang);
       const text = bagText(state, hit.item, sim, w.lang);
       if (!menu) return { ui: { ...calm(ui), message: { text } }, effect: null };
       return { ui: { ...calm(ui), menu: { where: 'bag', item: hit.item, text, options: menu } }, effect: null };
     }
-    case 'slot': return slotPress(ui, hit, { state, ctx, locked, debug, w });
-    case 'opt': return optionPress(ui, hit, { state, ctx, w });
+    case 'slot': return slotPress(ui, hit, env);
+    case 'opt': return optionPress(ui, hit, env);
     default: return same;
   }
 }
@@ -567,6 +738,7 @@ function useAfter(mon, id, { sim }, w, { stat, move } = {}) {
   const outside = OUTSIDE_ITEMS[id] ?? {}, who = mon ? w.mon(mon) : '';
   if (outside.all) return t('panel.usedAll');
   if (outside.vitamin) return t('panel.usedVitamin', { mon: who, stat: statName(outside.vitamin, lang) });
+  if (outside.evBerry && (mon.set.evs?.[outside.evBerry] ?? 0) > 0) return t('panel.usedEvBerry', { mon: who, stat: statName(outside.evBerry, lang) });
   if (outside.exp) return t('panel.usedExp', { mon: p(who, '은/는'), n: outside.exp.toLocaleString(lang) });
   if (outside.ability) return t('panel.usedAbility', { mon: who, ability: p(w.names.ability(abilityChange(sim, mon, id)), '으로/로') });
   if (outside.mint) return t('panel.usedMint', { mon: who, nature: natureName(outside.mint, lang) });
@@ -576,23 +748,44 @@ function useAfter(mon, id, { sim }, w, { stat, move } = {}) {
   return t('panel.used', { mon: who, item: p(itemName(id, w.names), '을/를') });
 }
 
-function slotPress(ui, hit, { state, ctx, locked, debug, w }) {
+const EGG_LOOKS = [[40, 'long'], [10, 'far'], [5, 'near'], [0, 'soon']];
+
+function eggText(mon, w, debug) {
+  const look = EGG_LOOKS.find(([above]) => mon.egg.cycles > above)?.[1] ?? 'soon';
+  return `${w.t(`panel.egg.${look}`)}${debug ? `\n${w.t('panel.eggLeft', { n: Math.ceil(mon.egg.cycles) })}` : ''}`;
+}
+
+function slotPress(ui, hit, { state, ctx, locked, debug, panel, w }) {
   const { sim } = ctx;
   const { t, p } = w;
   if (hit.where === 'box') {
     const mon = findIn(state.box, hit.uid);
     if (!mon) return { ui, effect: null };
-    return { ui: { ...calm(ui), menu: { where: 'box', uid: mon.uid, text: t('panel.boxAsk', { mon: p(w.mon(mon), '을/를') }), options: boxMenu(mon, { locked, debug }, w.lang) } }, effect: null };
+    const text = isEgg(mon) ? eggText(mon, w, debug) : t('panel.boxAsk', { mon: p(w.mon(mon), '을/를') });
+    return { ui: { ...calm(ui), menu: { where: 'box', uid: mon.uid, text, options: boxMenu(mon, { locked, debug }, w.lang) } }, effect: null };
   }
   const mon = findIn(state.party, hit.uid);
   if (!mon) return { ui, effect: null };
   const select = ui.select;
   if (select) {
     if (locked) return { ui: calm(ui), effect: null };
+
+    if (isEgg(mon) && ['give', 'use'].includes(select.mode)) return { ui: { ...ui, message: { text: t('panel.eggNo') } }, effect: null };
     switch (select.mode) {
+      case 'breed': {
+
+        if (isEgg(mon)) return { ui, effect: null };
+        const first = select.uid && findIn(state.party, select.uid);
+        if (!first || first.uid === mon.uid) return { ui: { ...ui, select: breedPick(first ? null : mon.uid, w) }, effect: null };
+        if ([first.uid, mon.uid].every(uid => state.breeding?.includes(uid))) return { ui: calm(ui), effect: null };
+        return { ui: calm(ui), effect: { kind: 'queue', action: actions.breed(first, mon) } };
+      }
       case 'order': {
         const from = findIn(state.party, select.uid);
         if (!from || from.uid === mon.uid) return { ui: calm(ui), effect: null };
+
+        const evolutions = swapEvolutions(ctx, from, mon);
+        if (evolutions) return { ui: calm(ui), effect: { kind: 'evolve', evolutions, before: actions.order(from, mon).ops } };
         return { ui: calm(ui), effect: { kind: 'queue', action: actions.order(from, mon) } };
       }
       case 'swapin': {
@@ -606,13 +799,12 @@ function slotPress(ui, hit, { state, ctx, locked, debug, w }) {
       }
       case 'use': {
         if (!(state.bag?.[select.item] > 0)) return { ui: calm(ui), effect: null };
-        const check = useCheck(mon, select.item, ctx, w.lang);
+        const check = useCheck(mon, select.item, ctx, w.lang, state.party, stateFormat(state));
 
         if (!check.ok) return { ui: { ...ui, message: { text: check.reason } }, effect: null };
-        if (check.evolve) {
-          return { ui: calm(ui), effect: { kind: 'evolveItem', uid: mon.uid, item: select.item, into: check.evolve, ...(check.consumeHeld ? { consumeHeld: true } : {}) } };
-        }
-        if (check.teach) return { ui: calm(ui), effect: { kind: 'teachTm', uid: mon.uid, item: select.item, move: check.teach } };
+        if (check.evolutions) return { ui: calm(ui), effect: { kind: 'evolve', item: select.item, evolutions: check.evolutions } };
+        if (check.teach) return panel ? learnOpen(calm(ui), mon, check.teach, { kind: 'tm', item: select.item })
+          : { ui: calm(ui), effect: { kind: 'teachTm', uid: mon.uid, item: select.item, move: check.teach } };
         if (check.moves) return { ui: { ...calm(ui), moves: { uid: mon.uid, item: select.item, list: check.moves, prompt: check.prompt } }, effect: null };
         if (check.stats) return { ui: { ...calm(ui), stats: { uid: mon.uid, item: select.item, list: check.stats } }, effect: null };
         if (check.confirm) return { ui: { ...calm(ui), ask: { kind: 'use', uid: mon.uid, item: select.item, text: check.confirm } }, effect: null };
@@ -621,10 +813,11 @@ function slotPress(ui, hit, { state, ctx, locked, debug, w }) {
       default: return { ui: calm(ui), effect: null };
     }
   }
-  return { ui: { ...calm(ui), menu: { where: 'party', uid: mon.uid, text: t('panel.partyAsk'), options: partyMenu(mon, { state, ctx, locked, debug }, w.lang) } }, effect: null };
+  const text = isEgg(mon) ? eggText(mon, w, debug) : t('panel.partyAsk');
+  return { ui: { ...calm(ui), menu: { where: 'party', uid: mon.uid, text, options: partyMenu(mon, { state, ctx, locked, debug }, w.lang) } }, effect: null };
 }
 
-function optionPress(ui, hit, { state, ctx, w }) {
+function optionPress(ui, hit, { state, ctx, panel, w }) {
   const { sim } = ctx;
   const { t, p } = w;
   if (hit.id === 'cancel') {
@@ -640,9 +833,10 @@ function optionPress(ui, hit, { state, ctx, w }) {
     const mon = findIn(state.party, menu.uid);
     if (!mon) return { ui: calm(ui), effect: null };
     switch (hit.id) {
-      case 'summary': return { ui: calm(ui), effect: { kind: 'summary', uid: mon.uid } };
-      case 'levelup': return { ui: calm(ui), effect: { kind: 'levelup', uid: mon.uid } };
-      case 'remember': return { ui: calm(ui), effect: { kind: 'remember', uid: mon.uid } };
+      case 'summary': return panel ? { ui: { ...calm(ui), screen: summaryScreen(mon, 'party') }, effect: null } : { ui: calm(ui), effect: { kind: 'summary', uid: mon.uid } };
+      case 'pet': return { ui: calm(ui), effect: { kind: 'pet', uid: mon.uid } };
+      case 'levelup': return panel ? levelUpNext(calm(ui), mon) : { ui: calm(ui), effect: { kind: 'levelup', uid: mon.uid } };
+      case 'remember': return panel ? { ui: { ...calm(ui), screen: rememberScreen(mon) }, effect: null } : { ui: calm(ui), effect: { kind: 'remember', uid: mon.uid } };
       case 'order': return { ui: { ...calm(ui), select: { mode: 'order', uid: mon.uid, text: t('panel.orderAsk') } }, effect: null };
       case 'give': {
         const options = [...holdableItems(state, sim).map(id => opt('pick', `${w.label(id)} ×${state.bag[id]}`, false, { item: id })), opt('cancel', t('panel.menu.cancel'))];
@@ -662,7 +856,7 @@ function optionPress(ui, hit, { state, ctx, w }) {
     const mon = findIn(state.box, menu.uid);
     if (!mon) return { ui: calm(ui), effect: null };
     switch (hit.id) {
-      case 'summary': return { ui: calm(ui), effect: { kind: 'summary', uid: mon.uid } };
+      case 'summary': return panel ? { ui: { ...calm(ui), screen: summaryScreen(mon, 'box') }, effect: null } : { ui: calm(ui), effect: { kind: 'summary', uid: mon.uid } };
       case 'withdraw':
         if (state.party.length < PARTY_MAX) return { ui: calm(ui), effect: { kind: 'queue', action: actions.withdraw(mon), after: t('panel.withdrew', { mon: p(w.mon(mon), '을/를') }) } };
 
@@ -687,4 +881,121 @@ function optionPress(ui, hit, { state, ctx, w }) {
     }
   }
   return { ui: calm(ui), effect: null };
+}
+
+export const SUMMARY_PAGES = Object.freeze(['profile', 'stats', 'moves']);
+export const STAT_MODES = Object.freeze(['stats', 'ivs', 'evs']);
+export const statModes = ctx => STAT_MODES.filter(mode => mode !== 'evs' || effortOn(ctx.sim, ruleFormat(ctx.rule)));
+
+export const summaryScreen = (mon, where) => ({ kind: 'summary', uid: mon.uid, where, page: SUMMARY_PAGES[0], stat: STAT_MODES[0], move: 0 });
+export const rememberScreen = mon => ({ kind: 'remember', uid: mon.uid, move: 0 });
+
+export const screenTab = screen => (screen?.kind === 'summary' && screen.where === 'box' ? 'box' : 'party');
+
+export const ASKING = new Set(['ask', 'pick', 'giveup']);
+
+export function liveScreen(screen, { state, ctx, locked = false }) {
+  if (!screen) return null;
+  const party = findIn(state.party, screen.uid), mon = party ?? findIn(state.box, screen.uid);
+  if (!mon || isEgg(mon)) return null;
+  if (screen.kind === 'summary') return screen;
+  if (locked || !party) return null;
+  if (screen.kind === 'remember') return canRemember(ctx, mon) ? screen : null;
+  if (screen.kind !== 'learn' || !ASKING.has(screen.step)) return screen;
+  if (screen.source.kind === 'levelup') return mon.pending?.moves?.includes(screen.move) ? screen : null;
+  if (mon.set.moves.includes(screen.move)) return null;
+  return screen.source.kind !== 'tm' || state.bag?.[screen.source.item] > 0 ? screen : null;
+}
+
+function learnAction(mon, move, source, result) {
+  if (source.kind === 'remember') return rememberAction(mon, { move, ...result });
+  if (source.kind === 'tm') return teachAction(mon, source.item, move, result);
+  return levelUpAction(mon, { moves: [{ move, result }] });
+}
+
+const decide = (ui, mon, screen, result) => {
+  const action = learnAction(mon, screen.move, screen.source, result);
+  return action ? { ui, effect: { kind: 'queue', action, screen } } : { ui: { ...ui, screen }, effect: null };
+};
+
+export function learnOpen(ui, mon, move, source) {
+  const screen = { kind: 'learn', uid: mon.uid, move, source, step: 'ask', show: 0 };
+  const open = { ...ui, open: true, tab: 'party' };
+  if (mon.set.moves.includes(move)) {
+    const action = source.kind === 'levelup' ? learnAction(mon, move, source, { learned: false }) : null;
+    return { ui: { ...open, screen: null }, effect: action && { kind: 'queue', action, followLevelUp: mon.uid } };
+  }
+  if (mon.set.moves.length < MAX_MOVES) return decide(open, mon, { ...screen, step: 'learned' }, { learned: true });
+  return { ui: { ...open, screen }, effect: null };
+}
+
+export function levelUpNext(ui, mon) {
+  const plan = levelUpPlan(mon);
+  if (plan.hatch || (!plan.moves.length && plan.evolve)) return { ui: { ...ui, screen: null }, effect: { kind: 'levelup', uid: mon.uid } };
+  if (plan.moves.length) return learnOpen(ui, mon, plan.moves[0], { kind: 'levelup' });
+  return { ui: { ...ui, screen: null }, effect: null };
+}
+
+function screenPress(ui, hit, { state, ctx }) {
+  const screen = ui.screen;
+  const same = { ui, effect: null };
+  if (!screen) return same;
+  const mon = findIn(state.party, screen.uid) ?? findIn(state.box, screen.uid);
+  if (!mon) return { ui: { ...ui, screen: null }, effect: null };
+  const set = patch => ({ ui: { ...ui, screen: { ...screen, ...patch } }, effect: null });
+  if (hit.t === 'scRename') return screen.kind === 'summary' ? { ui, effect: { kind: 'rename', uid: mon.uid } } : same;
+
+  if (hit.t === 'scBack') {
+    if (screen.kind === 'learn' && screen.source.kind === 'remember') {
+      const at = rememberableMoves(ctx, mon).findIndex(m => m.move === screen.move);
+      return { ui: { ...calm(ui), screen: { ...rememberScreen(mon), move: Math.max(0, at) } }, effect: null };
+    }
+    return { ui: { ...calm(ui), screen: null }, effect: null };
+  }
+  if (screen.kind === 'summary') {
+    if (hit.t === 'scPage' && SUMMARY_PAGES.includes(hit.page)) return set({ page: hit.page });
+    if (hit.t === 'scStat' && statModes(ctx).includes(hit.mode)) return set({ stat: hit.mode });
+    if (hit.t === 'scMove' && mon.set.moves[hit.i]) return set({ move: hit.i });
+    if (hit.t === 'scNav') {
+      const list = hatchedParty(state), at = list.findIndex(m => m.uid === mon.uid);
+      if (at < 0 || list.length < 2) return same;
+      return set({ uid: list[(at + hit.d + list.length) % list.length].uid, move: 0 });
+    }
+
+    if (hit.t === 'scMon') {
+      const list = hatchedParty(state);
+      return list.some(m => m.uid === mon.uid) && list.some(m => m.uid === hit.uid) && hit.uid !== mon.uid ? set({ uid: hit.uid, move: 0 }) : same;
+    }
+    return same;
+  }
+  if (screen.kind === 'remember') {
+    const list = rememberableMoves(ctx, mon);
+    if (hit.t === 'scMove' && list[hit.i]) return set({ move: hit.i });
+    if (hit.t === 'scRemember' && list[screen.move]) return learnOpen(ui, mon, list[screen.move].move, { kind: 'remember' });
+    return same;
+  }
+
+  switch (`${screen.step} ${hit.t}`) {
+    case 'ask scYes': return set({ step: 'pick', show: 0 });
+    case 'ask scNo': case 'pick scNo': return set({ step: 'giveup' });
+    case 'giveup scNo': return set({ step: 'ask' });
+    case 'giveup scYes': return decide(ui, mon, { ...screen, step: 'skipped' }, { learned: false });
+    case 'pick scForget': {
+      const forgot = mon.set.moves[screen.show - 1];
+      return forgot ? decide(ui, mon, { ...screen, step: 'done', forgot }, { learned: true, forgot }) : same;
+    }
+    case 'done scOk': case 'learned scOk': case 'skipped scOk': {
+      if (screen.source.kind === 'levelup') return levelUpNext(ui, mon);
+
+      if (screen.source.kind === 'remember' && screen.step === 'skipped') {
+        const at = rememberableMoves(ctx, mon).findIndex(m => m.move === screen.move);
+        return { ui: { ...ui, screen: { ...rememberScreen(mon), move: Math.max(0, at) } }, effect: null };
+      }
+      return { ui: { ...ui, screen: null }, effect: null };
+    }
+    default:
+
+      if (hit.t === 'scMove' && Number.isInteger(hit.i) && hit.i >= 0 && hit.i <= mon.set.moves.length) return set({ show: hit.i });
+      return same;
+  }
 }

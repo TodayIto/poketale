@@ -26,3 +26,10 @@ export const crossIcon = (width = 2.6) =>
   `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="${width}" stroke-linecap="round"/></svg>`;
 
 export const stripX = label => `<button type="button" class="leave" aria-label="${label}" title="${label}">${crossIcon(2.6)}</button>`;
+
+export const KEYS_CLASS = 'pkb-keys';
+export const ringCss = scope => `${scope}:not(.${KEYS_CLASS}) button:focus-visible { outline:none; }`;
+export function ringOnKeys(root) {
+  root.addEventListener('keydown', () => root.classList.add(KEYS_CLASS), true);
+  root.addEventListener('pointerdown', () => root.classList.remove(KEYS_CLASS), true);
+}

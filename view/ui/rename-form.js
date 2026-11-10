@@ -1,16 +1,16 @@
 // from pokerogue src/ui/handlers/rename-form-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/form-modal-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/modal-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/text.ts (TOOLTIP_CONTENT, SETTINGS_LABEL, addTextInputObject) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { addWindow, WINDOW_VARIANT_IMAGES } from './window.js';
 import { themeColors } from './theme.js';
 import { styledText, FONT_FAMILY } from './text.js';
 import { playSelect } from './keys.js';
+import { NICKNAME_MAX } from '../../story/rules.mjs';
 
 const TEXT = Object.freeze({ title: 'menu.renamePokemon', label: 'menu.nickname', rename: 'menu.rename', cancel: 'menu.cancel' });
-const MAX_LENGTH = 20;
 
 const WIDTH = 160, HEIGHT = 20 + 26 + 28, MARGIN = [0, 0, 48, 0];
 
@@ -84,7 +84,7 @@ export class RenameForm {
     const s = this.scene, parent = s.options.parent, doc = parent?.ownerDocument;
     if (!doc?.createElement) return null;
     const input = doc.createElement('input');
-    input.type = 'text'; input.maxLength = MAX_LENGTH; input.value = name; input.spellcheck = false;
+    input.type = 'text'; input.maxLength = NICKNAME_MAX; input.value = name; input.spellcheck = false;
     input.setAttribute('autocomplete', 'off'); input.setAttribute('aria-label', s.words(TEXT.label));
     const [color] = themeColors(s, 'WINDOW') ?? ['#f8f8f8'];
     Object.assign(input.style, { position: 'fixed', margin: '0', padding: '0', border: '0', outline: 'none', background: 'transparent',
@@ -113,7 +113,6 @@ export class RenameForm {
     });
   }
 
-  // Pad/keys (outside the input field): confirm = rename, back = cancel
   input(action) {
     if (!this.finish) return;
     if (action === 'ok') this.submit();
@@ -122,7 +121,7 @@ export class RenameForm {
 
   submit() {
     if (!this.finish) return;
-    const value = String(this.input_?.value ?? this.value ?? '').trim().slice(0, MAX_LENGTH);
+    const value = String(this.input_?.value ?? this.value ?? '').trim().slice(0, NICKNAME_MAX);
     playSelect(this.scene);
     this.finish(value);
   }

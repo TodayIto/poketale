@@ -1,5 +1,5 @@
 // from pokerogue src/phases/enemy-command-phase.ts, src/field/pokemon.ts (getNextMove, getNextTargets), src/field/trainer.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 
 import { snapshot, restore, rolloutMove, tryChoice, applyGimmick, atSlot } from './engine-copy.js';
 import { partyMatchupScores, getMatchupScore, sortScores, nextSummonIndex } from './matchup.js';
@@ -11,6 +11,7 @@ import { checkEnemyItem } from '../engine/bag.mjs';
 import { trainerOf, twinSeat } from '../engine/seats.mjs';
 import { holdDecision } from './commit.js';
 import { moveTargets } from '../director/targets.js';
+import { isReviving } from '../director/simple-ai.js';
 
 export { DEFAULT_POLICY, bossHealItems };
 
@@ -77,6 +78,7 @@ export function createEnemyAI(sim, options = {}) {
       ctx?.close();
     }
     const { info, parts } = decision;
+    if (info.choice === 'default') info.choice = fallbackChoice(battle, liveSide, request, keptParts(info, given));
     if (problems.length) info.problems = problems;
     info.tier = seatOpts.tier;
     if (!forced) {
@@ -166,7 +168,7 @@ function partState(s, part) {
   if (part === 'pass') return s;
   const lower = Math.max(s.switchCounter - 1, 0);
   if (part.startsWith('item ')) return { ...s, switchCounter: lower, ...(s.itemsLeft !== null ? { itemsLeft: Math.max(0, s.itemsLeft - 1) } : {}) };
-  if (part.startsWith('switch')) return { ...s, switchCounter: s.switchCounter + 1 };
+  if (/^switch /.test(part)) return { ...s, switchCounter: s.switchCounter + 1 };
   return { ...s, switchCounter: lower };
 }
 
@@ -216,7 +218,7 @@ function forcedSlot(ctx, i, turn) {
 function chooseReplacement(ctx, i, turn) {
   const { probe, side, rng, request, opts, liveSide } = ctx;
 
-  if (request?.side?.pokemon?.some(p => p.active && p.reviving)) {
+  if (isReviving(request)) {
     const trainer = trainerOf(side.active[i]);
     const fainted = side.pokemon.map((pokemon, k) => ({ pokemon, index: k + 1 }))
       .filter(({ pokemon, index }) => pokemon.fainted && trainerOf(pokemon) === trainer && !turn.taken.has(index));
@@ -508,4 +510,36 @@ function validate(ctx, i, info, turn) {
     ctx.problems.push({ type: 'rejected', choice: info.choice, fallback: choice });
   }
   return choice;
+}
+
+function keptParts(info, given) {
+  const decided = (info.slots ?? []).slice(0, -1).map(slot => slot.choice);
+  return [...decided, ...given.slice(decided.length)];
+}
+
+function fallbackChoice(battle, liveSide, request, kept) {
+  const entries = request.forceSwitch ?? request.active;
+  if (entries.length === 1 && !kept[0]) return 'default';
+  const taken = new Set(kept.filter(part => /^switch /.test(part ?? '')).map(part => Number(part.slice(7))));
+  const reviving = isReviving(request);
+  return entries.map((entry, i) => {
+    if (kept[i]) return kept[i];
+    if (request.forceSwitch) {
+      if (!entry) return 'pass';
+      const trainer = trainerOf(liveSide.active[i]);
+      const k = request.side.pokemon.findIndex((p, j) => !taken.has(j + 1) && !p.active && / fnt$/.test(p.condition) === reviving
+        && trainerOf(liveSide.pokemon[j]) === trainer);
+      if (k < 0) return 'pass';
+      taken.add(k + 1);
+      return `switch ${k + 1}`;
+    }
+    const pokemon = liveSide.active[i];
+    if (!pokemon || pokemon.fainted || entry.commanding) return 'pass';
+    const own = pokemon.getMoves();
+    const slot = 1 + Math.max(0, entry.moves.findIndex((m, k) => !m.disabled && !(own[k]?.id === m.id && own[k].disabled)));
+    const type = entry.moves[slot - 1]?.target;
+    const where = type !== undefined && battle.activePerHalf > 1 ? moveTargets(battle, pokemon, type) : null;
+    const to = where?.choose ? where.targets.find(t => !t.ally) ?? where.targets[0] : null;
+    return `move ${slot}${to ? ` ${to.loc}` : ''}`;
+  }).join(', ');
 }

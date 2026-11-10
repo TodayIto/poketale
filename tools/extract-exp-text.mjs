@@ -1,8 +1,9 @@
 // from pokerogue locales/{ko,en}/*.json @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { toID } from './sources.mjs';
+import { withKoTerms } from './ko-terms.mjs';
 import { LANGS } from '../director/lang.js';
 
 const json = async path => JSON.parse(await readFile(new URL(`../vendor/pokerogue/locales/${path}.json`, import.meta.url), 'utf8'));
@@ -42,7 +43,9 @@ for (const lang of LANGS) {
     count++;
   }
   if (missing.length) throw new Error(`영어 이름이나 ${lang} 설명이 없는 기술: ${missing.join(', ')}`);
-  await writeFile(new URL(`../director/text-exp-${lang}.json`, import.meta.url), JSON.stringify(result, null, 1) + '\n');
+  const { table, replaced } = withKoTerms(lang, result);
+  await writeFile(new URL(`../director/text-exp-${lang}.json`, import.meta.url), JSON.stringify(table, null, 1) + '\n');
+  if (replaced.length) console.log(`  ko-terms (tools/ko-terms.mjs): ${replaced.join(', ')}`);
   console.log(`Extracted ${Object.keys(keys).reduce((n, f) => n + keys[f].length, 0)} phrases + ${count} move effects -> director/text-exp-${lang}.json`
     + ` (Z기술 특수 칸 ${zSpecial.length}개는 물리 칸과 같은 이름이라 뺌)`);
 }

@@ -4,6 +4,7 @@ import { createEnemyAI } from '../../ai/index.js';
 import { battleNames, battleNamesIn } from './names.js';
 import { DEFAULT_LANG } from '../../director/lang.js';
 import { mark } from './marks.js';
+import { spriteIdOf } from '../../engine/mon.mjs';
 
 export function previewBattle(sim, spec, options, names = battleNames) {
   const preview = createStoryBattle(sim, spec, options);
@@ -14,7 +15,7 @@ export function previewBattle(sim, spec, options, names = battleNames) {
     return {
       mons: team.map(({ side, mon }) => {
         const species = shown.get(mon.uid);
-        return { side, speciesId: species.id, spriteId: species.spriteid, name: names.species(species.id),
+        return { side, speciesId: species.id, spriteId: spriteIdOf(species), name: names.species(species.id),
           level: mon.level, gender: mon.gender, shiny: mon.shiny, hp: mon.hp, maxhp: mon.maxhp, status: mon.status };
       }),
       moves: [...new Set(team.flatMap(({ mon }) => mon.moves.map(move => move.id)))],

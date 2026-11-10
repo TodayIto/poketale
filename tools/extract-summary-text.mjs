@@ -1,8 +1,9 @@
 // from pokerogue locales/{ko,en}/*.json @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { toID } from './sources.mjs';
+import { withKoTerms } from './ko-terms.mjs';
 import { LANGS } from '../director/lang.js';
 
 const json = async path => JSON.parse(await readFile(new URL(`../vendor/pokerogue/locales/${path}.json`, import.meta.url), 'utf8'));
@@ -10,7 +11,6 @@ const json = async path => JSON.parse(await readFile(new URL(`../vendor/pokerogu
 const en = await json('en/ability');
 const names = new Map();
 for (const [key, value] of Object.entries(en)) names.set(toID(value?.name), [...(names.get(toID(value?.name)) ?? []), key]);
-
 // A unique English name uses the name's id; a shared name (As One/Embody Aspect) uses each key's own id
 const shared = [...names.values()].filter(keys => keys.length > 1).flat();
 for (const lang of LANGS) {
@@ -36,6 +36,8 @@ for (const lang of LANGS) {
   for (const [id, keys] of names) if (keys.length === 1) add(id, keys[0]);
   for (const key of shared) add(toID(key), key);
 
-  await writeFile(new URL(`../director/text-summary-${lang}.json`, import.meta.url), JSON.stringify(result, null, 1) + '\n');
+  const { table, replaced } = withKoTerms(lang, result);
+  await writeFile(new URL(`../director/text-summary-${lang}.json`, import.meta.url), JSON.stringify(table, null, 1) + '\n');
+  if (replaced.length) console.log(`  ko-terms (tools/ko-terms.mjs): ${replaced.join(', ')}`);
   console.log(`Extracted 25 natures + ${count} ability descriptions -> director/text-summary-${lang}.json (같은 영어 이름이라 키로 넣은 것 ${shared.length}개)`);
 }

@@ -1,10 +1,11 @@
 // from pokerogue src/ui/text.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (getStatKey order) @ 7d7da4a8 (AGPL-3.0-only)
 
 import { loadFont as loadEmbeddedFont } from '../fonts.js';
 import { themeColors } from './theme.js';
 import { STATS } from '../../engine/mon.mjs';
+import { GENDER_MARK_BATTLE, markRuns, markSize } from '../gender-mark.js';
 
 export const FONT_FAMILY = 'BattleViewEmerald, sans-serif';
 
@@ -18,7 +19,6 @@ export function addTextObject(scene, x, y, content, style = 'message', extra = {
 }
 
 export const GENDER_COLORS = Object.freeze({ M: ['#40c8f8', '#006090'], F: ['#f89890', '#984038'] });
-export const genderSymbol = gender => (gender === 'M' ? '♂' : gender === 'F' ? '♀' : '');
 
 export const STATUS_FRAMES = Object.freeze({ brn: 'burn', par: 'paralysis', slp: 'sleep', frz: 'freeze', psn: 'poison', tox: 'toxic' });
 
@@ -60,3 +60,44 @@ export const pad2 = n => (String(n).length < 2 ? `  ${n}` : String(n));
 export const windowText = (scene, x, y, str, extra) => styledText(scene, x, y, str, 'WINDOW', extra);
 
 export const loadFont = assetBase => loadEmbeddedFont('BattleViewEmerald', `${assetBase}fonts/pokemon-emerald-pro.ttf`);
+
+const FONT_ASCENT = 0.75, FONT_LINE = 0.875, FONT_PIXELS = 16;
+
+function styleOf(scene, name) {
+  if (name === 'info' || name === 'message') {
+    const info = name === 'info';
+    const [color, shadow] = themeColors(scene, info ? 'BATTLE_INFO' : 'MESSAGE');
+    return { size: info ? 72 : 96, padding: { bottom: 6 }, sx: info ? 3.5 : 4, sy: info ? 3.5 : 5, color, shadow };
+  }
+  const s = STYLES[name];
+  if (!s) throw new Error(`Unknown text style: ${name}`);
+  const [color, shadow] = (s.theme !== null && themeColors(scene, s.theme ?? name)) || [s.color, s.shadow];
+  return { size: s.size ?? 96, padding: s.padding ?? { bottom: 6 }, sx: s.sx, sy: s.sy, color, shadow };
+}
+
+function markTexture(scene, gender) {
+  const key = `gender-mark-${gender}`;
+  if (scene.textures.exists(key)) return key;
+  const { w, h } = markSize(gender, GENDER_MARK_BATTLE);
+  const canvas = scene.textures.createCanvas(key, w, h);
+  const ctx = canvas.getContext();
+  ctx.fillStyle = '#ffffff';
+  for (const run of markRuns(gender, GENDER_MARK_BATTLE)) ctx.fillRect(run.x, run.y, run.w, 1);
+  canvas.refresh();
+  return key;
+}
+
+const tintOf = color => parseInt(String(color).replace('#', ''), 16);
+
+export function addGenderMark(scene, x, y, gender, name, { originY = 0, color, shadow } = {}) {
+  if (!GENDER_MARK_BATTLE[gender]) return null;
+  const st = styleOf(scene, name);
+  const top = st.padding.top ?? 0, height = st.size * FONT_LINE + top + (st.padding.bottom ?? 0);
+  const baseline = Math.floor(y) + (top + st.size * FONT_ASCENT - originY * height) / 6;
+  const pixel = st.size / FONT_PIXELS / 6;
+  const { w, h } = markSize(gender, GENDER_MARK_BATTLE), key = markTexture(scene, gender);
+  const layer = (dx, dy, tint) => scene.add.container(dx, dy).add(scene.add.image(0, 0, key).setOrigin(0).setScale(pixel).setTint(tintOf(tint)));
+  const mark = scene.add.container(Math.floor(x), baseline - h * pixel);
+  mark.add([layer(st.sx / 6, st.sy / 6, shadow ?? st.shadow), layer(0, 0, color ?? st.color)]);
+  return mark.setSize(w * pixel, h * pixel);
+}

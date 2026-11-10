@@ -26,7 +26,7 @@ export function showdownMods() {
 }
 
 export const DROPPED_FIELDS = {
-  Pokedex: ['color', 'eggGroups', 'heightm', 'formeOrder', 'canHatch'],
+  Pokedex: ['color', 'heightm', 'formeOrder', 'canHatch'],
   Moves: ['contestType'],
   FormatsData: ['tier', 'natDexTier', 'doublesTier'],
   Rulesets: ['onValidateSet', 'onValidateTeam', 'onChangeSet', 'checkCanLearn'],
@@ -45,7 +45,6 @@ function property(key, value) {
   return `${JSON.stringify(key)}:${literal(value)}`;
 }
 
-// ES module text of one data file (path)'s table (type) with DROPPED_FIELDS removed
 export function slimTableSource(path, type) {
   const drop = new Set(DROPPED_FIELDS[type]);
 
@@ -126,7 +125,6 @@ export const showdownBrowser = {
         patch('if (typeof crypto === "undefined") globalThis.crypto = require("node:crypto");',
           'if (typeof crypto === "undefined") throw new Error("Web Crypto is required for an unseeded battle");');
       } else if (file === 'dex-species.js') {
-
         // Optional identity-sharing optimization only. Keep each mod's equal Species object separate.
         patch('var import_node_util = require("node:util");', '');
         patch(/      if \(this.dex.parentMod\) \{[\s\S]*?\n      \}\n    \} else \{/,

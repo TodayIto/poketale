@@ -1,24 +1,36 @@
-import { findBlocks, findTags, parseChange, hashKey, speciesName, messageId, norm } from './blocks.mjs';
-import { expForLevel, calcExpGain, growthOf as growthOfSpecies, DEFAULT_EXP_RATE } from '../engine/exp.mjs';
-import { STATS, STATUS_IDS, completeSet, levelEvolution, toID } from '../engine/mon.mjs';
+import { findBlocks, findTags, parseChange, parseBattle, battlesIn, hashKey, speciesName, messageId, norm, stripForPrompt } from './blocks.mjs';
+import { expForLevel, calcExpGain, growthOf as growthOfSpecies, DEFAULT_EXP_RATE, storyExpRate, STORY_EXP_PACE } from '../engine/exp.mjs';
+import { STATS, STATUS_IDS, completeSet, toID } from '../engine/mon.mjs';
+import { levelEvolution, usesHeldItem, extraEvolutions, countOf, ABSENT_TRADE_EVOLUTION, EVOLVE_FRIENDSHIP } from '../engine/evolution.mjs';
 import { engineMember } from '../engine/input.mjs';
-import { BAG_ITEMS, isBall } from '../engine/bag.mjs';
+import { escapeRe } from './norm.mjs';
+import { BAG_ITEMS, isBall, foodHeal } from '../engine/bag.mjs';
 import { ppUpCount } from '../engine/pp.mjs';
-import { DEFAULT_FORMAT, formatRules } from '../engine/rules.mjs';
+import { DEFAULT_FORMAT, DEFAULT_RULE, formatRules, ruleFormat, formatRule } from '../engine/rules.mjs';
 import { waitingTrainer } from '../engine/core.mjs';
 import { HYPER_TRAIN_LEVEL, expShareOn } from './items.mjs';
 import { say } from './screen-text.mjs';
-import { isCustomItem, itemId, customInfo, addCustomItem, tidyCustomItems } from './custom-items.mjs';
+import { isCustomItem, itemId, customInfo, addCustomItem, tidyCustomItems, hasTag } from './custom-items.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, OT_NAME_MAX, BOX_NAME_MAX, PLAYER_NAME } from './rules.mjs';
 import { bossBgm, personalName } from './named.mjs';
 import { outcomeOf } from './outcome.mjs';
 import { opponentPicture, foePartnerPicture } from './trainer-look.mjs';
 import { readStored, isRecord } from './stored.mjs';
 import { ruleError } from './failure.mjs';
-import { surveyBattles } from './chat.mjs';
+import { surveyBattles, dropOocs } from './chat.mjs';
+import { statusIn, battleScene, COMPAT_LINE_RE, FIELD_WEATHERS } from './compat.mjs';
+import { badgeCount, earnedBadges, readLeague, leaguePlaces, leagueAt, leagueDate, keepRecords, LEAGUE_VAR, UNOVA_ERA_VAR } from './badges.mjs';
+import { changeFriendship, moveFriendship, friendshipStep, baseFriendship, friendshipLocked, FRIEND_BALL_FRIENDSHIP, FRIENDSHIP_STEPS, FOND_FRIENDSHIP } from '../engine/friendship.mjs';
+import { entry as nameEntry } from '../names/index.js';
 import { SAVE_VAR } from './save.mjs';
+import { boxOf } from './diary.mjs';
 import { QUEUE_VAR, runAction } from './acts.mjs';
 import { IMPORT_VAR, readImports, applyImport, importPlace, inForce } from './import.mjs';
+import { SETTING_CHANGES_VAR, foldCtxAt, foldSettings } from './setting-changes.mjs';
+import { enjoymentOf, setEnjoyment, friendshipFor, afterMessage, ENJOY_STEP, canEat, fullnessOf, setFullness, FULL_PER_FOOD, foodFriendship, parsePuff, puffFriendship,
+  FREE_GRADE, puffCount, addPuffs, eatsFood } from './amie.mjs';
+import { eggChance, breedEgg, giftEgg, eggCycles, hatchSpeed, HATCH_FRIENDSHIP } from '../engine/breeding.mjs';
+import { evGain, clearBags, bagOf, traineeOf, setTrainee, isHungBag, setHungBag, refillEnergy } from './training.mjs';
 
 export const TABLE_VAR = '$pkb_states';
 
@@ -104,7 +116,9 @@ export function heldChanges(chat, table = readTable(chat)) {
   return surveyBattles(chat, table).held;
 }
 
-export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR];
+export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR, SETTING_CHANGES_VAR, `$${LEAGUE_VAR}`, `$${UNOVA_ERA_VAR}`];
+
+const BOOK_FIELDS = ['badges', 'league', 'gyms'];
 
 export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const table = readTable(chat);
@@ -133,9 +147,44 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
     imports.set(at, [...imports.get(at) ?? [], imp]);
   }
   const importsAt = i => imports.get(i) ?? [];
-  const applyImportsAt = (i, start) => importsAt(i).reduce((cur, imp) => applyImport(cur, imp, ctx), start);
+  const applyImportsAt = (i, start, at) => importsAt(i).reduce((cur, imp) => applyImport(cur, imp, at), start);
   const importKey = i => [...(i === 0 ? importsAt(-1) : []), ...importsAt(i)].map(imp => hashKey(JSON.stringify(imp))).join(',');
-  const keyOf = i => `${messageId(messages[i], i)}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}`;
+
+  const ctxAt = foldCtxAt(chat, ctx);
+  const settingsOf = i => foldSettings(ctxAt(i));
+
+  const league = readLeague(chat);
+  const places = league && leaguePlaces(league, chat);
+  const leagueKey = i => (league ? [league.era, ...leagueAt(league, places, i).map(id => `${id}=${leagueDate(league, id)}`)].join(',') : '-');
+
+  const since = [];
+  messages.forEach((message, i) => { since[i + 1] = message?.role === 'char' ? i : since[i] ?? 0; });
+
+  const book = (next, i) => {
+    const own = league ? { ...next, badges: leagueAt(league, places, i), league: { era: league.era } } : next;
+    const gyms = keepRecords(own.gyms, earnedBadges(own), { league, win, since: i < 0 ? Infinity : since[i] ?? 0 });
+    if (Object.keys(gyms).length) return { ...own, gyms };
+    const { gyms: _, ...rest } = own;
+    return rest;
+  };
+
+  const withBook = (next, now) => {
+    const out = { ...next };
+    for (const field of BOOK_FIELDS) if (Object.hasOwn(now, field)) out[field] = now[field]; else delete out[field];
+    return out;
+  };
+
+  const wonAt = (key, i, now) => {
+    const meta = table.meta?.[key];
+    const info = meta?.blockKey && survey.battles.get(meta.blockKey);
+    if (!info || (meta.storyEnd ? info.ended?.outcome : meta.outcome) !== 'win') return null;
+    const block = battlesIn(messages[info.index], info.index).find(b => b.key === meta.blockKey);
+    const spec = block && parseBattle(block.body).spec;
+    if (!spec?.boss) return null;
+    return { index: i, date: status?.date ?? null, party: hatchedParty(now).map(mon => ({ species: mon.set.species, ...(mon.set.name ? { name: mon.set.name } : {}) })),
+      opponents: [spec.name, spec.foePartner?.name].filter(Boolean) };
+  };
+  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}`;
   let from = 0;
   while (from <= last && from < folds.length && folds[from].key === keyOf(from)) from++;
   if (from <= last) folds.length = from;
@@ -143,12 +192,28 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   for (const fold of folds.slice(0, from)) {
     for (const [key, set] of Object.entries(fold.fills)) if (!Object.hasOwn(table.fills, key)) { table.fills[key] = set; changed = true; }
   }
-  let state = from ? folds[from - 1].after : applyImportsAt(-1, emptyState());
+
+  let status = from ? folds[from - 1].status : null;
+  let win = from ? folds[from - 1].win : null;
+  let state = from ? folds[from - 1].after : applyImportsAt(-1, inRule(ctx?.sim, emptyState(), settingsOf(-1).rule), ctxAt(-1));
+  if (!from) state = book(state, -1);
 
   const seen = new Set(parts.slice(0, from).flatMap(text => findTags(text).map(t => t.key)).filter(used));
   const reflected = new Set([...seen].flatMap(key => reflectedBy(table, key)));
   for (let i = from; i <= last; i++) {
     const name = messageId(messages[i], i);
+    const here = ctxAt(i);
+
+    state = inRule(ctx?.sim, state, here.rule);
+    if (league) state = { ...state, badges: leagueAt(league, places, i) };
+
+    if (messages[i]?.role === 'char') {
+      status = statusIn(messages[i]) ?? status;
+      state = storyMention(state, parts[i], here);
+      state = storyTick(state, name, here).state;
+      state = refillEnergy(afterMessage(state));
+    }
+    const at = { ...here, status };
 
     const placed = t => { const { storyEnd, blockKey } = table.meta[t.key] ?? {}; const ended = storyEnd && survey.battles.get(blockKey)?.ended; return ended?.index === i ? ended.start : t.start; };
     const tags = findTags(parts[i]).filter(t => used(t.key)).map(t => ({ ...t, type: 'tag', start: placed(t) }));
@@ -160,30 +225,183 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
         const acted = table.acts?.[event.key];
         seen.add(event.key);
 
-        for (const action of (acted?.v === 2 ? acted.actions : storyEnd?.actions) ?? []) if (!isReflected(action, reflected, seen)) state = runAction(state, action, ctx).state;
+        for (const action of (acted?.v === 2 ? acted.actions : storyEnd?.actions) ?? []) if (!isReflected(action, reflected, seen)) state = runAction(state, action, at).state;
         for (const id of reflectedBy(table, event.key)) reflected.add(id);
         if (acted?.v === 2) continue;
-        if (!storyEnd) { state = clone(table.snaps[event.key]); continue; }
-        if (storyEnd.engine) state = applyBattles(state, [...storyEnd.engine.before ?? [], storyEnd.engine], ctx);
-        if (storyEnd.who) {
-          const outcome = survey.battles.get(blockKey).ended.outcome;
-          state = { ...state, trainers: { ...trainersOf(state), [storyEnd.who]: { ...clone(storyEnd.trainer), outcome } } };
+        if (!storyEnd) state = inRule(ctx?.sim, withBook(clone(table.snaps[event.key]), state), here.rule);
+        else {
+          if (storyEnd.engine) state = applyBattles(state, [...storyEnd.engine.before ?? [], storyEnd.engine], at);
+          if (storyEnd.who) {
+            const outcome = survey.battles.get(blockKey).ended.outcome;
+            state = { ...state, trainers: { ...trainersOf(state), [storyEnd.who]: { ...clone(storyEnd.trainer), outcome } } };
+          }
         }
+        win = wonAt(event.key, i, state) ?? win;
         continue;
       }
       if (held.has(changeAt(i, event.n))) continue;
       const { ops } = parseChange(event.body);
       const before = Object.keys(table.fills).length;
-      state = applyOps(state, ops, ctx, `${name}:${event.key}`, table).state;
+      state = applyOps(state, ops, at, `${name}:${event.key}`, table).state;
       if (Object.keys(table.fills).length !== before) changed = true;
       ops.forEach((_, j) => { const key = `${name}:${event.key}:${j}`; if (Object.hasOwn(table.fills, key)) fills[key] = table.fills[key]; });
     }
-    state = applyImportsAt(i, state);
-    if (keep) folds.push({ key: keyOf(i), after: state, fills });
+    state = book(applyImportsAt(i, state, at), i);
+    if (keep) folds.push({ key: keyOf(i), after: state, fills, status, win });
   }
 
+  const after = inRule(ctx?.sim, state, settingsOf(last + 1).rule);
   const counted = new Set(parts.slice(0, last + 1).flatMap(text => findTags(text).map(t => t.key)).filter(used));
-  return { state: keep ? clone(state) : state, table, changed, counted, reflected: new Set([...counted].flatMap(key => reflectedBy(table, key))) };
+  return { state: keep && after === state ? clone(state) : after, table, changed, counted, reflected: new Set([...counted].flatMap(key => reflectedBy(table, key))), status };
+}
+
+export const friendshipOf = (ctx, mon) => mon.friendship ?? baseFriendship(ctx.exp, ctx.sim.Dex.species.get(mon.set.species));
+
+export const FRIENDSHIP_TOP = FOND_FRIENDSHIP;
+export const FRIENDSHIP_HIGH = EVOLVE_FRIENDSHIP;
+export const FRIENDSHIP_LOW = 20;
+
+export const friendshipBand = (value, base) => (value >= FRIENDSHIP_TOP ? 'top' : value >= FRIENDSHIP_HIGH ? 'high'
+  : value < FRIENDSHIP_LOW && value < base ? 'lowest' : null);
+
+export function friendshipLine(mon, ctx, lang) {
+  if (isEgg(mon)) return null;
+  const band = friendshipBand(friendshipOf(ctx, mon), baseFriendship(ctx.exp, ctx.sim.Dex.species.get(mon.set.species)));
+  return band && { band, text: say(lang, `panel.sc.friendship.${band}`) };
+}
+
+export function addFriendship(mon, amount, source, ctx) {
+  if (friendshipLocked(mon)) return 0;
+  const now = friendshipOf(ctx, mon);
+  const step = amount ?? friendshipStep(now, source);
+  const { value, carry } = changeFriendship(now, step, { item: mon.set.item, ball: mon.ball, rate: ctx.friendshipRate ?? 1, carry: mon.friendshipCarry ?? 0 });
+  if (value !== now) mon.friendship = value;
+  setCarry(mon, carry);
+  return value - now;
+}
+
+function setCarry(mon, carry) {
+  if (carry) mon.friendshipCarry = carry;
+  else delete mon.friendshipCarry;
+}
+
+const storyText = text => dropOocs(stripForPrompt(text)).replace(COMPAT_LINE_RE, ' ').normalize('NFKC');
+
+const PARTICLES = '이|가|은|는|을|를|의|에|에게|에겐|에서|께|한테|한텐|와|과|랑|이랑|하고|도|만|로|으로|야|아|여|이여|처럼|보다|까지|부터|나|이나';
+
+function names(text, name) {
+  const written = String(name ?? '').normalize('NFKC').trim();
+  if (!written) return false;
+  if (/^[\p{Script=Latin}\p{N}\s.'’:-]+$/u.test(written)) return new RegExp(`(?<![\\p{Script=Latin}\\p{N}])${escapeRe(written)}(?![\\p{Script=Latin}\\p{N}])`, 'u').test(text);
+  const want = written.toLowerCase();
+  const after = [...want].length === 1 ? `(?:${PARTICLES})*(?!\\p{Script=Hangul})` : '';
+  return new RegExp(`(?<!\\p{Script=Hangul})${escapeRe(want)}${after}`, 'u').test(text.toLowerCase());
+}
+
+function callNames(sim, mon) {
+  const base = nameEntry('species', sim.Dex.species.get(mon.set.species).baseSpecies);
+  return [mon.set.name, base?.ko, base?.en].filter(Boolean);
+}
+
+export function storyMention(state, text, ctx) {
+  const plain = storyText(text);
+  const named = state.party.filter(mon => !isEgg(mon) && callNames(ctx.sim, mon).some(name => names(plain, name)));
+  if (!named.length) return state;
+  const next = clone(state);
+  for (const mon of next.party) {
+    if (!named.some(m => m.uid === mon.uid)) continue;
+    addFriendship(mon, null, 'mention', ctx);
+    countUp(ctx, mon, 'mentions');
+  }
+  return next;
+}
+
+export const isEgg = mon => !!mon?.egg;
+
+export const hatched = mons => mons.filter(mon => !isEgg(mon));
+
+export const hatchedParty = state => hatched(state.party);
+
+export function newEgg(ctx, set, uid, ball) {
+  return { ...newMon(ctx, { ...set, item: '', name: '' }, uid), egg: { cycles: eggCycles(ctx.sim.Dex, set.species) }, ...(ball && ball !== 'pokeball' ? { ball } : {}) };
+}
+
+function hatch(state, ctx, mon) {
+  delete mon.egg;
+  mon.friendship = HATCH_FRIENDSHIP;
+  mon.pending.hatched = true;
+  markDex(state, ctx.sim, mon.set.species, true);
+}
+
+const parentOf = mon => ({ species: mon.set.species, gender: mon.set.gender || '', ot: mon.ot ?? '' });
+
+const pairIn = (state, pair) => {
+  const mons = (pair ?? []).map(uid => state.party.find(m => m.uid === uid));
+  return mons.length && mons.every(Boolean) ? mons : null;
+};
+
+export function tidyBreeding(state) {
+  if (state.breeding && !pairIn(state, state.breeding)) delete state.breeding;
+}
+
+export function breedingOf(state, ctx) {
+  const pair = pairIn(state, state.breeding);
+  if (!pair) return null;
+  const [a, b] = pair;
+  return { a, b, ...eggChance(ctx.sim.Dex, parentOf(a), parentOf(b)) };
+}
+
+export function storyTick(state, name, ctx) {
+  const breeding = breedingOf(state, ctx);
+  if (!state.party.some(isEgg) && !breeding?.chance) return { state, events: [] };
+  const { sim } = ctx;
+  const next = clone(state), events = [];
+  const speed = hatchSpeed(hatchedParty(next).map(m => m.set.ability)) * (ctx.hatchRate ?? 1);
+  for (const [i, mon] of next.party.entries()) {
+    if (!isEgg(mon)) continue;
+    mon.egg.cycles = Math.max(0, Math.round((mon.egg.cycles - speed) * 1000) / 1000);
+    if (mon.egg.cycles > 0) continue;
+    hatch(next, ctx, mon);
+    events.push({ kind: 'hatch', who: { uid: mon.uid, species: mon.set.species, name: '' }, slot: i + 1 });
+  }
+  const rng = rngFor(sim, `${name}:egg`);
+  if (breeding?.chance && rng.random(100) < breeding.chance) {
+    const [a, b] = [breeding.a, breeding.b].map(m => next.party.find(p => p.uid === m.uid));
+    const { set, ball } = breedEgg(sim.Dex, a, b, rng, { levelUp: ctx.levelUp });
+    const egg = newEgg(ctx, set, uniqueUid(next, `e${hashKey(name)}`), ball);
+    const list = next.party.length < PARTY_MAX ? next.party : next.box;
+    list.push(egg);
+    const inBox = list === next.box;
+    events.push({ kind: 'egg', box: inBox ? boxOf(next, next.box.length - 1) : false, slot: inBox ? null : next.party.length,
+      parents: [a, b].map(m => next.party.indexOf(m) + 1).sort((x, y) => x - y) });
+  }
+  return { state: next, events };
+}
+
+export function countUp(ctx, mon, kind, n = 1) {
+  if (countOf(ctx.sim.Dex, mon.set.species)?.kind !== kind) return;
+  mon.counts = { ...mon.counts, [kind]: (mon.counts?.[kind] ?? 0) + n };
+}
+
+function addCounts(now, end, start) {
+  const out = { ...now };
+  for (const [kind, value] of Object.entries(end)) out[kind] = Math.max(0, (now?.[kind] ?? 0) + value - (start?.[kind] ?? 0));
+  return out;
+}
+
+export function evolutionCheck(ctx, mon, party = [], badges = 0) {
+  const { sim } = ctx;
+  const species = sim.Dex.species.get(mon.set.species);
+  const rules = formatRules(sim, ruleFormat(ctx.rule));
+  const stat = name => rules.stat(species.baseStats, mon.set, name);
+  const status = ctx.status ?? null;
+  return {
+    mon: { species: species.name, gender: mon.set.gender, item: mon.set.item, uid: mon.uid, moves: mon.set.moves, nature: mon.natureOrig ?? mon.set.nature,
+      ability: mon.set.ability, stats: { atk: stat('atk'), def: stat('def') }, counts: mon.counts },
+    now: { level: mon.set.level, friendship: friendshipOf(ctx, mon), timeOfDay: status?.timeOfDay ?? 'day', weather: FIELD_WEATHERS[status?.weather] ?? null,
+      region: status?.region ?? null, money: status?.money ?? null, badges, trade: ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION,
+      party: hatched(party).filter(m => m.uid !== mon.uid).map(m => m.set.species) },
+  };
 }
 
 export function reflectedBy(table, key) {
@@ -207,6 +425,7 @@ export function applyOps(state, ops, ctx, fillKeyPrefix, table, { trace = false 
     try {
       applyOp(attempt, op, ctx, fillKey, fill);
       tidyCustomItems(attempt);
+      tidyBreeding(attempt);
     } catch (e) {
       error = e.message;
       errorNotes = e.notes ?? [];
@@ -230,13 +449,14 @@ function takeCustom(state, id, op, named = true) {
 
 function applyOp(state, op, ctx, fillKey, fill) {
   const { sim } = ctx;
+  const format = stateFormat(state);
   switch (op?.op) {
     case 'add': {
       let set = fill.known;
       if (!set || toID(set.species) !== toID(op.set.species)) set = fill.made = fillSet(ctx, op.set, rngFor(sim, fillKey));
       const mon = newMon(ctx, clone(set), uniqueUid(state, `m${hashKey(fillKey)}`));
       takeCustom(state, mon.set.item, op, false);
-      if (op.set.hpPercent !== undefined) mon.hp = hpFromPercent(sim, mon.set, op.set.hpPercent, false, ctx.formatid);
+      if (op.set.hpPercent !== undefined) mon.hp = hpFromPercent(sim, mon.set, op.set.hpPercent, false, format);
       if (op.set.status) mon.status = op.set.status;
       if (mon.hp === 0) mon.status = 'fnt';
 
@@ -246,23 +466,34 @@ function applyOp(state, op, ctx, fillKey, fill) {
       markDex(state, sim, mon.set.species, true);
       return;
     }
+    case 'egg': {
+
+      const species = sim.Dex.species.get(op.species);
+      if (!species.exists) fail('unknownSpecies', { species: op.species });
+      let set = fill.known;
+      if (!set || toID(set.species) !== species.id) set = fill.made = giftEgg(sim.Dex, species.name, rngFor(sim, fillKey), { levelUp: ctx.levelUp });
+      const egg = newEgg(ctx, clone(set), uniqueUid(state, `e${hashKey(fillKey)}`));
+      (op.to === 'box' || state.party.length >= PARTY_MAX ? state.box : state.party).push(egg);
+      return;
+    }
     case 'level': {
       const { list, index, mon } = findMon(state, op.ref, sim);
       const delta = op.to !== undefined ? op.to - mon.set.level : op.delta;
       if (!Number.isInteger(delta) || delta <= 0) fail('levelUpOnly', { mon: monLabel(mon), level: mon.set.level });
       if (mon.set.level >= MAX_LEVEL) fail('maxLevel', { mon: monLabel(mon), max: MAX_LEVEL });
 
-      list[index] = op.candy ? levelUpOutside(mon, delta, ctx, null, { effort: false }) : levelUpOutside(mon, delta, ctx, rngFor(sim, fillKey));
+      list[index] = op.candy ? levelUpOutside(mon, delta, ctx, null, outsideOf(state, { effort: false }))
+        : levelUpOutside(mon, delta, ctx, rngFor(sim, fillKey), outsideOf(state));
       return;
     }
     case 'heal': {
       if (op.ref === 'all') return healParty(state, ctx, op);
-      heal(sim, findMon(state, op.ref, sim).mon, op, ctx.formatid);
+      heal(sim, findMon(state, op.ref, sim).mon, op, format);
       return;
     }
     case 'swap': {
 
-      const a = findMon(state, op.a, sim), b = findMon(state, op.b, sim);
+      const a = findMon(state, op.a, sim, { egg: true }), b = findMon(state, op.b, sim, { egg: true });
       if (a.mon.uid === b.mon.uid) fail('swapSame', { mon: monLabel(a.mon) });
       a.list[a.index] = b.mon;
       b.list[b.index] = a.mon;
@@ -279,18 +510,18 @@ function applyOp(state, op, ctx, fillKey, fill) {
       return;
     }
     case 'release': {
-      const { list, index } = findMon(state, op.ref, sim);
+      const { list, index } = findMon(state, op.ref, sim, { egg: true });
       list.splice(index, 1);
       return;
     }
     case 'deposit': {
-      const { list, index, mon } = findMon(state, op.ref, sim);
+      const { list, index, mon } = findMon(state, op.ref, sim, { egg: true });
       if (list !== state.party) fail('inBox', { mon: monLabel(mon) });
       state.box.push(...list.splice(index, 1));
       return;
     }
     case 'withdraw': {
-      const { list, index, mon } = findMon(state, op.ref, sim, { boxFirst: true });
+      const { list, index, mon } = findMon(state, op.ref, sim, { boxFirst: true, egg: true });
       if (list !== state.box) fail('inParty', { mon: monLabel(mon) });
       if (state.party.length >= PARTY_MAX) fail('partyFull', { max: PARTY_MAX, mon: monLabel(mon) });
       state.party.push(...list.splice(index, 1));
@@ -314,9 +545,9 @@ function applyOp(state, op, ctx, fillKey, fill) {
       return;
     }
     case 'evolve': {
+
       const { mon } = findMon(state, op.ref, sim);
-      evolve(ctx, mon, op.species);
-      markDex(state, sim, mon.set.species, true);
+      evolve(state, ctx, mon, op.species, { decoration: op.decoration });
       return;
     }
     case 'teach': {
@@ -379,7 +610,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       const ids = op.move ? [toID(op.move)] : [...mon.set.moves];
       if (op.move && !mon.set.moves.includes(ids[0])) fail('moveNotKnown', { mon: monLabel(mon), move: op.move });
       for (const id of ids) {
-        const { pp: now, maxpp: max } = movePp(sim, mon, id, ctx.formatid);
+        const { pp: now, maxpp: max } = movePp(sim, mon, id, format);
         const next = op.amount === 'full' ? max : Math.min(max, now + Math.max(0, Number(op.amount) || 0));
         if (next >= max) delete mon.pp[id]; else mon.pp[id] = next;
       }
@@ -394,9 +625,9 @@ function applyOp(state, op, ctx, fillKey, fill) {
       const from = ppUpsOf(mon, id);
       const to = ppUpCount(move, from + Math.max(0, Math.trunc(Number(op.amount) || 0)));
       if (to <= from) fail('ppMax', { mon: monLabel(mon), move: move.name });
-      const { pp: now, maxpp: oldMax } = movePp(sim, mon, id, ctx.formatid);
+      const { pp: now, maxpp: oldMax } = movePp(sim, mon, id, format);
       (mon.ppUps ??= {})[id] = to;
-      const max = maxPp(sim, id, to, ctx.formatid);
+      const max = maxPp(sim, id, to, format);
       if (Object.hasOwn(mon.pp, id) && now + max - oldMax < max) mon.pp[id] = now + max - oldMax; else delete mon.pp[id];
       return;
     }
@@ -408,12 +639,12 @@ function applyOp(state, op, ctx, fillKey, fill) {
       if (!STATS.includes(stat)) fail('unknownStat', { stat: op.stat });
       const evs = mon.set.evs ??= {};
       for (const s of STATS) evs[s] ??= 0;
-      const total = STATS.reduce((sum, s) => sum + evs[s], 0);
-      const gain = Math.min(Math.max(0, Math.trunc(Number(op.amount) || 0)), EV_STAT_MAX - evs[stat], EV_TOTAL_MAX - total);
-      if (gain <= 0) fail('evsMax', { mon: monLabel(mon) });
-      const oldMax = maxHp(sim, mon.set, ctx.formatid);
+      const amount = Math.trunc(Number(op.amount) || 0);
+      const gain = evGain(evs, stat, amount);
+      if (!gain) fail(amount < 0 ? 'evsZero' : 'evsMax', { mon: monLabel(mon) });
+      const oldMax = maxHp(sim, mon.set, format);
       evs[stat] += gain;
-      keepHpGain(sim, mon, oldMax, ctx.formatid);
+      keepHpGain(sim, mon, oldMax, format);
       return;
     }
     case 'exp': {
@@ -428,7 +659,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       const exp = Math.min(expForLevel(growth, MAX_LEVEL), Math.max(low, mon.exp ?? low) + amount);
       let to = mon.set.level;
       while (to < MAX_LEVEL && expForLevel(growth, to + 1) <= exp) to++;
-      if (to > mon.set.level) list[index] = levelUpOutside({ ...mon, exp }, to - mon.set.level, ctx, null, { effort: false });
+      if (to > mon.set.level) list[index] = levelUpOutside({ ...mon, exp }, to - mon.set.level, ctx, null, outsideOf(state, { effort: false }));
       else mon.exp = exp;
       return;
     }
@@ -462,10 +693,21 @@ function applyOp(state, op, ctx, fillKey, fill) {
       const ivs = mon.set.ivs ??= {};
       const raise = stats.filter(s => (ivs[s] ?? MAX_IV) < MAX_IV);
       if (!raise.length) fail('ivsMax', { mon: monLabel(mon) });
-      const oldMax = maxHp(sim, mon.set, ctx.formatid);
+      const oldMax = maxHp(sim, mon.set, format);
       mon.hyper ??= {};
       for (const s of raise) { mon.hyper[s] = ivs[s]; ivs[s] = MAX_IV; }
-      keepHpGain(sim, mon, oldMax, ctx.formatid);
+      keepHpGain(sim, mon, oldMax, format);
+      return;
+    }
+    case 'friendship': {
+
+      const { mon } = findMon(state, op.ref, sim);
+      const source = String(op.source ?? '');
+      const amount = op.amount === undefined || op.amount === null ? null : Number(op.amount);
+      if (!/^[a-z]{1,16}$/.test(source) || (amount === null ? !Object.hasOwn(FRIENDSHIP_STEPS, source) : !Number.isInteger(amount) || !amount)) {
+        fail('friendshipAmount', { amount: `${op.source} ${op.amount ?? ''}`.trim() });
+      }
+      addFriendship(mon, amount, source, ctx);
       return;
     }
     case 'boxname': {
@@ -477,6 +719,81 @@ function applyOp(state, op, ctx, fillKey, fill) {
       names[index] = String(op.name ?? '').trim().slice(0, BOX_NAME_MAX);
       while (names.length && !names.at(-1)) names.pop();
       if (names.length) state.boxNames = names; else delete state.boxNames;
+      return;
+    }
+    case 'breed': {
+
+      if (op.stop) { delete state.breeding; return; }
+      const a = findMon(state, op.a, sim), b = findMon(state, op.b, sim);
+      if (a.mon.uid === b.mon.uid) fail('breedSame', { mon: monLabel(a.mon) });
+      for (const { list, mon } of [a, b]) if (list !== state.party) fail('breedBox', { mon: monLabel(mon) });
+      state.breeding = [a.mon.uid, b.mon.uid];
+      return;
+    }
+    case 'hatched': {
+
+      const { mon } = findMon(state, op.ref, sim);
+      delete mon.pending.hatched;
+      return;
+    }
+    case 'amie': {
+
+      const { mon } = findMon(state, op.ref, sim);
+      const have = enjoymentOf(mon);
+      const gains = op.gains ?? [op.spend];
+      const ok = Array.isArray(gains) && gains.length > 0 && gains.every(g => Number.isInteger(g) && g > 0 && g % ENJOY_STEP === 0);
+      const spend = ok ? gains.reduce((sum, g) => sum + g, 0) : 0;
+      if (!ok || spend > have) fail('amieSpend', { mon: monLabel(mon), have });
+      setEnjoyment(mon, have - spend);
+      for (const g of gains) addFriendship(mon, friendshipFor(g), 'amie', ctx);
+      return;
+    }
+    case 'train': {
+
+      const { mon } = findMon(state, op.ref, sim);
+      const bags = Array.isArray(op.bags) ? op.bags : [];
+      const bad = bags.find(id => !bagOf(id)) ?? (op.hung && !isHungBag(op.hung) ? op.hung.id ?? '' : undefined);
+      if (bad !== undefined || (!bags.length && op.hung === undefined)) fail('trainBag', { bag: bad ?? '' });
+      const oldMax = maxHp(sim, mon.set, format);
+      const { trainee, friendship } = clearBags(traineeOf(mon), bags);
+      setTrainee(mon, trainee);
+      if (op.hung !== undefined) setHungBag(mon, op.hung);
+      if (friendship) addFriendship(mon, friendship, 'soothing', ctx);
+      keepHpGain(sim, mon, oldMax, format);
+      return;
+    }
+    case 'feed': {
+
+      const { mon } = findMon(state, op.ref, sim);
+      const species = sim.Dex.species.get(mon.set.species);
+      if (!eatsFood(species.num)) fail('feedNever', { mon: monLabel(mon) });
+      if (!canEat(mon)) fail('feedFull', { mon: monLabel(mon) });
+      let friendship;
+      if (op.puff !== undefined) {
+        const puff = parsePuff(op.puff) ?? fail('unknownPuff', { puff: op.puff });
+        if (puff.grade !== FREE_GRADE) {
+          if (!puffCount(state, op.puff)) fail('puffNone', { puff: op.puff });
+          addPuffs(state, op.puff, -1);
+        }
+        friendship = puffFriendship(puff.grade);
+      } else {
+        const id = itemId(op.item ?? '');
+        friendship = foodFriendship(id, sim, state);
+        if (!friendship) fail('notFood', { item: op.item });
+        if (!(state.bag[id] > 0)) fail('notInBag');
+        if (state.bag[id] > 1) state.bag[id]--; else delete state.bag[id];
+      }
+      setFullness(mon, fullnessOf(mon) + FULL_PER_FOOD);
+      addFriendship(mon, friendship, 'food', ctx);
+      if (mon.hp !== 0) heal(sim, mon, { hpAdd: foodHeal(maxHp(sim, mon.set, format)) }, format);
+      return;
+    }
+    case 'puff': {
+
+      const puff = parsePuff(op.puff) ?? fail('unknownPuff', { puff: op.puff });
+      if (puff.grade === FREE_GRADE || !Number.isInteger(op.delta) || !op.delta) fail('unknownPuff', { puff: op.puff });
+      if (puffCount(state, op.puff) + op.delta < 0) fail('puffNone', { puff: op.puff });
+      addPuffs(state, op.puff, op.delta);
       return;
     }
   }
@@ -519,7 +836,8 @@ function ppUpsFromSlots(moves, previous) {
 }
 
 export function healParty(state, ctx, op = {}) {
-  for (const mon of state.party) heal(ctx.sim, mon, op, ctx.formatid);
+  const format = stateFormat(state);
+  for (const mon of state.party) heal(ctx.sim, mon, op, format);
 }
 
 function heal(sim, mon, { hpPercent, hpAdd, statusOnly, revive }, formatid) {
@@ -594,9 +912,11 @@ export function rememberableMoves(ctx, mon) {
   return [...lowest].map(([move, level]) => ({ move, level })).sort((a, b) => a.level - b.level);
 }
 
-export function levelUpOutside(mon, delta, ctx, rng, { effort } = {}) {
+const outsideOf = (state, extra) => ({ party: state.party, badges: badgeCount(state), format: stateFormat(state), ...extra });
+
+export function levelUpOutside(mon, delta, ctx, rng, { effort, party = [], badges = 0, format = DEFAULT_FORMAT } = {}) {
   const { sim } = ctx;
-  effort ??= formatRules(sim, ctx.formatid || DEFAULT_FORMAT).effort;
+  effort ??= formatRules(sim, format).effort;
   const next = clone(mon);
   const set = next.set;
   const from = set.level;
@@ -611,19 +931,11 @@ export function levelUpOutside(mon, delta, ctx, rng, { effort } = {}) {
     next.exp = Math.max(low, Math.min(high, mon.exp ?? 0));
   }
 
-  if (effort) {
-    const curve = growth ?? 'mediumfast';
-    let defeats = 0;
-    for (let level = from; level < to; level++) {
-      const need = expForLevel(curve, level + 1) - expForLevel(curve, level);
-      defeats += need / calcExpGain({ baseExp: TYPICAL_BASE_EXP, level, victorLevel: level });
-    }
-    set.evs = gainEffort({ ...set.evs }, Math.max(1, Math.round(defeats)), rng);
-  }
+  if (effort) set.evs = gainEffort({ ...set.evs }, outsideDefeats(growth ?? 'mediumfast', from, to), rng);
 
-  const oldMax = maxHp(sim, { ...mon.set }, ctx.formatid);
+  const oldMax = maxHp(sim, { ...mon.set }, format);
   set.level = to;
-  const newMax = maxHp(sim, set, ctx.formatid);
+  const newMax = maxHp(sim, set, format);
   if (next.hp !== null && next.hp > 0) next.hp = Math.min(newMax, next.hp + newMax - oldMax);
 
   next.pending.levels += to - from;
@@ -633,9 +945,21 @@ export function levelUpOutside(mon, delta, ctx, rng, { effort } = {}) {
     next.pending.moves.push(moveid);
   }
 
-  const evolution = levelEvolution(sim.Dex, set, to);
+  for (let level = from; level < to; level++) addFriendship(next, null, 'level', ctx);
+
+  const { mon: evolving, now } = evolutionCheck(ctx, next, party, badges);
+  const evolution = levelEvolution(sim.Dex, evolving, now);
   if (evolution) next.pending.evolve = evolution;
   return next;
+}
+
+export function outsideDefeats(curve, from, to) {
+  let defeats = 0;
+  for (let level = from; level < to; level++) {
+    const need = expForLevel(curve, level + 1) - expForLevel(curve, level);
+    defeats += need / calcExpGain({ baseExp: TYPICAL_BASE_EXP, level, victorLevel: level, rate: STORY_EXP_PACE });
+  }
+  return Math.max(1, Math.round(defeats));
 }
 
 function gainEffort(evs, defeats, rng) {
@@ -657,13 +981,17 @@ function sameSlotAbility(from, ability, to) {
   return to.abilities[slot] ?? to.abilities['0'];
 }
 
-function evolve(ctx, mon, target) {
+function evolve(state, ctx, mon, target, { decoration } = {}) {
   const { sim } = ctx;
   const from = sim.Dex.species.get(mon.set.species);
   const to = sim.Dex.species.get(target);
   if (!to.exists) fail('unknownSpecies', { species: target });
+  const before = clone(mon);
   mon.set.ability = sameSlotAbility(from, mon.set.ability, to);
   mon.set.species = to.name;
+  if (usesHeldItem(sim.Dex, to.name, mon.set.item)) mon.set.item = '';
+  if (decoration) mon.decoration = itemId(decoration);
+  delete mon.counts;
   mon.pending.evolve = null;
 
   for (const [level, moveid] of levelUpMoves(ctx, to.name)) {
@@ -671,22 +999,57 @@ function evolve(ctx, mon, target) {
     mon.pending.moves.push(moveid);
   }
   settlePending(mon);
+  markDex(state, sim, to.name, true);
+  for (const name of extraEvolutions(sim.Dex, from.name, to.name)) {
+    if (state.party.length >= PARTY_MAX || !(state.bag.pokeball > 0)) break;
+    const extra = sim.Dex.species.get(name);
+    const set = { ...clone(before.set), species: extra.name, ability: extra.abilities['0'], item: '', name: '', gender: extra.gender === 'N' ? '' : before.set.gender };
+    const born = { ...newMon(ctx, set, uniqueUid(state, `${mon.uid}-${extra.id}`)), ball: 'pokeball', ...(before.exp === undefined ? {} : { exp: before.exp }), ...(before.ot ? { ot: before.ot } : {}) };
+    state.bag.pokeball -= 1;
+    if (!state.bag.pokeball) delete state.bag.pokeball;
+    state.party.push(born);
+    markDex(state, sim, extra.name, true);
+  }
 }
 
-export function applyBattleResult(before, result, ctx, { battle = null, outcome = outcomeOf(result), start = null } = {}) {
+export function applyBattleResult(before, result, ctx, { battle = null, outcome = outcomeOf(result), start = null, format = null } = {}) {
   const { sim } = ctx;
   const state = clone(before);
+
+  const own = stateFormat(state);
+  const hpIn = (member, set) => {
+    if (member.hp <= 0) return 0;
+    if (format && format !== own) return shareOf(member.hp, member.maxhp, maxHp(sim, set, own));
+    return member.hp >= member.maxhp ? null : member.hp;
+  };
   const mine = result.sides.find(s => s.id === 'p1');
   const theirs = result.sides.find(s => s.id === 'p2');
   const evolutions = new Map((result.evolutions ?? []).filter(e => !e.unsupported).map(e => [e.uid, e]));
   const started = new Map((start ?? []).map(m => [m.uid, m]));
 
+  for (const used of result.itemsUsed ?? []) {
+    const id = itemId(used.item);
+    const count = Math.max(0, (state.bag[id] ?? 0) - 1);
+    if (count) state.bag[id] = count; else delete state.bag[id];
+  }
+  tidyCustomItems(state);
+
   for (const member of mine?.team ?? []) {
     const mon = [...state.party, ...state.box].find(m => m.uid === member.uid);
     if (!mon) continue;
-    const from = started.get(member.uid) ?? { set: mon.set, exp: mon.exp };
+    const from = started.get(member.uid) ?? { set: mon.set, exp: mon.exp, friendship: mon.friendship, friendshipCarry: mon.friendshipCarry, counts: mon.counts };
     const sameSpecies = toID(mon.set.species) === toID(from.set.species);
     gainLevel(ctx, mon, member, from);
+
+    const gained = member.friendship === undefined ? 0 : member.friendship + (member.friendshipCarry ?? 0) - friendshipOf(ctx, from) - (from.friendshipCarry ?? 0);
+    if (gained && !friendshipLocked(mon)) {
+      const { value, carry } = moveFriendship(friendshipOf(ctx, mon), mon.friendshipCarry ?? 0, gained);
+      mon.friendship = value;
+      setCarry(mon, carry);
+    }
+
+    if (member.counts) mon.counts = addCounts(mon.counts, member.counts, from.counts);
+    if (member.cloak && sameSpecies && sim.Dex.species.get(mon.set.species).baseSpecies === 'Burmy') mon.set.species = member.cloak;
 
     if (member.evs) mon.set.evs = addEffort(mon.set.evs, member.evs, from.set.evs);
     learnFromBattle(mon, member.moves.map(m => m.id), (from.set.moves ?? []).map(toID));
@@ -699,15 +1062,14 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
 
     const ppUps = ppUpsFromSlots(mon.set.moves.map(id => slots.get(id) ?? { id }), mon.ppUps);
     if (ppUps) mon.ppUps = ppUps; else delete mon.ppUps;
-    mon.hp = member.fainted || member.hp <= 0 ? 0 : member.hp >= member.maxhp ? null : member.hp;
+    mon.hp = member.fainted ? 0 : hpIn(member, mon.set);
     mon.status = mon.hp === 0 ? 'fnt' : member.status || '';
     mon.pending.moves = mon.pending.moves.filter(id => !mon.set.moves.includes(id));
 
     const evolution = sameSpecies ? evolutions.get(member.uid) : null;
     if (evolution?.evolved === true) {
-      evolve(ctx, mon, evolution.to);
+      evolve(state, ctx, mon, evolution.to);
       mon.pending.moves = mon.pending.moves.filter(id => !mon.set.moves.includes(id));
-      markDex(state, sim, mon.set.species, true);
     } else if (evolution && evolution.evolved === undefined) {
       mon.pending.evolve = evolution.to;
     }
@@ -715,12 +1077,6 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
   for (const { uid, move } of result.learnQueue ?? []) {
     const mon = [...state.party, ...state.box].find(m => m.uid === uid);
     if (mon && !mon.set.moves.includes(move) && !mon.pending.moves.includes(move)) mon.pending.moves.push(move);
-  }
-
-  for (const used of result.itemsUsed ?? []) {
-    const id = toID(used.item);
-    const count = Math.max(0, (state.bag[id] ?? 0) - 1);
-    if (count) state.bag[id] = count; else delete state.bag[id];
   }
 
   for (const foe of theirs?.team ?? []) markDex(state, sim, foe.species, false);
@@ -742,12 +1098,13 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
     };
     const uid = uniqueUid(state, `c${hashKey(JSON.stringify([set, caught.turn, result.turn]))}`);
     const mon = newMon(ctx, set, uid);
-    mon.hp = foe.hp >= foe.maxhp ? null : foe.hp;
+    mon.hp = hpIn(foe, mon.set);
     mon.status = foe.status || '';
     mon.pp = Object.fromEntries(foe.moves.filter(m => m.pp < m.maxpp).map(m => [m.id, m.pp]));
     const ppUps = ppUpsFromSlots(foe.moves, null);
     if (ppUps) mon.ppUps = ppUps;
     if (caught.ball) mon.ball = caught.ball;
+    if (caught.ball === 'friendball') mon.friendship = FRIEND_BALL_FRIENDSHIP;
         // The actual box slot is decided here: last
     (caught.toBox || state.party.length >= PARTY_MAX ? state.box : state.party).push(mon);
     markDex(state, sim, set.species, true);
@@ -756,7 +1113,7 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
 }
 
 export function applyBattles(before, battles, ctx, { battle = null } = {}) {
-  return battles.reduce((state, { start, result, outcome }, i) => applyBattleResult(state, result, ctx, { battle: i ? null : battle, outcome, start }), before);
+  return battles.reduce((state, { start, result, outcome, format }, i) => applyBattleResult(state, result, ctx, { battle: i ? null : battle, outcome, start, format }), before);
 }
 
 function gainLevel(ctx, mon, end, from) {
@@ -802,8 +1159,9 @@ export function storyEndTrainer(battle, outcome, team = null) {
   return { who, trainer: { name: battle.name, personal: personalName(battle), outcome, team: team ?? battle.team.map(({ species, level }) => ({ species, level })) } };
 }
 
-export const battleRecord = (spec, result, outcome) => ({ start: spec.p1.team.map(({ uid, set, exp }) => ({ uid, set, exp })), result,
-  ...(outcome === undefined ? {} : { outcome }) });
+export const battleRecord = (spec, result, outcome) => ({ start: spec.p1.team.map(({ uid, set, exp, friendship, friendshipCarry, counts }) => ({ uid, set, exp,
+  ...(friendship === undefined ? {} : { friendship }), ...(friendshipCarry ? { friendshipCarry } : {}), ...(counts ? { counts } : {}) })), result,
+  ...(outcome === undefined ? {} : { outcome }), ...(spec.formatid ? { format: spec.formatid } : {}) });
 
 export const battlesBefore = spec => spec?.before ?? [];
 
@@ -816,22 +1174,29 @@ export function nextStageSpec(spec, result, state, ctx, { seed }) {
   if (!waiting || outcomeOf(result) !== 'win') return null;
   const { log, screen, ...ended } = result;
   const before = [...battlesBefore(spec), battleRecord(spec, ended)];
-  const now = applyBattles(state, before, ctx);
+  const now = inRule(ctx.sim, applyBattles(state, before, ctx), formatRule(spec.formatid));
   const { foePartner, double, partner, ...same } = spec;
   return { ...same, seed: [...seed], p1: { ...spec.p1, team: playerTeam(now) }, p2: waiting,
-    ...(spec.bag ? { bag: { ...spec.bag, items: battleBag(now), caughtSpecies: [...now.dex.caught] } } : {}), teraOrb: hasTeraOrb(now), before };
+    ...(spec.bag ? { bag: { ...otherBag(spec.bag), ...battleBag(now), caughtSpecies: [...now.dex.caught] } } : {}), teraOrb: hasTeraOrb(now), before };
 }
 
-const playerTeam = state => state.party.map(mon => engineMember(mon, state.customItems));
+const playerTeam = state => hatchedParty(state).map(mon => engineMember(mon, state.customItems));
 
-const battleBag = state => Object.fromEntries(Object.entries(state.bag).filter(([id]) => BAG_ITEMS[id] || isBall(id)));
+function battleBag(state) {
+  const items = Object.fromEntries(Object.entries(state.bag).filter(([id]) => BAG_ITEMS[id] || isBall(id) || hasTag(state, id, 'food')));
+  const foods = Object.fromEntries(Object.keys(items).filter(isCustomItem).map(id => { const { name, emoji } = customInfo(state, id); return [id, { name, emoji }]; }));
+  return { items, ...(Object.keys(foods).length ? { foods } : {}) };
+}
+
+const otherBag = ({ items, foods, ...rest }) => rest;
 const hasTeraOrb = state => (state.bag.teraorb ?? 0) > 0;
 
-export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, player, expShare, expRate = DEFAULT_EXP_RATE } = {}) {
-  if (!state.party.length) fail('noParty');
-  if (!state.party.some(m => m.hp !== 0)) fail('allFainted');
+export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, player, expShare, expRate = DEFAULT_EXP_RATE, status = null } = {}) {
+  if (!hatchedParty(state).length) fail('noParty');
+  if (!hatchedParty(state).some(m => m.hp !== 0)) fail('allFainted');
   const { sim } = ctx;
-  const place = battle.place || 'plains';
+  const { place, time, timeOfDay, weather, terrain } = battleScene(battle, status);
+  const friendshipRate = ctx.friendshipRate ?? 1;
   const { sprite, silhouette } = opponentPicture(battle, picture);
   const bgm = bossBgm({ wild: battle.wild, boss: battle.boss, sprite, name: battle.name, trainerClass: battle.trainerClass });
 
@@ -849,7 +1214,7 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
     ...(second.sprite ? { trainerSprite: second.sprite } : {}), ...(second.silhouette ? { trainerSilhouette: true } : {}) };
   return {
     ...(seed ? { seed: [...seed] } : {}),
-    formatid: formatid || ctx.formatid || DEFAULT_FORMAT,
+    formatid: formatid || stateFormat(state),
     p1: { name: ctx.playerName || PLAYER_NAME, team: p1,
 
       ...(player ? { trainerSprite: player.gender } : {}), ...(player?.silhouette ? { trainerSilhouette: true } : {}) },
@@ -859,17 +1224,27 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
 
     ...(bgm ? { bgm } : {}),
     bag: {
-      items: battleBag(state), wild: !!battle.wild, caughtSpecies: [...state.dex.caught],
-      env: { night: battle.time === 'night', cave: CAVE_BIOMES.has(place), water: WATER_BIOMES.has(place) },
+      ...battleBag(state), wild: !!battle.wild, caughtSpecies: [...state.dex.caught],
+      env: { night: time === 'night', cave: CAVE_BIOMES.has(place), water: WATER_BIOMES.has(place) },
     },
     wild: !!battle.wild,
     boss: !battle.wild && !!battle.boss,
     ...(expShareOn(expShare, state.bag) ? {} : { expShare: false }),
-    ...(expRate === DEFAULT_EXP_RATE ? {} : { expRate }),
+    expRate: storyExpRate(expRate),
+    ...(friendshipRate === 1 ? {} : { friendshipRate }),
+    ...(timeOfDay === 'day' ? {} : { timeOfDay }),
+    ...evolutionWorld(ctx, status, state),
+    ...(weather ? { weather } : {}), ...(terrain ? { terrain } : {}),
     teraOrb: hasTeraOrb(state),
     biome: place,
     ...(battle.double ? { double: true } : {}), ...(partner ? { partner } : {}), ...(foePartner ? { foePartner } : {}),
   };
+}
+
+function evolutionWorld(ctx, status, state) {
+  const badges = badgeCount(state), trade = ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION;
+  return { ...(status?.region ? { region: status.region } : {}), ...(Number.isInteger(status?.money) ? { money: status.money } : {}), ...(badges ? { badges } : {}),
+    ...(trade === ABSENT_TRADE_EVOLUTION ? {} : { tradeEvolution: trade }) };
 }
 
 function blockMember(sim, teamSet, uid, past) {
@@ -909,41 +1284,44 @@ function continuePast(sim, set, past) {
   return out;
 }
 
-export function findMon(state, ref, sim, { boxFirst = false } = {}) {
+export function findMon(state, ref, sim, { boxFirst = false, egg = false } = {}) {
+
+  const found = (list, index) => {
+    if (isEgg(list[index]) && !egg) fail('isEgg');
+    return { list, index, mon: list[index] };
+  };
   if (ref && typeof ref.uid === 'string') {
 
     for (const list of [state.party, state.box]) {
       const index = list.findIndex(m => m.uid === ref.uid);
-      if (index >= 0) return { list, index, mon: list[index] };
+      if (index >= 0) return found(list, index);
     }
     fail('monGone');
   }
   if (ref && Number.isInteger(ref.box)) {
 
-    const mon = state.box[ref.box - 1];
-    if (!mon) fail('noBoxMon', { n: ref.box });
-    return { list: state.box, index: ref.box - 1, mon };
+    if (!state.box[ref.box - 1]) fail('noBoxMon', { n: ref.box });
+    return found(state.box, ref.box - 1);
   }
   if (ref && Number.isInteger(ref.slot)) {
-    const mon = state.party[ref.slot - 1];
-    if (!mon) fail('noPartyMon', { n: ref.slot });
-    return { list: state.party, index: ref.slot - 1, mon };
+    if (!state.party[ref.slot - 1]) fail('noPartyMon', { n: ref.slot });
+    return found(state.party, ref.slot - 1);
   }
   const name = String(ref?.name ?? '').trim();
   if (!name) fail('noWho');
-  const lists = boxFirst ? [state.box, state.party] : [state.party, state.box];
+  const lists = (boxFirst ? [state.box, state.party] : [state.party, state.box]).map(list => list.filter(m => !isEgg(m)));
+  const at = mon => { const list = [state.party, state.box].find(l => l.includes(mon)); return { list, index: list.indexOf(mon), mon }; };
   const key = name.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
   for (const list of lists) {
-    const index = list.findIndex(m => m.set.name && m.set.name.normalize('NFKC').toLowerCase().replace(/\s+/g, '') === key);
-    if (index >= 0) return { list, index, mon: list[index] };
+    const mon = list.find(m => m.set.name && m.set.name.normalize('NFKC').toLowerCase().replace(/\s+/g, '') === key);
+    if (mon) return at(mon);
   }
   const species = speciesName(name);
   if (species) {
     const id = toID(species);
     for (const list of lists) {
-      let index = list.findIndex(m => toID(m.set.species) === id);
-      if (index < 0) index = list.findIndex(m => toID(sim.Dex.species.get(m.set.species).baseSpecies) === id);
-      if (index >= 0) return { list, index, mon: list[index] };
+      const mon = list.find(m => toID(m.set.species) === id) ?? list.find(m => toID(sim.Dex.species.get(m.set.species).baseSpecies) === id);
+      if (mon) return at(mon);
     }
   }
   fail('notFound', { name });
@@ -979,6 +1357,29 @@ export function hpFromPercent(sim, set, percent, keepAlive = false, formatid) {
   if (percent >= 100) return null;
   const hp = Math.round(maxHp(sim, set, formatid) * percent / 100);
   return percent > 0 || keepAlive ? Math.max(1, hp) : hp;
+}
+
+export const ruleOf = state => state?.rule ?? DEFAULT_RULE;
+
+export const stateFormat = state => ruleFormat(ruleOf(state));
+
+function shareOf(hp, was, max) {
+  if (hp >= was) return null;
+  if (was === max) return hp;
+  return Math.max(1, Math.min(max - 1, Math.round(hp * max / was)));
+}
+
+export function inRule(sim, state, rule = DEFAULT_RULE) {
+  if (ruleOf(state) === rule) return state;
+  const from = stateFormat(state), to = ruleFormat(rule);
+  const next = clone(state);
+  for (const mon of [...next.party, ...next.box]) {
+    if (isEgg(mon)) continue;
+    if (mon.hp) mon.hp = shareOf(mon.hp, maxHp(sim, mon.set, from), maxHp(sim, mon.set, to));
+    for (const id of Object.keys(mon.pp ?? {})) if (mon.pp[id] >= maxPp(sim, id, ppUpsOf(mon, id), to)) delete mon.pp[id];
+  }
+  if (rule === DEFAULT_RULE) delete next.rule; else next.rule = rule;
+  return next;
 }
 
 export function markDex(state, sim, species, caught) {

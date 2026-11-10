@@ -1,15 +1,17 @@
 import { mountLoading } from './loading.js';
-import { UI_VARS, CARD_FRAME, crossIcon } from './ui-css.js';
+import { UI_VARS, CARD_FRAME, crossIcon, ringCss, ringOnKeys } from './ui-css.js';
 import { isRecord, isUnreadable, unreadableLine } from '../../story/stored.mjs';
 import { THEMES as THEME_IDS, DEFAULT_THEME } from '../../view/ui/theme.js';
 import { DIFFICULTIES as DIFFICULTY_IDS } from '../../ai/index.js';
 import { GAME_SPEEDS, DEFAULT_SPEED } from '../../view/game-speed.js';
 import { QUALITIES as QUALITY_IDS } from '../../view/quality.js';
-import { MAINLINE_FORMAT, CHAMPIONS_FORMAT } from '../../engine/rules.mjs';
+import { RULE_IDS, DEFAULT_RULE } from '../../engine/rules.mjs';
 import { EXP_SHARE_MODES } from '../../story/items.mjs';
-import { EXP_RATES, DEFAULT_EXP_RATE, EXP_RATE_DIGITS, EXP_RATE_MIN, EXP_RATE_MAX, isExpRate } from '../../engine/exp.mjs';
+import { EXP_RATES, RATES, DEFAULT_EXP_RATE, EXP_RATE_DIGITS, EXP_RATE_MIN, EXP_RATE_MAX, isExpRate, isExpRateSetting } from '../../engine/exp.mjs';
+import { TRADE_EVOLUTIONS as TRADE_EVOLUTION_IDS, DEFAULT_TRADE_EVOLUTION_SETTING } from '../../engine/evolution.mjs';
 import { numberPadCss, openNumberPad } from './number-pad.js';
-import { PICTURE_ROUTES, DEFAULT_PICTURE_ROUTE } from '../panel/pictures.js';
+import { controlsCss, switchControl, stepperControl, segmentControl } from './controls.js';
+import { PICTURE_ROUTES, DEFAULT_PICTURE_ROUTE } from './picture-route.js';
 import { shrinkPicture } from './my-picture.js';
 import { loadFont } from '../../view/fonts.js';
 import { FONT, noteRule } from '../../story/card.mjs';
@@ -17,6 +19,7 @@ import { WHAT, failureText } from '../../story/failure.mjs';
 import { sayer, perLang } from '../../story/screen-text.mjs';
 import { SHEET_FONT } from '../../story/style.mjs';
 import { TAB_COLOR, ICON as PANEL_ICON } from '../../story/panel-html.mjs';
+import { SCREEN_PLACES, DEFAULT_SCREEN_PLACE } from '../../story/panel.mjs';
 
 export const SETTINGS_KEY = 'pkb_settings';
 
@@ -30,7 +33,7 @@ export const langOf = tag => (/^ko\b/i.test(String(tag ?? '')) ? 'ko' : 'en');
 
 export const hostLang = () => langOf(globalThis.navigator?.language);
 export const DEFAULT_SETTINGS = Object.freeze({ iron: false, sound: false, sendFormat: 'key', theme: DEFAULT_THEME, orientation: 'portrait', lang: null, autoSend: false, commands: false, aux: false, auxRecent: 8, oocTrial: false, difficulty: 'normal',
-  rule: 'mainline', expShare: 'always', expRate: DEFAULT_EXP_RATE, speed: DEFAULT_SPEED, typeHints: false, moveAnims: true, quality: 'high', panelPicture: DEFAULT_PICTURE_ROUTE, silhouette: true,
+  rule: DEFAULT_RULE, expShare: 'always', expRate: DEFAULT_EXP_RATE, friendshipRate: DEFAULT_EXP_RATE, hatchRate: DEFAULT_EXP_RATE, tradeEvolution: DEFAULT_TRADE_EVOLUTION_SETTING, speed: DEFAULT_SPEED, typeHints: false, moveAnims: true, quality: 'high', panelPicture: DEFAULT_PICTURE_ROUTE, outsideScreens: DEFAULT_SCREEN_PLACE, silhouette: true,
   looks: Object.freeze({}), oldLook: null, debug: false,
   bots: Object.freeze([]), botsOff: Object.freeze([]) });
 
@@ -39,27 +42,29 @@ export const DEFAULT_LOOK = Object.freeze({ gender: 'm', myBack: 'silhouette', m
 const labelled = (ids, prefix) => perLang(t => Object.freeze(ids.map(id => Object.freeze([id, t(`${prefix}.${id}`)]))));
 
 const SEND_FORMAT_IDS = ['summary', 'key', 'log'];
-const RULE_IDS = ['mainline', 'champions'];
 const LOOK_IDS = ['silhouette', 'color'];
 const PICTURE_LOOK_IDS = [...LOOK_IDS, 'image'];
 const GENDER_IDS = ['m', 'f'];
 export const SEND_FORMATS = labelled(SEND_FORMAT_IDS, 'settings.sendFormat');
 export const THEMES = labelled(THEME_IDS, 'settings.theme');
 export const DIFFICULTIES = labelled(DIFFICULTY_IDS, 'settings.difficulty');
-
-const RULE_FORMATS = { mainline: MAINLINE_FORMAT, champions: CHAMPIONS_FORMAT };
 export const RULES = labelled(RULE_IDS, 'settings.rule');
 export const EXP_SHARES = labelled(EXP_SHARE_MODES, 'settings.expShare');
-export const EXP_RATE_CHOICES = perLang(t => Object.freeze(EXP_RATES.map(rate => Object.freeze([rate, t('settings.expRate', { rate })]))));
+export const TRADE_EVOLUTIONS = labelled(TRADE_EVOLUTION_IDS, 'settings.tradeEvolution');
+const rateChoices = rates => perLang(t => Object.freeze(rates.map(rate => Object.freeze([rate, t('settings.expRate', { rate })]))));
+
+export const EXP_RATE_CHOICES = rateChoices(EXP_RATES);
+
+export const RATE_CHOICES = rateChoices(RATES);
 
 export const EXP_RATE_TYPED = perLang(t => Object.freeze({
   unset: t('settings.expRateTyped'), label: rate => t('settings.expRate', { rate }),
   range: t('settings.expRateRange', { min: EXP_RATE_MIN, max: EXP_RATE_MAX }), digits: EXP_RATE_DIGITS, valid: isExpRate,
 }));
-export const ruleFormat = rule => RULE_FORMATS[rule];
 export const SPEEDS = perLang(t => Object.freeze(GAME_SPEEDS.map(speed => Object.freeze([speed, t('settings.speed', { speed })]))));
 export const QUALITIES = labelled(QUALITY_IDS, 'settings.quality');
 export const PANEL_PICTURES = labelled(PICTURE_ROUTES, 'settings.panelPicture');
+export const OUTSIDE_SCREENS = labelled(SCREEN_PLACES, 'settings.outsideScreens');
 
 export const LOOKS = labelled(LOOK_IDS, 'settings.look');
 export const PICTURE_LOOKS = labelled(PICTURE_LOOK_IDS, 'settings.look');
@@ -82,21 +87,25 @@ export const auxOn = settings => commandsOn(settings) && settings.aux === true;
 export const ON_OFF = perLang(t => Object.freeze([Object.freeze([true, t('settings.on')]), Object.freeze([false, t('settings.off')])]));
 
 export const SETTING_TABS = perLang((t, lang) => {
-  const row = (key, options, extra = {}) => ({ key, label: t(`settings.row.${key}`), ...(options ? { options } : {}), ...('help' in extra ? {} : { help: t(`settings.help.${key}`) }), ...extra });
   const onOff = ON_OFF(lang);
+  const row = (key, options, extra = {}) => ({ key, label: t(`settings.row.${key}`), ...(options ? { options, control: options === onOff ? 'switch' : 'segment' } : {}),
+    ...('help' in extra ? {} : { help: t(`settings.help.${key}`) }), ...extra });
+  const ordered = { control: 'stepper' };
   const underCommands = { needs: commandsOn, needsHelp: t('settings.needsCommands') };
   return Object.freeze([
-    { id: 'battle', rows: [row('rule', RULES(lang)), row('expShare', EXP_SHARES(lang)), row('expRate', EXP_RATE_CHOICES(lang), { typed: EXP_RATE_TYPED(lang) }), row('iron', onOff), row('difficulty', DIFFICULTIES(lang)), row('speed', SPEEDS(lang)), row('typeHints', onOff)] },
+    { id: 'battle', rows: [row('rule', RULES(lang)), row('expShare', EXP_SHARES(lang)), row('expRate', EXP_RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }),
+      row('friendshipRate', RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }), row('hatchRate', RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }),
+      row('tradeEvolution', TRADE_EVOLUTIONS(lang)), row('iron', onOff), row('difficulty', DIFFICULTIES(lang), ordered), row('speed', SPEEDS(lang), ordered), row('typeHints', onOff)] },
     { id: 'screen', rows: [
       ...(LANG_OPEN ? [row('lang', LANGS, { help: LANG_HELP })] : []),
       row('sound', onOff), row('moveAnims', onOff),
       row('silhouette', LOOKS(lang), { get: s => (s.silhouette ? 'silhouette' : 'color'), set: id => ({ silhouette: id === 'silhouette' }) }),
       row('persona'),
       row('gender', GENDERS(lang), { look: true }), row('myBack', LOOKS(lang), { look: true }), row('myPicture', PICTURE_LOOKS(lang), { look: true }),
-      row('theme', THEMES(lang)), row('quality', QUALITIES(lang)), row('panelPicture', PANEL_PICTURES(lang)),
+      row('theme', THEMES(lang)), row('quality', QUALITIES(lang)), row('panelPicture', PANEL_PICTURES(lang)), row('outsideScreens', OUTSIDE_SCREENS(lang)),
     ] },
     { id: 'story', rows: [row('sendFormat', SEND_FORMATS(lang), { help: SEND_FORMAT_NOTES(lang) }), row('autoSend', onOff, { permission: 'sendChat' }),
-      row('commands', onOff), row('aux', onOff, underCommands), row('auxRecent', AUX_RECENTS(lang), underCommands), row('oocTrial', onOff), row('debug', onOff)] },
+      row('commands', onOff), row('aux', onOff, underCommands), row('auxRecent', AUX_RECENTS(lang), { ...underCommands, ...ordered }), row('oocTrial', onOff), row('debug', onOff)] },
     { id: 'bot', rows: [row('bot', onOff, { help: undefined }), row('bots'), row('import')] },
   ].map(tab => Object.freeze({ ...tab, label: t(`settings.tab.${tab.id}`) })));
 });
@@ -140,12 +149,16 @@ export function normalizeSettings(raw) {
     difficulty: pick(s.difficulty, DIFFICULTY_IDS, DEFAULT_SETTINGS.difficulty),
     rule: pick(s.rule, RULE_IDS, DEFAULT_SETTINGS.rule),
     expShare: pick(s.expShare, EXP_SHARE_MODES, DEFAULT_SETTINGS.expShare),
-    expRate: isExpRate(s.expRate) ? s.expRate : DEFAULT_SETTINGS.expRate,
+    expRate: isExpRateSetting(s.expRate) ? s.expRate : DEFAULT_SETTINGS.expRate,
+    friendshipRate: isExpRate(s.friendshipRate) ? s.friendshipRate : DEFAULT_SETTINGS.friendshipRate,
+    hatchRate: isExpRate(s.hatchRate) ? s.hatchRate : DEFAULT_SETTINGS.hatchRate,
+    tradeEvolution: pick(s.tradeEvolution, TRADE_EVOLUTION_IDS, DEFAULT_SETTINGS.tradeEvolution),
     speed: pick(s.speed, GAME_SPEEDS, DEFAULT_SETTINGS.speed),
     typeHints: s.typeHints === true,
     moveAnims: s.moveAnims !== false,
     quality: pick(s.quality, QUALITY_IDS, DEFAULT_SETTINGS.quality),
     panelPicture: pick(s.panelPicture, PICTURE_ROUTES, DEFAULT_SETTINGS.panelPicture),
+    outsideScreens: pick(s.outsideScreens, SCREEN_PLACES, DEFAULT_SETTINGS.outsideScreens),
     silhouette: s.silhouette !== false,
     debug: s.debug === true,
     looks: lookMap(s.looks),
@@ -276,6 +289,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     .pkb-settings * { box-sizing:border-box; }
     .pkb-settings button { font:inherit; }
     .pkb-settings button:focus-visible { outline:2px solid #ffcf4a; outline-offset:2px; }
+    ${ringCss('.pkb-settings')}
     .pkb-settings .card { position:relative; width:min(420px, 100%); height:640px; max-height:100%; display:flex; flex-direction:column; overflow:hidden; ${CARD_FRAME} }
     .pkb-settings .hd { flex:none; display:flex; align-items:center; gap:8px; min-height:36px; padding:6px 8px 6px 12px; background:var(--navy); color:#fff; border-bottom:2.5px solid var(--navy-dark); }
     .pkb-settings .hd .pb { flex:none; width:18px; height:18px; margin:0 -1.5px; } /* 15px ball + 1.5px white rim (takes only the ball's room) */
@@ -301,13 +315,9 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     .pkb-settings .row.on .cur { visibility:visible; }
     .pkb-settings .lab { min-width:0; overflow-wrap:anywhere; }
     .pkb-settings .row.off .lab { opacity:.55; }
-    /* Choices: text only, the chosen one white on red */
-    .pkb-settings .opts { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:2px; }
-    .pkb-settings .opt { min-width:38px; padding:5px 7px 4px; border:none; border-radius:6px; background:transparent; color:#9aaab7; font-size:13px; cursor:pointer; }
-    .pkb-settings .opt[aria-checked="false"]:not(:disabled):hover { color:#23435f; }
-    .pkb-settings .opt[aria-checked="true"] { color:#fff; background:var(--red); box-shadow:0 2px 0 var(--red-dark); }
-    .pkb-settings .opt:disabled { cursor:default; }
-    .pkb-settings .row.off .opt[aria-checked="true"] { opacity:.45; }
+    /* Choices: a switch, a stepper or a segment per row (controls.js - SETTING_TABS row.control) at the row's right */
+    ${controlsCss('.pkb-settings')}
+    .pkb-settings .row > .sw, .pkb-settings .row > .step, .pkb-settings .row > .seg { justify-self:end; }
     /* Rows under another (row.needs): indented right below it, joined to it by a line on the left, no dashes inside the group; greyed while it is off */
     .pkb-settings .row.joined { border-bottom-color:transparent; }
     .pkb-settings .row.sub { position:relative; min-height:42px; padding-left:22px; }
@@ -378,6 +388,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     <div class="msg" aria-live="polite"></div>
   </div>`;
   parent.append(root);
+  ringOnKeys(root);
   const card = root.querySelector('.card'), tabBar = root.querySelector('.tabs'), list = root.querySelector('.list'), msg = root.querySelector('.msg');
   if (notice) {
     const line = document.createElement('p'); line.className = 'notice'; line.setAttribute('role', 'alert'); line.textContent = notice;
@@ -413,37 +424,18 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     page.append(r);
     return r;
   };
-  const setChoice = (group, id) => {
-    group.drawTyped?.(id);
-    for (const b of group.children) b.setAttribute('aria-checked', String(b.dataset.id === String(id)));
-  };
 
-  const choices = (list, value, label, change, { disabled = false, typed = null } = {}) => {
-    const g = document.createElement('div'); g.className = 'opts'; g.setAttribute('role', 'radiogroup'); g.setAttribute('aria-label', label);
-    const choice = (name, id, press) => {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'opt'; b.setAttribute('role', 'radio');
-      b.textContent = name; b.dataset.id = String(id); b.disabled = disabled; b.onclick = press;
-      g.append(b);
-      return b;
-    };
-    const select = id => { setChoice(g, id); change(id); };
-    for (const [id, name] of list) choice(name, id, () => select(id));
-    if (typed) {
-      const fixed = id => list.some(([other]) => other === id);
-      let shown = null;
-      const b = choice('', '', () => openNumberPad({
-        parent: card, title: label, range: typed.range, format: typed.label, text: shown === null ? '' : String(shown), digits: typed.digits,
-        accepts: text => typed.valid(Number(text)), words: { ok: t('settings.padOk'), cancel: t('settings.padCancel'), delete: t('settings.padDelete') },
-        onConfirm: text => { select(Number(text)); b.focus(); }, onCancel: () => b.focus(),
-      }));
-      g.drawTyped = id => {
-        shown = fixed(id) ? null : id;
-        b.textContent = shown === null ? typed.unset : typed.label(shown);
-        b.dataset.id = shown === null ? '' : String(shown);
-      };
-    }
-    setChoice(g, value);
-    return g;
+  const choices = (kind, list, value, label, change, { disabled = false, typed = null } = {}) => {
+    const ask = typed && ((current, done) => openNumberPad({
+      parent: card, title: label, range: typed.range, format: typed.label, text: current === null ? '' : String(current), digits: typed.digits,
+      accepts: text => typed.valid(Number(text)), words: { ok: t('settings.padOk'), cancel: t('settings.padCancel'), delete: t('settings.padDelete') },
+      onConfirm: text => done(Number(text)), onCancel: () => done(null),
+    }));
+    const c = kind === 'switch' ? switchControl({ value, label, change, words: { on: t('settings.on'), off: t('settings.off') } })
+      : kind === 'stepper' ? stepperControl({ list, value, label, change, words: { prev: t('settings.prev'), next: t('settings.next') }, typed: typed && { unset: typed.unset, label: typed.label, ask } })
+        : segmentControl({ list, value, label, change });
+    c.disable(disabled);
+    return c;
   };
   const button = (label, press) => {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.textContent = label; b.onclick = press; return b;
@@ -455,7 +447,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     for (const { r, group, needs } of under) {
       const usable = needs(current);
       r.classList.toggle('off', !usable);
-      for (const b of group.children) b.disabled = !usable;
+      group.disable(!usable);
     }
   }
 
@@ -534,7 +526,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
   function drawBots() {
     names.replaceChildren(...current.bots.map(n => chip(n, false)), ...current.botsOff.map(n => chip(n, true)));
     names.hidden = !names.childElementCount;
-    if (botChoices) setChoice(botChoices, enabledNow());
+    botChoices?.set(enabledNow());
   }
   const addName = () => {
     const name = input.value.trim();
@@ -606,8 +598,8 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     list.append(page); pages.set(tab.id, page);
     for (const row of tab.rows) {
       if (row.key === 'bot') {
-        botChoices = choices(row.options, enabledNow(), row.label, on => changeBots(setBotEnabled(current, bot.name, on)), { disabled: !bot?.name });
-        line(page, row.label, botHelp(botSub), botChoices).classList.toggle('off', !bot?.name);
+        botChoices = choices(row.control, row.options, enabledNow(), row.label, on => changeBots(setBotEnabled(current, bot.name, on)), { disabled: !bot?.name });
+        line(page, row.label, botHelp(botSub), botChoices.el).classList.toggle('off', !bot?.name);
       } else if (row.key === 'bots') {
         line(page, row.label, botHelp(row.help)).append(form, names);
       } else if (row.key === 'import') {
@@ -616,22 +608,22 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
       } else if (row.key === 'persona') {
         line(page, t('settings.personaOf', { label: row.label, name: persona ?? t('settings.unknown') }), () => (persona ? row.help : NEEDS_CHAT)).classList.toggle('off', !persona);
       } else if (row.look) {
-        const r = line(page, row.label, () => row.help, choices(row.options, rowValue(row, shownLook(current, persona)), row.label, id => {
+        const r = line(page, row.label, () => row.help, choices(row.control, row.options, rowValue(row, shownLook(current, persona)), row.label, id => {
           commit(setLook(current, persona, rowPatch(row, id)));
           if (row.key === 'myPicture') drawPicture();
-        }, { disabled: !persona }));
+        }, { disabled: !persona }).el);
         r.classList.toggle('off', !persona);
         if (row.key === 'myPicture') r.append(pic);
       } else {
-        const group = choices(row.options, rowValue(row, current, inUse), row.label, async id => {
+        const group = choices(row.control, row.options, rowValue(row, current, inUse), row.label, async id => {
           if (row.permission && id === true && rowValue(row, current) !== true && !(await onPermission(row.permission))) {
-            setChoice(group, rowValue(row, current));
+            group.set(rowValue(row, current));
             return;
           }
           commit(normalizeSettings({ ...current, ...rowPatch(row, id) }));
         }, { typed: row.typed });
         const above = page.children[page.children.length - 1];
-        const r = line(page, row.label, () => (row.needs && !row.needs(current) ? row.needsHelp : row.help), group);
+        const r = line(page, row.label, () => (row.needs && !row.needs(current) ? row.needsHelp : row.help), group.el);
         if (row.needs) {
           above?.classList.add('joined');
           r.classList.add('sub');

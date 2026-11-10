@@ -8,11 +8,19 @@ import { STATS } from '../engine/mon.mjs';
 import { toID } from '../names/index.js';
 import { DEFAULT_EMOJI, customItemId, splitEmoji } from './custom-items.mjs';
 import { ruleNote } from './failure.mjs';
+import { readTime } from './compat.mjs';
+import { norm } from './norm.mjs';
 
-export const norm = s => String(s ?? '').normalize('NFKC').replace(/♀/g, 'f').replace(/♂/g, 'm').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+export { norm };
 
 const TABLES = { species: speciesTable, moves: movesTable, abilities: abilitiesTable, items: itemsTable };
 const reverse = {};
+
+const ITEM_ALIASES = Object.freeze({
+  linkingcord: ['링킹코드'], leafstone: ['잎의돌', '나뭇잎의돌'], thunderstone: ['번개의돌'], shinystone: ['빛나는돌'], metalcoat: ['메탈코트'],
+  kingsrock: ['왕의징표', '킹스락'], dragonscale: ['드래곤스케일'], dubiousdisc: ['수상한디스크', '괴상한디스크'], reapercloth: ['영계의옷'],
+  electirizer: ['일렉트라이저'], magmarizer: ['마그마라이저'], sachet: ['향주머니'],
+});
 
 function buildReverse(kind) {
   const names = new Map(), aliases = new Map();
@@ -20,8 +28,10 @@ function buildReverse(kind) {
   const alias = (k, id) => { if (!k) return; aliases.set(k, aliases.has(k) && aliases.get(k) !== id ? null : id); };
   for (const [id, r] of Object.entries(TABLES[kind])) {
     if (r.en) add(toID(r.en), id), add(norm(r.en), id);
+    if (kind === 'items') for (const other of ITEM_ALIASES[id] ?? []) alias(norm(other), id);
     if (!r.ko) continue;
     add(norm(r.ko), id);
+    if (kind === 'items' && r.ko.includes('의')) alias(norm(r.ko.replaceAll('의', '')), id);
 
     const m = /^(.+?)\s*\((.+)\)$/.exec(r.ko);
     if (kind !== 'species' || !m) continue;
@@ -91,7 +101,6 @@ const SHINY = words({
 const NOT_SHINY = new Set(['notshiny', 'nonshiny', 'noshiny', '이로치아님', '이로치아니다', '이로치아니']);
 const OPPONENT = words({ wild: ['wild', '야생'], trainer: ['trainer', '트레이너', '사람'] });
 const RANK = words({ normal: ['normal', '일반', '보통'], boss: ['boss', '보스', 'ace', '강적'] });
-const TIME = words({ day: ['day', 'morning', 'dawn', 'noon', '낮', '아침', '새벽', '오후', '점심'], night: ['night', 'dusk', 'evening', '밤', '저녁', '황혼', '한밤'] });
 const BOSS_CLASS = /관장|사천왕|챔피언|gym\s*leader|elite\s*four|champion/i;
 
 const LOOKS = words({
@@ -199,7 +208,7 @@ const CHANGE_KEYS = words({
   item: ['item', 'bag', 'items', '도구', '가방', '아이템'], release: ['release', 'farewell', '놓아주기', '떠나보내기', '방생'],
   deposit: ['deposit', 'tobox', '맡기기', '보관'], withdraw: ['withdraw', 'toparty', '꺼내기'], nickname: ['nickname', 'rename', '별명', '이름'],
   hold: ['hold', 'helditem', 'give', '지닌도구', '지니기', '들리기'], evolve: ['evolve', 'evolution', '진화'], teach: ['teach', 'learn', 'move', '기술', '가르치기', '배우기'],
-  money: ['money', 'cash', '돈', '소지금', '금액'],
+  money: ['money', 'cash', '돈', '소지금', '금액'], egg: ['egg', '알', '알받기'],
 });
 
 const LEVEL_RES = [/(?:\blv\.?|\blvl\.?|\bl|레벨)\s*\.?\s*(\d{1,3})(?!\d)/i, /(?<!\d)(\d{1,3})\s*(?:레벨|lv\b)/i];
@@ -334,7 +343,7 @@ function parseSet(value, errors, dest, warnings = errors) {
 export function parseBattle(body) {
   const errors = [];
   let fatal = false;
-  const spec = { wild: null, name: null, gender: null, look: null, trainerClass: null, boss: null, place: 'plains', time: 'day', team: [] };
+  const spec = { wild: null, name: null, gender: null, look: null, trainerClass: null, boss: null, place: null, time: null, team: [] };
 
   let format = null, partnerName = null, foePartnerName = null;
   const partnerTeam = [], foePartnerTeam = [];
@@ -365,7 +374,7 @@ export function parseBattle(body) {
       const b = storyNames.biomes[norm(value)];
       if (b) spec.place = b; else errors.push(note('unknownPlace', { value }));
     } else if (k === 'time') {
-      const t = TIME.get(norm(value));
+      const t = readTime(value);
       if (t) spec.time = t; else errors.push(note('timeWord', { value }));
     } else if (k === 'format') {
       const f = FORMAT.get(norm(value));
@@ -486,6 +495,12 @@ function parseOp(op, value, errors, warnings) {
     case 'add': {
       const r = parseSet(value, errors, true, warnings);
       return r && { op, set: r.set, to: r.to, ...(r.ot ? { ot: r.ot } : {}), ...(r.custom ? { custom: r.custom } : {}) };
+    }
+    case 'egg': {
+
+      const m = /^(.*?)(?:\s*[,/|]?\s*(box|박스))?$/i.exec(value.trim());
+      const species = need('species', m[1], errors);
+      return species && { op, species: speciesTable[species].en, ...(m[2] ? { to: 'box' } : {}) };
     }
     case 'level': {
       const m = /^(.*?)\s*(?:([+-])\s*(\d{1,3})|=\s*(?:lv\.?\s*)?(\d{1,3})|(?:lv\.?\s*|레벨\s*)?(\d{1,3}))\s*(?:레벨)?$/i.exec(value);
@@ -671,11 +686,12 @@ function actPart(rest, side, errors, key = side, names = lookupId) {
   }
   if (verb === 'item') {
     const m = /^(.*?)\s*(?:(#\s*\d+(?:번)?)|(?:\b(?:on|to)\b|에게|→|->)\s*(.+))?$/i.exec(after);
-    const name = (m?.[1] ?? after).trim();
-    const item = names('items', name);
-    if (!item) errors.push(note('unknown.items', { name }));
+
+    const raw = (m?.[1] ?? after).trim();
+    const { emoji, rest: name } = splitEmoji(raw);
+    const item = itemOf(name, emoji, raw, errors);
     const target = actTarget(m?.[2] ?? m?.[3]);
-    return { kind: 'item', item, ...(target ? { target } : {}) };
+    return { kind: 'item', item: item?.item ?? null, ...(item?.custom ? { raw } : {}), ...(target ? { target } : {}) };
   }
 
   const [what, aim] = after.split(TARGET_RE, 2);

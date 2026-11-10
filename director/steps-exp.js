@@ -3,14 +3,14 @@ import { interpolate } from './text.js';
 import { checkLang, DEFAULT_LANG } from './lang.js';
 import { expForLevel, levelForExp, replaceMove } from '../engine/exp.mjs';
 import { newMovePp } from '../engine/pp.mjs';
-import { MAX_LEVEL, NON_HP_STATS } from '../engine/mon.mjs';
+import { MAX_LEVEL, NON_HP_STATS, spriteIdOf } from '../engine/mon.mjs';
 import { createLedger } from './ledger.js';
 import { identName, teamOf } from './read.js';
 import { ownTemplate } from './own-text.js';
+import { evolutionChoices, evolutionFlips } from '../engine/evolution.mjs';
+import { say as screenSay } from '../story/screen-text.mjs';
 
-// Lines this module handles (steps.js dispatch table)
 export const EXP_KINDS = ['-story-exp', '-story-levelup', '-story-learnmove', '-story-movequeue', '-story-replacemove', '-story-skipmove'];
-
 // Per language: the decompressed table, and the Promise of the one decompression
 const loaded = {}, pending = {};
 
@@ -70,7 +70,6 @@ export function createLearnSteps(view, lang = DEFAULT_LANG) {
         const slot = await view.chooseForgetMove({ mon, moves, newMove });
         if (Number.isInteger(slot) && slot >= 0 && slot < moves.length) {
           await commit(slot);
-
           // The pauses and the 'poof' sound of "1, 2, ... ... poof!" (@d/@s kept for the message window to handle)
           await view.message(expText('battle.countdownPoof', {}, { keepCodes: true, lang }), { wait: true });
           await say('battle.learnMoveForgetSuccess', { pokemonName, moveName: moves[slot].name });
@@ -95,7 +94,13 @@ export function createLearnSteps(view, lang = DEFAULT_LANG) {
     else await say('battle.learnMove', { pokemonName, moveName });
   }
 
-  return { say, sayTimed, fanfare, learned, learnFlow };
+  async function chooseForm(choices) {
+    await view.message(screenSay(lang, 'evolution.choiceAsk'), { wait: false, hold: 0 });
+    const index = await view.pick(choices.map(c => screenSay(lang, `evolution.choice.${c.choice}`)));
+    return index === null ? null : choices[index].species;
+  }
+
+  return { say, sayTimed, fanfare, learned, learnFlow, chooseForm };
 }
 
 export function createExpSteps({ battle, view, names, warn, ledger = createLedger({ battle, names }), options = {}, mode = {}, onInput, lang = DEFAULT_LANG }) {
@@ -117,7 +122,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
   const expected = [];
 
   const displayName = p => (p.name === p.species.name || p.name === p.species.baseSpecies ? names.species(p.species.id) : p.name);
-  const { say, sayTimed, fanfare, learned, learnFlow } = createLearnSteps(view, lang);
+  const { say, sayTimed, fanfare, learned, learnFlow, chooseForm } = createLearnSteps(view, lang);
 
   function levelRatio(growth, exp) {
     if (!growth) return null;
@@ -129,9 +134,8 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
 
   const onField = uid => { const position = ledger.positionOfUid(uid); return position && teamOf(position) === 'player' ? position : null; };
   const nameOf = (uid, ident) => ledger.pokemon.get(uid)?.name ?? identName(ident);
-
   // Summary and learn-move screens (chosen now, so current engine values)
-  const iconMon = p => ({ speciesId: p.species.id, spriteId: p.species.spriteid, name: displayName(p), level: p.level,
+  const iconMon = p => ({ speciesId: p.species.id, spriteId: spriteIdOf(p.species), name: displayName(p), level: p.level,
     gender: p.gender || '', shiny: !!p.set.shiny, hp: p.hp, maxhp: p.maxhp, status: p.status || '' });
 
   function summonInfo(side, uid) {
@@ -244,14 +248,18 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
 
   async function evolveScreen(member, evolution) {
     await loadExpText(lang);
-    const from = battle.dex.species.get(evolution.from), to = battle.dex.species.get(evolution.to);
+    const from = battle.dex.species.get(evolution.from);
+    const choices = evolutionChoices(battle.dex, from.name, evolution.to);
     const nicknamed = !(member.name === from.name || member.name === from.baseSpecies);
     const preName = nicknamed ? member.name : names.species(from.id);
-    const mon = sp => ({ speciesId: sp.id, spriteId: sp.spriteid, name: nicknamed ? member.name : names.species(sp.id), level: member.level,
+    const mon = sp => ({ speciesId: sp.id, spriteId: spriteIdOf(sp), name: nicknamed ? member.name : names.species(sp.id), level: member.level,
       gender: member.gender || '', shiny: !!member.shiny, hp: member.hp, maxhp: member.maxhp, status: member.status === 'fnt' ? '' : member.status || '' });
     await view.startEvolution(mon(from));
-    await say('menu.evolving', { pokemonName: preName }, false);
-    if (!await view.evolve(mon(to), { canCancel: true })) {
+    const picked = choices.length ? await chooseForm(choices) : evolution.to;
+    if (picked) evolution.to = picked;
+    const to = battle.dex.species.get(evolution.to);
+    if (picked) await say('menu.evolving', { pokemonName: preName }, false);
+    if (!picked || !await view.evolve(mon(to), { canCancel: true, flip: evolutionFlips(battle.dex, to.name) })) {
       await say('menu.stoppedEvolving', { pokemonName: preName });
       await view.endEvolution();
       return null;

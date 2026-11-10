@@ -6,10 +6,11 @@ import { dropOocs } from './chat.mjs';
 import { COMPAT_LINES, COMPAT_LINE_RE, COMPAT_FIELD_SEP, compatHead, compatFold, dropTaken } from './compat.mjs';
 import { readStored, isRecord, isUnreadable } from './stored.mjs';
 import { ruleNote, ruleError, refusal, failed } from './failure.mjs';
-import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty } from './state.mjs';
+import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty, friendshipOf, isEgg, tidyBreeding, stateFormat } from './state.mjs';
+import { FRIENDSHIP_MAX, friendshipLocked } from '../engine/friendship.mjs';
 import { STATS, STATUS_IDS } from '../engine/mon.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX } from './rules.mjs';
-import { isCustomItem, customItemId, customInfo, splitEmoji, itemId, addCustomItem, tidyCustomItems, DEFAULT_EMOJI } from './custom-items.mjs';
+import { isCustomItem, customItemId, customInfo, splitEmoji, itemId, addCustomItem, tidyCustomItems, DEFAULT_EMOJI, CUSTOM_TAGS } from './custom-items.mjs';
 
 export const IMPORT_VAR = '$pkb_import';
 
@@ -24,12 +25,17 @@ export const COMPAT_FORMAT = Object.freeze({
   storageVar: 'yp_PokemonStorage',
   entrySep: '|',
   fieldSep: '^',
+  egg: 'Egg',
 });
 
 export const FIELD_FROM = Object.freeze(['record', 'auto', 'user', 'ai', 'current']);
 
 const SET_FIELDS = ['species', 'name', 'level', 'gender', 'shiny', 'nature', 'ability', 'item', 'moves', 'ivs', 'evs', 'teraType'];
 const MON_FIELDS = [...SET_FIELDS, 'hpPercent', 'status', 'place'];
+
+export const DEBUG_FIELDS = ['friendship', 'friendshipLocked', 'eggCycles'];
+
+const EGG_CYCLES_MAX = 255;
 const ACTIONS = ['add', 'update', 'skip'];
 // Auto fields that follow the species / the level (filled again when either is edited)
 const BY_SPECIES = ['ability', 'moves', 'gender', 'teraType'];
@@ -47,6 +53,7 @@ function compatReader(format) {
   const fieldOf = new Map(Object.entries(format.fields).map(([field, name]) => [compatFold(name), field]));
   const conditions = new Map(Object.entries(format.conditions).map(([word, id]) => [compatFold(word), id]));
   const shinyWords = new Set((format.shinyWords ?? []).map(compatFold));
+  const isEggWord = text => !!format.egg && compatFold(text) === compatFold(format.egg);
 
   const entries = text => [...String(text ?? '').matchAll(COMPAT_LINE_RE)].map(m => {
     const [head, ...segs] = m[1].split(COMPAT_FIELD_SEP).map(s => s.trim());
@@ -57,7 +64,7 @@ function compatReader(format) {
       const field = kv && fieldOf.get(compatFold(kv[1]));
       if (field) fields[field] = kv[2].trim();
     }
-    return { kind: READ_KINDS[line?.line] ?? null, slot: line?.slot ?? null, fields };
+    return { kind: READ_KINDS[line?.line] ?? null, slot: line?.slot ?? null, fields, egg: !Object.keys(fields).length && segs.some(isEggWord) };
   });
 
   const condition = text => {
@@ -72,8 +79,10 @@ function compatReader(format) {
     return { status, shiny };
   };
 
-  const storageEntries = text => text.split(format.entrySep)
-    .map(entry => { const [name = '', level = '', english = ''] = entry.split(format.fieldSep).map(s => s.trim()); return { name, level, english }; });
+  const storageEntries = text => text.split(format.entrySep).map(entry => {
+    const [name = '', level = '', english = ''] = entry.split(format.fieldSep).map(s => s.trim());
+    return { fields: { name, level, english }, egg: isEggWord(name) && !level && !english };
+  });
   return { entries, condition, storageEntries };
 }
 
@@ -89,6 +98,8 @@ function nameId(kind, raw) {
 const speciesOf = raw => { const id = nameId('species', raw); return id ? speciesName(id) : null; };
 
 const named = fields => !!(fields.name || fields.english);
+
+const eggFound = source => ({ egg: true, source });
 
 function speciesAndNickname(sim, name, english) {
   const species = (english ? speciesOf(english) : speciesOf(name)) ?? (english || name).trim();
@@ -133,7 +144,8 @@ export function readCompat(chat, ctx, { format = COMPAT_FORMAT } = {}) {
   const stored = chat?.scriptstate?.[`$${format.storageVar}`];
   const fromVar = typeof stored === 'string';
   let party = [];
-  let box = fromVar ? reader.storageEntries(stored).filter(named).map(fields => toFound(fields, reader, sim, { index: null, chatId: null, var: format.storageVar }, warnings)) : [];
+  const varSource = { index: null, chatId: null, var: format.storageVar };
+  let box = fromVar ? reader.storageEntries(stored).filter(e => e.egg || named(e.fields)).map(e => (e.egg ? eggFound(varSource) : toFound(e.fields, reader, sim, varSource, warnings))) : [];
   (chat?.message ?? []).forEach((message, index) => {
     const lines = reader.entries(recordText(message?.data)).filter(line => line.kind);
     const source = { index, chatId: message?.chatId ?? null };
@@ -141,8 +153,8 @@ export function readCompat(chat, ctx, { format = COMPAT_FORMAT } = {}) {
     if (partyLines.length) {
       const list = [], slots = new Map();
       for (const line of partyLines) {
-        if (!named(line.fields)) continue;
-        const found = toFound(line.fields, reader, sim, source, warnings);
+        if (!line.egg && !named(line.fields)) continue;
+        const found = line.egg ? eggFound(source) : toFound(line.fields, reader, sim, source, warnings);
 
         if (line.slot && slots.has(line.slot)) list[slots.get(line.slot)] = found;
         else { if (line.slot) slots.set(line.slot, list.length); list.push(found); }
@@ -247,6 +259,8 @@ function monProblems(mon, ctx) {
   if (!(typeof mon.hpPercent === 'number' && mon.hpPercent >= 0 && mon.hpPercent <= 100)) out.push(note('hpRange', { hp: mon.hpPercent }));
   if (!STATUS_IDS.has(mon.status)) out.push(note('unknownStatus', { status: mon.status }));
   if (mon.place !== 'party' && mon.place !== 'box') out.push(note('placeRange', { place: mon.place }));
+  if (mon.friendship !== undefined && !(Number.isInteger(mon.friendship) && mon.friendship >= 0 && mon.friendship <= FRIENDSHIP_MAX)) out.push(note('friendshipRange', { value: mon.friendship }));
+  if (mon.eggCycles !== undefined && !(Number.isInteger(mon.eggCycles) && mon.eggCycles >= 1 && mon.eggCycles <= EGG_CYCLES_MAX)) out.push(note('eggCyclesRange', { value: mon.eggCycles, max: EGG_CYCLES_MAX }));
   return out;
 }
 
@@ -254,6 +268,7 @@ function draftMon(found, place, key, ctx, seed) {
   const mon = blankMon(key, place, seed);
   const record = (field, value) => { if (field in mon.set) mon.set[field] = value; else mon[field] = value; mon.from[field] = 'record'; };
   record('place', place);
+  if (found.egg) return { ...mon, egg: true, action: 'skip' };
   record('species', found.species);
   record('name', found.nickname ?? '');
   if (found.level !== undefined) record('level', found.level);
@@ -269,8 +284,8 @@ function draftMon(found, place, key, ctx, seed) {
 
 const labelOf = ({ name, species, level }) => `${name ? `${name} (${species})` : species}${level ? ` Lv${level}` : ''}`;
 
-function valuesOf(ctx, mon) {
-  const hpPercent = mon.hp === null || mon.hp === undefined ? 100 : mon.hp / maxHp(ctx.sim, mon.set, ctx.formatid) * 100;
+function valuesOf(ctx, state, mon) {
+  const hpPercent = mon.hp === null || mon.hp === undefined ? 100 : mon.hp / maxHp(ctx.sim, mon.set, stateFormat(state)) * 100;
   return { set: Object.fromEntries(SET_FIELDS.map(f => [f, clone(mon.set[f])])), hpPercent, status: mon.status === 'fnt' ? '' : mon.status ?? '' };
 }
 const FOLLOWING = MON_FIELDS.filter(f => f !== 'place');
@@ -292,11 +307,12 @@ function rematch(draft, ctx) {
   const { sim } = ctx;
   const taken = new Set();
   const pairs = new Map();
-  const lines = new Map(draft.pool.map(p => [p.uid, lineOf(sim, p.species)]));
-  const nicknamed = draft.mons.filter(m => m.set.name), plain = draft.mons.filter(m => !m.set.name);
+  const mons = draft.mons.filter(m => !m.egg), pool = draft.pool.filter(p => !p.egg);
+  const lines = new Map(pool.map(p => [p.uid, lineOf(sim, p.species)]));
+  const nicknamed = mons.filter(m => m.set.name), plain = mons.filter(m => !m.set.name);
   for (const mon of nicknamed) {
     const line = lineOf(sim, mon.set.species);
-    const hit = line && draft.pool.find(p => !taken.has(p.uid) && lines.get(p.uid) === line && sameName(p.name, mon.set.name));
+    const hit = line && pool.find(p => !taken.has(p.uid) && lines.get(p.uid) === line && sameName(p.name, mon.set.name));
     if (hit) { taken.add(hit.uid); pairs.set(mon.key, hit); }
   }
   for (const mon of plain) {
@@ -304,16 +320,25 @@ function rematch(draft, ctx) {
     if (!line) continue;
     const near = p => !validLevel(mon.set.level) || Math.abs(p.level - mon.set.level) <= LEVEL_NEAR;
     const score = p => [toID(p.species) === toID(mon.set.species) ? 0 : 1, p.name ? 1 : 0, validLevel(mon.set.level) ? Math.abs(p.level - mon.set.level) : 0];
-    const hits = draft.pool.filter(p => !taken.has(p.uid) && lines.get(p.uid) === line && near(p))
+    const hits = pool.filter(p => !taken.has(p.uid) && lines.get(p.uid) === line && near(p))
       .sort((a, b) => { const x = score(a), y = score(b); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; });
     if (hits.length) { taken.add(hits[0].uid); pairs.set(mon.key, hits[0]); }
+  }
+  const eggs = draft.mons.filter(m => m.egg), ourEggs = draft.pool.filter(p => p.egg);
+  for (const samePlace of [true, false]) {
+    for (const mon of eggs) {
+      if (pairs.has(mon.key)) continue;
+      const hit = ourEggs.find(p => !taken.has(p.uid) && (!samePlace || p.place === mon.place));
+      if (hit) { taken.add(hit.uid); pairs.set(mon.key, hit); }
+    }
   }
   for (const mon of draft.mons) {
     const hit = pairs.get(mon.key);
     const match = hit ? { uid: hit.uid, place: hit.place, label: labelOf(hit) } : null;
     if ((mon.match?.uid ?? null) === (match?.uid ?? null)) { mon.match = match; continue; }
     mon.match = match;
-    if (mon.action !== 'skip') mon.action = match ? 'update' : 'add';
+    if (mon.egg) mon.action = match ? 'update' : 'skip';
+    else if (mon.action !== 'skip') mon.action = match ? 'update' : 'add';
     followPair(mon, hit, ctx);
   }
 }
@@ -321,7 +346,7 @@ function rematch(draft, ctx) {
 export function makeDraft(chat, state, ctx, { seed = 0, format } = {}) {
   const found = readCompat(chat, ctx, format ? { format } : {});
   const pool = [...(state?.party ?? []).map(m => [m, 'party']), ...(state?.box ?? []).map(m => [m, 'box'])]
-    .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level, now: valuesOf(ctx, m) }));
+    .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level, now: valuesOf(ctx, state, m), ...(isEgg(m) ? { egg: true } : {}) }));
   const bag = Object.fromEntries(Object.entries(state?.bag ?? {}).filter(([, n]) => n > 0).map(([id, n]) => [id, { count: n, from: 'current' }]));
 
   const customItems = Object.fromEntries(Object.keys(bag).filter(isCustomItem).map(id => [id, customInfo(state, id)]).filter(([, info]) => info));
@@ -363,7 +388,8 @@ export function compatRecords(state, ctx, { lang = 'ko' } = {}) {
   const nameOf = mon => mon.set.name || species(mon.set.species);
   const { fields } = COMPAT_FORMAT;
   const lines = state.party.map((mon, i) => {
-    const hp = hpPercentOf(sim, mon, ctx.formatid);
+    if (isEgg(mon)) return `[${[`${COMPAT_LINES.party} ${i + 1}`, COMPAT_FORMAT.egg].join(COMPAT_FORMAT.lineSep)}]`;
+    const hp = hpPercentOf(sim, mon, stateFormat(state));
     const status = hp === 0 ? 'fnt' : mon.status || '';
     const values = {
       name: nameOf(mon), level: mon.set.level, hp: `${hp}%`, state: words.state, english: mon.set.species,
@@ -372,7 +398,7 @@ export function compatRecords(state, ctx, { lang = 'ko' } = {}) {
     return `[${[`${COMPAT_LINES.party} ${i + 1}`, ...COMPAT_FORMAT.partyFields.map(f => `${fields[f]}: ${plainValue(values[f], LINE_SEPS)}`)].join(COMPAT_FORMAT.lineSep)}]`;
   });
   const boxSeps = [COMPAT_FORMAT.entrySep, COMPAT_FORMAT.fieldSep];
-  const storage = state.box.map(mon => [nameOf(mon), mon.set.level, mon.set.species].map(v => plainValue(v, boxSeps)).join(COMPAT_FORMAT.fieldSep)).join(COMPAT_FORMAT.entrySep);
+  const storage = state.box.map(mon => (isEgg(mon) ? COMPAT_FORMAT.egg : [nameOf(mon), mon.set.level, mon.set.species].map(v => plainValue(v, boxSeps)).join(COMPAT_FORMAT.fieldSep))).join(COMPAT_FORMAT.entrySep);
   return { lines, storage };
 }
 
@@ -403,17 +429,22 @@ export function newMonDraft(ctx, { place = 'party', seed = 0 } = {}) {
 
 export function currentMonDraft(ctx, state, uid) {
   const place = state.party.some(m => m.uid === uid) ? 'party' : state.box.some(m => m.uid === uid) ? 'box' : fail('notInState', { uid });
-  const { set, hpPercent, status } = valuesOf(ctx, [...state.party, ...state.box].find(m => m.uid === uid));
-  const mon = { key: 'e1', place, set, hpPercent, status, from: Object.fromEntries(MON_FIELDS.map(f => [f, 'current'])),
+  const found = [...state.party, ...state.box].find(m => m.uid === uid);
+  const { set, hpPercent, status } = valuesOf(ctx, state, found);
+  const debug = isEgg(found) ? { eggCycles: Math.ceil(found.egg.cycles) } : { friendship: friendshipOf(ctx, found), friendshipLocked: friendshipLocked(found) };
+  const mon = { key: 'e1', place, set, hpPercent, status, ...debug, from: Object.fromEntries([...MON_FIELDS, ...Object.keys(debug)].map(f => [f, 'current'])),
     match: { uid, place, label: labelOf(set) }, action: 'update', problems: [], seed: `0:e1` };
   mon.problems = monProblems(mon, ctx);
   return { v: 1, kind: DEBUG_KIND, mons: [mon], bag: {}, warnings: [], pool: [], base: { bag: {} } };
 }
 
-export function bagDraft(state, { item = null, name = '', emoji = '', add = 1 } = {}) {
+export const friendshipLockDraft = (ctx, state, uid, locked) => editMon(currentMonDraft(ctx, state, uid), 'e1', 'friendshipLocked', !!locked, ctx);
+
+export function bagDraft(state, { item = null, name = '', emoji = '', add = 1, tags } = {}) {
   const written = String(name ?? '').trim();
   const id = written ? lookupId('items', written) ?? customItemId(written) : item;
-  const custom = isCustomItem(id) ? customInfo(state, id) ?? { name: written || id, emoji: splitEmoji(emoji).emoji || DEFAULT_EMOJI } : null;
+  const known = isCustomItem(id) ? customInfo(state, id) ?? { name: written || id, emoji: splitEmoji(emoji).emoji || DEFAULT_EMOJI } : null;
+  const custom = known && tags !== undefined ? { ...known, tags: CUSTOM_TAGS.filter(tag => tags.includes(tag)) } : known;
   const now = id ? state?.bag?.[id] ?? 0 : 0;
   return {
     v: 1, kind: DEBUG_KIND, mons: [], warnings: [], pool: [],
@@ -440,14 +471,17 @@ function editValue(sim, field, value) {
     case 'hpPercent': return Number(value);
     case 'status': return String(value ?? '');
     case 'place': return value;
+    case 'friendship': case 'eggCycles': return Number(value);
+    case 'friendshipLocked': return value === true;
   }
   return fail('badEditField', { field });
 }
 
 export function editMon(draft, key, field, value, ctx) {
-  if (!MON_FIELDS.includes(field)) fail('badEditField', { field });
   const next = clone(draft);
   const mon = monAt(next, key);
+  if (!MON_FIELDS.includes(field) && !(DEBUG_FIELDS.includes(field) && field in mon)) fail('badEditField', { field });
+  if (mon.egg && field !== 'place') fail('badEditField', { field });
   const v = editValue(ctx.sim, field, value);
   if (field in mon.set && field !== 'place') mon.set[field] = v; else mon[field] = v;
   mon.from[field] = 'user';
@@ -459,10 +493,13 @@ export function editMon(draft, key, field, value, ctx) {
   return next;
 }
 
+export const canTake = (mon, action) => ACTIONS.includes(action) && !(mon.egg && action === 'add');
+
 export function setAction(draft, key, action) {
-  if (!ACTIONS.includes(action)) fail('badAction', { action });
   const next = clone(draft);
-  monAt(next, key).action = action;
+  const mon = monAt(next, key);
+  if (!canTake(mon, action)) fail('badAction', { action });
+  mon.action = action;
   return next;
 }
 
@@ -513,7 +550,7 @@ export function draftProblems(draft, ctx) {
 }
 
 const importShape = imp => isRecord(imp) && typeof imp.id === 'string' && isRecord(imp.at) && Array.isArray(imp.mons) && (imp.bag === undefined || isRecord(imp.bag))
-  && (imp.canceled === undefined || typeof imp.canceled === 'number');
+  && (imp.canceled === undefined || typeof imp.canceled === 'number') && (imp.badges === undefined || (Array.isArray(imp.badges) && imp.badges.every(id => typeof id === 'string')));
 const readImportsRaw = chat => readStored(chat?.scriptstate?.[IMPORT_VAR], { shape: value => Array.isArray(value.imports) && value.imports.every(importShape) });
 
 export function readImports(chat) {
@@ -527,6 +564,8 @@ function writeImports(chat, imports) {
   else delete chat.scriptstate[IMPORT_VAR];
 }
 
+const locks = m => m.from.friendshipLocked === 'user' && m.friendshipLocked === true;
+
 export function commitImport(chat, draft, ctx, { now = Date.now() } = {}) {
   const problems = draftProblems(draft, ctx);
   if (problems.length) throw refusal(problems);
@@ -534,7 +573,9 @@ export function commitImport(chat, draft, ctx, { now = Date.now() } = {}) {
     const mons = draft.mons.filter(m => m.action !== 'skip').map((m, n) => ({
       action: m.action, uid: m.action === 'update' ? m.match.uid : `i${hashKey(`${id}:${n}`)}`, place: m.place,
       set: { ...Object.fromEntries(SET_FIELDS.map(f => [f, clone(m.set[f])])), item: m.set.item ? itemId(m.set.item) : '', moves: m.set.moves.map(toID) },
-      hpPercent: m.hpPercent, status: m.status, from: { ...m.from },
+      hpPercent: m.hpPercent, status: m.status, ...(m.from.friendship === 'user' || locks(m) ? { friendship: m.friendship } : {}),
+      ...(m.from.friendshipLocked === 'user' ? { friendshipLocked: m.friendshipLocked } : {}),
+      ...(m.from.eggCycles === 'user' ? { eggCycles: m.eggCycles } : {}), from: { ...m.from },
     }));
     const counts = Object.fromEntries(Object.entries(draft.bag).map(([itemId, e]) => [itemId, e.count]));
     const bag = Object.fromEntries([...new Set([...Object.keys(draft.base.bag), ...Object.keys(counts)])]
@@ -545,14 +586,16 @@ export function commitImport(chat, draft, ctx, { now = Date.now() } = {}) {
 
 export const commitDebugHeal = (chat, { now = Date.now() } = {}) => appendImport(chat, now, 'heal', () => ({ mons: [], bag: {}, kind: DEBUG_KIND, heal: 'party' }));
 
+export const commitDebugBadges = (chat, badges, { now = Date.now() } = {}) => appendImport(chat, now, `badges:${badges.join(',')}`,
+  () => ({ mons: [], bag: {}, kind: DEBUG_KIND, badges: [...badges] }));
+
 function appendImport(chat, now, key, body) {
   const { status, imports } = readImports(chat);
   if (isUnreadable(status)) throw failed('unreadable');
   const messages = chat?.message ?? [];
-  const last = messages.length - 1;
   let id = `imp${hashKey(`${now}:${imports.length}:${key}`)}`;
   for (let n = 2; imports.some(imp => imp.id === id); n++) id = `imp${hashKey(`${now}:${imports.length}:${n}`)}`;
-  const imp = { id, time: now, at: { chatId: messages[last]?.chatId ?? null, index: last }, ...body(id) };
+  const imp = { id, time: now, at: anchorAtEnd(messages), ...body(id) };
   writeImports(chat, [...imports, imp]);
   return imp;
 }
@@ -566,24 +609,40 @@ export function cancelImport(chat, id, { now = Date.now() } = {}) {
   return true;
 }
 
-export function importPlace(messages, imp) {
-  const { chatId, index } = imp.at ?? {};
-  const found = chatId === null || chatId === undefined ? -1 : messages.findIndex(m => m?.chatId === chatId);
+export const ANCHOR_EARLIER = 3;
+
+export function anchorAtEnd(messages) {
+  const index = messages.length - 1;
+  const earlier = messages.slice(Math.max(0, index - ANCHOR_EARLIER), Math.max(0, index)).map(m => m?.chatId).filter(isChatId).reverse();
+  return { chatId: messages[index]?.chatId ?? null, index, ...(earlier.length ? { earlier } : {}) };
+}
+const isChatId = id => id !== null && id !== undefined;
+
+export function importPlace(messages, record) {
+  const { chatId, index, earlier } = record.at ?? {};
+  const where = id => (isChatId(id) ? messages.findIndex(m => m?.chatId === id) : -1);
+  const found = where(chatId);
   if (found >= 0) return found;
+  for (const id of Array.isArray(earlier) ? earlier : []) {
+    const place = where(id);
+    if (place >= 0) return place;
+  }
   return Math.max(-1, Math.min(Number.isInteger(index) ? index : -1, messages.length - 1));
 }
 
 function updatedMon(ctx, old, set) {
-  const mon = newMon(ctx, set, old.uid);
-  const same = toID(old.set.species) === toID(set.species) && old.set.level === set.level;
-  if (same) mon.exp = old.exp;
-  for (const k of ['ot', 'ball']) if (old[k] !== undefined) mon[k] = old[k];
+  const mon = { ...clone(old), set };
   mon.pp = Object.fromEntries(Object.entries(old.pp ?? {}).filter(([id]) => set.moves.includes(id)));
   const ppUps = Object.entries(old.ppUps ?? {}).filter(([id]) => set.moves.includes(id));
-  if (ppUps.length) mon.ppUps = Object.fromEntries(ppUps);
-  if (old.natureOrig && old.set.nature === set.nature) mon.natureOrig = old.natureOrig;
-  if (old.hyper && STATS.every(s => old.set.ivs?.[s] === set.ivs[s])) mon.hyper = old.hyper;
-  if (same) mon.pending = { ...old.pending, moves: old.pending.moves.filter(id => !set.moves.includes(id)) };
+  if (ppUps.length) mon.ppUps = Object.fromEntries(ppUps); else delete mon.ppUps;
+  if (old.set.nature !== set.nature) delete mon.natureOrig;
+  if (!STATS.every(s => old.set.ivs?.[s] === set.ivs[s])) delete mon.hyper;
+  if (toID(old.set.species) === toID(set.species) && old.set.level === set.level) mon.pending = { ...old.pending, moves: old.pending.moves.filter(id => !set.moves.includes(id)) };
+  else {
+    const { exp, pending } = newMon(ctx, set, old.uid);
+    Object.assign(mon, { exp, pending });
+    delete mon.counts;
+  }
   return mon;
 }
 
@@ -606,9 +665,15 @@ export function applyImport(state, imp, ctx) {
       mon = newMon(ctx, clone(entry.set), uniqueUid(next, entry.uid));
       (entry.place === 'box' ? next.box : next.party).push(mon);
     } else continue;
-    mon.hp = hpFromPercent(sim, mon.set, entry.hpPercent ?? 100, false, ctx.formatid);
+    mon.hp = hpFromPercent(sim, mon.set, entry.hpPercent ?? 100, false, stateFormat(next));
     mon.status = mon.hp === 0 ? 'fnt' : entry.status || '';
-    markDex(next, sim, mon.set.species, true);
+
+    if (entry.friendship !== undefined && !isEgg(mon)) { mon.friendship = entry.friendship; delete mon.friendshipCarry; }
+    if (entry.friendshipLocked !== undefined && !isEgg(mon)) {
+      if (entry.friendshipLocked === true) mon.friendshipLocked = true; else delete mon.friendshipLocked;
+    }
+    if (entry.eggCycles !== undefined && isEgg(mon)) mon.egg.cycles = entry.eggCycles;
+    if (!isEgg(mon)) markDex(next, sim, mon.set.species, true);
     if (entry.place !== 'box') partyOrder.push(mon.uid);
   }
   if (imp.kind !== DEBUG_KIND) {
@@ -622,6 +687,8 @@ export function applyImport(state, imp, ctx) {
 
   for (const [id, info] of Object.entries(isRecord(imp.customItems) ? imp.customItems : {})) addCustomItem(next, id, info);
   tidyCustomItems(next);
+  tidyBreeding(next);
   if (imp.heal === 'party') healParty(next, ctx);
+  if (imp.badges) next.badges = [...imp.badges];
   return next;
 }

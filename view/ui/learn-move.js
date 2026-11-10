@@ -1,9 +1,9 @@
 // from pokerogue src/ui/handlers/base-option-select-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/confirm-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (SummaryUiMode.LEARN_MOVE, Page.MOVES) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/text.ts (SUMMARY*, WINDOW*, colours) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/ui.ts (fadeOut/fadeIn transition) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { addWindow } from './window.js';
 import { placeSprite } from '../sprites/placement.js';
@@ -12,7 +12,8 @@ import { fixed } from '../game-speed.js';
 import { uiRect } from './tap-back.js';
 import { playSelect, playError } from './keys.js';
 import { openMenu } from './menu.js';
-import { styledText, pad2, STATUS_FRAMES, GENDER_COLORS, genderSymbol } from './text.js';
+import { styledText, addGenderMark, pad2, STATUS_FRAMES, GENDER_COLORS } from './text.js';
+import { nameShowsGender } from '../gender-mark.js';
 
 export const LEARN_MOVE_IMAGES = {
   summary_bg: 'images/ui/summary_bg.png', summary_moves: 'images/ui/summary_moves.png',
@@ -43,10 +44,15 @@ export async function fadeSwap(scene, swap) {
 
 export class ConfirmMenu {
   constructor(scene) { this.scene = scene; }
-  choose() {
+
+  async choose() {
+    const s = this.scene;
+    return await this.pick([s.words(TEXT.yes), s.words(TEXT.no)]) === 0;
+  }
+
+  pick(options) {
     if (this.finish) throw new Error('Confirm menu already open');
     const s = this.scene;
-    const options = [s.words(TEXT.yes), s.words(TEXT.no)];
 
     const text = styledText(s, 0, 0, options.join('\n'), 'WINDOW', { lineSpacing: 12 }).setOrigin(0);
     const width = text.displayWidth + 23, height = (options.length + 1) * 16 - 2;
@@ -72,7 +78,6 @@ export class ConfirmMenu {
   }
   setCursor(i) { this.cursor = i; this.cursorObj.setPosition(this.left + 10, this.top + 17 + i * 16 - 2); }
 
-  // Tapping inside this window is not back
   windows() { return this.rect ? [this.rect] : []; }
 
   input(action) {
@@ -80,8 +85,8 @@ export class ConfirmMenu {
     const before = this.cursor;
     if (action === 'up') this.setCursor(this.cursor ? this.cursor - 1 : this.count - 1);
     else if (action === 'down') this.setCursor(this.cursor < this.count - 1 ? this.cursor + 1 : 0);
-    else if (action === 'ok') { playSelect(this.scene); this.finish(this.cursor === 0); }
-    else if (action === 'back') { playSelect(this.scene); this.finish(false); }
+    else if (action === 'ok') { playSelect(this.scene); this.finish(this.cursor); }
+    else if (action === 'back') { playSelect(this.scene); this.finish(null); }
     if (this.finish && this.cursor !== before) playSelect(this.scene);
   }
   destroy() { this.container?.destroy(); }
@@ -123,7 +128,8 @@ export class LearnMoveSummary {
     const name = styledText(s, 6, -53, mon.name, 'SUMMARY').setOrigin(0, 0);
     c.add([name, s.add.sprite(6, -19, 'pb', 'pb').setOrigin(0, 1),
       styledText(s, 24, -17, String(mon.level), 'SUMMARY_ALT').setOrigin(0, 1)]);
-    if (GENDER_COLORS[mon.gender]) c.add(styledText(s, 96, -17, genderSymbol(mon.gender), mon.gender === 'M' ? 'SUMMARY_BLUE' : 'SUMMARY_PINK').setOrigin(0, 1));
+
+    if (GENDER_COLORS[mon.gender] && !nameShowsGender(mon.name)) c.add(addGenderMark(s, 96, -17, mon.gender, mon.gender === 'M' ? 'SUMMARY_BLUE' : 'SUMMARY_PINK', { originY: 1 }));
 
     if (STATUS_FRAMES[mon.status]) {
       const status = s.add.container(-106, -16);

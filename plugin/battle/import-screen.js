@@ -1,17 +1,21 @@
-import { UI_VARS, CARD_FRAME, crossIcon } from './ui-css.js';
+import { UI_VARS, CARD_FRAME, crossIcon, ringCss, ringOnKeys } from './ui-css.js';
+import { controlsCss, segmentControl } from './controls.js';
 import { loadFont } from '../../view/fonts.js';
+import { LOCKED, UNLOCKED } from '../../view/lock-icon.js';
 import { FONT, noteRule } from '../../story/card.mjs';
 import { SHEET_FONT } from '../../story/style.mjs';
 import { WHAT, failureText, ruleText } from '../../story/failure.mjs';
 import { say, sayer, perLang } from '../../story/screen-text.mjs';
-import { TAB_COLOR } from '../../story/panel-html.mjs';
+import { TAB_COLOR, panelSpriteUrl } from '../../story/panel-html.mjs';
 import { itemName, bagItemName, itemLabel, namesFor } from '../../story/panel.mjs';
 import { natureName, statName, moneyText } from '../../story/diary.mjs';
-import { editMon, setAction, setBag, refillMon, draftProblems, draftPartyCount, bagDraft } from '../../story/import.mjs';
-import { isCustomItem, customText, DEFAULT_EMOJI } from '../../story/custom-items.mjs';
+import { editMon, setAction, setBag, refillMon, draftProblems, draftPartyCount, bagDraft, canTake, DEBUG_FIELDS } from '../../story/import.mjs';
+import { EGG_SPRITE } from '../../engine/breeding.mjs';
+import { isCustomItem, customText, DEFAULT_EMOJI, CUSTOM_TAGS } from '../../story/custom-items.mjs';
 import { learnableTms } from '../../story/item-info.mjs';
-import { STATS, MAX_LEVEL, MAX_MOVES, MAX_IV, PARTY_MAX, STATUS_IDS, displayName, toID } from '../../engine/mon.mjs';
+import { STATS, MAX_LEVEL, MAX_MOVES, MAX_IV, PARTY_MAX, STATUS_IDS, displayName, toID, spriteIdOf } from '../../engine/mon.mjs';
 import { EV_STAT_MAX, EV_TOTAL_MAX } from '../../engine/rules.mjs';
+import { FRIENDSHIP_MAX } from '../../engine/friendship.mjs';
 import storyNames from '../../data/story-names.json' with { type: 'json' };
 import itemTable from '../../data/names/items.json' with { type: 'json' };
 
@@ -21,7 +25,7 @@ export const ACTIONS = perLang(t => Object.freeze(['add', 'update', 'skip'].map(
 const PLACES = perLang(t => Object.freeze(['party', 'box'].map(id => [id, t(`import.place.${id}`)])));
 
 const GROUPS = [
-  { id: 'basic', fields: ['species', 'name', 'level'] },
+  { id: 'basic', fields: ['species', 'name', 'level', 'friendship', 'eggCycles'] },
   { id: 'battle', fields: ['nature', 'ability', 'moves', 'item'], details: true },
   { id: 'now', fields: ['hpPercent', 'status'], details: true },
   { id: 'look', fields: ['gender', 'shiny'], details: true },
@@ -31,7 +35,8 @@ export const FIELD_GROUPS = perLang(t => Object.freeze(GROUPS.map(g => Object.fr
 
 export const FIELD_LABEL = perLang(t => Object.freeze(Object.fromEntries(['place', ...GROUPS.flatMap(g => g.fields)].map(f => [f, t(`rule.import.field.${f}`)]))));
 
-// Fields shown as small badges on a list row (place is shown by the section the row is in)
+const EGG_CYCLES_MAX = 255;
+
 const ROW_FIELDS = GROUPS.flatMap(g => g.fields);
 const ROW_SHORT = perLang(t => Object.fromEntries(ROW_FIELDS.map(f => [f, t(`import.short.${f}`)])));
 const NICKNAME_MAX = 20;
@@ -161,13 +166,14 @@ export function genderChoices(sim, speciesName, lang) {
   return ids.map(id => [id, GENDER_LABEL(lang)[id]]);
 }
 
-// Name on a row: nickname, else the species name in lang; the text as found when the species is unknown
 export function monTitle(mon, sim, lang) {
+  if (mon.egg) return say(lang, 'panel.egg');
   const species = sim.Dex.species.get(mon.set.species);
   return species.exists ? displayName(sim.Dex, screenNames(sim, lang).names, mon.set.species, mon.set.name) : (mon.set.name || String(mon.set.species ?? ''));
 }
 
 export function monSub(mon, sim, lang) {
+  if (mon.egg) return '';
   const t = sayer(lang);
   const species = sim.Dex.species.get(mon.set.species);
   const kind = species.exists ? choicesFor(sim, lang).species.label(species.name) : mon.set.species ? t('rule.import.unknownSpecies', { species: mon.set.species }) : t('import.speciesBlank');
@@ -175,6 +181,7 @@ export function monSub(mon, sim, lang) {
 }
 
 export function matchLabel(draft, mon, sim, lang) {
+  if (mon.egg) return say(lang, 'panel.egg');
   const mine = (draft.pool ?? []).find(p => p.uid === mon.match.uid);
   return mine ? `${monTitle({ set: { species: mine.species, name: mine.name } }, sim, lang)} Lv${mine.level}` : mon.match.label;
 }
@@ -191,6 +198,7 @@ export function quickSummary(draft, ctx, lang) {
   const { sim } = ctx;
   const kept = draft.mons.filter(m => m.action !== 'skip');
   const label = m => {
+    if (m.egg) return say(lang, 'panel.egg');
     const found = sim.Dex.species.get(m.set.species);
     const species = found.exists ? choicesFor(sim, lang).species.label(found.name) : String(m.set.species ?? '');
     const name = m.set.name && m.set.name !== species ? say(lang, 'import.quick.nick', { name: m.set.name, species }) : species;
@@ -199,7 +207,7 @@ export function quickSummary(draft, ctx, lang) {
   return { party: kept.filter(m => m.place === 'party').map(label), box: kept.filter(m => m.place === 'box').length, problems: draftProblems(draft, ctx).length };
 }
 
-export const actionChoices = (mon, lang) => ACTIONS(lang).filter(([id]) => id !== 'update' || mon.match);
+export const actionChoices = (mon, lang) => ACTIONS(lang).filter(([id]) => (id !== 'update' || mon.match) && canTake(mon, id));
 
 const MODE_WHAT = { import: WHAT.import, create: WHAT.debugAdd, edit: WHAT.debugEdit, bag: WHAT.debugAdd };
 export const MODES = perLang(t => Object.freeze(Object.fromEntries(Object.entries(MODE_WHAT).map(([mode, what]) => [mode, {
@@ -223,7 +231,6 @@ export function bagGroups(sim, state, lang) {
   ];
 }
 
-// Bag mode footer once nothing is left to fix: "puts in 3 Potions (2 now -> 5)"
 export function bagSummary(draft, state, sim, lang) {
   const [id, { count }] = Object.entries(draft.bag)[0];
   const name = draft.customItems[id]?.name ?? itemLabelIn(state, id, sim, lang, { bag: true });
@@ -245,6 +252,7 @@ const CSS = `
   .pkb-import * { box-sizing:border-box; }
   .pkb-import button, .pkb-import input, .pkb-import select { font:inherit; }
   .pkb-import button:focus-visible, .pkb-import input:focus-visible, .pkb-import select:focus-visible { outline:2px solid #ffcf4a; outline-offset:1px; }
+  ${ringCss('.pkb-import')}
   .pkb-import .card { position:relative; width:min(560px, 100%); height:760px; max-height:100%; display:flex; flex-direction:column; overflow:hidden; ${CARD_FRAME} }
   .pkb-import .hd { flex:none; display:flex; align-items:center; gap:8px; min-height:36px; padding:6px 8px 6px 12px; background:var(--navy); color:#fff; border-bottom:2.5px solid var(--navy-dark); }
   .pkb-import .hd b { flex:1; min-width:0; font-weight:400; font-size:15px; letter-spacing:.02em; }
@@ -263,7 +271,6 @@ const CSS = `
   .pkb-import h3 .n { color:#5b768b; font-size:12px; }
   .pkb-import h3 .n.over { color:var(--red); }
   .pkb-import .row-act.place { padding-top:3px; }
-  .pkb-import .opt:disabled { color:#c3cdd5; cursor:default; }
   .pkb-import .empty { margin:2px 0 6px; color:#7d8c98; font-size:13px; }
   /* Pokemon rows */
   .pkb-import .mon { margin:0 0 7px; border:2px solid #789db7; border-radius:10px; background:#fff; box-shadow:0 2px 0 #466c87; }
@@ -273,22 +280,22 @@ const CSS = `
     text-align:left; cursor:pointer; border-radius:8px 8px 0 0; }
   .pkb-import .mon .open:hover { background:#f1f7fb; }
   .pkb-import .open > svg { width:14px; height:14px; color:#789db7; }
+  .pkb-import .mon .open:disabled { cursor:default; background:transparent; }
+  .pkb-import .mon .open:disabled > svg { visibility:hidden; }
   .pkb-import .pic { width:44px; height:44px; display:flex; align-items:center; justify-content:center; border-radius:8px; background:#dbe8f2; overflow:hidden; }
   .pkb-import .pic img { width:56px; height:56px; image-rendering:pixelated; }
   .pkb-import .who { min-width:0; display:flex; flex-direction:column; gap:2px; }
   .pkb-import .who b { font-weight:400; font-size:14px; overflow-wrap:anywhere; }
   .pkb-import .who .sub { font-size:12px; color:#5b768b; }
   .pkb-import .chips { display:flex; flex-wrap:wrap; gap:3px; margin-top:2px; }
-  .pkb-import .chips .from { padding:0 5px; font-size:10.5px; }
+  .pkb-import .chips .from { padding:0 6px; font-size:11px; }
   .pkb-import .probs { margin:2px 0 0; padding:0; list-style:none; color:var(--red); font-size:12px; }
   .pkb-import .probs.err { margin:0 0 8px; padding:5px 10px; }
   .pkb-import .row-act { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; padding:4px 8px 6px; border-top:1.5px dashed #b9cddc; font-size:12px; color:#3b5a73; }
   .pkb-import .row-act .match { flex:1 1 140px; min-width:0; overflow-wrap:anywhere; }
-  /* Text choices (the settings window look: chosen = white on red) */
-  .pkb-import .opts { display:inline-flex; flex-wrap:wrap; gap:2px; }
-  .pkb-import .opt { min-width:38px; padding:4px 7px 3px; border:none; border-radius:6px; background:transparent; color:#8b9ba8; font-size:13px; cursor:pointer; }
-  .pkb-import .opt[aria-checked="false"]:hover { color:#23435f; }
-  .pkb-import .opt[aria-checked="true"] { color:#fff; background:var(--red); box-shadow:0 2px 0 var(--red-dark); }
+  /* Choices: the settings window's segment (controls.js) */
+  ${controlsCss('.pkb-import')}
+  .pkb-import .f .ctl > .seg { align-self:flex-start; }
   .pkb-import .btn { flex:none; padding:5px 9px 4px; border:2px solid var(--navy); border-radius:7px; background:#fff; color:#23435f; font-size:12px; box-shadow:0 2px 0 var(--navy-dark); cursor:pointer; }
   .pkb-import .btn:not(:disabled):active { transform:translateY(2px); box-shadow:none; }
   .pkb-import .btn:disabled { opacity:.45; cursor:default; box-shadow:none; }
@@ -337,6 +344,13 @@ const CSS = `
   .pkb-import .f .ctl { min-width:0; display:flex; flex-direction:column; gap:4px; }
   .pkb-import .f .note { font-size:11.5px; color:#5b768b; }
   .pkb-import .f .note.bad { color:var(--red); }
+  .pkb-import .lockrow { display:flex; align-items:stretch; justify-content:flex-start; gap:6px; }
+  .pkb-import .lockrow input { flex:none; width:6.5em; }
+  .pkb-import .lock { flex:none; width:36px; min-height:32px; padding:0; display:flex; align-items:center; justify-content:center; border:2px solid var(--navy); border-radius:7px;
+    background:#fff; color:#5b768b; box-shadow:0 2px 0 var(--navy-dark); cursor:pointer; }
+  .pkb-import .lock.on { border-color:#c98a1d; background:#fff3cf; color:#8a5a00; box-shadow:0 2px 0 #8a5a00; }
+  .pkb-import .lock:active { transform:translateY(2px); box-shadow:none; }
+  .pkb-import .lock svg { width:17px; height:17px; }
   .pkb-import .moves { display:grid; grid-template-columns:1fr 1fr; gap:4px; }
   .pkb-import .more-btn { width:100%; display:flex; align-items:baseline; gap:8px; margin:0 0 10px; padding:9px 12px; border:2px dashed #789db7; border-radius:10px;
     background:#f1f7fb; color:#23435f; font-size:14px; text-align:left; cursor:pointer; }
@@ -350,6 +364,8 @@ const CSS = `
   .pkb-import .goes { margin:0 0 8px; padding:6px 10px; border:2px dashed #c98a1d; border-radius:10px; background:#fff8e6; color:#6b4a00; font-size:13px; }
   .pkb-import .emo { font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif; }
   .pkb-import .emoji-in { width:4.5em; font-size:18px; text-align:center; }
+  .pkb-import .tags { display:flex; flex-wrap:wrap; gap:4px 12px; }
+  .pkb-import .tag { display:flex; align-items:center; gap:4px; font-size:13px; cursor:pointer; }
   .pkb-import .pick .new { display:flex; flex-direction:column; align-items:flex-start; gap:8px; margin:12px 0 0; }
   .pkb-import .pick .new p { margin:0; font-size:13px; color:#5b768b; }
   /* Footer: what apply does, problems left, the apply button */
@@ -394,12 +410,14 @@ const el = (tag, props = {}, ...children) => {
   return node;
 };
 
-// Replaces a node's children with a nested list of nodes (null/false left out)
 const fillWith = (node, ...children) => node.replaceChildren(...children.flat(Infinity).filter(c => c !== null && c !== undefined && c !== false));
 const svg = html => { const span = document.createElement('span'); span.innerHTML = html; return span.firstChild; };
 
-function fromBadge(from, lang, text = FROM_LABEL(lang)[from]) {
-  if (!from) return null;
+const SHOWN_FROM = ['auto', 'ai', 'user'];
+const shownFrom = mode => (mode === 'create' ? ['user'] : SHOWN_FROM);
+
+function fromBadge(from, lang, text = FROM_LABEL(lang)[from], mode = 'import') {
+  if (!shownFrom(mode).includes(from)) return null;
   const badge = el('span', { className: 'from', textContent: text, title: FROM_LABEL(lang)[from] ?? '' });
   badge.style.background = FROM_COLOR[from];
   return badge;
@@ -414,15 +432,15 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
   let mode = firstMode;
   let text = MODES(lang)[mode === 'quick' ? 'import' : mode];
   const fieldLabel = FIELD_LABEL(lang), fromLabel = FROM_LABEL(lang);
-  const badge = (from, label) => fromBadge(from, lang, label);
+  const badge = (from, label) => fromBadge(from, lang, label, mode);
   const title = m => monTitle(m, sim, lang);
 
   const words = note => ruleText(note, lang);
   const one = mode === 'create' || mode === 'edit';
   const id = `pkb-imp-${++seq}`;
 
-  let wanted = { item: null, name: '', emoji: DEFAULT_EMOJI, add: 1, isNew: false };
-  const fromPick = () => bagDraft(state, wanted.isNew ? { name: wanted.name, emoji: wanted.emoji, add: wanted.add } : { item: wanted.item, add: wanted.add });
+  let wanted = { item: null, name: '', emoji: DEFAULT_EMOJI, add: 1, isNew: false, tags: undefined };
+  const fromPick = () => bagDraft(state, { ...(wanted.isNew ? { name: wanted.name, emoji: wanted.emoji } : { item: wanted.item }), add: wanted.add, tags: wanted.tags });
   const start = mode === 'bag' ? fromPick() : given;
   let draft = start, busy = false, failure = '', picker = null, details = false;
   let view = one ? start.mons[0].key : null;
@@ -435,6 +453,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     <div class="ft"><span class="sum" aria-live="polite"></span><button class="apply" type="button">${text.apply}</button></div>
   </div>`;
   parent.append(root);
+  ringOnKeys(root);
   const card = root.querySelector('.card'), body = root.querySelector('.body'), sum = root.querySelector('.ft .sum'), applyButton = root.querySelector('.apply'), back = root.querySelector('.hd .back');
   const heading = root.querySelector('.hd b'), foot = root.querySelector('.ft');
 
@@ -498,17 +517,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     return b;
   };
 
-  // Text choices (one chosen)
-  const choices = (list, value, label, pick, { disabled = new Map() } = {}) => {
-    const g = el('div', { className: 'opts' }); g.setAttribute('role', 'radiogroup'); g.setAttribute('aria-label', label);
-    for (const [v, name] of list) {
-      const b = el('button', { type: 'button', className: 'opt', textContent: name, disabled: disabled.has(v), title: disabled.get(v) ?? '' });
-      b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(v === value));
-      b.onclick = () => { if (v !== value) pick(v); };
-      g.append(b);
-    }
-    return g;
-  };
+  const choices = (list, value, label, pick, { disabled = new Map() } = {}) => segmentControl({ list, value, label, change: pick, disabled }).el;
   const select = (list, value, label, pick) => {
     const s = el('select', {}, list.map(([v, name]) => el('option', { value: String(v), textContent: name, selected: v === value })));
     s.setAttribute('aria-label', label);
@@ -536,13 +545,16 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       el('span', { className: 'who' },
         el('b', { textContent: title(m) }),
         el('span', { className: 'sub', textContent: monSub(m, sim, lang) }),
-        el('span', { className: 'chips' }, ROW_FIELDS.filter(f => m.from[f]).map(f => {
-          const chip = badge(m.from[f], ROW_SHORT(lang)[f]); chip.title = `${fieldLabel[f]}: ${fromLabel[m.from[f]]}`; return chip;
+
+        el('span', { className: 'chips' }, SHOWN_FROM.map(from => [from, ROW_FIELDS.filter(f => m.from[f] === from)]).filter(([, fields]) => fields.length).map(([from, fields]) => {
+          const chip = badge(from, t(`import.count.${from}`, { n: fields.length })); chip.title = `${fromLabel[from]}: ${fields.map(f => ROW_SHORT(lang)[f]).join(', ')}`; return chip;
         })),
         bad ? el('ul', { className: 'probs' }, m.problems.map(p => el('li', { textContent: words(p) }))) : null),
       svg(NEXT));
     open.setAttribute('aria-label', t('import.editOf', { mon: title(m) }));
-    open.onclick = () => { view = m.key; draw(); body.scrollTop = 0; };
+
+    if (m.egg) open.disabled = true;
+    else open.onclick = () => { view = m.key; draw(); body.scrollTop = 0; };
     row.append(open, actionLine(m), m.action === 'skip' ? null : placeLine(m));
     return row;
   }
@@ -563,8 +575,8 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
   function picture(m) {
     const box = el('span', { className: 'pic' });
     const species = sim.Dex.species.get(m.set.species);
-    if (species.exists) {
-      const img = el('img', { src: SPRITE(species.spriteid || species.id), alt: '', loading: 'lazy' });
+    if (m.egg || species.exists) {
+      const img = el('img', { src: m.egg ? panelSpriteUrl(EGG_SPRITE) : SPRITE(spriteIdOf(species) || species.id), alt: '', loading: 'lazy' });
       img.addEventListener('error', () => img.remove());
       box.append(img);
     }
@@ -600,7 +612,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     fillWith(body,
       el('p', { className: 'intro', textContent: t('import.intro') }),
       draft.warnings.map(w => el('p', { className: 'warn', textContent: words(w) })),
-      el('div', { className: 'legend' }, ['record', 'auto', 'user', ...(Object.values(draft.bag).some(b => b.from === 'current') ? ['current'] : [])].map(f => badge(f))),
+      el('div', { className: 'legend' }, ['auto', 'user'].map(f => badge(f))),
       section(t('import.place.party'), TAB_COLOR.party, `${partyCount()}/${PARTY_MAX}`, party.length ? party.map(monRow) : [el('p', { className: 'empty', textContent: t('import.noParty') })],
         { over: partyCount() > PARTY_MAX }),
       partyCount() > PARTY_MAX ? el('p', { className: 'err', textContent: t('import.partyOver', { max: PARTY_MAX }) }) : null,
@@ -608,8 +620,13 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       section(t('import.bag'), TAB_COLOR.bag, null, [el('p', { className: 'intro', textContent: t('import.bagIntro') }), ...bagSection()]));
   }
 
+  const opened = (m, field) => {
+    const was = start.mons.find(x => x.key === m.key), value = x => JSON.stringify(field in x.set ? x.set[field] : x[field]);
+    return !!was && value(was) === value(m);
+  };
+  const fieldBadge = (m, field) => (mode === 'create' && opened(m, field) ? null : badge(m.from[field]));
   const fieldRow = (m, field, control, note = null) => el('div', { className: 'f' },
-    el('span', { className: 'lab' }, el('span', { textContent: fieldLabel[field] }), badge(m.from[field])),
+    el('span', { className: 'lab' }, el('span', { textContent: fieldLabel[field] }), fieldBadge(m, field)),
     el('span', { className: 'ctl' }, control, note));
   function statInputs(m, field, max) {
     const values = m.set[field] ?? {};
@@ -634,6 +651,15 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     }
     return grid;
   }
+
+  function friendshipLock(m, input) {
+    const locked = m.friendshipLocked;
+    const label = t(locked ? 'import.friendshipUnlock' : 'import.friendshipLock');
+    const lock = el('button', { type: 'button', className: `lock${locked ? ' on' : ''}`, innerHTML: locked ? LOCKED : UNLOCKED, title: label });
+    lock.setAttribute('aria-label', label);
+    lock.onclick = () => edit(m.key, 'friendshipLocked', !locked);
+    return el('span', { className: 'lockrow' }, input, lock);
+  }
   function drawEditor(m) {
     const refill = el('button', { type: 'button', className: 'btn', textContent: t('import.refill') });
     refill.title = t('import.refillHint');
@@ -645,7 +671,6 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       species: () => pickButton(lists.species.label(s.species), { label: fieldLabel.species, placeholder: t('import.pickSpecies'), open: () => openPicker({
         title: t('import.pickSpeciesTitle'), value: s.species, groups: [{ label: t('import.pokemon'), entries: lists.species.options }], pick: v => edit(m.key, 'species', v) }) }),
       name: () => {
-
         // An empty nickname means the species name - shown greyed in the box
         const input = el('input', { type: 'text', value: s.name ?? '', maxLength: NICKNAME_MAX, placeholder: sim.Dex.species.get(s.species).exists ? lists.species.label(s.species) : t('import.none') });
         input.setAttribute('aria-label', fieldLabel.name);
@@ -661,6 +686,8 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       item: () => pickButton(lists.items.label(s.item ?? ''), { label: fieldLabel.item, placeholder: t('import.none'), open: () => openPicker({
         title: t('import.pickItem'), value: s.item ?? '', none: t('import.none'), groups: [{ label: t('import.items'), entries: lists.items.options }], pick: v => edit(m.key, 'item', v) }) }),
       hpPercent: () => numberInput(m.hpPercent, { min: 0, max: 100, label: 'HP %', pick: v => edit(m.key, 'hpPercent', v) }),
+      friendship: () => friendshipLock(m, numberInput(m.friendship, { min: 0, max: FRIENDSHIP_MAX, label: fieldLabel.friendship, pick: v => edit(m.key, 'friendship', v) })),
+      eggCycles: () => numberInput(m.eggCycles, { min: 1, max: EGG_CYCLES_MAX, label: fieldLabel.eggCycles, pick: v => edit(m.key, 'eggCycles', v) }),
       status: () => select(STATUS_CHOICES(lang), m.status ?? '', fieldLabel.status, v => edit(m.key, 'status', v)),
       gender: () => choices(genderChoices(sim, s.species, lang), s.gender ?? '', fieldLabel.gender, v => edit(m.key, 'gender', v)),
       shiny: () => choices(SHINY_CHOICES(lang), !!s.shiny, fieldLabel.shiny, v => edit(m.key, 'shiny', v)),
@@ -675,7 +702,9 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       moves: el('span', { className: 'note', textContent: t('import.movesNote', { max: MAX_MOVES }) }),
       name: el('span', { className: 'note', textContent: t('import.nameNote') }),
     };
-    const group = g => el('fieldset', {}, el('legend', { textContent: g.label }), g.fields.map(f => fieldRow(m, f, controls[f](), notes[f] ?? null)));
+
+    const group = g => el('fieldset', {}, el('legend', { textContent: g.label }),
+      g.fields.filter(f => !DEBUG_FIELDS.includes(f) || m[f] !== undefined).map(f => fieldRow(m, f, controls[f](), notes[f] ?? null)));
 
     const toggle = el('button', { type: 'button', className: 'more-btn' },
       el('span', { textContent: t(details ? 'import.detailsHide' : 'import.detailsShow') }),
@@ -700,11 +729,20 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     title: t('import.pickBagItem'), value: wanted.isNew ? '' : wanted.item ?? '', groups: bagGroups(sim, state, lang),
     empty: q => {
       const add = el('button', { type: 'button', className: 'btn', textContent: t('import.asNew') });
-      add.onclick = () => { closePicker(); setPick({ isNew: true, item: null, name: q.trim() }); body.querySelector('.new-name')?.focus(); };
+      add.onclick = () => { closePicker(); setPick({ isNew: true, item: null, name: q.trim(), tags: undefined }); body.querySelector('.new-name')?.focus(); };
       return el('div', { className: 'new' }, el('p', { textContent: t('import.notGameItem', { name: q.trim() }) }), add);
     },
-    pick: item => setPick({ isNew: false, item }),
+    pick: item => setPick({ isNew: false, item, tags: undefined }),
   });
+
+  function tagBoxes(info) {
+    const have = info.tags ?? [];
+    return el('span', { className: 'tags' }, CUSTOM_TAGS.map(tag => {
+      const box = el('input', { type: 'checkbox', checked: have.includes(tag) });
+      box.onchange = () => setPick({ tags: CUSTOM_TAGS.filter(t2 => (t2 === tag ? box.checked : have.includes(t2))) });
+      return el('label', { className: 'tag' }, box, el('span', { textContent: t(`import.tag.${tag}`) }));
+    }));
+  }
   function drawBag() {
     const chosen = draft.item;
     const label = !chosen ? '' : customText(draft, chosen) ?? itemLabelIn(state, chosen, sim, lang, { bag: true });
@@ -722,6 +760,8 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       rows.push(row(t('import.name'), name, el('span', { className: 'note', textContent: game ? t('import.asGameItem', { name: label }) : t('import.newItemNote') })),
         row(t('import.picture'), emoji, el('span', { className: 'note', textContent: t('import.pictureNote') })));
     }
+    const custom = chosen ? draft.customItems[chosen] : null;
+    if (custom) rows.push(row(t('import.tags'), tagBoxes(custom), el('span', { className: 'note', textContent: t('import.tagsNote') })));
     rows.push(row(t('import.amount'), numberInput(wanted.add, { min: 1, max: BAG_COUNT_MAX, label: t('import.amountToPut'), pick: n => setPick({ add: n }) }),
       chosen ? el('span', { className: 'note', textContent: t('import.bagNow', { n: draft.base.bag[chosen] }) }) : null));
     fillWith(body, el('p', { className: 'intro', textContent: t('import.bagIntroDebug') }),

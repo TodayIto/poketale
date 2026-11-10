@@ -10,11 +10,11 @@ export function actBlocks(chat) {
   const messages = chat?.message ?? [];
   const blocks = messages.flatMap((message, index) => actsIn(message, index)
     .map(block => ({ ...block, index, at: spot(index, block.start), ...parseAct(block.body) })));
-  const answers = block => messages[block.index]?.role !== 'user' && commandsIn(messages[block.index - 1], block.index - 1).length > 0;
-  return blocks.filter(block => !answers(block));
+  return blocks.filter(block => !answersCommands(chat, block.index));
 }
 
-// This block's plan rows whose command block is in the chat now, in chat order (with the block: row.block)
+export const answersCommands = (chat, index) => chat?.message?.[index]?.role !== 'user' && commandsIn(chat?.message?.[index - 1], index - 1).length > 0;
+
 function livePlans(chat, attempt, blocks = actBlocks(chat)) {
   const byKey = new Map(blocks.map(block => [block.key, block]));
   return (attempt?.plans ?? []).filter(row => byKey.has(row.act)).map(row => ({ ...row, block: byKey.get(row.act) }))
@@ -89,7 +89,6 @@ export const addPlan = (chat, blockKey, row) => editAttempt(chat, blockKey, atte
 
 export const rewindPlans = (chat, blockKey, snapshot) => editAttempt(chat, blockKey, attempt => ({ ...attempt, auto: snapshot, plans: liveRows(chat, attempt) }));
 
-// Marks rows as told (their rejected command went to the AI in the OOC with this send mark)
 export const tellPlans = (chat, blockKey, acts, mark) => acts.length > 0 && editAttempt(chat, blockKey, attempt =>
   ({ ...attempt, plans: (attempt.plans ?? []).map(r => (acts.includes(r.act) ? { ...r, told: mark } : r)) }));
 

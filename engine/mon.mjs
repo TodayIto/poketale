@@ -14,8 +14,6 @@ export const NON_HP_STATS = Object.freeze(STATS.slice(1));
 
 export const STATUS_IDS = Object.freeze(new Set(['', 'brn', 'par', 'slp', 'frz', 'psn', 'tox']));
 
-export const REGIONAL_FORMES = Object.freeze(new Set(['Alola', 'Galar', 'Hisui', 'Paldea']));
-
 export const toID = text => String(text ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 
 export function completeSet(dex, set, rng, { levelUp, label = set.species } = {}) {
@@ -83,27 +81,7 @@ export function heldItemForm(dex, set) {
 	return out;
 }
 
-export const genderAllows = (gender, target) => !(target.gender === 'M' || target.gender === 'F') || gender === target.gender;
-
-export const isLevelEvolution = (target, level) => !target.evoType && !!target.evoLevel && !target.evoCondition && !target.evoRegion && target.evoLevel <= level;
-
-export const isForeignRegional = (target, species) => REGIONAL_FORMES.has(target.forme) && target.forme !== species.forme;
-
-export const holdsEverstone = item => toID(item) === 'everstone';
-
-export function evolutionTargets(dex, { species: name, gender }, how) {
-	const species = dex.species.get(name);
-	const ready = species.evos.map(id => dex.species.get(id))
-		.filter(t => how(t) && genderAllows(gender, t) && !isForeignRegional(t, species));
-	if (ready.length > 1 && species.forme && ready.some(t => t.forme === species.forme)) return ready.filter(t => t.forme === species.forme);
-	return ready;
-}
-
-export function levelEvolution(dex, mon, level) {
-	if (holdsEverstone(mon.item)) return null;
-	const ready = evolutionTargets(dex, mon, t => isLevelEvolution(t, level));
-	return ready.length === 1 ? ready[0].name : null;
-}
+export const spriteIdOf = species => (species.isCosmeticForme ? `${toID(species.baseSpecies)}-${toID(species.forme)}` : species.spriteid);
 
 export function battleOnlyBase(dex, species) {
 	const base = Array.isArray(species.battleOnly) ? species.battleOnly[0] : species.battleOnly;

@@ -1,0 +1,63 @@
+{
+	"_source": "story/compat.mjs 상태창 읽기 낱말 (한국어·영어·일본어). 글꼴 조각의 글자 출처가 아님 (tools/build-font.mjs)",
+	"weather": {
+		"sand": ["sandstorm","sand storm","sand","dust storm","duststorm","모래바람","모래폭풍","황사","砂嵐","砂あらし","砂塵","すなあらし"],
+		"snow": ["snow","snowy","snowing","snowfall","snowstorm","blizzard","hail","hailstorm","sleet","flurries","눈","눈보라","폭설","함박눈","싸라기눈","진눈깨비","우박","雪","吹雪","大雪","粉雪","霰","雹","みぞれ","ゆき","ふぶき","あられ"],
+		"rain": ["rain","rainy","raining","heavy rain","downpour","shower","showers","drizzle","thunderstorm","storm","rainstorm","비","폭우","소나기","호우","이슬비","가랑비","장대비","보슬비","뇌우","천둥번개","폭풍우","장마","雨","大雨","豪雨","小雨","にわか雨","雷雨","夕立","霧雨","暴風雨","あめ","おおあめ"],
+		"mist": ["fog","foggy","mist","misty","haze","hazy","안개","짙은안개","연무","霧","濃霧","もや","霞","きり"],
+		"sun": ["harsh sunlight","harsh sun","intense sun","intense sunlight","strong sunlight","strong sun","scorching","heat wave","heatwave","sweltering","blazing sun","extremely sunny","쨍쨍","강한햇살","강한햇빛","햇살이강함","폭염","땡볕","불볕","쾌청","日差しが強い","ひざしがつよい","猛暑","炎天","酷暑","日本晴れ","にほんばれ"]
+	},
+	"indoors": ["indoors","indoor","inside","building","pokemon center","center","centre","gym","house","home","room","shop","mart","store","department store","lab","laboratory","school","academy","classroom","hotel","inn","restaurant","cafe","museum","hospital","office","hall","실내","건물","포켓몬센터","센터","체육관","집","방","상점","가게","프렌들리숍","백화점","연구소","학교","아카데미","교실","호텔","여관","식당","레스토랑","카페","박물관","병원","사무실","실험실","室内","屋内","建物","ポケモンセンター","センター","ジム","家","部屋","ショップ","フレンドリィショップ","デパート","研究所","学校","アカデミー","教室","ホテル","宿","レストラン","カフェ","博物館","病院"],
+	"regions": {
+		"kanto": ["kanto","관동","칸토","カントー"],
+		"johto": ["johto","성도","조토","ジョウト"],
+		"hoenn": ["hoenn","호연","호엔","ホウエン"],
+		"sinnoh": ["sinnoh","신오","신오우","シンオウ"],
+		"unova": ["unova","하나","이슈","イッシュ"],
+		"kalos": ["kalos","칼로스","카로스","カロス"],
+		"alola": ["alola","알로라","アローラ"],
+		"galar": ["galar","가라르","ガラル"],
+		"hisui": ["hisui","히스이","ヒスイ"],
+		"paldea": ["paldea","팔데아","パルデア"],
+		"kitakami": ["kitakami","북신","キタカミ"]
+	},
+	"places": {
+		"town": ["town","village","city","street","타운","마을","시티","거리","광장","町","村","タウン","シティ","街"],
+		"plains": ["route","road","path","field","도로","길","들판","道路","番道路","ばんどうろ","草原"],
+		"forest": ["forest","woods","woodland","숲","森","林"],
+		"cave": ["cave","cavern","tunnel","grotto","동굴","터널","洞窟","どうくつ","トンネル"],
+		"mountain": ["mountain","mt","mount","peak","summit","hill","산","고개","봉우리","정상","언덕","山","峠","頂上"],
+		"sea": ["sea","ocean","bay","바다","해역","수로","海","水道"],
+		"beach": ["beach","shore","coast","해변","해안","바닷가","모래사장","浜","海岸","ビーチ","砂浜"],
+		"lake": ["lake","pond","river","호수","연못","강","湖","池","川"],
+		"desert": ["desert","사막","砂漠"],
+		"volcano": ["volcano","화산","火山"],
+		"swamp": ["swamp","marsh","늪","습지","沼","湿地"],
+		"graveyard": ["graveyard","cemetery","묘지","墓地"],
+		"ruins": ["ruins","유적","遺跡"],
+		"snowy_forest": ["snowfield","설원","雪原"],
+		"ice_cave": ["ice cave","얼음동굴","氷の洞窟"],
+		"power_plant": ["power plant","발전소","発電所"],
+		"island": ["island","섬","島"],
+		"metropolis": ["metropolis","대도시","도심","都会"],
+		"meadow": ["meadow","꽃밭","목초지","花畑"],
+		"jungle": ["jungle","정글","ジャングル"],
+		"laboratory": ["laboratory","lab","연구소","실험실","研究所"],
+		"dojo": ["dojo","gym","도장","체육관","道場","ジム"],
+		"factory": ["factory","공장","工場"],
+		"temple": ["temple","shrine","사원","신전","神殿","寺","神社"],
+		"construction_site": ["construction site","공사장","工事現場"],
+		"wasteland": ["wasteland","황무지","荒野"]
+	},
+	"times": {
+		"morning": ["morning","dawn","아침","새벽","朝","あさ"],
+		"day": ["day","noon","afternoon","daytime","낮","오후","점심","昼","ひる"],
+		"dusk": ["dusk","evening","sunset","twilight","황혼","저녁","해질녘","夕方","夕暮れ","ゆうがた"],
+		"night": ["night","midnight","밤","한밤중","夜","よる","深夜"]
+	},
+	"clock": {
+		"hour": ["시","時"],
+		"meridiem": {"pm":["pm","p.m.","오후","午後"],"am":["am","a.m.","오전","午前"]},
+		"pmTimes": ["day","dusk","night"]
+	}
+}

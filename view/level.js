@@ -1,7 +1,7 @@
 // from pokerogue src/phases/exp-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 // from pokerogue src/phases/show-party-exp-bar-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/level-up-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { EXP_IMAGES, EXP_SOUNDS, PartyExpBar, setLevelDisplay } from './ui/exp-bar.js';
 import { MAX_LEVEL } from '../engine/mon.mjs';
@@ -65,6 +65,8 @@ export class BattleLevel {
   showLevelUpStats({ prev, next }) { this.scene.requireReady(); return this.stats.show({ prev, next }); }
 
   confirm() { this.scene.requireReady(); return this.confirmMenu.choose(); }
+
+  pick(options) { this.scene.requireReady(); return this.confirmMenu.pick(options); }
 
   chooseForgetMove(options) { this.scene.requireReady(); return this.summary.choose(options); }
   startEvolution(from) { this.scene.requireReady(); return this.evolution.start(from); }

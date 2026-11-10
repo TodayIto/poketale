@@ -21,6 +21,7 @@ export function imageKind(bytes) {
   const h = new Uint8Array(bytes);
   if (h.length >= 6 && String.fromCharCode(...h.subarray(0, 6)).match(/^GIF8[79]a$/)) return 'image/gif';
   if (h.length >= 8 && [137, 80, 78, 71, 13, 10, 26, 10].every((v, i) => h[i] === v)) return 'image/png';
+  if (h.length >= 12 && String.fromCharCode(...h.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...h.subarray(8, 12)) === 'WEBP') return 'image/webp';
   return null;
 }
 

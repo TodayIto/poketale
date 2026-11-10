@@ -1,4 +1,4 @@
-import { createNamer, trainerName, secondName, partnerName, stageTrainer } from './ai-names.mjs';
+import { createNamer, trainerName, secondName, partnerName, stageTrainer, ownLabel } from './ai-names.mjs';
 import { outcomeOf } from './outcome.mjs';
 import { STATS } from '../engine/mon.mjs';
 import { keyLines, summaryLine, turnSpan } from './narrate.mjs';
@@ -75,10 +75,13 @@ export function storyOoc(format, { battle, result = null, ended = false, first =
 export const USER = '{{user}}';
 
 const STAT_EN = { hp: 'HP', atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe: 'Spe' };
+
+const STAT_FULL = { hp: 'HP', atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed' };
 const signed = n => `${n > 0 ? '+' : ''}${n}`;
 
 export function logLine(event, namer = createNamer({ lang: 'en' })) {
-  const monEn = w => (w?.name ? w.name : w?.species ? namer.species(w.species) : w?.ref ?? 'Pokémon');
+
+  const monEn = w => (w?.egg ? 'Egg' : w?.name ? w.name : w?.species ? namer.species(w.species) : w?.ref ?? 'Pokémon');
 
   const itemEn = id => customText(event, id) ?? namer.items(id);
   const effectEn = e => {
@@ -93,7 +96,7 @@ export function logLine(event, namer = createNamer({ lang: 'en' })) {
     if (e.kind === 'evolve') return `evolved into ${namer.species(e.species)}`;
     if (e.kind === 'teach') return `learned ${namer.moves(e.move)}`;
     // Out-of-battle items
-    if (e.kind === 'evs') return `${STAT_EN[e.stat] ?? e.stat} EVs +${e.to - e.from}`;
+    if (e.kind === 'evs') return e.to === e.from ? '' : `its base ${STAT_FULL[e.stat] ?? e.stat} ${e.to > e.from ? 'rose' : 'fell'}`;
     if (e.kind === 'exp') return `+${e.amount} EXP${e.to > e.from ? `, Lv${e.from} → ${e.to}` : ''}`;
     if (e.kind === 'ability') return `ability ${namer.abilities(e.from)} → ${namer.abilities(e.to)}`;
     if (e.kind === 'nature') return `stats now grow as ${e.nature} nature`;
@@ -123,14 +126,24 @@ export function logLine(event, namer = createNamer({ lang: 'en' })) {
       if (event.forget) return `${who} learned ${move} (forgot ${namer.moves(event.forget)})`;
       return event.learned ? `${who} learned ${move}` : `${who} can learn ${move}`;
     }
-    case 'evolve': return `${monEn(event.who)} evolved into ${namer.species(event.species)}`;
+
+    case 'evolve': return [`${monEn(event.who)} evolved into ${namer.species(event.species)}`,
+      ...(event.joined ?? []).map(j => `${namer.species(j.species)} came from the empty shell and joined ${USER}`)].join('. ');
     case 'level': return `${monEn(event.who)} Lv${event.from ?? '?'} → ${event.to ?? '?'}`;
     case 'heal': {
       if (event.all) return event.revivedAll ? 'All fainted Pokémon revived' : 'Party healed';
       const effect = effectEn(event);
       return `${monEn(event.who)} healed${effect ? `: ${effect}` : ''}`;
     }
-    case 'evs': case 'exp': case 'ability': case 'nature': case 'hypertrain': case 'ppup': return `${monEn(event.who)}: ${effectEn(event)}`;
+    case 'evs': case 'exp': case 'ability': case 'nature': case 'hypertrain': case 'ppup': { const effect = effectEn(event); return effect ? `${monEn(event.who)}: ${effect}` : null; }
+
+    case 'feed': return event.item ? `${USER} used ${itemEn(event.item)} on ${monEn(event.who)}` : null;
+
+    case 'egg': {
+      const parents = (event.parents ?? []).map(ownLabel);
+      return `An Egg was found${parents.length === 2 ? ` with ${parents.join(' and ')}` : ''} (${event.box ? 'sent to storage' : event.slot ? `party #${event.slot}` : 'party'})`;
+    }
+    case 'hatch': return `${event.slot ? `The Egg in party #${event.slot}` : 'An Egg'} hatched into ${namer.species(event.who?.species)}`;
     case 'item': return `${itemEn(event.item)} ${signed(event.delta)}`;
     case 'add': return `${USER} got ${namer.species(event.who?.species)} Lv${event.level}${event.box ? ', sent to storage' : ''}`;
     default: return null;

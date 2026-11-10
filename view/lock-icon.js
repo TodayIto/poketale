@@ -1,0 +1,2 @@
+export const LOCKED = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.2 7.2V5a2.8 2.8 0 0 1 5.6 0v2.2" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="2.8" y="7" width="10.4" height="7.4" rx="1.6" fill="currentColor"/></svg>';
+export const UNLOCKED = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.8 7.2V5a2.8 2.8 0 0 0-5.6 0v.4" fill="none" stroke="currentColor" stroke-width="1.9"/><rect x="2.8" y="7" width="10.4" height="7.4" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.9"/></svg>';

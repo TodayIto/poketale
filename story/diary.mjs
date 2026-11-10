@@ -6,6 +6,7 @@ import { BOX_SIZE } from './rules.mjs';
 import storyNames from '../data/story-names.json' with { type: 'json' };
 import { customText } from './custom-items.mjs';
 import { sideParts } from './blocks.mjs';
+import { ruleText } from './failure.mjs';
 
 const LETTER_BATCHIM = { L: 'l', R: 'l', M: true, N: true };
 function batchim(word) {
@@ -56,7 +57,7 @@ function nameKit(lang, names) {
     item: (id, event) => customText(event, id) ?? names.item(id),
     move: id => names.move(id),
     ability: id => names.ability(id),
-    mon: who => (who?.name ? who.name : who?.species ? sp(who.species) : who?.ref ?? say(lang, 'diary.mon')),
+    mon: who => (who?.egg ? say(lang, 'diary.egg') : who?.name ? who.name : who?.species ? sp(who.species) : who?.ref ?? say(lang, 'diary.mon')),
 
     p: (word, pair) => withParticle(lang, word, pair),
   };
@@ -75,7 +76,7 @@ function effectLine(event, lang, k) {
   if (event.kind === 'evolve') return t('diary.fx.evolve', { species: k.p(k.sp(event.species), '으로/로') });
   if (event.kind === 'teach') return t('diary.fx.teach', { move: k.move(event.move) });
 
-  if (event.kind === 'evs') return t('diary.fx.evs', { stat: statName(event.stat, lang), n: event.to - event.from });
+  if (event.kind === 'evs') return t(event.to > event.from ? 'diary.fx.evs' : 'diary.fx.evsDown', { stat: statName(event.stat, lang) });
   if (event.kind === 'exp') return `${t('diary.fx.exp', { n: count(event.amount, lang) })}${event.to > event.from ? `, Lv${event.from} → ${event.to}` : ''}`;
   if (event.kind === 'ability') return t('diary.fx.ability', { from: k.ability(event.from), to: k.ability(event.to) });
   if (event.kind === 'nature') return t('diary.fx.nature', { nature: natureName(event.nature, lang) });
@@ -148,6 +149,14 @@ export function diaryLine(event, lang, names) {
       : t('diary.moneySpent', { money: p(moneyText(-event.delta, lang), '을/를') });
 
     case 'evs': case 'exp': case 'ability': case 'nature': case 'hypertrain': case 'ppup': return `${who}: ${effectLine(event, lang, k)}`;
+    case 'friendship': return null;
+
+    case 'gotEgg': return t('diary.gotEgg', { box: boxSent(event.box, lang) });
+    case 'egg': return t('diary.newEgg', { box: boxSent(event.box, lang) });
+    case 'hatch': return t('diary.hatch', { mon: p(k.sp(event.who?.species), '이/가') });
+    case 'breed': return t('diary.breed', { a: p(k.mon(event.a), '과/와'), b: k.mon(event.b) });
+    case 'breedStop': return t('diary.breedStop');
+    case 'hatched': return null;
     default: return event?.op ? `(${event.op})` : null;
   }
 }
@@ -256,15 +265,15 @@ function commandWords(c, lang, names) {
   }
   if (c.kind === 'switch') return t('diary.cmd.switch', { target: target(c.target) });
   if (c.kind === 'item') {
-    const item = c.item ? k.item(c.item) : t('diary.cmd.anyItem');
+    const item = c.raw ?? (c.item ? k.item(c.item) : t('diary.cmd.anyItem'));
     return c.target ? t('diary.cmd.itemOn', { item, target: target(c.target) }) : item;
   }
   if (c.kind === 'run') return t('diary.cmd.run');
   return '';
 }
 
-export function commandLines(turns, results, lang, names) {
-  const out = { plain: [], errors: [] };
+export function commandLines(turns, results, lang, names, unread = []) {
+  const out = { plain: [], errors: unread.filter(note => note.rule !== 'block.unknown.moves').map(note => say(lang, 'diary.cmd.unread', { why: ruleText(note, lang) })) };
   turns.forEach((turn, i) => {
     const result = results?.[i];
     if (result?.state !== 'done' && result?.state !== 'rejected') return;

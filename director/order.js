@@ -7,6 +7,7 @@ const isEffectiveness = e => e.kind === '-supereffective' || e.kind === '-resist
 const isCrit = e => e.kind === '-crit';
 
 export const isSurvive = ({ kind, args: a, kwArgs: kw }) =>
+  (kind === '-story-friendship' && a[1] === 'endure') ||
   (kind === '-ability' && toID(a[1]) === 'sturdy' && !kw.from)
   || (kind === '-activate' && /^(move: Endure|item: Focus Band)$/i.test(a[1] ?? ''))
   || (kind === '-enditem' && toID(a[1]) === 'focussash' && !kw.from);
@@ -14,7 +15,6 @@ export const isSurvive = ({ kind, args: a, kwArgs: kw }) =>
 const isDamage = ({ kind, args: a, kwArgs: kw }) => (kind === '-damage' && !kw.from)
   || ((kind === '-activate' || kind === '-end') && /substitute/i.test(a[1] ?? ''));
 
-// First-arg Pokemon of a line (uid)
 const actorOf = e => (isIdent(e.args[0]) ? uidOf(e, e.args[0]) : null);
 
 export function openingOrder(events) {
@@ -27,9 +27,15 @@ export function openingOrder(events) {
     enemy[0].joinedBy = enemy.slice(1);
     for (const e of enemy.slice(1)) e.joins = enemy[0];
   }
-  if (!player.length || !enemy.length || events.indexOf(enemy[0]) < events.indexOf(player[0])) return events;
-  const ordered = events.filter(e => !enemy.includes(e));
-  ordered.splice(ordered.indexOf(player[0]), 0, ...enemy);
+
+  const first = events.findIndex(e => e.kind === 'switch');
+  const field = events.filter((e, i) => i < first && (e.kind === '-weather' || e.kind === '-fieldstart'));
+  let ordered = events.filter(e => !field.includes(e));
+  if (player.length && enemy.length && ordered.indexOf(enemy[0]) > ordered.indexOf(player[0])) {
+    ordered = ordered.filter(e => !enemy.includes(e));
+    ordered.splice(ordered.indexOf(player[0]), 0, ...enemy);
+  }
+  if (field.length) ordered.splice(Math.max(...[...player, ...enemy].map(e => ordered.indexOf(e))) + 1, 0, ...field);
   return ordered;
 }
 
@@ -116,7 +122,6 @@ function orderSegment(segment) {
     out.push(e);
     out.push(...lines.filter(isSurvive).map(event => ({ cue: 'survive', event })), ...lines.filter(isCrit));
     if (lastHit.get(hit.target) !== hit) return;
-
     // After the last hit: effectiveness (once), OHKO
     for (const l of hits.filter(h => h.target === hit.target).flatMap(h => h.lines.map(j => segment[j])).filter(isEffectiveness)) {
       if (said.has(hit.target)) l.repeat = true;

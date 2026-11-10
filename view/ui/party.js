@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/party-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/utils/pokemon-icon-anim-helper.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/message-ui-handler.ts (showPrompt) @ 7d7da4a8 (AGPL-3.0-only)
 
@@ -8,7 +8,8 @@ import { uiRect } from './tap-back.js';
 import { openSummary } from './summary.js';
 import { playSelect, playError } from './keys.js';
 import { openMenu } from './menu.js';
-import { styledText, windowText, STATUS_FRAMES, GENDER_COLORS, genderSymbol } from './text.js';
+import { styledText, windowText, addGenderMark, STATUS_FRAMES, GENDER_COLORS } from './text.js';
+import { nameShowsGender } from '../gender-mark.js';
 import { tween, delay } from '../lifetime.js';
 import { fixed } from '../game-speed.js';
 import { fadeSwap } from './learn-move.js';
@@ -67,10 +68,11 @@ class PartySlot {
     const objects = [this.bg, this.pb, this.icon, this.name,
       s.add.image(lx, ly, 'party_slot_overlay_lv').setOrigin(0),
       partyText(s, lx + 9, ly, String(mon.level)).setOrigin(0, 0.25)];
-    if (GENDER_COLORS[mon.gender]) {
+
+    if (GENDER_COLORS[mon.gender] && !nameShowsGender(name)) {
       const [color, shadow] = GENDER_COLORS[mon.gender];
-      objects.push(partyText(s, lx + p.gender[0], ly + p.gender[1], genderSymbol(mon.gender), { color })
-        .setShadow(4, 5, shadow).setOrigin(0, 0.25));
+
+      objects.push(addGenderMark(s, lx + p.gender[0], ly + p.gender[1], mon.gender, 'PARTY', { originY: 0.25, color, shadow }));
     }
     if (STATUS_FRAMES[mon.status]) objects.push(s.add.sprite(lx + p.status[0], ly + p.status[1], 'statuses', STATUS_FRAMES[mon.status]).setOrigin(0));
 

@@ -1,6 +1,6 @@
 // from pokerogue src/ui/handlers/ball-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/command-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { addWindow } from './window.js';
 import BAG_ICONS from '../../data/bag-icons.json' with { type: 'json' };
@@ -10,15 +10,25 @@ import { styledText } from './text.js';
 import { uiRect } from './tap-back.js';
 import { fixed } from '../game-speed.js';
 import { LoadError } from '../retry.js';
+import { foodTexture } from '../amie-art.js';
 
 const CANCEL_TEXT = 'command-ui-handler.ballCancel';
 const ROWS = 6;
+const TAB_LEFT = 18;
 
 export const BALL_FRAMES = { pokeball: 'pb', greatball: 'gb', ultraball: 'ub', masterball: 'mb', luxuryball: 'lb' };
 export const ballFrame = id => BALL_FRAMES[id] ?? 'pb';
 
 const windowText = (scene, x, y, str, extra, style = 'WINDOW') => styledText(scene, x, y, str, style, extra);
 const GREY = ['#a0a0a0', '#505050'];
+
+const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+function emojiIcon(scene, x, y, emoji) {
+  const art = foodTexture(scene, emoji);
+  if (art) return scene.add.image(x, y, art);
+  const text = scene.add.text(x, y, emoji, { fontSize: 96, fontFamily: EMOJI_FONT, padding: { top: 8, bottom: 8 } }).setOrigin(0.5);
+  return text.setScale(Math.min(16 / text.width, 16 / text.height));
+}
 
 export function openBag(menu) {
   if (menu.bag.blocked) { menu.notice = menu.bag.blocked; return menu.draw(); }
@@ -63,7 +73,6 @@ export class BagMenu {
   }
   get items() { return this.bag.pockets[this.pocket].items; }
 
-  // Tapping empty space: inside the bag window is not back
   windows() { return this.rect ? [this.rect] : []; }
 
   get length() { return this.items.length + 1; }
@@ -79,16 +88,17 @@ export class BagMenu {
     const all = this.bag.pockets.flatMap(p => p.items);
     const namesWidth = Math.max(0, ...all.map(i => measure(i.name)));
     const countsWidth = Math.max(0, ...all.map(i => measure(`×${i.count}`)));
+
     const tabs = this.bag.pockets.map(p => measure(p.name));
     const tabsWidth = tabs.reduce((a, b) => a + b, 0) + 8 * (tabs.length - 1);
-    const content = Math.max(64, namesWidth + 4 + countsWidth, measure(s.words(CANCEL_TEXT)), tabsWidth - 24);
+    const content = Math.max(64, namesWidth + 4 + countsWidth, measure(s.words(CANCEL_TEXT)), TAB_LEFT + tabsWidth + TAB_LEFT - 50);
     const width = 50 + content, height = 128, x = 320 - 51 - content, top = -49 - height;
     this.box = s.add.container(x, 0); c.add(this.box);
     this.box.add(addWindow(s, 0, top, width, height));
     this.rect = uiRect(x, top, width, height);
     const rowY = r => top + 9 + 16 * r;
 
-    let tabX = 18;
+    let tabX = TAB_LEFT;
     this.bag.pockets.forEach((pocket, i) => {
       const t = windowText(s, tabX, rowY(0), pocket.name);
       if (i !== this.pocket) t.setColor(GREY[0]).setShadow(3, 3, GREY[1]);
@@ -116,9 +126,10 @@ export class BagMenu {
         continue;
       }
 
-      const icon = item.target === 'enemy'
-        ? s.add.image(24, top + 15 + 16 * (r + 1), 'pb', ballFrame(item.id))
-        : s.add.image(24, top + 15 + 16 * (r + 1), 'bag_items', item.id).setScale(0.5);
+      const iconY = top + 15 + 16 * (r + 1);
+      const icon = item.target === 'enemy' ? s.add.image(24, iconY, 'pb', ballFrame(item.id))
+        : item.emoji ? emojiIcon(s, 24, iconY, item.emoji)
+          : s.add.image(24, iconY, 'bag_items', item.id).setScale(0.5);
       const name = windowText(s, 36, y, item.name);
       const count = windowText(s, 36 + namesWidth + 4 + countsWidth, y, `×${item.count}`).setOrigin(1, 0);
       if (item.blocked) for (const t of [name, count]) t.setColor(GREY[0]).setShadow(3, 3, GREY[1]);
@@ -138,7 +149,6 @@ export class BagMenu {
     this.setCursor(this.cursor, true);
   }
 
-  // Scrolls the list by rows (the cursor follows into the visible rows). ui/select if it scrolled
   scrollBy(rows) {
     if (this.sub) return false;
     const max = Math.max(0, this.length - ROWS), scroll = Math.min(max, Math.max(0, this.scroll + rows));

@@ -1,11 +1,11 @@
 import { battleNamesIn } from './names.js';
 import { DEFAULT_LANG } from '../../director/lang.js';
-import { showOutsideSummary, learnMoveOutside, evolveOutside, rememberMoveOutside } from '../../director/outside.js';
+import { showOutsideSummary, learnMoveOutside, evolveOutside, rememberMoveOutside, amieOutside, hatchOutside, trainingOutside } from '../../director/outside.js';
 
-export function createOutsideScreens({ sim, createView, fetchBytes, levelUp, exp, lang = DEFAULT_LANG, viewOptions = {}, trainer, formatid } = {}) {
+export function createOutsideScreens({ sim, createView, fetchBytes, levelUp, exp, lang = DEFAULT_LANG, viewOptions = {}, trainer, battleFormat } = {}) {
   if (!sim?.Battle || typeof createView !== 'function') throw new TypeError('sim and createView are required');
   const names = battleNamesIn(lang, sim.Dex);
-  const context = async () => ({ sim, names, lang, exp, formatid, trainer: typeof trainer === 'function' ? await trainer() : trainer,
+  const context = async () => ({ sim, names, lang, exp, battleFormat: typeof battleFormat === 'function' ? await battleFormat() : battleFormat, trainer: typeof trainer === 'function' ? await trainer() : trainer,
     levelUp: typeof levelUp === 'function' ? await levelUp() : await levelUp });
 
   async function withView({ parent, theme }, work) {
@@ -23,5 +23,11 @@ export function createOutsideScreens({ sim, createView, fetchBytes, levelUp, exp
     openEvolution: ({ parent, mon, into, learn, theme }) => withView({ parent, theme }, (view, ctx) => evolveOutside({ view, ctx, mon, into, learn })),
 
     openRememberMove: ({ parent, mon, moves, party, theme }) => withView({ parent, theme }, (view, ctx) => rememberMoveOutside({ view, ctx, mon, moves, party })),
+
+    openAmie: ({ parent, mon, state, party, debug, awake, trainWhy, lock, theme }) => withView({ parent, theme }, (view, ctx) => amieOutside({ view, ctx, mon, state, party, debug, awake, trainWhy, lock })),
+
+    openHatch: ({ parent, mon, theme }) => withView({ parent, theme }, (view, ctx) => hatchOutside({ view, ctx, mon })),
+
+    openTraining: ({ parent, mon, theme }) => withView({ parent, theme }, (view, ctx) => trainingOutside({ view, ctx, mon })),
   };
 }

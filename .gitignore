@@ -3,3 +3,5 @@ node_modules/
 dist/*
 !dist/poke-battle.js
 cache/
+
+data/names/MISSING.md

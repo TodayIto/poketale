@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const norm = s => String(s ?? '').normalize('NFKC').replace(/♀/g, 'f').replace(/♂/g, 'm').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+import { norm } from '../story/norm.mjs';
 
 const LOC = new URL('../vendor/pokerogue/locales/', import.meta.url);
 const read = (lang, file) => JSON.parse(readFileSync(new URL(`${lang}/${file}`, LOC), 'utf8'));

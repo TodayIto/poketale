@@ -1,10 +1,11 @@
 import { createFetchBytes } from './fetch-bytes.js';
 import { mark } from './marks.js';
-import { startStoryLink, openSettings, currentSettings, openLang, queueAction, storyNow, onStoryChange, showWindow, hideWindow, resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, quickImport, importLater } from './story-link.js';
+import { startStoryLink, openSettings, currentSettings, openLang, queueAction, storyNow, onStoryChange, showWindow, hideWindow, resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, writeBotTravel, quickImport, importLater, battleFormat, watchReplies } from './story-link.js';
 import { startPanel } from '../panel/panel.js';
 import { createPanelScreens } from '../panel/screens.js';
 import { createPanelPictures } from '../panel/pictures.js';
 import { probeImage, pokerogueStillUrl } from '../panel/picture-steps.js';
+import { defringeAddress } from '../panel/defringe.js';
 import { personaName } from './persona.js';
 import { useMainDocument } from './stage.js';
 import { POKE_BALL_ICON } from './settings.js';
@@ -35,10 +36,12 @@ mark('pb:script');
     const doc = await risuai.getRootDocument();
     if (doc) {
       useMainDocument(doc);
-      const screens = createPanelScreens({ fetchBytes, settings: currentSettings, lang: openLang,
-        show: showWindow, hide: hideWindow, trainer: () => personaName(risuai).catch(() => null) });
-      const pictures = createPanelPictures({ route: () => currentSettings().panelPicture, probe: probeImage, fetchBytes, still: pokerogueStillUrl });
-      await startPanel({ doc, read: storyNow, queueAction, screens, changes: onStoryChange, resume: resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, quickImport, importLater, pictures });
+      const screens = createPanelScreens({ fetchBytes, settings: currentSettings, lang: openLang, battleFormat,
+        show: showWindow, hide: hideWindow, replies: watchReplies, trainer: () => personaName(risuai).catch(() => null) });
+      const pictures = createPanelPictures({ route: () => currentSettings().panelPicture, probe: probeImage, fetchBytes, still: pokerogueStillUrl,
+        clean: (address, viaHost) => defringeAddress(address, viaHost ? fetchBytes : null) });
+      await startPanel({ doc, read: storyNow, queueAction, screens, changes: onStoryChange, resume: resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, botTravel: writeBotTravel, quickImport, importLater, pictures,
+        place: () => currentSettings().outsideScreens, trainer: () => personaName(risuai).catch(() => null) });
     }
   } catch (error) { console.warn('[poke-battle] 오른쪽 패널을 끼우지 못함', error); }
 })();

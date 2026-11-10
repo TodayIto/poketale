@@ -178,6 +178,10 @@ export const PHONE_CSS = `
   .poke-battle .pad .ab .b { left:0; bottom:4px; border:2.5px solid var(--navy); background:var(--paper);
     color:var(--navy); box-shadow:0 4px 0 var(--navy-dark); }
   .poke-battle .pad button.held { transform:translateY(3px); box-shadow:0 1px 0 var(--navy-dark); }
+  /* A screen played by touch (pkb-fill - the petting screen): no pad; the view takes the room below the band, as tall as the window allows */
+  .poke-battle.pkb-portrait.pkb-fill .pad { display:none; }
+  .poke-battle.pkb-portrait.pkb-fill .frame { flex:1 1 auto; margin-top:0; width:100%; min-height:0; }
+  .poke-battle.pkb-portrait.pkb-fill .screen { flex:1 1 auto; aspect-ratio:auto; min-height:0; }
   .poke-battle .pad .ab .a.held { box-shadow:0 1px 0 var(--red-dark); }
   /* Shows which leave-confirmation button the pad picked (arrows = move, A = press, B = keep playing) */
   .poke-battle.pkb-portrait .confirm .row button.pkb-picked, .poke-battle.pkb-landscape .confirm .row button.pkb-picked { outline:3px solid #ffd35c; outline-offset:2px; }

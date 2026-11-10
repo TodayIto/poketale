@@ -1,0 +1,360 @@
+{
+	"_source": "tools/build-leader-names.mjs from vendor/pokerogue/locales/{en,ja}/trainer-names.json and its hand-written lists (HAND_JA - Japanese names PokeRogue does not have, with sources; CHAMPIONS) - ja: badge id -> the Japanese names of its leaders (data/badges.json order); champions: champion entry id -> [[Korean, English, Japanese, ...other spellings]] who is fought for the title",
+	"ja": {
+		"kanto-boulder": [
+			"タケシ"
+		],
+		"kanto-cascade": [
+			"カスミ"
+		],
+		"kanto-thunder": [
+			"マチス"
+		],
+		"kanto-rainbow": [
+			"エリカ"
+		],
+		"kanto-soul": [
+			"キョウ",
+			"アンズ"
+		],
+		"kanto-marsh": [
+			"ナツメ"
+		],
+		"kanto-volcano": [
+			"カツラ"
+		],
+		"kanto-earth": [
+			"サカキ",
+			"グリーン"
+		],
+		"johto-zephyr": [
+			"ハヤト"
+		],
+		"johto-hive": [
+			"ツクシ"
+		],
+		"johto-plain": [
+			"アカネ"
+		],
+		"johto-fog": [
+			"マツバ"
+		],
+		"johto-storm": [
+			"シジマ"
+		],
+		"johto-mineral": [
+			"ミカン"
+		],
+		"johto-glacier": [
+			"ヤナギ"
+		],
+		"johto-rising": [
+			"イブキ"
+		],
+		"hoenn-stone": [
+			"ツツジ"
+		],
+		"hoenn-knuckle": [
+			"トウキ"
+		],
+		"hoenn-dynamo": [
+			"テッセン"
+		],
+		"hoenn-heat": [
+			"アスナ"
+		],
+		"hoenn-balance": [
+			"センリ"
+		],
+		"hoenn-feather": [
+			"ナギ"
+		],
+		"hoenn-mind": [
+			"フウ",
+			"ラン"
+		],
+		"hoenn-rain": [
+			"アダン",
+			"ミクリ"
+		],
+		"sinnoh-coal": [
+			"ヒョウタ"
+		],
+		"sinnoh-forest": [
+			"ナタネ"
+		],
+		"sinnoh-cobble": [
+			"スモモ"
+		],
+		"sinnoh-fen": [
+			"マキシ"
+		],
+		"sinnoh-relic": [
+			"メリッサ"
+		],
+		"sinnoh-mine": [
+			"トウガン"
+		],
+		"sinnoh-icicle": [
+			"スズナ"
+		],
+		"sinnoh-beacon": [
+			"デンジ"
+		],
+		"unova-trio": [
+			"デント",
+			"ポッド",
+			"コーン"
+		],
+		"unova-basic": [
+			"アロエ"
+		],
+		"unova-insect": [
+			"アーティ"
+		],
+		"unova-bolt": [
+			"カミツレ"
+		],
+		"unova-quake": [
+			"ヤーコン"
+		],
+		"unova-jet": [
+			"フウロ"
+		],
+		"unova-freeze": [
+			"ハチク"
+		],
+		"unova-legend": [
+			"シャガ",
+			"アイリス"
+		],
+		"unova2-basic": [
+			"チェレン"
+		],
+		"unova2-toxic": [
+			"ホミカ"
+		],
+		"unova2-insect": [
+			"アーティ"
+		],
+		"unova2-bolt": [
+			"カミツレ"
+		],
+		"unova2-quake": [
+			"ヤーコン"
+		],
+		"unova2-jet": [
+			"フウロ"
+		],
+		"unova2-legend": [
+			"シャガ"
+		],
+		"unova2-wave": [
+			"シズイ"
+		],
+		"kalos-bug": [
+			"ビオラ"
+		],
+		"kalos-cliff": [
+			"ザクロ"
+		],
+		"kalos-rumble": [
+			"コルニ"
+		],
+		"kalos-plant": [
+			"フクジ"
+		],
+		"kalos-voltage": [
+			"シトロン"
+		],
+		"kalos-fairy": [
+			"マーシュ"
+		],
+		"kalos-psychic": [
+			"ゴジカ"
+		],
+		"kalos-iceberg": [
+			"ウルップ"
+		],
+		"alola-normal": [
+			"イリマ"
+		],
+		"alola-water": [
+			"スイレン"
+		],
+		"alola-fire": [
+			"カキ"
+		],
+		"alola-grass": [
+			"マオ"
+		],
+		"alola-electric": [
+			"マーマネ"
+		],
+		"alola-ghost": [
+			"アセロラ"
+		],
+		"alola-fairy": [
+			"マツリカ"
+		],
+		"alola-grand-melemele": [
+			"ハラ"
+		],
+		"alola-grand-akala": [
+			"ライチ"
+		],
+		"alola-grand-ulaula": [
+			"クチナシ"
+		],
+		"alola-grand-poni": [
+			"ハプウ"
+		],
+		"galar-grass": [
+			"ヤロー"
+		],
+		"galar-water": [
+			"ルリナ"
+		],
+		"galar-fire": [
+			"カブ"
+		],
+		"galar-fighting": [
+			"サイトウ"
+		],
+		"galar-ghost": [
+			"オニオン"
+		],
+		"galar-fairy": [
+			"ポプラ"
+		],
+		"galar-rock": [
+			"マクワ"
+		],
+		"galar-ice": [
+			"メロン"
+		],
+		"galar-dark": [
+			"ネズ"
+		],
+		"galar-dragon": [
+			"キバナ"
+		],
+		"paldea-bug": [
+			"カエデ"
+		],
+		"paldea-grass": [
+			"コルサ"
+		],
+		"paldea-electric": [
+			"ナンジャモ"
+		],
+		"paldea-water": [
+			"ハイダイ"
+		],
+		"paldea-normal": [
+			"アオキ"
+		],
+		"paldea-ghost": [
+			"ライム"
+		],
+		"paldea-psychic": [
+			"リップ"
+		],
+		"paldea-ice": [
+			"グルーシャ"
+		]
+	},
+	"champions": {
+		"kanto-champion": [
+			[
+				"그린",
+				"Blue",
+				"グリーン"
+			]
+		],
+		"johto-champion": [
+			[
+				"목호",
+				"Lance",
+				"ワタル"
+			]
+		],
+		"hoenn-champion": [
+			[
+				"성호",
+				"Steven",
+				"ダイゴ"
+			],
+			[
+				"윤진",
+				"Wallace",
+				"ミクリ"
+			]
+		],
+		"sinnoh-champion": [
+			[
+				"난천",
+				"Cynthia",
+				"シロナ"
+			]
+		],
+		"unova-champion": [
+			[
+				"노간주",
+				"Alder",
+				"アデク"
+			],
+			[
+				"N",
+				"N",
+				"N",
+				"엔"
+			]
+		],
+		"unova2-champion": [
+			[
+				"아이리스",
+				"Iris",
+				"アイリス"
+			]
+		],
+		"kalos-champion": [
+			[
+				"카르네",
+				"Diantha",
+				"カルネ"
+			]
+		],
+		"alola-champion": [
+			[
+				"쿠쿠이",
+				"Kukui",
+				"ククイ"
+			],
+			[
+				"하우",
+				"Hau",
+				"ハウ"
+			]
+		],
+		"galar-champion": [
+			[
+				"단델",
+				"Leon",
+				"ダンデ"
+			]
+		],
+		"paldea-champion": [
+			[
+				"테사",
+				"Geeta",
+				"オモダカ"
+			],
+			[
+				"네모",
+				"Nemona",
+				"ネモ"
+			]
+		]
+	}
+}

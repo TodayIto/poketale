@@ -1,9 +1,9 @@
 // from pokerogue src/pipelines/glsl/sprite-frag-shader.frag @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 // from pokerogue src/pipelines/sprite.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/tera-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/battle-info/battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/data/type.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
 
 import Phaser from 'phaser';
 
@@ -184,7 +184,6 @@ export class TeraView {
     for (const fx of [instance].flat()) fx.teraColor = typeRgb(type);
   }
 
-  // When a PokemonSprite is created (appearance, form change) - glow if MonView.tera is set
   applySprite(pokemon) { if (pokemon.mon?.tera) this.glow(pokemon.getSprite(), pokemon.mon.tera); }
 
   applyInfo(info, type) {
@@ -196,7 +195,7 @@ export class TeraView {
     }
     const [r, g, b] = typeRgb(type);
     info.teraIcon.setVisible(true).setTintFill(Phaser.Display.Color.GetColor(r, g, b))
-      .setPosition(info.nameText.x + info.nameText.displayWidth + info.genderText.displayWidth + 1, info.nameText.y + 2);
+      .setPosition(info.nameText.x + info.nameText.displayWidth + (info.gender?.displayWidth ?? 0) + 1, info.nameText.y + 2);
   }
 
   async terastallize(side, type) {

@@ -10,6 +10,10 @@ const require = createRequire(import.meta.url);
 
 export const toID = text => String(text ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+export function speciesWithCosmeticFormes(Dex) {
+  const all = Dex.species.all(), have = new Set(all.map(s => s.id));
+  return [...all, ...all.flatMap(s => (s.cosmeticFormes ?? []).map(name => Dex.species.get(name)).filter(c => c.exists && !have.has(c.id)))];
+}
 export const englishID = text => toID(String(text).normalize('NFD').replace(/\p{M}/gu, '').replace(/♀/g, '-F').replace(/♂/g, '-M'));
 
 let pokeapiSource;

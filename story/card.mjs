@@ -8,7 +8,6 @@ const BIOMES = ['town', 'plains', 'grass', 'tallGrass', 'metropolis', 'forest', 
   'constructionSite', 'jungle', 'fairyCave', 'temple', 'slum', 'snowyForest', 'island', 'laboratory', 'end'];
 const keyOf = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const PLACE = Object.fromEntries(BIOMES.map(k => [keyOf(k), k]));
-const TIMES = new Set(['day', 'night']);
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '{': '&#123;', '}': '&#125;' };
 
@@ -21,10 +20,10 @@ export function placeName(place, lang) {
   const biome = PLACE[keyOf(place)];
   return biome ? say(lang, `place.${biome}`) : String(place);
 }
-const timeName = (time, lang) => (TIMES.has(time) ? say(lang, `time.${time}`) : time ? String(time) : '');
 
 const speciesName = (species, lang) => namesIn(lang).species(species);
-const subLine = (spec, lang) => [placeName(spec.place, lang), timeName(spec.time, lang)].filter(Boolean).join(' · ');
+
+const subLine = (spec, lang) => placeName(spec.place, lang);
 
 function wildPair(spec, lang) {
   if (!spec?.wild || !(spec.team?.length > 1)) return null;

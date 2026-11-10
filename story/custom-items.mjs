@@ -2,8 +2,9 @@ import { toID } from '../engine/mon.mjs';
 
 export const CUSTOM_PREFIX = 'custom:';
 
-// Picture of a custom item written without an emoji
 export const DEFAULT_EMOJI = '📦';
+
+export const CUSTOM_TAGS = Object.freeze(['taunt', 'distract', 'cheer', 'food']);
 
 export const isCustomItem = id => typeof id === 'string' && id.startsWith(CUSTOM_PREFIX);
 
@@ -17,8 +18,14 @@ export const itemId = id => (isCustomItem(id) ? id : toID(id));
 export function customInfo(holder, id) {
   if (!isCustomItem(id)) return null;
   const info = holder?.customItems?.[id];
-  return info ? { name: info.name, emoji: info.emoji } : null;
+  if (!info) return null;
+  const tags = tidyTags(info.tags);
+  return { name: info.name, emoji: info.emoji, ...(tags.length ? { tags } : {}) };
 }
+
+export const hasTag = (holder, id, tag) => !!customInfo(holder, id)?.tags?.includes(tag);
+
+const tidyTags = tags => CUSTOM_TAGS.filter(tag => [].concat(tags ?? []).includes(tag));
 
 export function customText(holder, id) {
   const info = customInfo(holder, id);
@@ -35,9 +42,15 @@ export function splitEmoji(text) {
   return m ? { emoji: m[1], rest: s.slice(m[0].length).trim() } : { emoji: '', rest: s.trim() };
 }
 
-export function addCustomItem(state, id, { name, emoji }) {
-  if (!isCustomItem(id) || state.customItems?.[id]) return;
-  state.customItems = { ...state.customItems, [id]: { name: String(name).trim(), emoji: emoji || DEFAULT_EMOJI } };
+export function addCustomItem(state, id, { name, emoji, tags }) {
+  if (!isCustomItem(id)) return;
+  const old = state.customItems?.[id];
+  const entry = old ? { ...old } : { name: String(name).trim(), emoji: emoji || DEFAULT_EMOJI };
+  if (tags !== undefined) {
+    const tidy = tidyTags(tags);
+    if (tidy.length) entry.tags = tidy; else delete entry.tags;
+  }
+  state.customItems = { ...state.customItems, [id]: entry };
 }
 
 export function tidyCustomItems(state) {

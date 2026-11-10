@@ -11,9 +11,11 @@ const steps = [
   "tools/build-exp.mjs",
   "tools/build-names.mjs",
   "tools/build-pokerogue-boxes.mjs",
+  "tools/build-pinned-assets.mjs",
   "tools/extract-director-text.mjs",
   "tools/build-pokeapi-sprites.mjs",
   "tools/build-catch-rates.mjs",
+  "tools/build-breeding.mjs",
   "ai/build-pokerogue-moves.mjs",
   "tools/extract-effects-text.mjs",
   "tools/build-bag-data.mjs",
@@ -23,6 +25,7 @@ const steps = [
   "tools/build-story-names.mjs",
   "tools/build-items-outside.mjs",
   "tools/build-named-trainers.mjs",
+  "tools/build-leader-names.mjs",
   "tools/build-font.mjs",
   "plugin/build-battle.mjs"
 ];

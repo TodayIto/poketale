@@ -10,4 +10,6 @@ export const BOX_SIZE = 30;
 
 export const BOX_NAME_MAX = 16;
 
+export const NICKNAME_MAX = 20;
+
 export const PLAYER_NAME = 'Player';

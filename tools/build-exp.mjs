@@ -32,7 +32,6 @@ function buildExpTable() {
 			species[num] = [Number(baseExp), PR_GROWTH.indexOf(growth)];
 		}
 	}
-
 	// Must run from 1 with no gaps (a gap = a species definition that was not read)
 	const max = Math.max(...Object.keys(species).map(Number));
 	const list = Array.from({ length: max + 1 }, (_, i) => species[i] || null);
@@ -68,7 +67,6 @@ function buildEffortTable() {
 		const num = Number(p.species_id), row = stats.get(p.id), sd = showdown.get(num);
 		if (!row || row.effort.filter(n => n !== undefined).length !== 6) throw new Error(`${p.identifier}: 능력치 여섯 줄이 없습니다`);
 		if (!sd) throw new Error(`${p.identifier} (#${num}): Showdown 에 같은 번호 종이 없습니다`);
-
 		// Some base form identifiers carry the form name (deoxys-normal etc.), so the name is matched by prefix
 		if (!toID(p.identifier).startsWith(sd.id) && !toID(p.identifier).startsWith(toID(sd.baseSpecies))) throw new Error(`#${num}: 이름이 다릅니다 (PokeAPI ${p.identifier} / Showdown ${sd.id})`);
 		if (!sameBase(row, sd)) skipped.baseStats.push(`${sd.id}`);
@@ -88,12 +86,28 @@ function buildEffortTable() {
 	return { effortStats: EFFORT_STATS, effort, effortForms: forms, skipped };
 }
 
+const OLD_BASE = 70, GEN8_BASE = 50, KEPT_OLD_BASE = new Set([532, 618]);
+
+function buildFriendshipTable(count) {
+	const friendship = Array.from({ length: count }, () => null);
+	for (const r of csv('pokemon_species.csv')) {
+		const num = Number(r.id), value = Number(r.base_happiness);
+		if (num >= count) continue;
+		if (r.base_happiness === '' || !Number.isInteger(value) || value < 0 || value > 255) throw new Error(`pokemon_species ${r.identifier}: 기초 친밀도 ${r.base_happiness}`);
+		if (KEPT_OLD_BASE.has(num) && value !== OLD_BASE) throw new Error(`#${num}: PokeAPI 기초 친밀도가 ${value} 입니다 - KEPT_OLD_BASE 를 다시 보세요`);
+		friendship[num] = value === OLD_BASE && !KEPT_OLD_BASE.has(num) ? GEN8_BASE : value;
+	}
+	for (let n = 1; n < count; n++) if (friendship[n] === null) throw new Error(`#${n}: 기초 친밀도가 비었습니다`);
+	return { friendship };
+}
+
 const { skipped, ...effortTable } = buildEffortTable();
-const table = { ...buildExpTable(), ...effortTable };
+const expTable = buildExpTable();
+const table = { ...expTable, ...effortTable, ...buildFriendshipTable(expTable.species.length) };
 
 const json = JSON.stringify(table) + '\n';
 const out = new URL('../data/', import.meta.url);
 mkdirSync(out, { recursive: true });
 writeFileSync(new URL('exp.json', out), json);
-console.log(`data/exp.json: ${table.species.filter(Boolean).length}종, 노력치 ${table.effort.filter(Boolean).length}종 + 다른 폼 ${Object.keys(table.effortForms).length}개, ${Buffer.byteLength(json)} bytes`,
+console.log(`data/exp.json: ${table.species.filter(Boolean).length}종, 기초 친밀도 ${table.friendship.filter(v => v !== null).length}종, 노력치 ${table.effort.filter(Boolean).length}종 + 다른 폼 ${Object.keys(table.effortForms).length}개, ${Buffer.byteLength(json)} bytes`,
 	`(PokeAPI 폼 중 Showdown 짝이 없거나 종족값이 다르거나 값이 빈 것 ${skipped.form}개, 기본 폼 종족값이 Showdown 과 다른 종 ${skipped.baseStats.length}개${skipped.baseStats.length ? `: ${skipped.baseStats.join(', ')}` : ''})`);

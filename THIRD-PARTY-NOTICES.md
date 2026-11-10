@@ -49,7 +49,8 @@ Upstream revisions used for the build:
 - Copyright (c) 2024 Richard Davey, Phaser Studio Inc. (individual source files also name
   Photon Storm Ltd. and other contributors as authors).
 - License: MIT (text in [Appendix A](#a3-phaser)).
-- What is included: a partial build of `phaser/src` (physics, tilemaps, loader, sound and the canvas renderer are left out).
+- What is included: a partial build of `phaser/src` (see `phaserSlim` in `build/plugins.mjs`;
+  physics, tilemaps, loader, sound and the canvas renderer are left out).
 - Phaser source files included in the bundle that carry their own notices:
   - `src/geom/polygon/Earcut.js` — based on Earcut, ISC License, Copyright (c) 2016, Mapbox
     ([Appendix A](#a4-earcut-in-phaser)).
@@ -129,14 +130,47 @@ Move animation data, by upstream `battle-anims/REUSE.toml`:
   **SIL Open Font License 1.1**. Full license text: [`data/fonts/OFL-Galmuri11.txt`](data/fonts/OFL-Galmuri11.txt)
   (identical to upstream `LICENSE.txt`). The subset (`data/fonts/galmuri11.woff2`, made by
   `tools/build-font.mjs`) keeps only the glyphs used and is renamed `PkbPixel`; its name table
-  keeps the copyright and license entries.
+  keeps the copyright and license entries. **Modified glyphs:** the outlines (and advance
+  widths, kept at 12 px) of ♂ U+2642 and ♀ U+2640 are replaced with our own pixel drawings
+  (`view/gender-mark.js` `GENDER_MARK`, drawn in the mainline games' style — ♂ with a
+  diagonal arrow); every other glyph is unchanged. This makes the subset a Modified Version
+  under the OFL: it stays under the SIL Open Font License 1.1, keeps the copyright notice and
+  the license, and is not sold by itself; it does not use the name "Galmuri" (renamed
+  `PkbPixel`, see above).
 - **BattleViewEmerald** — a subset of **Pokémon Emerald Pro** (`fonts/pokemon-emerald-pro.ttf`
   in PokeRogue assets), Copyright crystalwalrein 2013, made with FontStruct, licensed under
   **CC BY-SA 3.0** (http://creativecommons.org/licenses/by-sa/3.0/). The subset
   (`data/fonts/emerald-ko.woff2`, made by `tools/build-font.mjs`) keeps ASCII, all Hangul
   syllables and the other characters used, drops the unused `rtla` layout table, and keeps the
-  glyph outlines, hinting and the full name table. The subset is distributed under the same
-  license (CC BY-SA 3.0) with this attribution.
+  glyph outlines, hinting and the full name table — **except two modified glyphs:** the
+  outlines of ♂ U+2642 and ♀ U+2640 (and ♂'s advance width, 6 → 9 px) are replaced with our
+  own pixel drawings on the font's 16-pixel em (`view/gender-mark.js` `GENDER_MARK_BATTLE`,
+  drawn in the mainline games' style — ♂ with a diagonal arrow). The subset, with these
+  changes, is an adaptation distributed under the same license (CC BY-SA 3.0, ShareAlike)
+  with this attribution and this note of the changes.
+
+### 1.9 PlayNav — MIT
+
+- Source: https://github.com/poooooby/PlayNav (revision `7f1b4dcb8ca1cc85180272c165842374924f1564`)
+- Copyright (c) 2026 poooooby
+- License: MIT (text in [Appendix A](#a8-playnav)); upstream file `LICENSE`.
+- What is included: the petting screen's rules and motions, rewritten in JavaScript —
+  the timing numbers of `data/amie_rules.lua` and the logic of `src/amie/session.lua` and
+  `src/amie/play.lua` (stroking, the hit, the high five, the wake and dozing off; the breathing,
+  hops, flinch and reward motions; feeding in bites, the bites-per-species and non-eater lists of
+  `data/amie_rules.lua` PUFF / NON_EATERS), the Poke Puff catalogue of `src/amie/rules.lua`, and the
+  minigame rules of `src/amie/games/common.lua` (star thresholds, prizes), `berry_picker.lua`,
+  `head_it.lua` with `data/head_it_rules.lua` (plain, crush, purple and giant balls) and `tile_puzzle.lua`, in `story/amie.mjs`,
+  `story/amie-games.mjs`, `view/amie.js` and `view/amie-games.js`. No PlayNav pictures, sounds,
+  layouts or per-species spot tables are included; the screen's pictures are drawn in code
+  (`view/amie-art.js`).
+- Also included: Super Training's Core Training rules, rewritten in JavaScript — the training bag
+  numbers and Effort-o-Meter steps of `data/training_rules.lua` (LIMITS, BAGS, METER, CORE) and the
+  logic of `src/training/rules.lua`, `src/training/session.lua` (punches, a bag bursting, resting and
+  the second wind, the effect and Soothing bags, the blank bag's finds and their odds),
+  `src/training/core_app.lua` and `src/training/bags_app.lua`, in
+  `story/training.mjs` and `view/training.js`. No PlayNav training pictures, sounds or layouts; the
+  bags and the meter are drawn in code.
 
 ---
 
@@ -157,9 +191,10 @@ into `dist/poke-battle.js`, and this project does not relicense them.
   MIT code license; they belong to their respective owners (Nintendo, Creatures Inc.,
   GAME FREAK inc., and the sprite artists credited by Pokémon Showdown).
 - **PokéAPI sprites** — `https://raw.githubusercontent.com/PokeAPI/sprites/1dd55c0436d2a5b6e324c0b780e1b1b416fbfb64/sprites/pokemon/`:
-  Pokémon battle images, used when the animated Pokémon Showdown images are not available. These
-  images are not covered by the PokéAPI data license (section 1.7); they belong to their respective
-  owners (Nintendo, Creatures Inc., GAME FREAK inc.).
+  Pokémon battle images, used when the animated Pokémon Showdown images are not available; and
+  `…/sprites/badges/` at the same revision: the gym badge pictures of the right panel's badge tab.
+  These images are not covered by the PokéAPI data license (section 1.7); they belong to their
+  respective owners (Nintendo, Creatures Inc., GAME FREAK inc.). The Alola trial pictures are the Z-Crystal item icons of the Pokémon Showdown item sheet above.
 
 ---
 
@@ -387,4 +422,30 @@ Redistribution and use in source and binary forms, with or without modification,
 * Neither the name of PokéAPI nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+### A.8 PlayNav
+
+```
+MIT License
+
+Copyright (c) 2026 poooooby
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```

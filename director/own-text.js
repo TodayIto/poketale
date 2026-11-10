@@ -66,9 +66,9 @@ const KO = {
 
   'own.mintNote': '{{itemName}}의 효과를 받고 있다.',
 
-  'own.pocket.heal': '회복', 'own.pocket.status': '상태', 'own.pocket.battle': '배틀', 'own.pocket.ball': '볼',
+  'own.pocket.heal': '회복', 'own.pocket.status': '상태', 'own.pocket.battle': '배틀', 'own.pocket.ball': '볼', 'own.pocket.food': '먹이',
 
-  'own.forfeitQuestion': '정말로 도망칠까요?',
+  'own.forfeitQuestion': '정말로 도망치겠습니까?',
   'own.forfeitNote': '패배로 기록됩니다',
 
   'own.alreadyChosen': '{{pokemonName}}[[는]]\n이미 교체하기로 했다!',
@@ -77,6 +77,14 @@ const KO = {
 
   'own.partnerGo': '{{trainerName}}[[는]] {{pokemonName}}[[를]] 꺼냈다!',
   'own.partnerPokemonWithAffix': '{{trainerName}}의 {{pokemonName}}',
+
+  'own.friendshipEndure': '{{pokemonNameWithAffix}}[[는]] 슬프게 하지 않으려고\n버텼다!',
+  'own.friendshipCure.slp': '{{pokemonNameWithAffix}}[[는]] 걱정시키지 않으려고\n스스로 잠에서 깼다!',
+  'own.friendshipCure.psn': '{{pokemonNameWithAffix}}[[는]] 걱정시키지 않으려고\n스스로 독을 이겨 냈다!',
+  'own.friendshipCure.tox': '{{pokemonNameWithAffix}}[[는]] 걱정시키지 않으려고\n스스로 독을 이겨 냈다!',
+  'own.friendshipCure.brn': '{{pokemonNameWithAffix}}[[는]] 걱정시키지 않으려고\n화상을 견뎌 냈다!',
+  'own.friendshipCure.frz': '{{pokemonNameWithAffix}}[[는]] 걱정시키지 않으려고\n얼음을 녹였다!',
+  'own.friendshipCure.par': '{{pokemonNameWithAffix}}[[는]] 걱정시키지 않으려고\n마비를 풀었다!',
 };
 
 const EN = {
@@ -132,7 +140,8 @@ const EN = {
   'own.sentToBox': '{{pokemonName}} was sent\nto the Box!',
   'own.expShare': 'The rest of your team\ngained Exp. Points!',
   'own.mintNote': 'Under the effect of the {{itemName}}.',
-  'own.pocket.heal': 'HP/PP Restore', 'own.pocket.status': 'Status Restore', 'own.pocket.battle': 'Battle Items', 'own.pocket.ball': 'Pok\u00e9 Balls',
+
+  'own.pocket.heal': 'HP/PP', 'own.pocket.status': 'Status', 'own.pocket.battle': 'Battle', 'own.pocket.ball': 'Pok\u00e9 Balls', 'own.pocket.food': 'Food',
   'own.forfeitQuestion': 'Do you really want to run away?',
   'own.forfeitNote': 'It will count as a loss.',
   'own.alreadyChosen': '{{pokemonName}} is already\ngoing in!',
@@ -140,6 +149,13 @@ const EN = {
   'own.swap': '{{pokemonNameWithAffix}} and {{targetName}}\nswitched places!',
   'own.partnerGo': '{{trainerName}} sent out {{pokemonName}}!',
   'own.partnerPokemonWithAffix': '{{trainerName}}\'s {{pokemonName}}',
+  'own.friendshipEndure': '{{pokemonNameWithAffix}} toughed it out\nso you wouldn\'t feel sad!',
+  'own.friendshipCure.slp': '{{pokemonNameWithAffix}} shook itself awake\nso you wouldn\'t worry!',
+  'own.friendshipCure.psn': '{{pokemonNameWithAffix}} managed to expel\nthe poison so you wouldn\'t worry!',
+  'own.friendshipCure.tox': '{{pokemonNameWithAffix}} managed to expel\nthe poison so you wouldn\'t worry!',
+  'own.friendshipCure.brn': '{{pokemonNameWithAffix}} blew on its burn\nso you wouldn\'t worry!',
+  'own.friendshipCure.frz': '{{pokemonNameWithAffix}} melted the ice\nso you wouldn\'t worry!',
+  'own.friendshipCure.par': '{{pokemonNameWithAffix}} broke through its paralysis\nso you wouldn\'t worry!',
 };
 
 export const OWN = Object.freeze({ ko: KO, en: EN });

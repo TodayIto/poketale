@@ -1,6 +1,5 @@
 import { say } from './screen-text.mjs';
 
-// Kinds of why (screen text fail.why.<kind>)
 export const WHY = Object.freeze(Object.fromEntries([
   'noChat', 'chatGone', 'chatMoved', 'oocMoved', 'blockGone', 'blockBroken', 'unreadable', 'denied', 'noMainScreen', 'writeBlocked', 'replying',
   'storyOn', 'busy', 'inBattle', 'ironMode', 'emptyParty', 'allFainted', 'unresumable', 'notOpened', 'noRecord', 'parkFailed', 'notPicture',
@@ -9,7 +8,7 @@ export const WHY = Object.freeze(Object.fromEntries([
 
 export const WHAT = Object.freeze(Object.fromEntries([
   'open', 'resume', 'retry', 'discard', 'restore', 'send', 'sendOn', 'result', 'storyEnd', 'autosave', 'record', 'buttons',
-  'settings', 'picture', 'pictureRemove', 'compat', 'action', 'screen', 'forge', 'importOpen', 'import', 'importCancel', 'debugAdd', 'debugEdit', 'debugHeal'
+  'settings', 'picture', 'pictureRemove', 'compat', 'action', 'screen', 'forge', 'importOpen', 'import', 'importCancel', 'debugAdd', 'debugEdit', 'debugHeal', 'debugBadges', 'botSetting', 'botGuide'
 ].map(what => [what, what])));
 
 export const failed = why => Object.assign(new Error(WHY[why] ? say('ko', `fail.why.${why}`) : why), { why });

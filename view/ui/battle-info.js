@@ -1,8 +1,9 @@
 // from pokerogue src/ui/battle-info/battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/battle-info/player-battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/battle-info/enemy-battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
-import { addTextObject, STATUS_FRAMES, GENDER_COLORS, genderSymbol } from './text.js';
+import { addTextObject, addGenderMark, STATUS_FRAMES, GENDER_COLORS } from './text.js';
+import { nameShowsGender } from '../gender-mark.js';
 import { tween } from '../lifetime.js';
 import { ExpBar } from './exp-bar.js';
 
@@ -20,14 +21,14 @@ export class BattleInfo {
     scene.fieldUI.add(c);
     this.box = scene.add.sprite(0, 0, mini ? 'pbinfo_player_mini' : player ? 'pbinfo_player' : 'pbinfo_enemy_mini').setOrigin(1, 0.5);
     this.nameText = addTextObject(scene, p.nameX, p.nameY, '', 'info');
-    this.genderText = addTextObject(scene, 0, p.nameY + 2, '', 'info');
     this.status = scene.add.sprite(p.nameX, p.nameY + 11.5, 'statuses', 'paralysis').setOrigin(0).setVisible(false);
     this.levelX = p.levelX;
     this.level = scene.add.container(p.levelX, p.levelY);
     this.hp = scene.add.image(p.hpX, p.hpY, 'overlay_hp', 'high').setOrigin(0);
     const hpLabel = scene.add.image(p.hpX - 1, p.hpY - 3, 'overlay_hp_label').setOrigin(1, 0);
     this.numbers = scene.add.container(-15, 10).setVisible(player && !mini);
-    c.add([this.box, this.nameText, this.genderText, this.status, this.level, this.hp, hpLabel, this.numbers]);
+    this.gender = null;
+    c.add([this.box, this.nameText, this.status, this.level, this.hp, hpLabel, this.numbers]);
     if (player) this.exp = new ExpBar(scene, this);
     if (mini) { this.exp.label.setVisible(false); this.exp.bar.setVisible(false); }
 
@@ -37,9 +38,11 @@ export class BattleInfo {
     this.nameText.setScale(1 / 6).setText(mon.name);
 
     if (this.nameText.displayWidth > 74) this.nameText.setScale((1 / 6) * 74 / this.nameText.displayWidth);
-    this.genderText.setPosition(this.nameText.x + this.nameText.displayWidth + 1, this.nameText.y + 2)
-      .setText(genderSymbol(mon.gender))
-      .setColor((GENDER_COLORS[mon.gender] ?? GENDER_COLORS.F)[0]);
+
+    this.gender?.destroy();
+    this.gender = nameShowsGender(mon.name) ? null
+      : addGenderMark(this.scene, this.nameText.x + this.nameText.displayWidth + 1, this.nameText.y + 2, mon.gender, 'info', { color: GENDER_COLORS[mon.gender]?.[0] });
+    if (this.gender) this.container.add(this.gender);
     this.level.removeAll(true);
     this.level.add(this.scene.add.image(5.5, 0, 'overlay_lv').setOrigin(1, 0.5));
 
@@ -71,7 +74,6 @@ export class BattleInfo {
     if (status) this.status.setFrame(STATUS_FRAMES[status]);
   }
 
-  // Ally Switch: moves to another position's layout (same side, so only the offset changes)
   place({ dx = 0, dy = 0, mini = this.mini } = {}) {
     if (mini !== this.mini) throw new Error('An info box keeps its size when it moves');
     const x = (this.player ? 310 : 140) + dx, y = (this.player ? -72 : -141) + dy;

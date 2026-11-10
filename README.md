@@ -8,7 +8,7 @@ Import [`dist/poke-battle.js`](dist/poke-battle.js) in RisuAI's plugin settings.
 
 After installing this file once, future versions can be installed with RisuAI's plugin update control. Updates are downloaded from this repository's main branch.
 
-Images and sounds are loaded at runtime from PokeRogue assets and PokéAPI sprites on `raw.githubusercontent.com`, and from `play.pokemonshowdown.com`. The plugin has no server of its own.
+Images and sounds are loaded at runtime from PokeRogue assets and PokéAPI Pokémon and badge sprites on `raw.githubusercontent.com`, and from `play.pokemonshowdown.com`. The plugin has no server of its own.
 
 ## Build
 

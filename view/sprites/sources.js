@@ -1,10 +1,10 @@
-// Ordered battle sprite sources and their fallbacks.
 import POKEAPI_SPRITES from '../../data/pokeapi-sprite-map.json' with { type: 'json' };
 import { showdownUrl, showdownSprite, imageSprite } from './showdown.js';
 import { loadPokerogueStill } from './pokerogue.js';
 import { LoadError, missingFile } from '../retry.js';
 
-export const POKEAPI_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/1dd55c0436d2a5b6e324c0b780e1b1b416fbfb64/sprites/pokemon/';
+export const POKEAPI_ROOT = 'https://raw.githubusercontent.com/PokeAPI/sprites/1dd55c0436d2a5b6e324c0b780e1b1b416fbfb64/sprites/';
+export const POKEAPI_BASE = `${POKEAPI_ROOT}pokemon/`;
 
 export function spriteSources(mon, back) {
   const stem = POKEAPI_SPRITES[mon.spriteId];

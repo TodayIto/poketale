@@ -1,0 +1,2106 @@
+{
+  "_source": "Badge and trial catalogue for compatible chat milestones. Badge images use pinned PokeAPI sprites; Alola trials use item icons. Korean place names follow the Korean game text.",
+  "regions": [
+    {
+      "id": "kanto",
+      "name": [
+        "관동",
+        "Kanto"
+      ]
+    },
+    {
+      "id": "johto",
+      "name": [
+        "성도",
+        "Johto"
+      ]
+    },
+    {
+      "id": "hoenn",
+      "name": [
+        "호연",
+        "Hoenn"
+      ]
+    },
+    {
+      "id": "sinnoh",
+      "name": [
+        "신오",
+        "Sinnoh"
+      ]
+    },
+    {
+      "id": "unova",
+      "name": [
+        "하나 (블랙·화이트)",
+        "Unova (Black & White)"
+      ]
+    },
+    {
+      "id": "unova2",
+      "name": [
+        "하나 (블랙2·화이트2)",
+        "Unova (Black 2 & White 2)"
+      ]
+    },
+    {
+      "id": "kalos",
+      "name": [
+        "칼로스",
+        "Kalos"
+      ]
+    },
+    {
+      "id": "alola",
+      "name": [
+        "알로라",
+        "Alola"
+      ]
+    },
+    {
+      "id": "galar",
+      "name": [
+        "가라르",
+        "Galar"
+      ]
+    },
+    {
+      "id": "paldea",
+      "name": [
+        "팔데아",
+        "Paldea"
+      ]
+    }
+  ],
+  "badges": [
+    {
+      "id": "kanto-boulder",
+      "region": "kanto",
+      "slot": 1,
+      "name": [
+        "회색배지",
+        "Boulder Badge"
+      ],
+      "leaders": [
+        [
+          "웅",
+          "Brock"
+        ]
+      ],
+      "place": [
+        "회색시티",
+        "Pewter City"
+      ],
+      "picture": {
+        "pokeapi": 1
+      }
+    },
+    {
+      "id": "kanto-cascade",
+      "region": "kanto",
+      "slot": 2,
+      "name": [
+        "블루배지",
+        "Cascade Badge"
+      ],
+      "leaders": [
+        [
+          "이슬",
+          "Misty"
+        ]
+      ],
+      "place": [
+        "블루시티",
+        "Cerulean City"
+      ],
+      "picture": {
+        "pokeapi": 2
+      }
+    },
+    {
+      "id": "kanto-thunder",
+      "region": "kanto",
+      "slot": 3,
+      "name": [
+        "오렌지배지",
+        "Thunder Badge"
+      ],
+      "leaders": [
+        [
+          "마티스",
+          "Lt. Surge"
+        ]
+      ],
+      "place": [
+        "갈색시티",
+        "Vermilion City"
+      ],
+      "picture": {
+        "pokeapi": 3
+      }
+    },
+    {
+      "id": "kanto-rainbow",
+      "region": "kanto",
+      "slot": 4,
+      "name": [
+        "무지개배지",
+        "Rainbow Badge"
+      ],
+      "leaders": [
+        [
+          "민화",
+          "Erika"
+        ]
+      ],
+      "place": [
+        "무지개시티",
+        "Celadon City"
+      ],
+      "picture": {
+        "pokeapi": 4
+      }
+    },
+    {
+      "id": "kanto-soul",
+      "region": "kanto",
+      "slot": 5,
+      "name": [
+        "핑크배지",
+        "Soul Badge"
+      ],
+      "leaders": [
+        [
+          "독수",
+          "Koga"
+        ],
+        [
+          "도희",
+          "Janine"
+        ]
+      ],
+      "place": [
+        "연분홍시티",
+        "Fuchsia City"
+      ],
+      "picture": {
+        "pokeapi": 5
+      }
+    },
+    {
+      "id": "kanto-marsh",
+      "region": "kanto",
+      "slot": 6,
+      "name": [
+        "골드배지",
+        "Marsh Badge"
+      ],
+      "leaders": [
+        [
+          "초련",
+          "Sabrina"
+        ]
+      ],
+      "place": [
+        "노랑시티",
+        "Saffron City"
+      ],
+      "picture": {
+        "pokeapi": 6
+      }
+    },
+    {
+      "id": "kanto-volcano",
+      "region": "kanto",
+      "slot": 7,
+      "name": [
+        "크림슨배지",
+        "Volcano Badge"
+      ],
+      "leaders": [
+        [
+          "강연",
+          "Blaine"
+        ]
+      ],
+      "place": [
+        "홍련마을",
+        "Cinnabar Island"
+      ],
+      "picture": {
+        "pokeapi": 7
+      }
+    },
+    {
+      "id": "kanto-earth",
+      "region": "kanto",
+      "slot": 8,
+      "name": [
+        "그린배지",
+        "Earth Badge"
+      ],
+      "leaders": [
+        [
+          "비주기",
+          "Giovanni"
+        ],
+        [
+          "그린",
+          "Blue"
+        ]
+      ],
+      "place": [
+        "상록시티",
+        "Viridian City"
+      ],
+      "picture": {
+        "pokeapi": 8
+      }
+    },
+    {
+      "id": "kanto-champion",
+      "region": "kanto",
+      "kind": "champion",
+      "slot": 9,
+      "name": [
+        "관동 챔피언",
+        "Kanto Champion"
+      ]
+    },
+    {
+      "id": "johto-zephyr",
+      "region": "johto",
+      "slot": 10,
+      "name": [
+        "윙배지",
+        "Zephyr Badge"
+      ],
+      "leaders": [
+        [
+          "비상",
+          "Falkner"
+        ]
+      ],
+      "place": [
+        "도라지시티",
+        "Violet City"
+      ],
+      "picture": {
+        "pokeapi": 9
+      }
+    },
+    {
+      "id": "johto-hive",
+      "region": "johto",
+      "slot": 11,
+      "name": [
+        "인섹트배지",
+        "Hive Badge"
+      ],
+      "leaders": [
+        [
+          "호일",
+          "Bugsy"
+        ]
+      ],
+      "place": [
+        "고동마을",
+        "Azalea Town"
+      ],
+      "picture": {
+        "pokeapi": 10
+      }
+    },
+    {
+      "id": "johto-plain",
+      "region": "johto",
+      "slot": 12,
+      "name": [
+        "레귤러배지",
+        "Plain Badge"
+      ],
+      "leaders": [
+        [
+          "꼭두",
+          "Whitney"
+        ]
+      ],
+      "place": [
+        "금빛시티",
+        "Goldenrod City"
+      ],
+      "picture": {
+        "pokeapi": 11
+      }
+    },
+    {
+      "id": "johto-fog",
+      "region": "johto",
+      "slot": 13,
+      "name": [
+        "팬텀배지",
+        "Fog Badge"
+      ],
+      "leaders": [
+        [
+          "유빈",
+          "Morty"
+        ]
+      ],
+      "place": [
+        "인주시티",
+        "Ecruteak City"
+      ],
+      "picture": {
+        "pokeapi": 12
+      }
+    },
+    {
+      "id": "johto-storm",
+      "region": "johto",
+      "slot": 14,
+      "name": [
+        "쇼크배지",
+        "Storm Badge"
+      ],
+      "leaders": [
+        [
+          "사도",
+          "Chuck"
+        ]
+      ],
+      "place": [
+        "진청시티",
+        "Cianwood City"
+      ],
+      "picture": {
+        "pokeapi": 13
+      }
+    },
+    {
+      "id": "johto-mineral",
+      "region": "johto",
+      "slot": 15,
+      "name": [
+        "스틸배지",
+        "Mineral Badge"
+      ],
+      "leaders": [
+        [
+          "규리",
+          "Jasmine"
+        ]
+      ],
+      "place": [
+        "담청시티",
+        "Olivine City"
+      ],
+      "picture": {
+        "pokeapi": 14
+      }
+    },
+    {
+      "id": "johto-glacier",
+      "region": "johto",
+      "slot": 16,
+      "name": [
+        "아이스배지",
+        "Glacier Badge"
+      ],
+      "leaders": [
+        [
+          "류옹",
+          "Pryce"
+        ]
+      ],
+      "place": [
+        "황토마을",
+        "Mahogany Town"
+      ],
+      "picture": {
+        "pokeapi": 15
+      }
+    },
+    {
+      "id": "johto-rising",
+      "region": "johto",
+      "slot": 17,
+      "name": [
+        "라이징배지",
+        "Rising Badge"
+      ],
+      "leaders": [
+        [
+          "이향",
+          "Clair"
+        ]
+      ],
+      "place": [
+        "검은먹시티",
+        "Blackthorn City"
+      ],
+      "picture": {
+        "pokeapi": 16
+      }
+    },
+    {
+      "id": "johto-champion",
+      "region": "johto",
+      "kind": "champion",
+      "slot": 18,
+      "name": [
+        "성도 챔피언",
+        "Johto Champion"
+      ]
+    },
+    {
+      "id": "hoenn-stone",
+      "region": "hoenn",
+      "slot": 19,
+      "name": [
+        "스톤배지",
+        "Stone Badge"
+      ],
+      "leaders": [
+        [
+          "원규",
+          "Roxanne"
+        ]
+      ],
+      "place": [
+        "금탄도시",
+        "Rustboro City"
+      ],
+      "picture": {
+        "pokeapi": 17
+      }
+    },
+    {
+      "id": "hoenn-knuckle",
+      "region": "hoenn",
+      "slot": 20,
+      "name": [
+        "너클배지",
+        "Knuckle Badge"
+      ],
+      "leaders": [
+        [
+          "철구",
+          "Brawly"
+        ]
+      ],
+      "place": [
+        "무로마을",
+        "Dewford Town"
+      ],
+      "picture": {
+        "pokeapi": 18
+      }
+    },
+    {
+      "id": "hoenn-dynamo",
+      "region": "hoenn",
+      "slot": 21,
+      "name": [
+        "다이나모배지",
+        "Dynamo Badge"
+      ],
+      "leaders": [
+        [
+          "암페어",
+          "Wattson"
+        ]
+      ],
+      "place": [
+        "보라시티",
+        "Mauville City"
+      ],
+      "picture": {
+        "pokeapi": 19
+      }
+    },
+    {
+      "id": "hoenn-heat",
+      "region": "hoenn",
+      "slot": 22,
+      "name": [
+        "히트배지",
+        "Heat Badge"
+      ],
+      "leaders": [
+        [
+          "민지",
+          "Flannery"
+        ]
+      ],
+      "place": [
+        "용암마을",
+        "Lavaridge Town"
+      ],
+      "picture": {
+        "pokeapi": 20
+      }
+    },
+    {
+      "id": "hoenn-balance",
+      "region": "hoenn",
+      "slot": 23,
+      "name": [
+        "밸런스배지",
+        "Balance Badge"
+      ],
+      "leaders": [
+        [
+          "종길",
+          "Norman"
+        ]
+      ],
+      "place": [
+        "등화도시",
+        "Petalburg City"
+      ],
+      "picture": {
+        "pokeapi": 21
+      }
+    },
+    {
+      "id": "hoenn-feather",
+      "region": "hoenn",
+      "slot": 24,
+      "name": [
+        "페더배지",
+        "Feather Badge"
+      ],
+      "leaders": [
+        [
+          "은송",
+          "Winona"
+        ]
+      ],
+      "place": [
+        "검방울시티",
+        "Fortree City"
+      ],
+      "picture": {
+        "pokeapi": 22
+      }
+    },
+    {
+      "id": "hoenn-mind",
+      "region": "hoenn",
+      "slot": 25,
+      "name": [
+        "마인드배지",
+        "Mind Badge"
+      ],
+      "leaders": [
+        [
+          "풍",
+          "Tate"
+        ],
+        [
+          "란",
+          "Liza"
+        ]
+      ],
+      "place": [
+        "이끼시티",
+        "Mossdeep City"
+      ],
+      "picture": {
+        "pokeapi": 23
+      }
+    },
+    {
+      "id": "hoenn-rain",
+      "region": "hoenn",
+      "slot": 26,
+      "name": [
+        "레인배지",
+        "Rain Badge"
+      ],
+      "leaders": [
+        [
+          "아단",
+          "Juan"
+        ],
+        [
+          "윤진",
+          "Wallace"
+        ]
+      ],
+      "place": [
+        "루네시티",
+        "Sootopolis City"
+      ],
+      "picture": {
+        "pokeapi": 24
+      }
+    },
+    {
+      "id": "hoenn-champion",
+      "region": "hoenn",
+      "kind": "champion",
+      "slot": 27,
+      "name": [
+        "호연 챔피언",
+        "Hoenn Champion"
+      ]
+    },
+    {
+      "id": "sinnoh-coal",
+      "region": "sinnoh",
+      "slot": 28,
+      "name": [
+        "콜배지",
+        "Coal Badge"
+      ],
+      "leaders": [
+        [
+          "강석",
+          "Roark"
+        ]
+      ],
+      "place": [
+        "무쇠시티",
+        "Oreburgh City"
+      ],
+      "picture": {
+        "pokeapi": 25
+      }
+    },
+    {
+      "id": "sinnoh-forest",
+      "region": "sinnoh",
+      "slot": 29,
+      "name": [
+        "포리스트배지",
+        "Forest Badge"
+      ],
+      "leaders": [
+        [
+          "유채",
+          "Gardenia"
+        ]
+      ],
+      "place": [
+        "영원시티",
+        "Eterna City"
+      ],
+      "picture": {
+        "pokeapi": 26
+      }
+    },
+    {
+      "id": "sinnoh-cobble",
+      "region": "sinnoh",
+      "slot": 30,
+      "name": [
+        "코블배지",
+        "Cobble Badge"
+      ],
+      "leaders": [
+        [
+          "자두",
+          "Maylene"
+        ]
+      ],
+      "place": [
+        "장막시티",
+        "Veilstone City"
+      ],
+      "picture": {
+        "pokeapi": 27
+      }
+    },
+    {
+      "id": "sinnoh-fen",
+      "region": "sinnoh",
+      "slot": 31,
+      "name": [
+        "펜배지",
+        "Fen Badge"
+      ],
+      "leaders": [
+        [
+          "맥실러",
+          "Crasher Wake"
+        ]
+      ],
+      "place": [
+        "들판시티",
+        "Pastoria City"
+      ],
+      "picture": {
+        "pokeapi": 28
+      }
+    },
+    {
+      "id": "sinnoh-relic",
+      "region": "sinnoh",
+      "slot": 32,
+      "name": [
+        "레릭배지",
+        "Relic Badge"
+      ],
+      "leaders": [
+        [
+          "멜리사",
+          "Fantina"
+        ]
+      ],
+      "place": [
+        "연고시티",
+        "Hearthome City"
+      ],
+      "picture": {
+        "pokeapi": 29
+      }
+    },
+    {
+      "id": "sinnoh-mine",
+      "region": "sinnoh",
+      "slot": 33,
+      "name": [
+        "마인배지",
+        "Mine Badge"
+      ],
+      "leaders": [
+        [
+          "동관",
+          "Byron"
+        ]
+      ],
+      "place": [
+        "운하시티",
+        "Canalave City"
+      ],
+      "picture": {
+        "pokeapi": 30
+      }
+    },
+    {
+      "id": "sinnoh-icicle",
+      "region": "sinnoh",
+      "slot": 34,
+      "name": [
+        "글레이셔배지",
+        "Icicle Badge"
+      ],
+      "leaders": [
+        [
+          "무청",
+          "Candice"
+        ]
+      ],
+      "place": [
+        "선단시티",
+        "Snowpoint City"
+      ],
+      "picture": {
+        "pokeapi": 31
+      }
+    },
+    {
+      "id": "sinnoh-beacon",
+      "region": "sinnoh",
+      "slot": 35,
+      "name": [
+        "비콘배지",
+        "Beacon Badge"
+      ],
+      "leaders": [
+        [
+          "전진",
+          "Volkner"
+        ]
+      ],
+      "place": [
+        "물가시티",
+        "Sunyshore City"
+      ],
+      "picture": {
+        "pokeapi": 32
+      }
+    },
+    {
+      "id": "sinnoh-champion",
+      "region": "sinnoh",
+      "kind": "champion",
+      "slot": 36,
+      "name": [
+        "신오 챔피언",
+        "Sinnoh Champion"
+      ]
+    },
+    {
+      "id": "unova-trio",
+      "region": "unova",
+      "slot": 37,
+      "name": [
+        "트라이배지",
+        "Trio Badge"
+      ],
+      "leaders": [
+        [
+          "덴트",
+          "Cilan"
+        ],
+        [
+          "팟",
+          "Chili"
+        ],
+        [
+          "콘",
+          "Cress"
+        ]
+      ],
+      "place": [
+        "성신시티",
+        "Striaton City"
+      ],
+      "picture": {
+        "pokeapi": 33
+      }
+    },
+    {
+      "id": "unova-basic",
+      "region": "unova",
+      "slot": 38,
+      "name": [
+        "베이식배지",
+        "Basic Badge"
+      ],
+      "leaders": [
+        [
+          "알로에",
+          "Lenora"
+        ]
+      ],
+      "place": [
+        "칠보시티",
+        "Nacrene City"
+      ],
+      "picture": {
+        "pokeapi": 34
+      }
+    },
+    {
+      "id": "unova-insect",
+      "region": "unova",
+      "slot": 40,
+      "name": [
+        "비틀배지",
+        "Insect Badge"
+      ],
+      "leaders": [
+        [
+          "아티",
+          "Burgh"
+        ]
+      ],
+      "place": [
+        "구름시티",
+        "Castelia City"
+      ],
+      "picture": {
+        "pokeapi": 36
+      }
+    },
+    {
+      "id": "unova-bolt",
+      "region": "unova",
+      "slot": 41,
+      "name": [
+        "볼트배지",
+        "Bolt Badge"
+      ],
+      "leaders": [
+        [
+          "카밀레",
+          "Elesa"
+        ]
+      ],
+      "place": [
+        "뇌문시티",
+        "Nimbasa City"
+      ],
+      "picture": {
+        "pokeapi": 37
+      }
+    },
+    {
+      "id": "unova-quake",
+      "region": "unova",
+      "slot": 42,
+      "name": [
+        "퀘이크배지",
+        "Quake Badge"
+      ],
+      "leaders": [
+        [
+          "야콘",
+          "Clay"
+        ]
+      ],
+      "place": [
+        "물풍경시티",
+        "Driftveil City"
+      ],
+      "picture": {
+        "pokeapi": 38
+      }
+    },
+    {
+      "id": "unova-jet",
+      "region": "unova",
+      "slot": 43,
+      "name": [
+        "제트배지",
+        "Jet Badge"
+      ],
+      "leaders": [
+        [
+          "풍란",
+          "Skyla"
+        ]
+      ],
+      "place": [
+        "궐수시티",
+        "Mistralton City"
+      ],
+      "picture": {
+        "pokeapi": 39
+      }
+    },
+    {
+      "id": "unova-freeze",
+      "region": "unova",
+      "slot": 44,
+      "name": [
+        "아이시클배지",
+        "Freeze Badge"
+      ],
+      "leaders": [
+        [
+          "담죽",
+          "Brycen"
+        ]
+      ],
+      "place": [
+        "설화시티",
+        "Icirrus City"
+      ],
+      "picture": {
+        "pokeapi": 40
+      }
+    },
+    {
+      "id": "unova-legend",
+      "region": "unova",
+      "slot": 46,
+      "name": [
+        "레전드배지",
+        "Legend Badge"
+      ],
+      "leaders": [
+        [
+          "사간",
+          "Drayden"
+        ],
+        [
+          "아이리스",
+          "Iris"
+        ]
+      ],
+      "place": [
+        "쌍용시티",
+        "Opelucid City"
+      ],
+      "picture": {
+        "pokeapi": 41
+      }
+    },
+    {
+      "id": "unova-champion",
+      "region": "unova",
+      "kind": "champion",
+      "slot": 47,
+      "name": [
+        "하나 챔피언",
+        "Unova Champion"
+      ]
+    },
+    {
+      "id": "unova2-basic",
+      "region": "unova2",
+      "slot": 38,
+      "name": [
+        "베이식배지",
+        "Basic Badge"
+      ],
+      "leaders": [
+        [
+          "체렌",
+          "Cheren"
+        ]
+      ],
+      "place": [
+        "부채시티",
+        "Aspertia City"
+      ],
+      "picture": {
+        "pokeapi": 34
+      }
+    },
+    {
+      "id": "unova2-toxic",
+      "region": "unova2",
+      "slot": 39,
+      "name": [
+        "톡식배지",
+        "Toxic Badge"
+      ],
+      "leaders": [
+        [
+          "보미카",
+          "Roxie"
+        ]
+      ],
+      "place": [
+        "모란만시티",
+        "Virbank City"
+      ],
+      "picture": {
+        "pokeapi": 35
+      }
+    },
+    {
+      "id": "unova2-insect",
+      "region": "unova2",
+      "slot": 40,
+      "name": [
+        "비틀배지",
+        "Insect Badge"
+      ],
+      "leaders": [
+        [
+          "아티",
+          "Burgh"
+        ]
+      ],
+      "place": [
+        "구름시티",
+        "Castelia City"
+      ],
+      "picture": {
+        "pokeapi": 36
+      }
+    },
+    {
+      "id": "unova2-bolt",
+      "region": "unova2",
+      "slot": 41,
+      "name": [
+        "볼트배지",
+        "Bolt Badge"
+      ],
+      "leaders": [
+        [
+          "카밀레",
+          "Elesa"
+        ]
+      ],
+      "place": [
+        "뇌문시티",
+        "Nimbasa City"
+      ],
+      "picture": {
+        "pokeapi": 37
+      }
+    },
+    {
+      "id": "unova2-quake",
+      "region": "unova2",
+      "slot": 42,
+      "name": [
+        "퀘이크배지",
+        "Quake Badge"
+      ],
+      "leaders": [
+        [
+          "야콘",
+          "Clay"
+        ]
+      ],
+      "place": [
+        "물풍경시티",
+        "Driftveil City"
+      ],
+      "picture": {
+        "pokeapi": 38
+      }
+    },
+    {
+      "id": "unova2-jet",
+      "region": "unova2",
+      "slot": 43,
+      "name": [
+        "제트배지",
+        "Jet Badge"
+      ],
+      "leaders": [
+        [
+          "풍란",
+          "Skyla"
+        ]
+      ],
+      "place": [
+        "궐수시티",
+        "Mistralton City"
+      ],
+      "picture": {
+        "pokeapi": 39
+      }
+    },
+    {
+      "id": "unova2-legend",
+      "region": "unova2",
+      "slot": 46,
+      "name": [
+        "레전드배지",
+        "Legend Badge"
+      ],
+      "leaders": [
+        [
+          "사간",
+          "Drayden"
+        ]
+      ],
+      "place": [
+        "쌍용시티",
+        "Opelucid City"
+      ],
+      "picture": {
+        "pokeapi": 41
+      }
+    },
+    {
+      "id": "unova2-wave",
+      "region": "unova2",
+      "slot": 45,
+      "name": [
+        "웨이브배지",
+        "Wave Badge"
+      ],
+      "leaders": [
+        [
+          "시즈",
+          "Marlon"
+        ]
+      ],
+      "place": [
+        "기하시티",
+        "Humilau City"
+      ],
+      "picture": {
+        "pokeapi": 42
+      }
+    },
+    {
+      "id": "unova2-champion",
+      "region": "unova2",
+      "kind": "champion",
+      "slot": 47,
+      "name": [
+        "하나 챔피언",
+        "Unova Champion"
+      ]
+    },
+    {
+      "id": "kalos-bug",
+      "region": "kalos",
+      "slot": 48,
+      "name": [
+        "버그배지",
+        "Bug Badge"
+      ],
+      "leaders": [
+        [
+          "비올라",
+          "Viola"
+        ]
+      ],
+      "place": [
+        "백단시티",
+        "Santalune City"
+      ],
+      "picture": {
+        "pokeapi": 43
+      }
+    },
+    {
+      "id": "kalos-cliff",
+      "region": "kalos",
+      "slot": 49,
+      "name": [
+        "월배지",
+        "Cliff Badge"
+      ],
+      "leaders": [
+        [
+          "자크로",
+          "Grant"
+        ]
+      ],
+      "place": [
+        "삼채시티",
+        "Cyllage City"
+      ],
+      "picture": {
+        "pokeapi": 44
+      }
+    },
+    {
+      "id": "kalos-rumble",
+      "region": "kalos",
+      "slot": 50,
+      "name": [
+        "파이트배지",
+        "Rumble Badge"
+      ],
+      "leaders": [
+        [
+          "코르니",
+          "Korrina"
+        ]
+      ],
+      "place": [
+        "사라시티",
+        "Shalour City"
+      ],
+      "picture": {
+        "pokeapi": 45
+      }
+    },
+    {
+      "id": "kalos-plant",
+      "region": "kalos",
+      "slot": 51,
+      "name": [
+        "플랜트배지",
+        "Plant Badge"
+      ],
+      "leaders": [
+        [
+          "후쿠지",
+          "Ramos"
+        ]
+      ],
+      "place": [
+        "비익시티",
+        "Coumarine City"
+      ],
+      "picture": {
+        "pokeapi": 46
+      }
+    },
+    {
+      "id": "kalos-voltage",
+      "region": "kalos",
+      "slot": 52,
+      "name": [
+        "볼티지배지",
+        "Voltage Badge"
+      ],
+      "leaders": [
+        [
+          "시트론",
+          "Clemont"
+        ]
+      ],
+      "place": [
+        "미르시티",
+        "Lumiose City"
+      ],
+      "picture": {
+        "pokeapi": 47
+      }
+    },
+    {
+      "id": "kalos-fairy",
+      "region": "kalos",
+      "slot": 53,
+      "name": [
+        "페어리배지",
+        "Fairy Badge"
+      ],
+      "leaders": [
+        [
+          "마슈",
+          "Valerie"
+        ]
+      ],
+      "place": [
+        "후늬시티",
+        "Laverre City"
+      ],
+      "picture": {
+        "pokeapi": 48
+      }
+    },
+    {
+      "id": "kalos-psychic",
+      "region": "kalos",
+      "slot": 54,
+      "name": [
+        "사이킥배지",
+        "Psychic Badge"
+      ],
+      "leaders": [
+        [
+          "고지카",
+          "Olympia"
+        ]
+      ],
+      "place": [
+        "향전시티",
+        "Anistar City"
+      ],
+      "picture": {
+        "pokeapi": 49
+      }
+    },
+    {
+      "id": "kalos-iceberg",
+      "region": "kalos",
+      "slot": 55,
+      "name": [
+        "아이스버그배지",
+        "Iceberg Badge"
+      ],
+      "leaders": [
+        [
+          "우르프",
+          "Wulfric"
+        ]
+      ],
+      "place": [
+        "이설시티",
+        "Snowbelle City"
+      ],
+      "picture": {
+        "pokeapi": 50
+      }
+    },
+    {
+      "id": "kalos-champion",
+      "region": "kalos",
+      "kind": "champion",
+      "slot": 56,
+      "name": [
+        "칼로스 챔피언",
+        "Kalos Champion"
+      ]
+    },
+    {
+      "id": "alola-normal",
+      "region": "alola",
+      "kind": "trial",
+      "slot": 57,
+      "name": [
+        "일리마의 시련",
+        "Ilima's Trial"
+      ],
+      "leaders": [
+        [
+          "일리마",
+          "Ilima"
+        ]
+      ],
+      "place": [
+        "우거진 동굴",
+        "Verdant Cavern"
+      ],
+      "picture": {
+        "item": "normaliumz"
+      }
+    },
+    {
+      "id": "alola-water",
+      "region": "alola",
+      "kind": "trial",
+      "slot": 58,
+      "name": [
+        "수련의 시련",
+        "Lana's Trial"
+      ],
+      "leaders": [
+        [
+          "수련",
+          "Lana"
+        ]
+      ],
+      "place": [
+        "잔잔한물가언덕",
+        "Brooklet Hill"
+      ],
+      "picture": {
+        "item": "wateriumz"
+      }
+    },
+    {
+      "id": "alola-fire",
+      "region": "alola",
+      "kind": "trial",
+      "slot": 59,
+      "name": [
+        "키아웨의 시련",
+        "Kiawe's Trial"
+      ],
+      "leaders": [
+        [
+          "키아웨",
+          "Kiawe"
+        ]
+      ],
+      "place": [
+        "벨라화산공원",
+        "Wela Volcano Park"
+      ],
+      "picture": {
+        "item": "firiumz"
+      }
+    },
+    {
+      "id": "alola-grass",
+      "region": "alola",
+      "kind": "trial",
+      "slot": 60,
+      "name": [
+        "마오의 시련",
+        "Mallow's Trial"
+      ],
+      "leaders": [
+        [
+          "마오",
+          "Mallow"
+        ]
+      ],
+      "place": [
+        "셰이드정글",
+        "Lush Jungle"
+      ],
+      "picture": {
+        "item": "grassiumz"
+      }
+    },
+    {
+      "id": "alola-electric",
+      "region": "alola",
+      "kind": "trial",
+      "slot": 61,
+      "name": [
+        "마마네의 시련",
+        "Sophocles's Trial"
+      ],
+      "leaders": [
+        [
+          "마마네",
+          "Sophocles"
+        ]
+      ],
+      "place": [
+        "호쿠라니천문대",
+        "Hokulani Observatory"
+      ],
+      "picture": {
+        "item": "electriumz"
+      }
+    },
+    {
+      "id": "alola-ghost",
+      "region": "alola",
+      "kind": "trial",
+      "slot": 62,
+      "name": [
+        "아세로라의 시련",
+        "Acerola's Trial"
+      ],
+      "leaders": [
+        [
+          "아세로라",
+          "Acerola"
+        ]
+      ],
+      "place": [
+        "슈퍼・메가싸네",
+        "Thrifty Megamart"
+      ],
+      "picture": {
+        "item": "ghostiumz"
+      }
+    },
+    {
+      "id": "alola-dragon",
+      "region": "alola",
+      "kind": "trial",
+      "slot": 63,
+      "name": [
+        "포니대협곡의 시련",
+        "Vast Poni Canyon Trial"
+      ],
+      "leaders": [],
+      "place": [
+        "포니대협곡",
+        "Vast Poni Canyon"
+      ],
+      "picture": {
+        "item": "dragoniumz"
+      }
+    },
+    {
+      "id": "alola-fairy",
+      "region": "alola",
+      "kind": "trial",
+      "slot": 64,
+      "name": [
+        "말리화의 시련",
+        "Mina's Trial"
+      ],
+      "leaders": [
+        [
+          "말리화",
+          "Mina"
+        ]
+      ],
+      "place": [
+        "바다민족의 마을",
+        "Seafolk Village"
+      ],
+      "picture": {
+        "item": "fairiumz"
+      }
+    },
+    {
+      "id": "alola-grand-melemele",
+      "region": "alola",
+      "kind": "grand",
+      "slot": 65,
+      "name": [
+        "멜레멜레섬 큰 시련",
+        "Melemele Grand Trial"
+      ],
+      "leaders": [
+        [
+          "할라",
+          "Hala"
+        ]
+      ],
+      "place": [
+        "멜레멜레섬",
+        "Melemele Island"
+      ],
+      "picture": {
+        "item": "fightiniumz"
+      }
+    },
+    {
+      "id": "alola-grand-akala",
+      "region": "alola",
+      "kind": "grand",
+      "queen": true,
+      "slot": 66,
+      "name": [
+        "아칼라섬 큰 시련",
+        "Akala Grand Trial"
+      ],
+      "leaders": [
+        [
+          "라이치",
+          "Olivia"
+        ]
+      ],
+      "place": [
+        "아칼라섬",
+        "Akala Island"
+      ],
+      "picture": {
+        "item": "rockiumz"
+      }
+    },
+    {
+      "id": "alola-grand-ulaula",
+      "region": "alola",
+      "kind": "grand",
+      "slot": 67,
+      "name": [
+        "울라울라섬 큰 시련",
+        "Ula'ula Grand Trial"
+      ],
+      "leaders": [
+        [
+          "나리",
+          "Nanu"
+        ]
+      ],
+      "place": [
+        "울라울라섬",
+        "Ula'ula Island"
+      ],
+      "picture": {
+        "item": "darkiniumz"
+      }
+    },
+    {
+      "id": "alola-grand-poni",
+      "region": "alola",
+      "kind": "grand",
+      "queen": true,
+      "slot": 68,
+      "name": [
+        "포니섬 큰 시련",
+        "Poni Grand Trial"
+      ],
+      "leaders": [
+        [
+          "하플루",
+          "Hapu"
+        ]
+      ],
+      "place": [
+        "포니섬",
+        "Poni Island"
+      ],
+      "picture": {
+        "item": "groundiumz"
+      }
+    },
+    {
+      "id": "alola-champion",
+      "region": "alola",
+      "kind": "champion",
+      "slot": 69,
+      "name": [
+        "알로라 챔피언",
+        "Alola Champion"
+      ]
+    },
+    {
+      "id": "galar-grass",
+      "region": "galar",
+      "slot": 70,
+      "name": [
+        "풀배지",
+        "Grass Badge"
+      ],
+      "leaders": [
+        [
+          "아킬",
+          "Milo"
+        ]
+      ],
+      "place": [
+        "터프마을",
+        "Turffield"
+      ],
+      "picture": {
+        "pokeapi": 51
+      }
+    },
+    {
+      "id": "galar-water",
+      "region": "galar",
+      "slot": 71,
+      "name": [
+        "물배지",
+        "Water Badge"
+      ],
+      "leaders": [
+        [
+          "야청",
+          "Nessa"
+        ]
+      ],
+      "place": [
+        "바우마을",
+        "Hulbury"
+      ],
+      "picture": {
+        "pokeapi": 52
+      }
+    },
+    {
+      "id": "galar-fire",
+      "region": "galar",
+      "slot": 72,
+      "name": [
+        "불꽃배지",
+        "Fire Badge"
+      ],
+      "leaders": [
+        [
+          "순무",
+          "Kabu"
+        ]
+      ],
+      "place": [
+        "엔진시티",
+        "Motostoke"
+      ],
+      "picture": {
+        "pokeapi": 53
+      }
+    },
+    {
+      "id": "galar-fighting",
+      "region": "galar",
+      "slot": 73,
+      "name": [
+        "격투배지",
+        "Fighting Badge"
+      ],
+      "leaders": [
+        [
+          "채두",
+          "Bea"
+        ]
+      ],
+      "place": [
+        "래터럴마을",
+        "Stow-on-Side"
+      ],
+      "picture": {
+        "pokeapi": 54
+      }
+    },
+    {
+      "id": "galar-ghost",
+      "region": "galar",
+      "slot": 74,
+      "name": [
+        "고스트배지",
+        "Ghost Badge"
+      ],
+      "leaders": [
+        [
+          "어니언",
+          "Allister"
+        ]
+      ],
+      "place": [
+        "래터럴마을",
+        "Stow-on-Side"
+      ],
+      "picture": {
+        "pokeapi": 55
+      }
+    },
+    {
+      "id": "galar-fairy",
+      "region": "galar",
+      "slot": 75,
+      "name": [
+        "페어리배지",
+        "Fairy Badge"
+      ],
+      "leaders": [
+        [
+          "포플러",
+          "Opal"
+        ]
+      ],
+      "place": [
+        "아라베스크마을",
+        "Ballonlea"
+      ],
+      "picture": {
+        "pokeapi": 56
+      }
+    },
+    {
+      "id": "galar-rock",
+      "region": "galar",
+      "slot": 76,
+      "name": [
+        "바위배지",
+        "Rock Badge"
+      ],
+      "leaders": [
+        [
+          "마쿠와",
+          "Gordie"
+        ]
+      ],
+      "place": [
+        "키르쿠스마을",
+        "Circhester"
+      ],
+      "picture": {
+        "pokeapi": 57
+      }
+    },
+    {
+      "id": "galar-ice",
+      "region": "galar",
+      "slot": 77,
+      "name": [
+        "얼음배지",
+        "Ice Badge"
+      ],
+      "leaders": [
+        [
+          "멜론",
+          "Melony"
+        ]
+      ],
+      "place": [
+        "키르쿠스마을",
+        "Circhester"
+      ],
+      "picture": {
+        "pokeapi": 58
+      }
+    },
+    {
+      "id": "galar-dark",
+      "region": "galar",
+      "slot": 78,
+      "name": [
+        "악배지",
+        "Dark Badge"
+      ],
+      "leaders": [
+        [
+          "두송",
+          "Piers"
+        ]
+      ],
+      "place": [
+        "스파이크마을",
+        "Spikemuth"
+      ],
+      "picture": {
+        "pokeapi": 59
+      }
+    },
+    {
+      "id": "galar-dragon",
+      "region": "galar",
+      "slot": 79,
+      "name": [
+        "드래곤배지",
+        "Dragon Badge"
+      ],
+      "leaders": [
+        [
+          "금랑",
+          "Raihan"
+        ]
+      ],
+      "place": [
+        "너클시티",
+        "Hammerlocke"
+      ],
+      "picture": {
+        "pokeapi": 60
+      }
+    },
+    {
+      "id": "galar-champion",
+      "region": "galar",
+      "kind": "champion",
+      "slot": 80,
+      "name": [
+        "가라르 챔피언",
+        "Galar Champion"
+      ]
+    },
+    {
+      "id": "paldea-bug",
+      "region": "paldea",
+      "slot": 81,
+      "name": [
+        "벌레배지",
+        "Bug Badge"
+      ],
+      "leaders": [
+        [
+          "단풍",
+          "Katy"
+        ]
+      ],
+      "place": [
+        "세르클마을",
+        "Cortondo"
+      ],
+      "picture": {
+        "pokeapi": 70
+      }
+    },
+    {
+      "id": "paldea-grass",
+      "region": "paldea",
+      "slot": 82,
+      "name": [
+        "풀배지",
+        "Grass Badge"
+      ],
+      "leaders": [
+        [
+          "콜사",
+          "Brassius"
+        ]
+      ],
+      "place": [
+        "보울마을",
+        "Artazon"
+      ],
+      "picture": {
+        "pokeapi": 71
+      }
+    },
+    {
+      "id": "paldea-electric",
+      "region": "paldea",
+      "slot": 83,
+      "name": [
+        "전기배지",
+        "Electric Badge"
+      ],
+      "leaders": [
+        [
+          "모야모",
+          "Iono"
+        ]
+      ],
+      "place": [
+        "누룩스시티",
+        "Levincia"
+      ],
+      "picture": {
+        "pokeapi": 72
+      }
+    },
+    {
+      "id": "paldea-water",
+      "region": "paldea",
+      "slot": 84,
+      "name": [
+        "물배지",
+        "Water Badge"
+      ],
+      "leaders": [
+        [
+          "곤포",
+          "Kofu"
+        ]
+      ],
+      "place": [
+        "카라프시티",
+        "Cascarrafa"
+      ],
+      "picture": {
+        "pokeapi": 73
+      }
+    },
+    {
+      "id": "paldea-normal",
+      "region": "paldea",
+      "slot": 85,
+      "name": [
+        "노말배지",
+        "Normal Badge"
+      ],
+      "leaders": [
+        [
+          "청목",
+          "Larry"
+        ]
+      ],
+      "place": [
+        "참푸르마을",
+        "Medali"
+      ],
+      "picture": {
+        "pokeapi": 74
+      }
+    },
+    {
+      "id": "paldea-ghost",
+      "region": "paldea",
+      "slot": 86,
+      "name": [
+        "고스트배지",
+        "Ghost Badge"
+      ],
+      "leaders": [
+        [
+          "라임",
+          "Ryme"
+        ]
+      ],
+      "place": [
+        "프리지마을",
+        "Montenevera"
+      ],
+      "picture": {
+        "pokeapi": 75
+      }
+    },
+    {
+      "id": "paldea-psychic",
+      "region": "paldea",
+      "slot": 87,
+      "name": [
+        "에스퍼배지",
+        "Psychic Badge"
+      ],
+      "leaders": [
+        [
+          "리파",
+          "Tulip"
+        ]
+      ],
+      "place": [
+        "베이크마을",
+        "Alfornada"
+      ],
+      "picture": {
+        "pokeapi": 76
+      }
+    },
+    {
+      "id": "paldea-ice",
+      "region": "paldea",
+      "slot": 88,
+      "name": [
+        "얼음배지",
+        "Ice Badge"
+      ],
+      "leaders": [
+        [
+          "그루샤",
+          "Grusha"
+        ]
+      ],
+      "place": [
+        "나페산",
+        "Glaseado Mountain"
+      ],
+      "picture": {
+        "pokeapi": 77
+      }
+    },
+    {
+      "id": "paldea-champion",
+      "region": "paldea",
+      "kind": "champion",
+      "slot": 89,
+      "name": [
+        "팔데아 챔피언 랭크",
+        "Paldea Champion Rank"
+      ]
+    }
+  ]
+}

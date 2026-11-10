@@ -127,7 +127,8 @@ export function readLog(log, { from = 0, to = log?.length ?? 0 } = {}) {
       if (live && args[4] === 'caught') summary.caught = { mon: ref(mon), ball: args[2] };
       break;
     }
-    case '-story-item': push({ type: 'item', mon: ref(who(args[0])), item: args[2] }); break;
+
+    case '-story-item': push({ type: 'item', mon: ref(who(args[0])), item: args[2], ...(args[3] ? { label: args[3] } : {}) }); break;
     case '-story-run': if (live && args[2] === 'escaped') summary.ran = true; push({ type: 'run', result: args[2] }); break;
     case '-story-levelup': push({ type: 'levelup', mon: ref(who(args[0])), level: Number(args[2]) }); break;
     case 'win': if (live) summary.winner = args[0]; break;
@@ -252,7 +253,7 @@ function eventText(e, namer, sides) {
   case 'status': return `${mon(e.mon)} ${STATUS_EN[e.status] ?? `got ${e.status}`}`;
   case 'faint': return `${mon(e.mon)} fainted`;
   case 'ball': return `${namer.items(e.ball)} thrown at ${mon(e.mon)} → ${e.result === 'caught' ? 'caught' : e.result === 'blocked' ? 'blocked' : 'broke free'}`;
-  case 'item': return `${ownerName(ownerOf(e.mon, sides), sides)} used ${namer.items(e.item)} on ${mon(e.mon)}`;
+  case 'item': return `${ownerName(ownerOf(e.mon, sides), sides)} used ${e.label ?? namer.items(e.item)} on ${mon(e.mon)}`;
   case 'run': return e.result === 'escaped' ? 'Got away safely' : 'Could not get away';
   case 'levelup': return `${mon(e.mon)} grew to Lv${e.level}`;
 

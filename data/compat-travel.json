@@ -1,0 +1,31 @@
+{
+  "_note": "호환 봇의 여행 정보를 읽을 때 쓰는 그 봇의 낱말 (그 봇 양식만). none = 여정 안내가 비었다는 뜻의 값 (대소문자 무시). startTitle = 그 봇의 시작 설정 표 제목 (그 봇은 \"📋 \" 뒤에 씀 — 행이 아니라 맞추지 않음, 시험·시연 자료용). startRows = 그 봇의 언어(yp_Language 1 ko / 2 en / 3 ja)마다, 시작 설정 표(yp_StartSettingsDisplay)에서 보여 줄 여섯 행의 이름 → 우리 행 id (이름은 글자·숫자만 비교). 표의 다른 행(그 봇이 붙이는 일곱째 행 등)은 이름을 몰라도 되고 보이지 않는다. 화면에는 그 봇의 값만 글로 그리고, 행 이름은 우리 화면 글(panel.travel.row.*)을 쓴다. 화면에 그리지 않는 낱말이라 글꼴 조각이 읽는 코드 밖에 둔다. 출처: ref 답 (사용자 2026-11-09). 쓰는 곳: story/compat.mjs compatTravel",
+  "none": ["none", "없음", "なし"],
+  "startTitle": { "ko": "시작 설정", "en": "Starting Settings", "ja": "開始設定" },
+  "startRows": {
+    "ko": {
+      "region": ["시작 지방"],
+      "adventure": ["모험"],
+      "role": ["역할"],
+      "rival": ["라이벌"],
+      "official": ["공식 배틀 상대"],
+      "trainer": ["일반 트레이너"]
+    },
+    "en": {
+      "region": ["Starting Region"],
+      "adventure": ["Adventure"],
+      "role": ["Role"],
+      "rival": ["Rival"],
+      "official": ["Official Battle Opponents"],
+      "trainer": ["Generic Trainers"]
+    },
+    "ja": {
+      "region": ["開始地方"],
+      "adventure": ["冒険"],
+      "role": ["役割"],
+      "rival": ["ライバル"],
+      "official": ["公式戦の対戦相手"],
+      "trainer": ["一般トレーナー"]
+    }
+  }
+}

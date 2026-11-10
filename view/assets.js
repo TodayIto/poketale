@@ -8,6 +8,7 @@ import { iconFrame, iconAtlas } from './ui/party-icons.js';
 import { biomeImages, biomeKey, DEFAULT_BIOME } from './arena.js';
 import { fieldAtlases, atlasJson } from './field-atlases.js';
 import { withRetry, timeLimit, LoadError, TimeoutError } from './retry.js';
+import { createImageRoute, DIRECT_ONLY } from './image-route.js';
 import { checkTheme, usesLegacyArt, artPalette, recolorPixels } from './ui/theme.js';
 import { langPath, langAtlasKey } from './lang-images.js';
 import { isPlayerSide } from './positions.js';
@@ -38,19 +39,23 @@ const PR_SPECIES = { pikachu: '25', gyarados: '130' };
 
 export const SHOWDOWN_TIMEOUT_MS = 20000;
 
+export const HOST_ROUTE_TIMEOUT_MS = 180000;
+
 export function themedPath(theme, path, legacy = LEGACY_UI) {
   if (!usesLegacyArt(theme) || !path.startsWith('images/ui/')) return path;
   const rest = path.slice('images/ui/'.length);
   return legacy.includes(rest) ? `images/ui/legacy/${rest}` : path;
 }
 
-export function prefetchImages({ assetBase = DEFAULT_ASSET_BASE, theme, biome, lang }) {
+export function prefetchImages({ assetBase = DEFAULT_ASSET_BASE, theme, biome, lang, pictureWays = DIRECT_ONLY }) {
   const base = assetBase.endsWith('/') ? assetBase : assetBase + '/', themed = checkTheme(theme);
   const arena = biomeKey(biome) ?? DEFAULT_BIOME;
-  return [...Object.values(UI_IMAGES), ...biomeImages(arena).map(([key]) => `images/arenas/${key}.png`)].map(path => {
+
+  return [...Object.values(UI_IMAGES), ...biomeImages(arena).map(([key]) => `images/arenas/${key}.png`)].map(path => base + themedPath(themed, langPath(path, lang)))
+    .filter(src => (pictureWays(src) ?? ['direct'])[0] === 'direct').map(src => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.src = base + themedPath(themed, langPath(path, lang));
+    img.src = src;
     return img;
   });
 }
@@ -67,7 +72,7 @@ function recolored(img, palette) {
 }
 
 export class Assets {
-  constructor(scene, life, { fetchBytes, assetBase = DEFAULT_ASSET_BASE, spriteSource = 'showdown-ani', theme, lang }) {
+  constructor(scene, life, { fetchBytes, assetBase = DEFAULT_ASSET_BASE, spriteSource = 'showdown-ani', theme, lang, pictureWays = DIRECT_ONLY }) {
     if (!['showdown-ani', 'pokerogue'].includes(spriteSource)) throw new Error(`Unknown spriteSource: ${spriteSource}`);
     this.scene = scene; this.life = life;
     this.theme = checkTheme(theme);
@@ -75,12 +80,16 @@ export class Assets {
 
     this.fetchBytes = url => withRetry(() => timeLimit(fetchBytes(url), SHOWDOWN_TIMEOUT_MS,
       `Showdown timeout ${SHOWDOWN_TIMEOUT_MS / 1000}s: ${url}`, life.signal), { signal: life.signal });
+
+    const viaHost = url => withRetry(() => timeLimit(fetchBytes(url), HOST_ROUTE_TIMEOUT_MS,
+      `Host fetch timeout ${HOST_ROUTE_TIMEOUT_MS / 1000}s: ${url}`, life.signal), { signal: life.signal });
+    this.route = createImageRoute({ ways: pictureWays, fetchBytes: viaHost, signal: life.signal });
     this.base = assetBase.endsWith('/') ? assetBase : assetBase + '/';
     this.source = spriteSource; this.pending = new Map(); this.mons = new Map(); this.diagnostics = [];
   }
   url(path) { return this.base + path; }
 
-  loadImage(src) { return withRetry(() => this.loadImageOnce(src), { signal: this.life.signal }); }
+  loadImage(src) { return this.route.image(src, url => this.loadImageOnce(url)); }
   loadImageOnce(src) {
     return new Promise((resolve, reject) => {
       this.life.check();

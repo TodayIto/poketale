@@ -26,6 +26,8 @@ export const STATUS_EN = { '': 'Normal', par: 'Paralyzed', brn: 'Burned', slp: '
 
 export const nicknamed = (nick, species) => (nick ? `${nick} the ${species}` : species);
 
+export const ownLabel = slot => `Own Pokémon ${slot}`;
+
 const SPEAKER = { user: '{{user}}', char: 'Story' };
 export const sceneLines = messages => messages.map(m => `[${SPEAKER[m.role] ?? SPEAKER.char}]\n${m.text}`).join('\n\n');
 

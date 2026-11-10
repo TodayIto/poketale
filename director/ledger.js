@@ -2,7 +2,7 @@ import { monView } from './mon.js';
 import { parseHealth } from './parse.js';
 import { sideOf, positionOf, fieldPositions, isIdent, identName, uidOf } from './read.js';
 import { pokemonName } from './bag.js';
-import { toID } from '../engine/mon.mjs';
+import { toID, spriteIdOf } from '../engine/mon.mjs';
 import { abilityTrigger } from './ability-trigger.js';
 
 const BOOSTS = ['atk', 'def', 'spa', 'spd', 'spe', 'accuracy', 'evasion'];
@@ -18,7 +18,7 @@ export function createLedger({ battle, names }) {
   for (const [i, engineSide] of (battle.sides ?? []).entries()) {
     const side = i % 2 ? 'enemy' : 'player';
     for (const p of engineSide?.pokemon ?? []) {
-      pokemon.set(p.m.uid, { uid: p.m.uid, side, speciesId: p.species.id, spriteId: p.species.spriteid, name: pokemonName(names, p),
+      pokemon.set(p.m.uid, { uid: p.m.uid, side, speciesId: p.species.id, spriteId: spriteIdOf(p.species), name: pokemonName(names, p),
         level: p.level, gender: p.gender || '', shiny: !!p.set.shiny, hp: p.hp, maxhp: p.maxhp, status: p.fainted ? '' : p.status || '',
         ball: p.pokeball, boosts: {}, substitute: false, semiInvulnerable: null, disabled: null, fainted: !!p.fainted,
         ...(p.m.partner ? { partner: p.m.partner } : {}),
@@ -128,7 +128,7 @@ export function createLedger({ battle, names }) {
       const species = battle.dex.species.get(details ? details.split(', ')[0] : a[1]);
       if (!species?.exists) break;
       const parts = details.split(', ');
-      Object.assign(entry, { speciesId: species.id, spriteId: species.spriteid,
+      Object.assign(entry, { speciesId: species.id, spriteId: spriteIdOf(species),
         shiny: details ? parts.includes('shiny') : entry.shiny,
         gender: details ? (parts.includes('M') ? 'M' : parts.includes('F') ? 'F' : '') : entry.gender });
       break;

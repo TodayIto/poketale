@@ -1,8 +1,9 @@
 // from pokerogue src/audio/audio-manager.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 // from pokerogue src/audio/background-music.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
 
 import { battleMusic, bgmKey, loopPoint, victoryMusic } from './bgm.js';
+import { audioType } from './image-route.js';
 
 import CRIES from '../data/pokerogue-cries.json' with { type: 'json' };
 
@@ -52,6 +53,8 @@ class Music {
     if (this.destroyed) return;
     this.wanted = true;
     if (!this.owner.musicEnabled || this.owner.suspended || !this.audio.paused) return;
+
+    if (!this.audio.src) { this.owner.sourced(this.audio).then(() => { if (this.destroyed || !this.wanted) return; if (this.audio.src) this.play(); else this.destroy(); }); return; }
     this.audio.play().catch(error => {
       this.owner.note(`${error.name}: bgm/${this.key}`);
       if (error.name !== 'NotAllowedError' && error.name !== 'AbortError') this.destroy();
@@ -102,7 +105,6 @@ export class BattleAudio {
     this.musicEnabled = true; this.destroyed = false;
     this.currentBgm = null; this.tracks = new Set();
     this.pendingLoads = new Set(); this.finishes = new Set();
-
     // If autoplay was blocked, retry on the first touch/key
     this.unlock = () => { if (this.suspended) return; for (const track of this.tracks) if (track.wanted) track.play(); };
     this.suspended = false;
@@ -111,6 +113,12 @@ export class BattleAudio {
     parent.addEventListener('keydown', this.unlock);
   }
   note(text) { if (!this.diagnostics.includes(text)) this.diagnostics.push(text); }
+
+  sourced(audio) {
+    const entry = [...this.sounds.values()].find(sound => sound.audio === audio);
+    return entry?.sourced ?? Promise.resolve();
+  }
+
   load(path, loop = false) {
     if (this.destroyed) throw new Error('BattleAudio destroyed');
     if (this.silent) return SILENT;
@@ -118,21 +126,40 @@ export class BattleAudio {
     const audio = new Audio();
     audio.crossOrigin = 'anonymous'; audio.preload = 'auto'; audio.loop = loop;
     audio.volume = loop ? BGM_VOLUME : 0.6;
-    audio.src = this.assets.url(`audio/${path}`);
+    const url = this.assets.url(`audio/${path}`), route = this.assets.route;
+    const ways = route ? route.order(url) : ['direct'];
+    let finished = false, sourcedNow;
+    const sourced = new Promise(resolve => { sourcedNow = resolve; });
     const ready = new Promise(resolve => {
       const done = () => {
+        finished = true;
         clearTimeout(timer); audio.onloadeddata = audio.onerror = null;
         this.pendingLoads.delete(done);
         this.assets.life.signal.removeEventListener('abort', done); resolve(audio);
       };
+      const left = [...ways];
+      let triedDirect = false;
+      const next = () => {
+        const way = left.shift();
+        if (!way) {
+          if (!finished) { this.diagnostics.push(`Audio unavailable: ${path}`); done(); }
+          sourcedNow(); return;
+        }
+        if (way === 'direct') { triedDirect = true; audio.src = url; sourcedNow(); audio.load(); return; }
+        route.objectUrl(url, () => audioType(url)).then(src => {
+          if (this.destroyed) return;
+          if (triedDirect) route.markDown(url);
+          audio.src = src; sourcedNow(); audio.load();
+        }, error => { this.note(`Audio via host failed: ${path} (${error?.message ?? error})`); if (!this.destroyed) next(); });
+      };
       const timer = setTimeout(() => { this.diagnostics.push(`Audio load timeout: ${path}`); done(); }, 15000);
       audio.onloadeddata = done;
-      audio.onerror = () => { this.diagnostics.push(`Audio unavailable: ${path}`); done(); };
+      audio.onerror = next;
       this.assets.life.signal.addEventListener('abort', done, { once: true });
       this.pendingLoads.add(done);
-      audio.load();
+      next();
     });
-    this.sounds.set(path, { audio, ready });
+    this.sounds.set(path, { audio, ready, sourced });
     return { audio, ready };
   }
 
@@ -157,7 +184,7 @@ export class BattleAudio {
     const cached = this.load(path, true).audio;
     if (![...this.tracks].some(track => track.audio === cached)) return cached;
     const audio = new Audio();
-    audio.crossOrigin = 'anonymous'; audio.preload = 'auto'; audio.src = this.assets.url(`audio/${path}`);
+    audio.crossOrigin = 'anonymous'; audio.preload = 'auto'; audio.src = cached.src || this.assets.url(`audio/${path}`);
     this.extra ??= new Set(); this.extra.add(audio);
     return audio;
   }
@@ -201,7 +228,6 @@ export class BattleAudio {
     else if (outcome === 'lose' || outcome === 'tie') this.fadeOutBgm(5000);
   }
 
-  // Sound off/on (musicEnabled). While off the track state is kept and only the sound stops
   setMusicEnabled(enabled) {
     this.musicEnabled = !!enabled;
     for (const track of this.tracks) {
@@ -227,7 +253,6 @@ export class BattleAudio {
     this.wake?.();
   }
 
-  // If collapsed, waits until reopened (or closed); otherwise resolves at once
   awake() {
     if (!this.suspended) return Promise.resolve();
     return (this.woken ??= new Promise(resolve => { this.wake = () => { this.wake = this.woken = null; resolve(); }; }));
@@ -241,7 +266,6 @@ export class BattleAudio {
     if (this.destroyed) return;
     this.assets.life.check();
     if (audio.error || audio.readyState < 2) return;
-
     // Animation sound events can overlap, including repetitions of the same sample.
     const voice = audio.cloneNode();
     voice.volume = Math.max(0, Math.min(1, volume)); voice.playbackRate = rate;

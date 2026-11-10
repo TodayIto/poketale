@@ -1,8 +1,8 @@
 // from pokerogue src/phases/evolution-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/evolution-scene-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/end-evolution-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/animations.ts (doSpiralUpward; doArcDownward; doCycle; doCircleInward; doSpray) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { placeSprite } from './sprites/placement.js';
 import { tween, delay } from './lifetime.js';
@@ -17,14 +17,12 @@ const VIDEO = 'images/effects/evo_bg.mp4';
 const sin = (index, amplitude) => amplitude * Math.sin(index * (Math.PI / 128));
 const cos = (index, amplitude) => amplitude * Math.cos(index * (Math.PI / 128));
 const randInt = range => (range <= 1 ? 0 : Math.floor(Math.random() * range));
-
 // Center of default_bg 320x132 (evolutionBaseBg.displayWidth/2, displayHeight/2)
 const CX = 160, CY = 66;
 
 export class EvolutionScene {
   constructor(scene) { this.scene = scene; }
 
-  // Evolution screen images and sounds (prefetched at the battle's ending text - scene.end)
   load() {
     const s = this.scene;
     return Promise.all([...Object.entries(EVOLUTION_IMAGES).map(([key, path]) => s.assets.image(key, path, null)),
@@ -79,7 +77,7 @@ export class EvolutionScene {
   }
 
   get cancelable() { return !!this.canCancel && !this.cancelled; }
-  async evolve(to, { canCancel = true } = {}) {
+  async evolve(to, { canCancel = true, flip = false } = {}) {
     const s = this.scene;
     if (!this.container) throw new Error('Call startEvolution first');
     const asset = await s.assets.mon(to, false);
@@ -98,6 +96,7 @@ export class EvolutionScene {
     const unlisten = s.life.listen(parent, 'keydown', key, true);
     try {
       await delay(s, 1000);
+      if (flip) await this.turn(Math.PI);
       s.audio.cry(this.from).catch(() => {});
 
       await delay(s, 1000);
@@ -129,6 +128,7 @@ export class EvolutionScene {
         this.stopBgm();
         await tween(s, { targets: [this.video, this.pokemonTintSprite, this.pokemonEvoSprite, this.pokemonEvoTintSprite].filter(Boolean), alpha: 0, duration: 250 });
         this.video?.setVisible(false); this.videoWanted = false;
+        if (flip) await this.turn(0);
         return false;
       }
 
@@ -142,6 +142,7 @@ export class EvolutionScene {
       this.bgOverlay.setAlpha(1); this.video?.setVisible(false); this.videoWanted = false;
       await tween(s, { targets: [this.overlay, this.pokemonEvoTintSprite], alpha: 0, duration: 2000, delay: 150, ease: 'Sine.easeIn' });
       await tween(s, { targets: this.bgOverlay, alpha: 0, duration: 250 });
+      if (flip) await this.turn(0);
 
       this.stopBgm();
       await delay(s, 250);
@@ -152,6 +153,13 @@ export class EvolutionScene {
     } finally {
       unlisten();
     }
+  }
+
+  async turn(angle) {
+    const c = this.container, from = c.rotation;
+    const place = a => c.setRotation(a).setPosition(CX - (CX * Math.cos(a) - CY * Math.sin(a)), CY - 180 - (CX * Math.sin(a) + CY * Math.cos(a)));
+    await tween(this.scene, { targets: { t: 0 }, t: 1, duration: 600, ease: 'Sine.easeInOut', onUpdate: (tw, target) => place(from + (angle - from) * target.t) });
+    place(angle);
   }
 
   async end() {
@@ -166,7 +174,6 @@ export class EvolutionScene {
 
   particle(x, y) { const p = this.scene.add.image(x, y, 'evo_sparkle'); this.container.add(p); return p; }
 
-  // Calls update() every frame and removes the particle when it returns false (tweens.addCounter repeat -1)
   run(particle, update) {
     if (update() === false) { particle.destroy(); return; }
     const timer = this.scene.tweens.addCounter({ repeat: -1, duration: frameMs(1), onRepeat: () => {

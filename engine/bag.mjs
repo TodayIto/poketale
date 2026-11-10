@@ -1,6 +1,7 @@
 import { BALLS, ballModifier, captureValues, rollCapture } from './capture.mjs';
 import { awardCaptureExperience } from './exp.mjs';
 import { PARTY_MAX, toID } from './mon.mjs';
+import { itemId, customText } from '../story/custom-items.mjs';
 import { chooseEventAction, chooseParts, revive, sideLead } from './showdown-compat.mjs';
 
 export const BAG_ITEMS = {
@@ -55,6 +56,14 @@ export const BAG_ITEMS = {
 	pewtercrunchies: { name: 'Pewter Crunchies', cure: 'all', confusion: true },
 };
 
+export const foodHeal = maxhp => Math.max(1, Math.floor(maxhp / 4));
+
+export function bagItem(battle, id) {
+	if (Object.hasOwn(BAG_ITEMS, id)) return BAG_ITEMS[id];
+	const foods = battle.storyBag?.foods;
+	return foods && Object.hasOwn(foods, id) ? { name: customText({ customItems: foods }, id), heal: 'food' } : undefined;
+}
+
 export const FIELD_ITEMS = {
 	rarecandy: { name: 'Rare Candy' },
 	everstone: { name: 'Everstone' },
@@ -71,6 +80,7 @@ export function installBag(sim, battle, options = {}) {
 		options: { ...options, env: { ...options.env } },
 		catchRates: options.catchRates?.byNum ?? options.catchRates ?? null,
 		caught: new Set(options.caughtSpecies || []),
+		foods: options.foods ?? {},
 		pending: new Map(),
 		itemsUsed: [],
 		captured: null,
@@ -109,9 +119,9 @@ export function checkBagItem(battle, choice) {
 
 	if (user.getLockedMove()) return fail('locked');
 
-	const id = toID(choice?.item);
+	const id = itemId(choice?.item);
 	if (isBall(id)) return checkBall(battle, state, id);
-	const item = BAG_ITEMS[id];
+	const item = bagItem(battle, id);
 	if (!item) return fail('unknownitem', choice?.item);
 
 	const target = side.pokemon.find(p => p.m.uid === choice.target);
@@ -179,7 +189,7 @@ export function chooseBagItem(battle, choice) {
 	return { ok: true };
 }
 
-const pendingOf = choice => ({ item: toID(choice.item), target: choice.target ?? null, move: choice.move ? toID(choice.move) : null });
+const pendingOf = choice => ({ item: itemId(choice.item), target: choice.target ?? null, move: choice.move ? toID(choice.move) : null });
 
 export function chooseBagParts(battle, parts) {
 	const state = battle.storyBag;
@@ -250,13 +260,16 @@ function itemEffect(item, id) {
 	return { id, name: item.name, fullname: `item: ${item.name}`, effectType: 'Item', kind: 'Item', exists: true, num: 0, gen: 9, flags: {} };
 }
 
+const healOf = (item, target) => (item.heal === 'full' ? target.maxhp : item.heal === 'food' ? foodHeal(target.maxhp) : item.heal);
+
 function useItem(sim, battle, state, choice, side = battle.sides[0]) {
-	const item = BAG_ITEMS[choice.item];
+	const item = bagItem(battle, choice.item);
 	const target = side.pokemon.find(p => p.m.uid === choice.target);
 	if (!target || (target.fainted && !item.revive)) return;
 	const effect = itemEffect(item, choice.item);
 	const from = `[from] ${effect.fullname}`;
-	battle.add('-story-item', target, target.m.uid, choice.item);
+
+	battle.add('-story-item', target, target.m.uid, choice.item, ...(Object.hasOwn(BAG_ITEMS, choice.item) ? [] : [item.name]));
 
 	if (item.revive) {
 
@@ -264,8 +277,7 @@ function useItem(sim, battle, state, choice, side = battle.sides[0]) {
 		battle.add('-heal', target, target.getHealth, from);
 	}
 	if (item.heal) {
-		const amount = item.heal === 'full' ? target.maxhp : item.heal;
-		if (target.heal(amount)) battle.add('-heal', target, target.getHealth, from);
+		if (target.heal(healOf(item, target))) battle.add('-heal', target, target.getHealth, from);
 	}
 	if (item.cure && target.status && (item.cure === 'all' || item.cure.includes(target.status))) {
 		battle.add('-curestatus', target, target.status, from);

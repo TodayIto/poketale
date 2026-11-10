@@ -1,7 +1,8 @@
 // from pokerogue locales/{ko,en}/*.json @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 
 import { readFile, writeFile } from 'node:fs/promises';
+import { withKoTerms } from './ko-terms.mjs';
 import { LANGS } from '../director/lang.js';
 
 const PR = new URL('../vendor/pokerogue/', import.meta.url);
@@ -25,7 +26,7 @@ for (const lang of LANGS) {
       text[`${file}.${key}`] = value;
     }
   }
-  await writeFile(new URL(`../director/text-bag-${lang}.json`, import.meta.url), JSON.stringify(text, null, 2) + '\n');
+  await writeFile(new URL(`../director/text-bag-${lang}.json`, import.meta.url), JSON.stringify(withKoTerms(lang, text).table, null, 2) + '\n');
   counts.push(`${Object.keys(text).length - 1}개 -> director/text-bag-${lang}.json`);
 }
 

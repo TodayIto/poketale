@@ -1,7 +1,8 @@
 // from pokerogue locales/{ko,en}/*.json @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 
 import { readFile, writeFile } from 'node:fs/promises';
+import { withKoTerms } from './ko-terms.mjs';
 import { LANGS } from '../director/lang.js';
 
 const whole = ['battler-tags', 'arena-tag', 'weather', 'terrain', 'ability-trigger', 'modifier', 'move-trigger', 'pokemon-form-battle', 'status-effect'];
@@ -23,7 +24,6 @@ function flatten(into, prefix, value) {
   if (value && typeof value === 'object') for (const [key, inner] of Object.entries(value)) flatten(into, `${prefix}.${key}`, inner);
 }
 
-// Every string of the whole namespaces and the picked keys of one language, flattened to 'file.key.sub'
 async function phrases(lang) {
   const flat = {};
   for (const file of whole) flatten(flat, file, await load(lang, file));
@@ -44,6 +44,6 @@ for (const lang of LANGS) {
   if (missing.length) throw new Error(`Missing ${lang} effect phrases: ${missing.join(', ')}`);
   const result = { _source: `from pokerogue locales/${lang} @ 7d7da4a8 (AGPL-3.0-only); locales @ 485b48eb` };
   for (const key of keys) result[key] = flat[key];
-  await writeFile(new URL(`../director/text-effects-${lang}.json`, import.meta.url), JSON.stringify(result, null, 2) + '\n');
+  await writeFile(new URL(`../director/text-effects-${lang}.json`, import.meta.url), JSON.stringify(withKoTerms(lang, result).table, null, 2) + '\n');
   console.log(`Extracted ${keys.length} ${lang} effect phrases -> director/text-effects-${lang}.json`);
 }

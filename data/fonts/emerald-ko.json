@@ -1,8 +1,10 @@
 {
 	"_source": "tools/build-font.mjs: vendor/pokerogue/assets/fonts/pokemon-emerald-pro.ttf (PokeRogue 에셋, 글꼴 라이선스 CC BY-SA 3.0 crystalwalrein) 의 조각. 다시 만들기: node tools/build-font.mjs (python fontTools 필요)",
 	"sourceSha256": "da8025c85028a40dd70731e83e3bdf0e314218a24110cbb8f789bf8ab0c0e255",
-	"woff2Sha256": "877a3111ce29f7eb852c2785388c9467ea72a9b34923e14e1b010db9e8034e36",
-	"bytes": 17420,
-	"glyphs": 12021,
-	"cmap": "20-7e,b7,be,c3,d7,e9,301,2013-2014,2018-2019,201c-201d,2022,2026,2030,20a9,20bd,2191-2193,2640,2642,3001,300d,300f,3063,3093,30c3,30f3,ac00-d7a3,e000,ff0c,ff1a"
+	"woff2Sha256": "2f98fb5613b300114e53f33179b7c2bc4cf74870f3575461c1a201837b89c28e",
+	"bytes": 17912,
+	"glyphs": 12050,
+	"glyphPatch": "♀ ♂ 글리프를 view/gender-mark.js GENDER_MARK_BATTLE 픽셀로 바꿈 (본편 모양)",
+	"glyphPatchSha256": "54c715dae426dea60f0e737336da42ec93a9f53ffea488e4ce7006d3ac5a874a",
+	"cmap": "20-7e,b7,be,c3,d7,e9,301,2013-2014,2018-2019,201c-201d,2022,2026,2030,20a9,20bd,2191-2193,2605,2640,2642,2661,2665,3001,300d,300f,3055,3057,3063,306e,307e,3093,30a4,30aa,30ad,30af-30b0,30b8,30c0-30c1,30c3,30c6,30d0,30d4,30d7,30e0,30e3,30e9-30eb,30f3,30fb-30fc,56db,5929,738b,ac00-d7a3,e000,ff0c,ff1a"
 }

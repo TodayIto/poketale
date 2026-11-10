@@ -129,9 +129,9 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
   const entry = story?.from || !startSpec ? null : (() => {
     const kind = isWild(startSpec) ? 'wild' : 'trainer', named = entryNamed(startSpec), boss = !!startSpec.boss;
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const pictures = entryPictures(startSpec, { fetchBytes, wild: kind === 'wild', named: !!named, image: me.image });
+    const pictures = entryPictures(startSpec, { fetchBytes, wild: kind === 'wild', named: !!named, image: me.image, pictureWays: extraViewOptions.pictureWays });
     const myName = startSpec.p1?.name && startSpec.p1.name !== PLAYER_NAME ? startSpec.p1.name : say(lang, 'window.me');
-    const stamp = extraViewOptions.sound ? entrySound(STAMP_SOUND) : null;
+    const stamp = extraViewOptions.sound ? entrySound(STAMP_SOUND, { fetchBytes, pictureWays: extraViewOptions.pictureWays }) : null;
     return mountEntry(root, { kind, boss, named, reduced, pictures, sound: stamp, foeBlack: !!startSpec.p2?.trainerSilhouette, meBlack: me.black,
       names: { me: myName, foe: kind === 'wild' ? '' : startSpec.p2?.name ?? '' } });
   })();

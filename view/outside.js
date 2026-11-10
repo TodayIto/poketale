@@ -3,6 +3,8 @@ import { loadFont } from './ui/text.js';
 import { BattleMessage } from './ui/message.js';
 import { SummaryScreen } from './ui/summary.js';
 import { showPartyBackdrop } from './ui/party.js';
+import { AmieScreen } from './amie.js';
+import { TrainingScreen } from './training.js';
 
 export async function prepareOutside(scene, { mons = [] } = {}) {
   await Promise.all([
@@ -43,4 +45,16 @@ export async function chooseRememberMove(scene, { party, cursor = 0, moves, onOp
   if (!Array.isArray(moves)) throw new TypeError('chooseRememberMove needs moves');
   const picked = await scene.party.choose({ party, remember: { cursor, moves }, onOpen });
   return picked ? picked.move : null;
+}
+
+export function startAmie(scene, options) {
+  if (!scene.messages) throw new Error('Call prepareOutside before startAmie');
+  const screen = scene.amieScreen ??= new AmieScreen(scene);
+  return screen.open(options);
+}
+
+export function startTraining(scene, options) {
+  if (!scene.messages) throw new Error('Call prepareOutside before startTraining');
+  const screen = scene.trainingScreen ??= new TrainingScreen(scene);
+  return screen.open(options);
 }

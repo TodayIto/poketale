@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import sharp from 'sharp';
 import { median } from '../view/sprites/pixels.js';
-import { speciesIds, toID } from './sources.mjs';
+import { speciesIds, speciesWithCosmeticFormes, toID } from './sources.mjs';
+import { spriteIdOf } from '../engine/mon.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = path => readFileSync(resolve(root, path), 'utf8');
@@ -180,10 +181,10 @@ export async function buildTables() {
     }
     return key;
   };
-  for (const entry of [...Dex.species.all()].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) {
+  for (const entry of speciesWithCosmeticFormes(Dex).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) {
     if (entry.num <= 0) continue;
 
-    const s = Dex.species.get(entry.spriteid);
+    const s = entry.isCosmeticForme ? entry : Dex.species.get(entry.spriteid), spriteId = spriteIdOf(s);
     assert.ok(s.exists, `Unrecognized spriteid ${entry.spriteid}`);
     let enumName = specialSpecies[s.id] ?? ordinaryByNum.get(s.num);
     let form = s.forme;
@@ -207,15 +208,15 @@ export async function buildTables() {
 
     const base = boxes[String(s.num)] ? String(s.num) : null;
     const value = [exact, base];
-    if (mapping[s.spriteid]) assert.deepEqual(mapping[s.spriteid], value, `Conflicting spriteid ${s.spriteid}`);
-    mapping[s.spriteid] = value;
+    if (mapping[spriteId]) assert.deepEqual(mapping[spriteId], value, `Conflicting spriteid ${spriteId}`);
+    mapping[spriteId] = value;
 
     let cry = enumName && ids.has(enumName) ? cryKey(enumName, match ? definitions.indexOf(match) : 0) : String(s.num);
-    if (!cryFiles.has(cry)) { console.warn(`cry/${cry} missing for ${s.spriteid} → cry/${s.num}`); cry = String(s.num); }
-    assert.ok(cryFiles.has(cry), `No cry for ${s.spriteid}`);
-    if (cries[s.spriteid]) assert.equal(cries[s.spriteid], cry, `Conflicting cry ${s.spriteid}`);
-    cries[s.spriteid] = cry;
-    diagnostics.push({ id: entry.id, spriteId: entry.spriteid, practical: entry.isNonstandard === null, exact, base });
+    if (!cryFiles.has(cry)) { console.warn(`cry/${cry} missing for ${spriteId} → cry/${s.num}`); cry = String(s.num); }
+    assert.ok(cryFiles.has(cry), `No cry for ${spriteId}`);
+    if (cries[spriteId]) assert.equal(cries[spriteId], cry, `Conflicting cry ${spriteId}`);
+    cries[spriteId] = cry;
+    diagnostics.push({ id: entry.id, spriteId, practical: entry.isNonstandard === null, exact, base });
   }
   return { boxes, mapping, cries, diagnostics };
 }

@@ -91,7 +91,7 @@ const SILENT = new Set(['debug', '-hint', '-mustrecharge', '-center', '-waiting'
 export const EFFECT_KINDS = ['-damage', '-heal', '-sethp', '-status', '-curestatus', 'cant', '-boost', '-unboost', '-setboost', '-clearallboost',
   '-clearboost', '-clearnegativeboost', '-clearpositiveboost', '-invertboost', '-copyboost', '-swapboost', '-transform', '-formechange', 'detailschange',
   '-fail', '-block', '-nothing', '-notarget', '-ability', '-endability', '-item', '-enditem', '-activate', '-start', '-end', '-singleturn',
-  '-singlemove', '-weather', '-fieldstart', '-fieldend', '-sidestart', '-sideend', '-swapsideconditions', '-prepare', '-anim', '-hitcount', ...SILENT];
+  '-singlemove', '-weather', '-fieldstart', '-fieldend', '-sidestart', '-sideend', '-swapsideconditions', '-prepare', '-anim', '-hitcount', '-story-friendship', ...SILENT];
 
 export const EFFECT_TABLES = { WEATHER, TERRAIN, FIELD, SIDE, TRAP, VOLATILE, CHARGE, SINGLE_TURN, ABILITY_LINE, RUIN };
 
@@ -181,6 +181,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
   function surviveMessage({ kind, args: a }) {
     const v = nv(a[0]);
     if (kind === '-ability') return say('battler-tags.sturdyLapse', v);
+    if (kind === '-story-friendship') return say('own.friendshipEndure', v);
     if (kind === '-enditem') return say('own.itemSurvive', { ...v, itemName: names.item(id(a[1])) });
     const effect = effectOf(a[1]);
     if (effect.id === 'endure') return say('battler-tags.enduringLapse', v);
@@ -697,6 +698,8 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     case '-item': return onItem(a, kw);
     case '-enditem': return onEndItem(a, kw);
     case '-activate': return onActivate(a, kw);
+
+    case '-story-friendship': if (a[1] === 'cure') await say(`own.friendshipCure.${a[2]}`, nv(a[0])); return true;
     case '-start': return onStart(event);
     case '-end': return onEnd(event);
     case '-singleturn': {

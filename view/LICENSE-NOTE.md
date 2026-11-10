@@ -2,7 +2,7 @@
 
 Portions of this project are adapted from [PokeRogue](https://github.com/pagefaultgames/pokerogue), revision `7d7da4a829258b19e3f1615185fc6dd4d3d815f7`, Copyright 2024-2026 Pagefault Games, licensed under AGPL-3.0-only.
 
-Modified for PokeTale; modification notice date: 2026-11-05. Original source paths are listed below and retained in the corresponding source file headers. Full license and asset attribution information is in [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+Modified for PokeTale; modification notice date: 2026-11-10. Original source paths are listed below and retained in the corresponding source file headers. Full license and asset attribution information is in [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
 
 ## Changes
 
@@ -16,6 +16,8 @@ Modified for PokeTale; modification notice date: 2026-11-05. Original source pat
 - Four field positions, double-battle target selection and tag-battle presentation were added to the adapted UI.
 
 - Per-sprite color matrices replace shared post-processing targets for trainer silhouettes and move effects. A move information overlay supports the out-of-battle move reminder. Double and tag battles share the opponent scoring, switching and item handling.
+
+- Panel summaries, move learning and evolution were integrated with the auxiliary screens. Friendship effects, expanded evolution conditions and shared image transport were added. Petting, minigames and training include PlayNav adaptations described in THIRD-PARTY-NOTICES.md.
 
 ## Adapted source files
 

@@ -1,16 +1,18 @@
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (SummaryUiMode.DEFAULT, Page.PROFILE/STATS/MOVES) @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/party-ui-handler.ts (processSummaryOption) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { placeSprite } from '../sprites/placement.js';
 import { fixed } from '../game-speed.js';
 import { ballFrame } from './bag.js';
 import { LEARN_MOVE_IMAGES, TEXT as SUMMARY_TEXT, fadeSwap, buildMoveEffect, buildMovesPage, MoveDetails } from './learn-move.js';
-import { styledText, STATUS_FRAMES, STAT_ROWS, GENDER_COLORS, genderSymbol } from './text.js';
+import { styledText, addGenderMark, STATUS_FRAMES, STAT_ROWS, GENDER_COLORS } from './text.js';
+import { nameShowsGender } from '../gender-mark.js';
 import { playSelect, playError } from './keys.js';
 import { openMenu } from './menu.js';
 import { RenameForm } from './rename-form.js';
 import { LoadError } from '../retry.js';
+import { artTexture } from '../amie-art.js';
 
 const KO = 'images/ui/text_images/ko/summary/';
 
@@ -25,7 +27,6 @@ export const SUMMARY_IMAGES = {
   summary_stats_expbar_title: `${KO}summary_stats_expbar_title_ko.png`,
   shiny_star: 'images/ui/shiny.png', button_tera: 'images/ui/button_tera.png',
 };
-
 // Phrases by name (view/words.js): pokemon-summary.json ot, type, expPoints, nextLv. idNo is not shown
 const TEXT = Object.freeze({ ...SUMMARY_TEXT, ot: 'pokemon-summary.ot', type: 'pokemon-summary.type', expPoints: 'pokemon-summary.expPoints',
   nextLv: 'pokemon-summary.nextLv', noItem: 'own.noItem' });
@@ -34,6 +35,8 @@ const QUILL = ['......oo', '.....owo', '....owwo', '...owwo.', '..owwo..', '..ow
 const QUILL_COLOR = { o: 0x484848, w: 0xf8f8f8 };
 const QUILL_HIT = 14;
 export const PAGES = ['profile', 'stats', 'moves'];
+
+const MEMO_RIGHT = 7 + 1224 / 6, PAGE_BOTTOM = 159, BOND_HEART_W = 7, BOND_HEART_DY = 5, BOND_SIZES = [96, 80, 66];
 const [PROFILE, STATS_PAGE, MOVES] = [0, 1, 2];
 const SWIPE = 16 * 6;
 
@@ -88,7 +91,6 @@ export class SummaryScreen {
     return null;
   }
 
-  // Stop input (nothing is accepted during the closing transition). Keys are released by the menu frame
   release() {
     const s = this.scene;
     this.finish = null;
@@ -100,7 +102,6 @@ export class SummaryScreen {
     return { prev: this.page > PROFILE, next: this.page < MOVES && !this.moveSelect };
   }
 
-  // Only when the same press was not a swipe (object pointerup)
   tap(fn) {
     return (pointer, localX) => {
       if (!this.armed || !this.finish) return;
@@ -172,12 +173,14 @@ export class SummaryScreen {
     if (shiny) layer.add(shiny);
 
     const quill = this.rename ? this.drawQuill(layer) : null;
-    this.nameRefs = { name, shiny, quill };
+
+    const gender = GENDER_COLORS[mon.gender] ? addGenderMark(s, 96, -17, mon.gender, `GENDER_${mon.gender}`, { originY: 1 }).setVisible(!nameShowsGender(mon.name)) : null;
+    this.nameRefs = { name, shiny, quill, gender };
     this.placeQuill();
     layer.add(s.add.sprite(6, -19, 'pb', ballFrame(summary.ball)).setOrigin(0, 1));
 
     layer.add(styledText(s, 24, -17, String(mon.level), 'SUMMARY_ALT').setOrigin(0, 1));
-    if (GENDER_COLORS[mon.gender]) layer.add(styledText(s, 96, -17, genderSymbol(mon.gender), `GENDER_${mon.gender}`).setOrigin(0, 1));
+    if (gender) layer.add(gender);
 
     const status = STATUS_FRAMES[mon.status];
     if (status) this.status.setFrame(status);
@@ -261,13 +264,26 @@ export class SummaryScreen {
 
       if (summary.nature.mint) p.add(styledText(s, 7, 113 + 14.83, summary.nature.mint, 'WINDOW_ALT').setOrigin(0, 0));
     }
+
+    if (summary.bond) this.bondLine(p, 113 + 14.83 * (summary.nature ? (summary.nature.mint ? 2 : 1) : 0), summary.bond);
+  }
+
+  bondLine(p, y, bond) {
+    const s = this.scene, heart = s.add.image(7, y + BOND_HEART_DY, artTexture(s, bond.band === 'lowest' ? 'heartCold' : 'heart')).setOrigin(0, 0);
+    const x = 7 + BOND_HEART_W + 3;
+    let text;
+    for (const fontSize of BOND_SIZES) {
+      text?.destroy();
+      text = styledText(s, x, y, bond.text, 'WINDOW_ALT', { fontSize, wordWrap: { width: (MEMO_RIGHT - x) * 6 } }).setOrigin(0, 0);
+      if (y + text.displayHeight <= PAGE_BOTTOM) break;
+    }
+    p.add([heart, text]);
   }
   statsPage(container, content, mon, summary) {
     const s = this.scene, p = s.add.container(0, -159);
     content.add(p);
     const perm = s.add.container(27, 64), ivs = s.add.container(27, 64).setVisible(false);
     p.add([s.add.container(0, 0)                                                        , perm, ivs]);
-
     // Held item as one text line under the item title (in place of the icons)
     p.add(styledText(s, 8, 14, summary.item ?? s.words(TEXT.noItem), 'WINDOW_ALT').setOrigin(0, 0));
     p.add([s.add.image(7, 4, 'summary_stats_item_title').setOrigin(0, 0.5), s.add.image(16, 59, 'summary_stats_stats_title').setOrigin(0, 0.5),
@@ -436,16 +452,15 @@ export class SummaryScreen {
     } finally { this.renaming = false; }
   }
 
-  // Replace only the name text and move the shiny star / quill to the end of the name
   showName(name) {
-    const { name: text, shiny } = this.nameRefs ?? {};
+    const { name: text, shiny, gender } = this.nameRefs ?? {};
     if (!text) return;
     text.setText(name);
+    gender?.setVisible(!nameShowsGender(name));
     shiny?.setPosition(text.x + text.displayWidth + 1, text.y + 3);
     this.placeQuill();
   }
 
-  // Quill: pixel drawing (Graphics) + generous hit area. Positioned by placeQuill
   drawQuill(layer) {
     const s = this.scene, icon = s.add.graphics();
     QUILL.forEach((row, y) => [...row].forEach((cell, x) => { if (QUILL_COLOR[cell] !== undefined) icon.fillStyle(QUILL_COLOR[cell]).fillRect(x, y, 1, 1); }));

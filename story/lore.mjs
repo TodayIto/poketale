@@ -1,6 +1,6 @@
 import { hashKey } from './blocks.mjs';
-import { hpPercentOf, trainersOf } from './state.mjs';
-import { createNamer, STATUS_EN, nicknamed, battleKind } from './ai-names.mjs';
+import { hpPercentOf, trainersOf, isEgg, stateFormat } from './state.mjs';
+import { createNamer, STATUS_EN, nicknamed, battleKind, ownLabel } from './ai-names.mjs';
 import { outcomeText, opponentText, partnerField, BACK_TO_BACK } from './prompts.mjs';
 import { COMPAT_VAR } from './compat.mjs';
 import { customText } from './custom-items.mjs';
@@ -21,7 +21,6 @@ look: boy|girl|young man|young woman|middle-aged man|middle-aged woman|old man|o
 class: class
 rank: normal|boss
 place: place
-time: day|night
 format: single|double
 partner: name
 partner pokemon: Species Lv{n} | field value | …
@@ -56,7 +55,6 @@ look: middle-aged man
 class: hiker
 rank: normal
 place: mountain
-time: day
 pokemon: Geodude Lv12
 pokemon: Onix Lv14 | moves Tackle, Rock Tomb | item Hard Stone
 </pkb-battle>
@@ -80,14 +78,15 @@ export const CHANGE_ENTRY = `@@depth 0
 \`\`\`
 <pkb-change>
 add: Species Lv{n} | nickname name | box | ot name
+egg: Species | Species box
 level: #N +{levels}
 heal: all | #N | #N 50% | #N status | #N revive
-item: Item +{n} | Item -{n}
+item: Emoji Item +{n} | Emoji Item -{n}
 release: #N
 deposit: #N
 withdraw: box N
 nickname: #N name
-hold: #N Item | #N none
+hold: #N Emoji Item | #N none
 evolve: #N Species
 teach: #N Move | #N Move forget Move
 </pkb-change>
@@ -99,18 +98,21 @@ teach: #N Move | #N Move forget Move
 - HP is a percentage of max HP; 0% means fainted. Status is Normal, Paralyzed, Burned, Asleep, Frozen, Poisoned, Badly Poisoned, or Fainted.
 - add: A new Pokémon joins {{user}}; it goes to storage when the party is full or with box. It takes the same optional fields as a Battle Block pokemon line; anything left out is filled in automatically.
   ot is the original trainer's name, only when {{user}} receives a Pokémon someone else raised (e.g., a trade).
+- egg: An Egg {{user}} receives. Write only the species that will hatch from it; everything else is filled in automatically. It goes to storage when the party is full or with box.
 - heal: Restores HP fully or by a percentage, cures status only, or revives a fainted Pokémon (e.g., a Pokémon Center visit → heal: all).
 - teach: Adds a move; with forget, it replaces that move. Without forget, {{user}} chooses later which move to forget.
-- Use official English names for species, moves, and items. Write nicknames in the story's language.
+- item, hold: Start every item name with one emoji that fits the item (e.g., 🧪 Potion, 🗺️ Old Map). An item that exists only in the story keeps the name you give it, written in the story's language.
+- Use official English names for species, moves, and official items. Write nicknames and story-only items in the story's language.
 - Changes listed in <pkb-log> are already applied, including any that {{user}}'s message also describes.
 - Do not output a Change Block while a battle is in progress.
 
 ### Example
-After a time skip with level gains and a capture:
+After a time skip with level gains, a capture, and a gift:
 \`\`\`
 <pkb-change>
 level: #1 +3
 add: Pidgey Lv7
+item: 🗺️ Old Map +1
 </pkb-change>
 \`\`\``;
 
@@ -190,6 +192,11 @@ export function writeTrainerLore(chat, entries, { newId = newUuid } = {}) {
 
 export const VARS = { party: '$pkb_party', storage: '$pkb_storage', bag: '$pkb_bag' };
 
+export function breedingLabels(state) {
+  const slots = (state?.breeding ?? []).map(uid => (state.party ?? []).findIndex(m => m.uid === uid) + 1);
+  return slots.length === 2 && slots.every(n => n > 0) ? slots.sort((a, b) => a - b).map(ownLabel) : null;
+}
+
 const KIND_LABEL = { double: ['Double Battle'], tag: ['Tag Battle'] };
 
 export function varTexts(state, { sim, battle = null, lang = 'ko', en = null } = {}) {
@@ -211,9 +218,11 @@ export function varTexts(state, { sim, battle = null, lang = 'ko', en = null } =
     }
   }
   (state?.party ?? []).forEach((mon, i) => {
-    const hp = sim ? hpPercentOf(sim, mon) : mon.hp === 0 ? 0 : 100;
+
+    if (isEgg(mon)) { party.push(`[${ownLabel(i + 1)} | Egg]`); return; }
+    const hp = sim ? hpPercentOf(sim, mon, stateFormat(state)) : mon.hp === 0 ? 0 : 100;
     const status = hp === 0 ? 'Fainted' : STATUS_EN[mon.status || ''] ?? 'Normal';
-    const fields = [`Own Pokémon ${i + 1}`, `Species: ${namer.species(mon.set.species)}`];
+    const fields = [ownLabel(i + 1), `Species: ${namer.species(mon.set.species)}`];
     if (mon.set.name) fields.push(`Nickname: ${mon.set.name}`);
     fields.push(`Level: ${mon.set.level}`, `HP: ${hp}%`, `Status: ${status}`);
     if (mon.set.ability) fields.push(`Ability: ${namer.abilities(mon.set.ability)}`);
@@ -222,7 +231,10 @@ export function varTexts(state, { sim, battle = null, lang = 'ko', en = null } =
     party.push(`[${fields.join(' | ')}]`);
   });
   if (!(state?.party ?? []).length) party.push('[Own Pokémon | None]');
-  const storage = (state?.box ?? []).map((mon, i) => `${i + 1}: ${nicknamed(mon.set.name, namer.species(mon.set.species))}`);
+
+  const pair = breedingLabels(state);
+  if (pair) party.push(`[Breeding | ${pair.join(' & ')} are being raised together]`);
+  const storage = (state?.box ?? []).map((mon, i) => `${i + 1}: ${isEgg(mon) ? 'Egg' : nicknamed(mon.set.name, namer.species(mon.set.species))}`);
   const items = Object.entries(state?.bag ?? {}).filter(([, n]) => n > 0).map(([id, n]) => `${item(id)} ×${n}`);
   return {
     party: party.join('\n'),

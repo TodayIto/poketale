@@ -2,7 +2,6 @@ import { onInfoBox } from '../sprites/placement.js';
 
 const inside = (x, y, r) => !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 
-// Window in ui container coordinates (x, y = top left) -> field coordinate rectangle
 export const uiRect = (x, y, width, height) => ({ left: x, top: 180 + y, right: x + width, bottom: 180 + y + height });
 
 export const FIGHT_WINDOWS = Object.freeze([uiRect(0, -48, 320, 48)]);
@@ -13,7 +12,7 @@ export function backTarget(scene) {
 
 export function screenButtons(scene) {
   const top = scene.openMenus?.at(-1);
-  return { back: top ? top.canBack() : !!scene.levels?.evolution?.cancelable, pages: scene.summaryScreen?.pages() ?? null };
+  return { back: top ? top.canBack() : !!scene.levels?.evolution?.cancelable || (!!scene.amieScreen?.isOpen && scene.amieScreen.canBack()), pages: scene.summaryScreen?.pages() ?? null };
 }
 
 export function installTapBack(scene) {

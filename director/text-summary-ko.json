@@ -173,7 +173,7 @@
  "ability.multitype": "지니고 있는 플레이트 종류에 따라 자신의 타입이 바뀐다.",
  "ability.flowergift": "날씨가 맑을 때 자신과 같은 편의 공격과 특수방어가 50% 올라간다.",
  "ability.baddreams": "잠듦 상태의 상대에게 매 턴 최대 HP의 1/8만큼 대미지를 준다.",
- "ability.pickpocket": "접촉한 상대의 지닌 도구를 훔친다.",
+ "ability.pickpocket": "접촉한 상대의 지닌 물건을 훔친다.",
  "ability.sheerforce": "기술의 추가 효과가 없어지지만 위력이 30% 증가한 상태로 기술을 사용할 수 있다.",
  "ability.contrary": "능력의 변화가 역전해서 올라갈 때 떨어지고 떨어질 때 올라간다.",
  "ability.unnerve": "상대를 긴장시켜 나무열매를 먹지 못하게 한다.",

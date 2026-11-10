@@ -1,9 +1,9 @@
-// Vitamins: EV +10, up to 252 per stat, 510 total
 export const VITAMIN_EVS = 10;
 
 export const HYPER_TRAIN_LEVEL = 50;
 
 const vitamin = (name, stat) => ({ name, kind: 'train', vitamin: stat });
+const evBerry = (name, stat) => ({ name, kind: 'train', evBerry: stat });
 const candy = (name, exp) => ({ name, kind: 'train', exp });
 const mint = nature => ({ name: `${nature} Mint`, kind: 'train', mint: nature });
 const field = name => ({ name, kind: 'field' });
@@ -11,11 +11,11 @@ const treasure = name => ({ name, kind: 'treasure' });
 
 export const OUTSIDE_ITEMS = {
 
-	freshwater: { name: 'Fresh Water', kind: 'medicine', heal: 30 },
-	sodapop: { name: 'Soda Pop', kind: 'medicine', heal: 50 },
-	lemonade: { name: 'Lemonade', kind: 'medicine', heal: 70 },
-	moomoomilk: { name: 'Moomoo Milk', kind: 'medicine', heal: 100 },
-	sweetheart: { name: 'Sweet Heart', kind: 'medicine', heal: 20 },
+	freshwater: { name: 'Fresh Water', kind: 'medicine', heal: 30, food: 1 },
+	sodapop: { name: 'Soda Pop', kind: 'medicine', heal: 50, food: 1 },
+	lemonade: { name: 'Lemonade', kind: 'medicine', heal: 70, food: 1 },
+	moomoomilk: { name: 'Moomoo Milk', kind: 'medicine', heal: 100, food: 1 },
+	sweetheart: { name: 'Sweet Heart', kind: 'medicine', heal: 20, food: 2 },
 
 	energypowder: { name: 'Energy Powder', kind: 'medicine', heal: 60 },
 	energyroot: { name: 'Energy Root', kind: 'medicine', heal: 120 },
@@ -24,17 +24,20 @@ export const OUTSIDE_ITEMS = {
 
 	sacredash: { name: 'Sacred Ash', kind: 'medicine', revive: 'full', all: true },
 
-	lavacookie: { name: 'Lava Cookie', kind: 'medicine', cure: 'all' },
-	oldgateau: { name: 'Old Gateau', kind: 'medicine', cure: 'all' },
-	casteliacone: { name: 'Casteliacone', kind: 'medicine', cure: 'all' },
-	ragecandybar: { name: 'Rage Candy Bar', kind: 'medicine', cure: 'all' },
-	lumiosegalette: { name: 'Lumiose Galette', kind: 'medicine', cure: 'all' },
-	shaloursable: { name: 'Shalour Sable', kind: 'medicine', cure: 'all' },
-	bigmalasada: { name: 'Big Malasada', kind: 'medicine', cure: 'all' },
-	pewtercrunchies: { name: 'Pewter Crunchies', kind: 'medicine', cure: 'all' },
+	lavacookie: { name: 'Lava Cookie', kind: 'medicine', cure: 'all', food: 2 },
+	oldgateau: { name: 'Old Gateau', kind: 'medicine', cure: 'all', food: 2 },
+	casteliacone: { name: 'Casteliacone', kind: 'medicine', cure: 'all', food: 2 },
+	ragecandybar: { name: 'Rage Candy Bar', kind: 'medicine', cure: 'all', food: 2 },
+	lumiosegalette: { name: 'Lumiose Galette', kind: 'medicine', cure: 'all', food: 2 },
+	shaloursable: { name: 'Shalour Sable', kind: 'medicine', cure: 'all', food: 2 },
+	bigmalasada: { name: 'Big Malasada', kind: 'medicine', cure: 'all', food: 2 },
+	pewtercrunchies: { name: 'Pewter Crunchies', kind: 'medicine', cure: 'all', food: 2 },
 
 	hpup: vitamin('HP Up', 'hp'), protein: vitamin('Protein', 'atk'), iron: vitamin('Iron', 'def'),
 	calcium: vitamin('Calcium', 'spa'), zinc: vitamin('Zinc', 'spd'), carbos: vitamin('Carbos', 'spe'),
+
+	pomegberry: evBerry('Pomeg Berry', 'hp'), kelpsyberry: evBerry('Kelpsy Berry', 'atk'), qualotberry: evBerry('Qualot Berry', 'def'),
+	hondewberry: evBerry('Hondew Berry', 'spa'), grepaberry: evBerry('Grepa Berry', 'spd'), tamatoberry: evBerry('Tamato Berry', 'spe'),
 
 	ppup: { name: 'PP Up', kind: 'train', ppUp: 1 },
 	ppmax: { name: 'PP Max', kind: 'train', ppUp: 3 },
@@ -67,12 +70,14 @@ export const OUTSIDE_ITEMS = {
 	relicgold: treasure('Relic Gold'), rarebone: treasure('Rare Bone'), gimmighoulcoin: treasure('Gimmighoul Coin'),
 
 	repel: field('Repel'), superrepel: field('Super Repel'), maxrepel: field('Max Repel'), escaperope: field('Escape Rope'),
-	honey: field('Honey'), pokedoll: field('Poké Doll'), fluffytail: field('Fluffy Tail'),
+	honey: { ...field('Honey'), food: 1 }, pokedoll: field('Poké Doll'), fluffytail: field('Fluffy Tail'),
 
 	teraorb: { name: 'Tera Orb', kind: 'key' },
 
 	expshare: { name: 'Exp. Share', kind: 'key' },
 };
+
+export const FOOD_BERRY = 1;
 
 export const EXP_SHARE_MODES = ['always', 'item'];
 

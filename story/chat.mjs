@@ -1,6 +1,7 @@
 import { findBlocks, findTags, findMarks, markText, parseEnd, parseBattle, battlesIn, messageId, hashKey, MARK } from './blocks.mjs';
 import { readTable, writeTable, storyEndTrainer, rosterMon, changeAt } from './state.mjs';
 import { readSave } from './save.mjs';
+import { escapeRe } from './norm.mjs';
 import { RESULT_LINE_RE as RESULT_LINE } from './prompts.mjs';
 
 export { MARK };
@@ -25,7 +26,6 @@ export function findOocs(text) {
   });
 }
 
-// Strips only our OOC tags from a text (the text that goes to the AI)
 export const unwrapOocs = text => String(text ?? '').replace(STORY_RE, (_, __, inner) => inner);
 
 export const dropOocs = text => String(text ?? '').replace(STORY_RE, '');
@@ -52,7 +52,6 @@ export function surveyBattles(chat, table = readTable(chat)) {
   let lastBattleKey = null;
   const messages = chat?.message ?? [];
   const spot = (index, start) => index * 1e6 + start;
-
   // Marks on block messages (open, discarded), and per key its openedAt marks and its last result tag
   const open = new Set(), discarded = new Set(), openedAt = new Map(), lastResult = new Map();
   messages.forEach((message, index) => {
@@ -212,7 +211,6 @@ export function setFollow(chat, key = null) {
   return changed;
 }
 
-// Whether the chat has any follow mark (here, moved)
 export const hasFollowMarks = chat => (chat?.message ?? []).some(m => findMarks(m?.data ?? '').some(mark => mark.kind === MARK.here || mark.kind === MARK.moved));
 
 export function findBlockMessage(chat, key) {
@@ -227,9 +225,6 @@ export function setMark(chat, key, kind) {
   return true;
 }
 
-const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-// Position of this block's last result tag [message index, offset in text] | null
 function lastResultAt(chat, blockKey, table) {
   let at = null;
   (chat?.message ?? []).forEach((message, i) => {
@@ -276,7 +271,6 @@ export function undoable(chat, survey, key, { quiet = true } = {}) {
   return ![...survey.battles.values()].some(other => other.key !== key && other.result && other.result.at > result.at);
 }
 
-// The message holding this block's latest result tag and the tag | null
 function latestResult(chat, blockKey, table) {
   let found = null;
   for (const message of chat?.message ?? []) for (const tag of findTags(message?.data ?? '')) if (resultOf(table, tag.key, blockKey)) found = { message, tag: tag.key };

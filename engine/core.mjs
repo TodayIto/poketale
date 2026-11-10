@@ -3,6 +3,7 @@ import { installExtensions, extensionResults } from './extensions.mjs';
 import { completeSet, heldItemForm } from './mon.mjs';
 import { checkSpec } from './input.mjs';
 import { startsFainted } from './initial-state.mjs';
+import { countsResult } from './counts.mjs';
 
 // Format defaults and HP, PP and EV rules live in engine/rules.mjs
 export { DEFAULT_FORMAT, MAINLINE_FORMAT, CHAMPIONS_FORMAT, doublesFormat, multiFormat } from './rules.mjs';
@@ -115,5 +116,9 @@ function resultMon(sim, p) {
 
 		moves: p.baseMoveSlots.map((s, i) => ({ id: s.id, pp: s.pp, maxpp: s.maxpp, ppUps: p.ppUps[i] ?? 0 })),
 		exp: p.m.exp,
+		friendship: p.m.friendship,
+		friendshipCarry: p.m.friendshipCarry || undefined,
+		counts: countsResult(p),
+		cloak: p.m.cloak,
 	};
 }

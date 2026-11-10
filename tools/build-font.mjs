@@ -1,10 +1,13 @@
-//   Battle font - CC BY-SA 3.0 per the font's own name table (crystalwalrein, FontStruct) (view/LICENSE-NOTE.md)
+//   Battle font - CC BY-SA 3.0 per the font's own name table (crystalwalrein, FontStruct) (view/LICENSE-NOTE.md). The subset with its two changed glyphs
+
 //   Galmuri11 - SIL Open Font License 1.1, Copyright (c) 2019-2025 Lee Minseo (data/fonts/OFL-Galmuri11.txt). Source is vendor/galmuri (pinned version fetched by tools/fetch-vendor.sh)
+
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { transformSync } from 'esbuild';
 import { LANGS } from '../director/lang.js';
+import { GENDER_MARK, GENDER_MARK_BATTLE } from '../view/gender-mark.js';
 
 export const SOURCE = 'vendor/pokerogue/assets/fonts/pokemon-emerald-pro.ttf';
 export const OUT = 'data/fonts/emerald-ko.woff2';
@@ -14,7 +17,7 @@ export const GALMURI = Object.freeze({ family: 'PkbPixel', source: 'vendor/galmu
 
 const NAME_JSON = [
 	'data/names/species.json', 'data/names/moves.json', 'data/names/abilities.json', 'data/names/items.json',
-	'data/items-outside.json', 'data/named-trainers.json', 'data/story-names.json',
+	'data/items-outside.json', 'data/named-trainers.json', 'data/story-names.json', 'data/badges.json',
 ];
 
 const TEXT_JSON = [
@@ -44,10 +47,8 @@ function collect(json, code, extra = '') {
 	return [...cps].sort((a, b) => a - b);
 }
 
-// Characters the battle font subset must contain (code points, ascending)
 export const fontText = () => collect(TEXT_JSON, textCode(), phaserTestString());
 
-// Characters the Galmuri11 subset must contain (code points, ascending)
 export const galmuriText = () => collect(NAME_JSON, galmuriCode());
 
 function phaserTestString() {
@@ -100,6 +101,62 @@ export function fontCodePoints(bytes) {
 	return cps;
 }
 
+export function pixelOutline(rows) {
+	const h = rows.length, key = (x, y) => `${x},${y}`, edges = new Map();
+	const add = (a, b) => {
+		const back = `${key(...b)}>${key(...a)}`;
+		if (edges.has(back)) edges.delete(back);
+		else edges.set(`${key(...a)}>${key(...b)}`, [a, b]);
+	};
+	rows.forEach((row, r) => [...row].forEach((c, x) => {
+		if (c !== '#') return;
+		const y = h - 1 - r;
+		add([x, y], [x, y + 1]); add([x, y + 1], [x + 1, y + 1]); add([x + 1, y + 1], [x + 1, y]); add([x + 1, y], [x, y]);
+	}));
+	const from = new Map();
+	for (const [id, [a]] of edges) from.set(key(...a), [...(from.get(key(...a)) ?? []), id]);
+	const polygons = [];
+	for (const start of [...edges.keys()].sort()) {
+		if (!edges.has(start)) continue;
+		const points = [];
+		let id = start;
+		while (id) {
+			const [a, b] = edges.get(id);
+			edges.delete(id);
+			points.push(a);
+			const dir = [b[0] - a[0], b[1] - a[1]], turns = [[dir[1], -dir[0]], dir, [-dir[1], dir[0]]];
+			const next = (from.get(key(...b)) ?? []).filter(e => edges.has(e));
+			id = turns.map(([dx, dy]) => next.find(e => e.endsWith(`>${key(b[0] + dx, b[1] + dy)}`))).find(Boolean);
+		}
+
+		polygons.push(points.filter((p, i) => {
+			const q = points.at(i - 1), n = points[(i + 1) % points.length];
+			return (p[0] - q[0]) * (n[1] - p[1]) !== (p[1] - q[1]) * (n[0] - p[0]);
+		}));
+	}
+	return polygons;
+}
+
+export function genderGlyphs({ marks, unit, place }) {
+	return Object.fromEntries(Object.entries({ M: 0x2642, F: 0x2640 }).map(([g, cp]) => {
+		const [left, advance] = place[g];
+		return [cp, { advance: advance * unit, contours: pixelOutline(marks[g]).map(poly => poly.map(([x, y]) => [(x + left) * unit, y * unit])) }];
+	}));
+}
+
+const PATCH_GLYPHS = 'import sys, json; from fontTools.ttLib import TTFont; from fontTools.pens.ttGlyphPen import TTGlyphPen\n'
+	+ 'f = TTFont(sys.argv[1], recalcBBoxes=False); spec = json.loads(sys.argv[2]); cmap = f.getBestCmap(); glyf = f["glyf"]\n'
+	+ 'for cp, g in spec.items():\n'
+	+ '    name = cmap[int(cp)]\n'
+	+ '    assert [c for c, n in cmap.items() if n == name] == [int(cp)], name\n'
+	+ '    pen = TTGlyphPen(None)\n'
+	+ '    for poly in g["contours"]:\n'
+	+ '        pen.moveTo(tuple(poly[0])); [pen.lineTo(tuple(p)) for p in poly[1:]]; pen.closePath()\n'
+	+ '    glyph = pen.glyph(); glyph.recalcBounds(glyf); glyf[name] = glyph; f["hmtx"][name] = (g["advance"], glyph.xMin); head = f["head"]\n'
+	+ '    assert head.xMin <= glyph.xMin and glyph.xMax <= head.xMax and head.yMin <= glyph.yMin and glyph.yMax <= head.yMax and g["advance"] <= f["hhea"].advanceWidthMax\n'
+	+ '    assert glyph.numberOfContours <= f["maxp"].maxContours and len(glyph.coordinates) <= f["maxp"].maxPoints\n'
+	+ 'f.save(sys.argv[1])';
+
 function python(args) {
 	for (const py of ['python3', 'python']) {
 		const r = spawnSync(py, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
@@ -110,22 +167,26 @@ function python(args) {
 	throw new Error('python 이 없어 글꼴 조각을 다시 만들 수 없다 (python + pip install fonttools brotli)');
 }
 
-const JOBS = [
+export const JOBS = [
 	{
 		source: SOURCE, out: OUT, manifest: MANIFEST, text: fontText,
 
 		options: ['--layout-features='],
+
+		gender: { marks: GENDER_MARK_BATTLE, unit: 64, place: { M: [0, 9], F: [0, 6] } },
 		about: 'PokeRogue 에셋, 글꼴 라이선스 CC BY-SA 3.0 crystalwalrein',
 	},
 	{
 		...GALMURI, text: galmuriText,
 
 		options: [],
+
+		gender: { marks: GENDER_MARK, unit: 100, place: { M: [1, 12], F: [2, 12] } },
 		about: 'Galmuri11 2.40.3, Copyright (c) 2019–2025 Lee Minseo (quiple@quiple.dev), SIL Open Font License 1.1 — data/fonts/OFL-Galmuri11.txt, https://github.com/quiple/galmuri',
 	},
 ];
 
-function subset({ source, out, manifest: file, text, options, about, family = null }) {
+function subset({ source, out, manifest: file, text, options, gender, about, family = null }) {
 	if (!existsSync(source)) throw new Error(`${source} 가 없다 → tools/fetch-vendor.sh (윈도우 tools/fetch-vendor.ps1)`);
 	const font = readFileSync(source), have = fontCodePoints(font);
 	const needed = text();
@@ -133,8 +194,12 @@ function subset({ source, out, manifest: file, text, options, about, family = nu
 	const kept = needed.filter(cp => have.has(cp)), cmap = toRanges(kept);
 	const missing = String.fromCodePoint(...needed.filter(cp => !have.has(cp)));
 	const sourceSha256 = sha256(font);
+
+	const patch = Object.fromEntries(Object.entries(genderGlyphs(gender)).filter(([cp]) => kept.includes(Number(cp))));
+	const glyphPatchSha256 = sha256(JSON.stringify(patch));
 	const old = existsSync(file) && JSON.parse(readFileSync(file, 'utf8'));
-	if (old && old.sourceSha256 === sourceSha256 && old.cmap === cmap && (old.family ?? null) === family && existsSync(out) && sha256(readFileSync(out)) === old.woff2Sha256) {
+	if (old && old.sourceSha256 === sourceSha256 && old.cmap === cmap && (old.family ?? null) === family && old.glyphPatchSha256 === glyphPatchSha256
+		&& existsSync(out) && sha256(readFileSync(out)) === old.woff2Sha256) {
 		console.log(`글꼴 조각 그대로: ${out} ${old.bytes} B, 글리프 ${old.glyphs}. 원본에 없는 글자 ${[...missing].length}: ${missing}`);
 		return;
 	}
@@ -147,6 +212,7 @@ function subset({ source, out, manifest: file, text, options, about, family = nu
 	if (family) python(['-c', 'import sys; from fontTools.ttLib import TTFont; f = TTFont(sys.argv[1]); fam = sys.argv[2]; '
 		+ 'new = {1: fam, 3: fam + "-Regular", 4: fam, 6: fam + "-Regular", 16: fam, 21: fam}; '
 		+ '[setattr(r, "string", new[r.nameID]) for r in f["name"].names if r.nameID in new]; f.save(sys.argv[1])', out, family]);
+	if (Object.keys(patch).length) python(['-c', PATCH_GLYPHS, out, JSON.stringify(patch)]);
 	const read = JSON.parse(python(['-c', 'import sys, json; from fontTools.ttLib import TTFont; f = TTFont(sys.argv[1]); '
 		+ 'print(json.dumps({"glyphs": len(f.getGlyphOrder()), "cmap": sorted(f.getBestCmap())}))', out]));
 
@@ -155,6 +221,8 @@ function subset({ source, out, manifest: file, text, options, about, family = nu
 	const manifest = {
 		_source: `tools/build-font.mjs: ${source} (${about}) 의 조각. 다시 만들기: node tools/build-font.mjs (python fontTools 필요)`,
 		...(family && { family }), sourceSha256, woff2Sha256: sha256(bytes), bytes: bytes.length, glyphs: read.glyphs,
+		glyphPatch: `${Object.keys(patch).map(cp => String.fromCodePoint(cp)).join(' ')} 글리프를 view/gender-mark.js ${gender.marks === GENDER_MARK ? 'GENDER_MARK' : 'GENDER_MARK_BATTLE'} 픽셀로 바꿈 (본편 모양)`,
+		glyphPatchSha256,
 		cmap,
 	};
 	writeFileSync(file, `${JSON.stringify(manifest, null, '\t')}\n`);
