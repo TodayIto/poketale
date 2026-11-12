@@ -61,7 +61,8 @@ async function commands(ctx, request) {
 
     const taken = new Map();
     for (const pick of picks) if (pick?.bag) taken.set(pick.bag.item, (taken.get(pick.bag.item) ?? 0) + 1);
-    const choice = await view.chooseAction(commandOptions(ctx, request, i, chosen, taken, { back: asked, gimmickUsed: picks.some(pick => pick?.gimmick) }));
+    const options = commandOptions(ctx, request, i, chosen, taken, { back: asked, gimmickUsed: picks.some(pick => pick?.gimmick) });
+    const choice = await view.chooseAction(options);
     if (choice?.kind === 'back') {
       if (!asked) throw new Error('Invalid player choice');
       picks.length = 0; i = 0;
@@ -69,7 +70,7 @@ async function commands(ctx, request) {
     }
     if (choice?.kind === 'run') return run.choice();
     if (choice?.kind === 'item' && bag) {
-      const pick = bag.choice(choice, i, taken);
+      const pick = bag.choice(choice, options.party, i, taken);
       if (pick.bag.item in BALLS) return pick;
       picks[i++] = pick;
       continue;
@@ -100,7 +101,7 @@ function commandOptions(ctx, request, i, chosen, taken, { back, gimmickUsed }) {
     position: positionAt(0, i), ...(back ? { back: true } : {}), moves, canSwitch: true, party,
 
     ...(gimmickUsed ? {} : gimmickOptions(request, gimmicks, i)),
-    ...(bag ? { bag: bag.menu(i, taken) } : {}),
+    ...(bag ? { bag: bag.menu(party, i, taken) } : {}),
     run: run.menu(),
   };
 }

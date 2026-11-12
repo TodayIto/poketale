@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const ASSETS = resolve(root, 'vendor/pokerogue/assets');
 const OUT = resolve(root, 'plugin/battle/pinned-assets.json');
-export const HASH_BYTES = 6;
+const HASH_BYTES = 6;
 
 const base = /DEFAULT_ASSET_BASE = '([^']+)'/.exec(readFileSync(resolve(root, 'view/assets.js'), 'utf8'))?.[1];
 const commit = /\/([0-9a-f]{40})\/$/.exec(base ?? '')?.[1];

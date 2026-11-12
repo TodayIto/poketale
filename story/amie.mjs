@@ -1,5 +1,5 @@
 // Petting, feeding and visit state.
-// Modified for PokeTale on 2026-11-10. See THIRD-PARTY-NOTICES.md.
+// Modified for PokeTale on 2026-11-12. See THIRD-PARTY-NOTICES.md.
 // Ported from PlayNav (https://github.com/poooooby/PlayNav): data/amie_rules.lua (PET, HIT, HIGH_FIVE, IDLE numbers),
 // src/amie/session.lua (petTouch, hit, highFive, feedStart / feedHold: bites), src/amie/play.lua (handlePress, update: wake, petting, high five, dozing),
 // src/amie/rules.lua (the Poke Puff catalogue), data/amie_rules.lua PUFF (bites per species, the pace of a nearly full Pokemon, species that do not eat).
@@ -86,6 +86,8 @@ export const FREE_GRADE = 'basic';
 
 export const puffFriendship = grade => (grade === FREE_GRADE ? 1 : 2);
 
+export const feedHeals = fed => parsePuff(fed.puff)?.grade !== FREE_GRADE;
+
 export const puffId = (flavor, grade) => `${flavor}_${grade}`;
 
 export function parsePuff(id) {
@@ -165,7 +167,7 @@ export const PET = Object.freeze({
   SPEND: 5,
 });
 
-export const HIT = Object.freeze({ TICKS: 4 });
+export const HIT = Object.freeze({ TICKS: 8, COOL_TICKS: 90, SPEND: 5 });
 
 export const HIGH_FIVE = Object.freeze({ MIN_FRIENDSHIP: 5, POSE_TICKS: 10, STEP: 50, PER_STEP: 30, RAND: 30, SPEND: 5, LEAP_TICKS: 21 });
 
@@ -192,7 +194,7 @@ export function createPetting({ spots, enjoy = ENJOY_MAX, friendship, back = tru
     return [{ uid, spent, friendship: friendshipFor(spent) }];
   });
   m.friendsSpent = () => mates.filter(one => one.gains.length).map(one => ({ uid: one.uid, gains: [...one.gains] }));
-  let tick = 0, wakeT = 0, idle = 0, lock = 0, lastPress = -Infinity;
+  let tick = 0, wakeT = 0, idle = 0, lock = 0, lastPress = -Infinity, tapReady = 0;
   let touch = null;
   let five = null;
   let fiveLeft = highFiveTicks(friendship, random);
@@ -217,7 +219,7 @@ export function createPetting({ spots, enjoy = ENJOY_MAX, friendship, back = tru
     if (kindAt(cell) !== 'none') {
       if (tick - lastPress <= HIT.TICKS) {
         lastPress = -Infinity; touch = null;
-        return [{ type: 'hit' }];
+        return tap(kindAt(cell));
       }
       lastPress = tick;
       touch = freshTouch();
@@ -244,6 +246,18 @@ export function createPetting({ spots, enjoy = ENJOY_MAX, friendship, back = tru
     if (!touch || !down || !stroke) return [];
     return pet(cell, moved > PET.MOVE);
   };
+
+  function tap(kind) {
+    if (!stroke) return [{ type: 'hit', angry: true }];
+    if (kind === 'disliked') {
+      lock = PET.DISLIKE_LOCK_TICKS;
+      return [{ type: 'dislike' }];
+    }
+    if (tick < tapReady) return [{ type: 'hit', angry: true }];
+    tapReady = tick + HIT.COOL_TICKS;
+    lock = PET.LOCK_TICKS;
+    return [{ type: 'hit' }, { type: 'reward', spot: kind, ...spend(HIT.SPEND) }];
+  }
 
   function holdFive() {
     five.held++;

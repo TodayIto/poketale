@@ -1,6 +1,6 @@
 // from pokerogue src/ui/handlers/command-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-12. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/fight-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
 
 export const GIMMICK = 4;
 
@@ -35,7 +35,6 @@ export class GimmickButton {
     return false;
   }
 
-  // Fields added to the Choice when a move is picked
   choice() { return this.on ? { [this.kind]: true } : {}; }
 
   draw(container, fight) {
@@ -54,7 +53,7 @@ export class GimmickButton {
     container.add(this.button);
     const hit = s.add.rectangle(BUTTON.x - 13, BUTTON.y - 15, 26, 30, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
     hit.on('pointerover', () => m.hover(GIMMICK));
-    hit.on('pointerdown', () => { m.cursor = GIMMICK; m.input('ok'); });
+    hit.on('pointerdown', m.tapped(() => { m.cursor = GIMMICK; m.input('ok'); }));
     container.add(hit);
   }
   frame() {

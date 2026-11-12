@@ -1,14 +1,16 @@
 import { panelModel, reduce, initialUi, levelUpPlan, levelUpAction, evolutionMoves, evolveAction, teachAction, rememberAction, petAction, trainAction, spinInto, actions, boxName,
-  pendingCount, DEFAULT_SCREEN_PLACE, liveScreen, screenTab, slotView, namesFor } from '../../story/panel.mjs';
+  pendingCount, DEFAULT_SCREEN_PLACE, liveScreen, screenTab, slotView, namesFor, restedSlots } from '../../story/panel.mjs';
 import { screenView } from '../../story/panel-screens.mjs';
 import { loadExpText } from '../../director/steps-exp.js';
 import { rememberableMoves } from '../../story/state.mjs';
 import { trainBlock } from '../../story/training.mjs';
-import { renderPanel, panelShell, PANEL_STATES, OWN_CLASS, sheetCss, sheetArt } from '../../story/panel-html.mjs';
+import { renderPanel, panelShell, PANEL_STATES, OWN_CLASS, sheetCss, sheetArt, REST_GLOW_MS } from '../../story/panel-html.mjs';
 import { unreadableLine } from '../../story/stored.mjs';
 import { WHAT, failureText } from '../../story/failure.mjs';
 import { CHAT_SCREEN } from '../battle/stage.js';
 import { statusMoney, compatTravel } from '../../story/compat.mjs';
+import { belowSheet } from './host-bar.js';
+import { chatRoom } from './chat-room.js';
 
 const clone = value => JSON.parse(JSON.stringify(value));
 
@@ -25,14 +27,16 @@ export function keyOf(event) {
 }
 
 export async function startPanel({ doc, read, queueAction, screens, changes = () => () => {}, resume = async () => {}, toggleAux = async () => null, debugAdd = async () => {}, debugEdit = async () => {}, debugHeal = async () => {}, debugBadges = async () => {}, debugLock = async () => {},
-  botTravel = async () => {}, quickImport = async () => {}, importLater = async () => {}, pictures = null, place = () => DEFAULT_SCREEN_PLACE, trainer = async () => null }) {
+  botTravel = async () => {}, quickImport = async () => {}, importLater = async () => {}, pictures = null, place = () => DEFAULT_SCREEN_PLACE, trainer = async () => null, shift = () => 0,
+  restSound = () => {} }) {
   const body = await doc.querySelector('body');
   if (!body) return null;
   const root = await doc.createElement('div');
   await root.addClass('x-risu-pkbp-root');
   await body.appendChild(root);
   await root.setInnerHTML(panelShell());
-  const [outer, tabsBox, sheetBox, artBox] = await Promise.all(['.x-risu-pkbp', '.x-risu-pkbp-tabs', '.x-risu-pkbp-sheet', '.x-risu-pkbp-art'].map(selector => root.querySelector(selector)));
+  const [outer, tabsBox, sheetBox, artBox, floor] = await Promise.all(['.x-risu-pkbp', '.x-risu-pkbp-tabs', '.x-risu-pkbp-sheet', '.x-risu-pkbp-art', '.x-risu-pkbp-floor']
+    .map(selector => root.querySelector(selector)));
   if (!outer || !tabsBox || !sheetBox) { await root.remove(); return null; }
 
   let ui = initialUi();
@@ -43,6 +47,8 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
   let lastSig = null, busy = false, stopped = false;
   let away = false;
   let line = Promise.resolve(), queued = false, missed = false;
+
+  let glow = null;
 
   function refresh({ force = false } = {}) {
     if (!force) {
@@ -64,10 +70,16 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     const battle = cur?.battle ?? { key: null, phase: null };
     const chatScreen = !!(await doc.querySelector(CHAT_SCREEN));
 
+    const below = cur?.on && chatScreen && floor
+      ? await belowSheet(doc, floor).catch(error => { console.warn('[poke-battle] 패널 입력창 재기', error); return null; }) : null;
+
+    const room = cur?.on && chatScreen && floor
+      ? await chatRoom(doc, floor).catch(error => { console.warn('[poke-battle] 패널 채팅 오른쪽 재기', error); return null; }) : null;
+
     const travel = cur?.on && cur.compat ? compatTravel(cur.chat) : null;
 
     const sig = JSON.stringify([cur?.key ?? null, cur?.lang ?? null, !!cur?.on, battle.phase, chatScreen, !!cur?.compat, !!cur?.debug, cur?.aux?.on ?? null, cur?.offer ?? null, travel,
-      pictures?.route() ?? null, place()]);
+      pictures?.route() ?? null, place(), shift(), below, room]);
     if (!force && sig === lastSig) return;
     if ((cur?.id ?? null) !== chatId) {
       const id = cur?.id ?? null;
@@ -86,6 +98,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     if (now) now.resume = battle.phase === 'folded' || battle.phase === 'parked';
     if (now) now.live = battle.phase === 'live';
     if (now) now.aux = cur.aux ?? null;
+    if (now) { now.below = below; now.room = room; }
     if (now) {
       now.travel = travel;
       now.money = cur.compat ? statusMoney(cur.chat) : undefined;
@@ -107,16 +120,18 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     await box.setInnerHTML(html);
     const list = await box.querySelectorAll('.x-risu-pkbp-hit');
     const n = await list.length();
+    const blanks = [];
     for (let i = 0; i < n; i++) {
       const element = await list.at(i);
       const index = Number((await element.getClassName()).match(/x-risu-pkbp-h(\d+)/)?.[1]);
       const hit = hits[index];
       if (!hit) continue;
-      await element.addEventListener('click', event => {
+      const listener = event => {
         if (swipedJust()) return;
         if (hit.t === 'blank' ? echo(event) : (took(event), false)) return;
         press(hit).catch(error => console.warn('[poke-battle] 패널', error));
-      });
+      };
+      if (hit.t === 'blank') blanks.push([element, listener]); else await element.addEventListener('click', listener);
     }
 
     const own = await box.querySelectorAll(`.${OWN_CLASS}`);
@@ -143,6 +158,8 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
         press(dx < 0 ? next : prev).catch(error => console.warn('[poke-battle] 패널', error));
       });
     }
+
+    for (const [element, listener] of blanks) await element.addEventListener('click', listener);
   }
 
   let swipeFrom = null, swipedAt = 0;
@@ -182,7 +199,8 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
 
     const shownUi = now.unreadable && !ui.message ? { ...ui, message: { text: unreadableLine(now.lang), error: true } } : ui;
     const view = renderPanel(panelModel({ state: now.state, ctx: now.ctx, lang: now.lang, locked: now.locked, resume: now.resume, debug: now.debug, offer: now.offer, travel: now.travel,
-      ui: shownUi, screen, money: now.money }), { aux: now.aux, picture: pictures?.src });
+      ui: shownUi, screen, money: now.money }), { aux: now.aux, picture: pictures?.src, shift: shift(), below: now.below, room: now.room,
+      rested: glow && Date.now() < glow.until ? glow.uids : null });
     const states = [view.open && PANEL_STATES.open, view.locked && PANEL_STATES.locked].filter(Boolean);
 
     if (view.open && view.sheet !== shown.sheet) { await fill(sheetBox, view.sheet, view.hits); shown.sheet = view.sheet; }
@@ -223,11 +241,12 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
       return void await refresh({ force: true });
     }
     const { ui: next, effect } = reduce(ui, hit, envNow());
-    const opening = !ui.open && next.open;
+    const opening = !ui.open && next.open, folding = ui.open && !next.open;
     ui = next;
     if (!effect) {
       await draw();
       if (opening) await refresh({ force: true });
+      else if (folding) await refresh();
       return;
     }
     busy = true;
@@ -252,10 +271,11 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     };
   }
 
-  async function queue(action, after, target, lang, screen) {
+  async function queue(action, after, target, lang, screen, done = () => {}) {
     try {
-      await queueAction(action, target);
+      const queued = await queueAction(action, target);
       if (screen !== undefined) ui = { ...ui, screen };
+      done(queued);
       say(after ?? null);
       return true;
     } catch (error) {
@@ -267,12 +287,20 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     }
   }
 
+  function rested(before, after) {
+    const uids = restedSlots(before, after);
+    if (!uids.length) return;
+    glow = { uids, until: Date.now() + REST_GLOW_MS };
+    restSound();
+  }
+
   async function run(effect, target, lang) {
     try {
       switch (effect.kind) {
         case 'resume': return await resume();
         case 'queue': {
-          const ok = await queue(effect.action, effect.after, target, lang, effect.screen);
+          const before = now.state;
+          const ok = await queue(effect.action, effect.after, target, lang, effect.screen, effect.action.type === 'rest' ? queued => rested(before, queued?.state) : undefined);
 
           const mon = ok && effect.followLevelUp ? findMon(effect.followLevelUp) : null;
           if (mon && pendingCount(mon) && !now?.locked) await levelUp(mon.uid, target, lang);

@@ -99,7 +99,8 @@ teach: #N Move | #N Move forget Move
 - add: A new Pokémon joins {{user}}; it goes to storage when the party is full or with box. It takes the same optional fields as a Battle Block pokemon line; anything left out is filled in automatically.
   ot is the original trainer's name, only when {{user}} receives a Pokémon someone else raised (e.g., a trade).
 - egg: An Egg {{user}} receives. Write only the species that will hatch from it; everything else is filled in automatically. It goes to storage when the party is full or with box.
-- heal: Restores HP fully or by a percentage, cures status only, or revives a fainted Pokémon (e.g., a Pokémon Center visit → heal: all).
+- level: When time passes in the story (e.g., days of travel, a time skip), raise levels as fits that time, even if no one mentions it. Pokémon in storage stay as they are.
+- heal: Restores HP fully or by a percentage, cures status only, or revives a fainted Pokémon (e.g., a Pokémon Center visit or a full night's sleep anywhere → heal: all).
 - teach: Adds a move; with forget, it replaces that move. Without forget, {{user}} chooses later which move to forget.
 - item, hold: Start every item name with one emoji that fits the item (e.g., 🧪 Potion, 🗺️ Old Map). An item that exists only in the story keeps the name you give it, written in the story's language.
 - Use official English names for species, moves, and official items. Write nicknames and story-only items in the story's language.

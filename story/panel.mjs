@@ -3,7 +3,8 @@ import { BALLS } from '../engine/capture.mjs';
 import { expForLevel, growthOf } from '../engine/exp.mjs';
 import { STATS, displayName, heldItemForm, spriteIdOf } from '../engine/mon.mjs';
 import { itemEvolution, tradeEvolution, tradePair, evolutionItems, spinEvolution, ABSENT_TRADE_EVOLUTION } from '../engine/evolution.mjs';
-import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty, rememberableMoves, friendshipOf, evolutionCheck, isEgg, hatched, hatchedParty, breedingOf, stateFormat } from './state.mjs';
+import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty, rememberableMoves, friendshipOf, evolutionCheck, isEgg, hatched, hatchedParty, breedingOf, stateFormat,
+  restsLeft, restHelps, SHORT_RESTS } from './state.mjs';
 import { EGG_SPRITE, compatHearts } from '../engine/breeding.mjs';
 import { FRIENDSHIP_MAX, FRIENDSHIP_STEPS } from '../engine/friendship.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, BOX_SIZE, MAX_MOVES } from './rules.mjs';
@@ -18,7 +19,7 @@ import bagIcons from '../data/bag-icons.json' with { type: 'json' };
 import { CUSTOM_PREFIX, isCustomItem, customInfo, itemId } from './custom-items.mjs';
 import { hungBagOf, effortOn } from './training.mjs';
 import { badgeCaseModel, badgePress } from './badge-case.mjs';
-import { canPet, enjoymentOf, parsePuff, puffId, puffCount, puffFriendship, foodFriendship, FREE_GRADE, PUFF_FLAVORS, PUFF_GRADES } from './amie.mjs';
+import { canPet, enjoymentOf, parsePuff, puffId, puffCount, puffFriendship, foodFriendship, feedHeals, FREE_GRADE, PUFF_FLAVORS, PUFF_GRADES } from './amie.mjs';
 
 export { PARTY_MAX, BOX_SIZE };
 
@@ -288,7 +289,23 @@ export const actions = {
 
   breed: (a, b) => ({ type: 'breed', ops: [{ op: 'breed', a: refOf(a), b: refOf(b) }] }),
   unbreed: () => ({ type: 'breed', ops: [{ op: 'breed', stop: true }] }),
+
+  rest: () => ({ type: 'rest', ops: [{ op: 'rest' }] }),
 };
+
+export function restView(state, sim, locked) {
+  const left = restsLeft(state);
+  const why = locked ? 'battle' : !left ? 'none' : !restHelps(state, sim) ? 'full' : null;
+  return { left, max: SHORT_RESTS, why };
+}
+
+export function restedSlots(before, after) {
+  if (!after) return [];
+  const was = new Map(before.party.map(mon => [mon.uid, mon]));
+  const changed = (old, mon) => (old.hp ?? null) !== (mon.hp ?? null) || (old.status || '') !== (mon.status || '')
+    || mon.set.moves.some(id => old.pp?.[id] !== mon.pp?.[id]);
+  return after.party.filter(mon => was.has(mon.uid) && changed(was.get(mon.uid), mon)).map(mon => mon.uid);
+}
 
 export function breedingView(state, ctx, lang) {
   const now = breedingOf(state, ctx);
@@ -346,7 +363,7 @@ export function petAction(mon, result) {
     if (friend?.uid && friend.uid !== mon.uid && friend.gains?.length) ops.push({ op: 'amie', ref: { uid: friend.uid }, gains: [...friend.gains] });
   }
   for (const step of result?.done ?? []) {
-    if (step.fed) ops.push({ op: 'feed', ref: refOf(mon), ...step.fed });
+    if (step.fed) ops.push({ op: 'feed', ref: refOf(mon), ...step.fed, ...(feedHeals(step.fed) ? {} : { heal: false }) });
     const won = (step.won ?? []).filter(id => parsePuff(id)?.grade !== FREE_GRADE);
     for (const id of new Set(won)) ops.push({ op: 'puff', puff: id, delta: won.filter(w => w === id).length });
   }
@@ -513,6 +530,7 @@ export function panelModel({ state, ctx, lang, locked = false, resume = false, d
     bag: { money, groups: bagView(state, sim, lang, ctx.tradeEvolution) },
     add: debug ? addable(state, locked) : null, debug: !!debug,
     heal: debug ? !locked : null,
+    rest: restView(state, sim, locked),
     offer: offer && !locked ? { note: !!offer.note, button: !!offer.button } : null,
     breeding: breedingView(state, ctx, lang),
 
@@ -697,6 +715,13 @@ function reduceRaw(ui, hit, env) {
     case 'later': return locked ? same : { ui: calm(ui), effect: { kind: 'importLater' } };
     case 'botSet': return locked ? same : { ui: calm(ui), effect: { kind: 'botTravel', change: { key: hit.key, on: !!hit.on } } };
     case 'guideClear': return locked ? same : { ui: calm(ui), effect: { kind: 'botTravel', change: { clear: 'guide' } } };
+
+    case 'rest': {
+      const { why } = restView(state, sim, locked);
+      if (why === 'none') return same;
+      if (why) return { ui: { ...calm(ui), message: { text: why === 'full' ? noEffect(w.lang) : w.t('panel.rest.battle') } }, effect: null };
+      return { ui: calm(ui), effect: { kind: 'queue', action: actions.rest() } };
+    }
     case 'heal': {
       if (!debug || locked) return same;
       if (!healChanges(state, ctx)) return { ui: { ...calm(ui), message: { text: noEffect(w.lang) } }, effect: null };

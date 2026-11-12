@@ -1,6 +1,6 @@
 // from pokerogue src/phases/attempt-run-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-12. See view/LICENSE-NOTE.md.
 // from pokerogue src/phases/command-phase.ts (handleRunCommand, queueShowText) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { teamOf, fieldPositions } from './positions.js';
 import { tween } from './lifetime.js';
@@ -38,8 +38,7 @@ export function chooseRun(menu) {
     if (!menu.finish) return;
     messages.text.setText('');
     messages.container.setVisible(false);
-    menu.container.setVisible(true);
-    menu.mode = 'command'; menu.draw();
+    menu.reshow('command');
   }, error => { if (menu.finish) menu.fail(error); });
 }
 
@@ -65,7 +64,6 @@ function confirmForfeit(menu) {
     if (yes) return menu.finish({ kind: 'run' });
     messages.text.setText('');
     messages.container.setVisible(false);
-    menu.container.setVisible(true);
-    menu.mode = 'command'; menu.draw();
+    menu.reshow('command');
   }, error => { clearNote(); if (menu.finish) menu.fail(error); });
 }

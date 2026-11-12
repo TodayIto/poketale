@@ -1,5 +1,5 @@
 // Petting minigames and their rewards.
-// Modified for PokeTale on 2026-11-10. See THIRD-PARTY-NOTICES.md.
+// Modified for PokeTale on 2026-11-12. See THIRD-PARTY-NOTICES.md.
 // Ported from PlayNav (https://github.com/poooooby/PlayNav): src/amie/games/common.lua (THRESHOLDS, REWARDS, rewardList), src/amie/games/berry_picker.lua
 // (rotation, patience, kinds, slots), src/amie/games/head_it.lua with data/head_it_rules.lua (stages, flights, crush / purple / giant balls, hit windows, points, combos),
 // src/amie/games/tile_puzzle.lua (grids, the swap shuffle). PlayNav is MIT License, Copyright (c) 2026 poooooby - THIRD-PARTY-NOTICES.md.
@@ -11,7 +11,7 @@ export const LEVELS = Object.freeze(['easy', 'normal', 'hard']);
 
 export const DEFAULT_LEVEL = 'normal';
 
-export const GAME_SPEND = 10;
+export const GAME_SPEND = 20;
 
 export const STARS = Object.freeze([0, 1, 2, 3, 4, 4.5, 5]);
 const BERRY = [0, 5, 10, 15, 20, 30, 40];

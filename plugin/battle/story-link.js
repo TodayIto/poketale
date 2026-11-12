@@ -226,17 +226,25 @@ export async function hideWindow(owner) {
   if (at === windows.length) await syncWindow();
 }
 
+const permits = new Map();
+
 export async function askPermission(name) {
+  if (permits.has(name)) return permits.get(name);
+  let lowered = false;
   const run = windowLine.then(async () => {
+    if (permits.has(name)) return permits.get(name);
+    lowered = true;
     await risuai.hideContainer();
     frameHidden();
-    return risuai.requestPluginPermission(name);
+    const granted = (await risuai.requestPluginPermission(name)) === true;
+    permits.set(name, granted);
+    return granted;
   });
   windowLine = run.catch(() => {});
-  try { return (await run) === true; } catch (error) {
+  try { return await run; } catch (error) {
     console.warn('[poke-battle] 권한을 묻지 못함', error);
     return false;
-  } finally { await syncWindow(); }
+  } finally { if (lowered) await syncWindow(); }
 }
 
 let active = null;
@@ -1476,6 +1484,7 @@ async function sendOnce(target, what, { onWait, acts: told = [] } = {}) {
 }
 
 async function sendChatOn(target, mark, lang) {
+  if (!(await askPermission('sendChat'))) return failureNote(WHAT.sendOn, 'denied', lang);
   const pass = await readPass();
   const last = pass?.chat.message?.at(-1);
   if (pass?.id !== idOf(target)) return failureNote(WHAT.sendOn, 'chatMoved', lang);
@@ -1876,31 +1885,36 @@ export async function openSettings() {
   if (settingsApp) return;
   settingsApp = true;
   const owner = {};
-
-  const preparing = mountPreparing({ lang: await openLang() });
-  let pass, bot = null, persona, picture = null, imports = null;
+  let app = null;
   try {
-    await showWindow(owner, { full: true });
 
-    ({ settings, status: settingsStatus } = await loadSettings(risuai.pluginStorage));
-    ({ name: persona } = await personaLook());
-    if (persona) picture = await loadPicture(risuai.pluginStorage, persona);
-    pass = await readPass();
-    if (pass) bot = { name: (await characterAt(pass.charIndex, pass.chat, { fresh: true }))?.name ?? '', compat: compatStatus.get(pass.target?.chaId) ?? '' };
-    if (pass) imports = importsOf(pass.chat);
-  } catch (error) { settingsApp = undefined; throw error; }
-  finally { preparing.remove(); }
-  const unreadable = isUnreadable(settingsStatus);
-  const lang = currentLang(pass?.chat);
-  const app = mountSettings({ settings, bot, persona, notice: unreadable ? settingsUnreadable(lang) : '', picture, imports, lang,
-    inUse: { lang },
-    onPicture: next => savePicture(risuai.pluginStorage, persona, next),
-    onPermission: askPermission,
-    onChange: next => changeInWindow(pass?.target, next),
-    onImport: () => openImport(pass.target, next => app.setImports(next)),
-    onCancelImport: id => cancelImportIn(pass.target, id),
-    onClose: async () => { settingsApp = undefined; importApp?.close(); await hideWindow(owner); } });
-  settingsApp = app;
+    const preparing = mountPreparing({ lang: await openLang() });
+    let pass, bot = null, persona, picture = null, imports = null;
+    try {
+      await showWindow(owner, { full: true });
+
+      ({ settings, status: settingsStatus } = await loadSettings(risuai.pluginStorage));
+      ({ name: persona } = await personaLook());
+      if (persona) picture = await loadPicture(risuai.pluginStorage, persona);
+      pass = await readPass();
+      if (pass) bot = { name: (await characterAt(pass.charIndex, pass.chat, { fresh: true }))?.name ?? '', compat: compatStatus.get(pass.target?.chaId) ?? '' };
+      if (pass) imports = importsOf(pass.chat);
+    } finally { preparing.remove(); }
+    const unreadable = isUnreadable(settingsStatus);
+    const lang = currentLang(pass?.chat);
+    app = mountSettings({ settings, bot, persona, notice: unreadable ? settingsUnreadable(lang) : '', picture, imports, lang,
+      inUse: { lang },
+      onPicture: next => savePicture(risuai.pluginStorage, persona, next),
+      onPermission: askPermission,
+      onChange: next => changeInWindow(pass?.target, next),
+      onImport: () => openImport(pass.target, next => app.setImports(next)),
+      onCancelImport: id => cancelImportIn(pass.target, id),
+      onClose: async () => { settingsApp = undefined; importApp?.close(); await hideWindow(owner); } });
+    settingsApp = app;
+  } finally {
+
+    if (!app) { settingsApp = undefined; await hideWindow(owner); }
+  }
 }
 
 let importApp;

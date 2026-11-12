@@ -18,6 +18,7 @@ import { replaceMove } from '../engine/exp.mjs';
 import { chooseEnemyParts, hasEnemyItem } from '../engine/bag.mjs';
 import { commitChoice } from '../ai/commit.js';
 import { chooseDouble } from './double.js';
+import { requestIndex } from './party-slot.js';
 
 export function partySlots(battle, names, lang, request, { trapped = false, reviving = false, options } = {}) {
   const side = battle.sides[0];
@@ -41,10 +42,6 @@ export function partySlots(battle, names, lang, request, { trapped = false, revi
     active: !!pokemon.active, fainted: / fnt$/.test(pokemon.condition), partner: battle.sides[2].name, blocked: ownText('own.partnerPokemon', {}, lang) }));
   return [mine[0], ...theirs.filter(slot => slot.active), ...mine.slice(1), ...theirs.filter(slot => !slot.active)];
 }
-
-export const requestIndex = (party, slot) => party.slice(0, slot).filter(p => !p.partner).length;
-
-export const partyIndex = (party, index) => party.findIndex((p, i) => !p.partner && requestIndex(party, i) === index);
 
 export { isReviving };
 
@@ -315,10 +312,10 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
       }));
       const party = partySlots(battle, names, lang, request, { trapped: !!request.active[0].trapped, options: battleOptions });
 
-      const choice = await view.chooseAction({ moves, canSwitch: true, party, ...gimmickOptions(request, gimmicks), ...(bag ? { bag: bag.menu() } : {}), run: run.menu() });
+      const choice = await view.chooseAction({ moves, canSwitch: true, party, ...gimmickOptions(request, gimmicks), ...(bag ? { bag: bag.menu(party) } : {}), run: run.menu() });
       if (choice?.kind === 'switch') return switchChoice(choice, party);
       if (choice?.kind === 'run') return run.choice();
-      if (choice?.kind === 'item' && bag) return bag.choice(choice);
+      if (choice?.kind === 'item' && bag) return bag.choice(choice, party);
       if (choice?.kind !== 'move' || !Number.isInteger(choice.index) || !moves[choice.index] || moves[choice.index].disabled) {
         throw new Error('Invalid player choice');
       }

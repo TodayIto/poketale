@@ -1,6 +1,6 @@
 import { plateOf, plateFor, exitTop, gameBarFor, fabBox } from './amie-layout.js';
 import { LOCKED, UNLOCKED } from './lock-icon.js';
-import { NAVY, TAP, esc, partsCss, ringCss, fabHtml, rowHtml, roundHtml, exitsHtml, segHtml, pickSeg, bindLongPress } from './frame-parts.js';
+import { NAVY, TAP, esc, partsCss, gaugeRingCss, fabHtml, rowHtml, roundHtml, exitsHtml, segHtml, pickSeg, bindLongPress } from './frame-parts.js';
 import { artSvg, pixelSvg } from './amie-art.js';
 import { genderMarkSvg, GENDER_MARK_COLORS, nameShowsGender } from './gender-mark.js';
 import { ringSvg, ringDash, RING_COLOR, RING_ICON } from '../story/gauge-ring.mjs';
@@ -35,7 +35,7 @@ function css(f, width, plate) {
   .pkb-amie .pet{position:absolute;inset:0;}
   .pkb-amie .exit{top:${exitTop(f)}px;} .pkb-amie .exit.back{left:${f.side}px;} .pkb-amie .exit.close{right:${f.side}px;}
   .pkb-amie .top{position:absolute;left:${f.side + TAP + f.gap}px;top:${f.top}px;display:flex;align-items:center;gap:${f.gap}px;}
-  ${ringCss('.pkb-amie', f.ring)}
+  ${gaugeRingCss('.pkb-amie', f.ring)}
   .pkb-amie .ring.enjoy .ic{background:${RING_COLOR.enjoy};} .pkb-amie .ring.full .ic{background:${RING_COLOR.full};}
   .pkb-amie .chip{max-width:${Math.max(60, width - 2 * f.side - 2 * TAP - 2 * f.ring - 4 * f.gap)}px;overflow:hidden;text-overflow:ellipsis;
     padding:3px 11px;border:2.5px solid ${ink};border-radius:14px;background:rgba(255,255,255,.92);box-shadow:${drop};white-space:nowrap;}

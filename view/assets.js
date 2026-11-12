@@ -39,7 +39,7 @@ const PR_SPECIES = { pikachu: '25', gyarados: '130' };
 
 export const SHOWDOWN_TIMEOUT_MS = 20000;
 
-export const HOST_ROUTE_TIMEOUT_MS = 180000;
+const HOST_ROUTE_TIMEOUT_MS = 180000;
 
 export function themedPath(theme, path, legacy = LEGACY_UI) {
   if (!usesLegacyArt(theme) || !path.startsWith('images/ui/')) return path;

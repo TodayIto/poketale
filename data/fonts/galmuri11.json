@@ -2,10 +2,10 @@
 	"_source": "tools/build-font.mjs: vendor/galmuri/Galmuri11.ttf (Galmuri11 2.40.3, Copyright (c) 2019–2025 Lee Minseo (quiple@quiple.dev), SIL Open Font License 1.1 — data/fonts/OFL-Galmuri11.txt, https://github.com/quiple/galmuri) 의 조각. 다시 만들기: node tools/build-font.mjs (python fontTools 필요)",
 	"family": "PkbPixel",
 	"sourceSha256": "2c709890595668f7bdb6df408420fda957dde0288e95b31a1cc17a2ab98b4b4f",
-	"woff2Sha256": "8fefc81a0ea2558d91d6ea6a256145b02eca1ff725c3a0832e35f8c187d05a65",
-	"bytes": 147696,
-	"glyphs": 11332,
+	"woff2Sha256": "5f3fcf0f764ada2c0d35083eb53570ccb4d6bb4dc5f84216f6dc40034aa0dae4",
+	"bytes": 147864,
+	"glyphs": 11333,
 	"glyphPatch": "♀ ♂ 글리프를 view/gender-mark.js GENDER_MARK 픽셀로 바꿈 (본편 모양)",
 	"glyphPatchSha256": "f35374efe3da3bb70290cbf76d6478a1d34b038d306af705c409c6ee42f218bc",
-	"cmap": "20-7e,a0,b7,d7,e9,2013-2014,2018-2019,201d,2022,2026,20a9,2192,2194,21ba-21bb,25b2,2605,2640,2642,2661,2665,3001,300d,300f,3055,3057,306e,307e,3093,30a4,30aa,30ad,30af-30b0,30b8,30c0-30c1,30c6,30d0,30d4,30d7,30e0,30e3,30e9-30eb,30f3,30fb-30fc,56db,5929,738b,ac00-d7a3,e000,ff0c,ff1a,ff5c"
+	"cmap": "20-7e,a0,b7,d7,e9,2013-2014,2018-2019,201d,2022,2026,20a9,2192,2194,21ba-21bb,2212,25b2,2605,2640,2642,2661,2665,3001,300d,300f,3055,3057,306e,307e,3093,30a4,30aa,30ad,30af-30b0,30b8,30c0-30c1,30c6,30d0,30d4,30d7,30e0,30e3,30e9-30eb,30f3,30fb-30fc,56db,5929,738b,ac00-d7a3,e000,ff0c,ff1a,ff5c"
 }

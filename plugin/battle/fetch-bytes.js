@@ -1,15 +1,16 @@
 import { pinnedHash, PINNED_CHARS } from './pinned-assets.js';
 import { sha256, base64 } from './sha256.js';
+import { SHOWDOWN_HOST } from './picture-route.js';
 
-const POST_HOSTS = new Set(['play.pokemonshowdown.com']);
+const POST_HOSTS = new Set([SHOWDOWN_HOST]);
 
-export const CLEAR_URL = 'https://play.pokemonshowdown.com/sprites/gen5/pikachu.png';
+export const CLEAR_URL = `https://${SHOWDOWN_HOST}/sprites/gen5/pikachu.png`;
 
-export const REQUEST_TIMEOUT_MS = 20000;
+const REQUEST_TIMEOUT_MS = 20000;
 
-export const SOUND_TIMEOUT_MS = 60000;
+const SOUND_TIMEOUT_MS = 60000;
 
-export const KEEP_LIMIT = Object.freeze({ bytes: 32 * 1024 * 1024, files: 800 });
+const KEEP_LIMIT = Object.freeze({ bytes: 32 * 1024 * 1024, files: 800 });
 const SEEN_LIMIT = 4096;
 
 const httpError = (status, url) => Object.assign(new Error(`nativeFetch HTTP ${status}: ${url}`), { status });

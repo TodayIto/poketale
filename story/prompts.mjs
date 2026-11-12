@@ -146,6 +146,8 @@ export function logLine(event, namer = createNamer({ lang: 'en' })) {
     case 'hatch': return `${event.slot ? `The Egg in party #${event.slot}` : 'An Egg'} hatched into ${namer.species(event.who?.species)}`;
     case 'item': return `${itemEn(event.item)} ${signed(event.delta)}`;
     case 'add': return `${USER} got ${namer.species(event.who?.species)} Lv${event.level}${event.box ? ', sent to storage' : ''}`;
+
+    case 'rest': return `${USER}'s party took a short rest and regained half of their max HP and PP`;
     default: return null;
   }
 }

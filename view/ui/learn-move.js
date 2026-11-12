@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/base-option-select-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-12. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/confirm-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (SummaryUiMode.LEARN_MOVE, Page.MOVES) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/text.ts (SUMMARY*, WINDOW*, colours) @ 7d7da4a8 (AGPL-3.0-only)
@@ -95,15 +95,22 @@ export class ConfirmMenu {
 export class LearnMoveSummary {
   constructor(scene) { this.scene = scene; }
   async choose({ mon, moves, newMove }) {
-    if (this.finish) throw new Error('Learn move screen already open');
+    if (this.finish || this.opening) throw new Error('Learn move screen already open');
     const s = this.scene;
-    const asset = await s.assets.mon(mon, false);
-    s.life.check();
-    this.moves = moves; this.newMove = newMove;
-    await fadeSwap(s, () => this.build(mon, asset));
-    s.audio.cry(mon).catch(() => {});
-    const menu = openMenu(s, { input: action => this.input(action), close: () => { this.finish = null; } });
-    this.finish = menu.finish;
+    this.opening = true;
+    try {
+      const asset = await s.assets.mon(mon, false);
+      s.life.check();
+      this.moves = moves; this.newMove = newMove;
+      await fadeSwap(s, () => this.build(mon, asset));
+    } catch (error) { this.clear(); throw error; } finally { this.opening = false; }
+
+    let menu;
+    try {
+      s.audio.cry(mon).catch(() => {});
+      menu = openMenu(s, { input: action => this.input(action), close: () => { this.finish = null; } });
+      this.finish = menu.finish;
+    } catch (error) { menu?.finish(null); this.clear(); throw error; }
     let slot;
     try { slot = await menu.promise; } catch (error) { this.clear(); throw error; }
     await fadeSwap(s, () => this.clear());

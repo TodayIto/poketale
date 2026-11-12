@@ -1,4 +1,4 @@
-import { TAP, esc, partsCss, ringCss, ringHtml, drawRing, fabHtml, exitsHtml, stepperHtml, drawStepper } from './frame-parts.js';
+import { TAP, esc, partsCss, gaugeRingCss, ringHtml, drawRing, fabHtml, exitsHtml, stepperHtml, drawStepper } from './frame-parts.js';
 import { exitTop, fabBox } from './amie-layout.js';
 import { ICON } from './amie-frame.js';
 import { artSvg } from './amie-art.js';
@@ -14,7 +14,7 @@ function css(f) {
   ${partsCss('.pkb-train')}
   .pkb-train{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden;font-size:13px;line-height:1.35;}
   .pkb-train .exit{top:${exitTop(f)}px;} .pkb-train .exit.back{left:${f.side}px;} .pkb-train .exit.close{right:${f.side}px;}
-  ${ringCss('.pkb-train', f.ring)}
+  ${gaugeRingCss('.pkb-train', f.ring)}
   .pkb-train .ring.energy{position:absolute;left:${f.side + TAP + f.gap}px;top:${f.top}px;}
   .pkb-train .fab.bags{right:${fabBox(f.train).side}px;bottom:${f.train.bottom}px;--d:${f.train.d}px;}
   .pkb-train .shade{position:absolute;inset:0;pointer-events:auto;background:rgba(15,24,34,.35);}

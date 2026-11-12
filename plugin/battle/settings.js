@@ -10,7 +10,7 @@ import { EXP_SHARE_MODES } from '../../story/items.mjs';
 import { EXP_RATES, RATES, DEFAULT_EXP_RATE, EXP_RATE_DIGITS, EXP_RATE_MIN, EXP_RATE_MAX, isExpRate, isExpRateSetting } from '../../engine/exp.mjs';
 import { TRADE_EVOLUTIONS as TRADE_EVOLUTION_IDS, DEFAULT_TRADE_EVOLUTION_SETTING } from '../../engine/evolution.mjs';
 import { numberPadCss, openNumberPad } from './number-pad.js';
-import { controlsCss, switchControl, stepperControl, segmentControl } from './controls.js';
+import { controlsCss, switchControl, stepperControl, segmentControl, sliderControl } from './controls.js';
 import { PICTURE_ROUTES, DEFAULT_PICTURE_ROUTE } from './picture-route.js';
 import { shrinkPicture } from './my-picture.js';
 import { loadFont } from '../../view/fonts.js';
@@ -18,7 +18,7 @@ import { FONT, noteRule } from '../../story/card.mjs';
 import { WHAT, failureText } from '../../story/failure.mjs';
 import { sayer, perLang } from '../../story/screen-text.mjs';
 import { SHEET_FONT } from '../../story/style.mjs';
-import { TAB_COLOR, ICON as PANEL_ICON } from '../../story/panel-html.mjs';
+import { TAB_COLOR, ICON as PANEL_ICON, SIZE as PANEL_SIZE, panelShift } from '../../story/panel-html.mjs';
 import { SCREEN_PLACES, DEFAULT_SCREEN_PLACE } from '../../story/panel.mjs';
 
 export const SETTINGS_KEY = 'pkb_settings';
@@ -33,8 +33,8 @@ export const langOf = tag => (/^ko\b/i.test(String(tag ?? '')) ? 'ko' : 'en');
 
 export const hostLang = () => langOf(globalThis.navigator?.language);
 export const DEFAULT_SETTINGS = Object.freeze({ iron: false, sound: false, sendFormat: 'key', theme: DEFAULT_THEME, orientation: 'portrait', lang: null, autoSend: false, commands: false, aux: false, auxRecent: 8, oocTrial: false, difficulty: 'normal',
-  rule: DEFAULT_RULE, expShare: 'always', expRate: DEFAULT_EXP_RATE, friendshipRate: DEFAULT_EXP_RATE, hatchRate: DEFAULT_EXP_RATE, tradeEvolution: DEFAULT_TRADE_EVOLUTION_SETTING, speed: DEFAULT_SPEED, typeHints: false, moveAnims: true, quality: 'high', panelPicture: DEFAULT_PICTURE_ROUTE, outsideScreens: DEFAULT_SCREEN_PLACE, silhouette: true,
-  looks: Object.freeze({}), oldLook: null, debug: false,
+  rule: DEFAULT_RULE, expShare: 'always', expRate: DEFAULT_EXP_RATE, friendshipRate: DEFAULT_EXP_RATE, hatchRate: DEFAULT_EXP_RATE, tradeEvolution: DEFAULT_TRADE_EVOLUTION_SETTING, speed: DEFAULT_SPEED, typeHints: false, moveAnims: true, quality: 'high', panelPicture: DEFAULT_PICTURE_ROUTE, outsideScreens: DEFAULT_SCREEN_PLACE, panelShift: PANEL_SIZE.shift.default, aboveOthers: true,
+  silhouette: true, looks: Object.freeze({}), oldLook: null, debug: false,
   bots: Object.freeze([]), botsOff: Object.freeze([]) });
 
 export const DEFAULT_LOOK = Object.freeze({ gender: 'm', myBack: 'silhouette', myPicture: 'silhouette' });
@@ -65,6 +65,12 @@ export const SPEEDS = perLang(t => Object.freeze(GAME_SPEEDS.map(speed => Object
 export const QUALITIES = labelled(QUALITY_IDS, 'settings.quality');
 export const PANEL_PICTURES = labelled(PICTURE_ROUTES, 'settings.panelPicture');
 export const OUTSIDE_SCREENS = labelled(SCREEN_PLACES, 'settings.outsideScreens');
+
+export const PANEL_SHIFT_SLIDER = perLang(t => Object.freeze({
+  min: PANEL_SIZE.shift.min, max: PANEL_SIZE.shift.max, low: t('settings.panelShift.up'), high: t('settings.panelShift.down'),
+  typed: Object.freeze({ range: t('settings.panelShift.range', { min: PANEL_SIZE.shift.min, max: PANEL_SIZE.shift.max }), label: text => text,
+    digits: Object.freeze({ ints: 2, decimals: 0, sign: true }), valid: Number.isInteger }),
+}));
 
 export const LOOKS = labelled(LOOK_IDS, 'settings.look');
 export const PICTURE_LOOKS = labelled(PICTURE_LOOK_IDS, 'settings.look');
@@ -103,6 +109,7 @@ export const SETTING_TABS = perLang((t, lang) => {
       row('persona'),
       row('gender', GENDERS(lang), { look: true }), row('myBack', LOOKS(lang), { look: true }), row('myPicture', PICTURE_LOOKS(lang), { look: true }),
       row('theme', THEMES(lang)), row('quality', QUALITIES(lang)), row('panelPicture', PANEL_PICTURES(lang)), row('outsideScreens', OUTSIDE_SCREENS(lang)),
+      row('panelShift', null, { control: 'slider', slider: PANEL_SHIFT_SLIDER(lang) }), row('aboveOthers', onOff),
     ] },
     { id: 'story', rows: [row('sendFormat', SEND_FORMATS(lang), { help: SEND_FORMAT_NOTES(lang) }), row('autoSend', onOff, { permission: 'sendChat' }),
       row('commands', onOff), row('aux', onOff, underCommands), row('auxRecent', AUX_RECENTS(lang), { ...underCommands, ...ordered }), row('oocTrial', onOff), row('debug', onOff)] },
@@ -159,6 +166,8 @@ export function normalizeSettings(raw) {
     quality: pick(s.quality, QUALITY_IDS, DEFAULT_SETTINGS.quality),
     panelPicture: pick(s.panelPicture, PICTURE_ROUTES, DEFAULT_SETTINGS.panelPicture),
     outsideScreens: pick(s.outsideScreens, SCREEN_PLACES, DEFAULT_SETTINGS.outsideScreens),
+    panelShift: panelShift(s.panelShift),
+    aboveOthers: s.aboveOthers !== false,
     silhouette: s.silhouette !== false,
     debug: s.debug === true,
     looks: lookMap(s.looks),
@@ -317,7 +326,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     .pkb-settings .row.off .lab { opacity:.55; }
     /* Choices: a switch, a stepper or a segment per row (controls.js - SETTING_TABS row.control) at the row's right */
     ${controlsCss('.pkb-settings')}
-    .pkb-settings .row > .sw, .pkb-settings .row > .step, .pkb-settings .row > .seg { justify-self:end; }
+    .pkb-settings .row > .sw, .pkb-settings .row > .step, .pkb-settings .row > .seg, .pkb-settings .row > .sld { justify-self:end; }
     /* Rows under another (row.needs): indented right below it, joined to it by a line on the left, no dashes inside the group; greyed while it is off */
     .pkb-settings .row.joined { border-bottom-color:transparent; }
     .pkb-settings .row.sub { position:relative; min-height:42px; padding-left:22px; }
@@ -425,15 +434,17 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     return r;
   };
 
-  const choices = (kind, list, value, label, change, { disabled = false, typed = null } = {}) => {
+  const choices = (kind, list, value, label, change, { disabled = false, typed = null, slider = null } = {}) => {
+    if (slider) typed = slider.typed;
     const ask = typed && ((current, done) => openNumberPad({
       parent: card, title: label, range: typed.range, format: typed.label, text: current === null ? '' : String(current), digits: typed.digits,
-      accepts: text => typed.valid(Number(text)), words: { ok: t('settings.padOk'), cancel: t('settings.padCancel'), delete: t('settings.padDelete') },
+      accepts: text => text !== '' && typed.valid(Number(text)), words: { ok: t('settings.padOk'), cancel: t('settings.padCancel'), delete: t('settings.padDelete') },
       onConfirm: text => done(Number(text)), onCancel: () => done(null),
     }));
     const c = kind === 'switch' ? switchControl({ value, label, change, words: { on: t('settings.on'), off: t('settings.off') } })
       : kind === 'stepper' ? stepperControl({ list, value, label, change, words: { prev: t('settings.prev'), next: t('settings.next') }, typed: typed && { unset: typed.unset, label: typed.label, ask } })
-        : segmentControl({ list, value, label, change });
+        : kind === 'slider' ? sliderControl({ min: slider.min, max: slider.max, value, label, change, words: { low: slider.low, high: slider.high, type: t('settings.typeNumber') }, ask })
+          : segmentControl({ list, value, label, change });
     c.disable(disabled);
     return c;
   };
@@ -621,7 +632,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
             return;
           }
           commit(normalizeSettings({ ...current, ...rowPatch(row, id) }));
-        }, { typed: row.typed });
+        }, { typed: row.typed, slider: row.slider });
         const above = page.children[page.children.length - 1];
         const r = line(page, row.label, () => (row.needs && !row.needs(current) ? row.needsHelp : row.help), group.el);
         if (row.needs) {

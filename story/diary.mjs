@@ -156,6 +156,7 @@ export function diaryLine(event, lang, names) {
     case 'hatch': return t('diary.hatch', { mon: p(k.sp(event.who?.species), '이/가') });
     case 'breed': return t('diary.breed', { a: p(k.mon(event.a), '과/와'), b: k.mon(event.b) });
     case 'breedStop': return t('diary.breedStop');
+    case 'rest': return t('diary.rest');
     case 'hatched': return null;
     default: return event?.op ? `(${event.op})` : null;
   }

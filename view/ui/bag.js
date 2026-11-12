@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/ball-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-12. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/command-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 
 import { addWindow } from './window.js';
@@ -103,7 +103,7 @@ export class BagMenu {
       const t = windowText(s, tabX, rowY(0), pocket.name);
       if (i !== this.pocket) t.setColor(GREY[0]).setShadow(3, 3, GREY[1]);
       const hit = s.add.rectangle(tabX - 2, rowY(0), tabs[i] + 4, 16, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
-      hit.on('pointerdown', () => { if (i !== this.pocket) playSelect(s); this.setPocket(i); });
+      hit.on('pointerdown', () => { if (this.sub) return; if (i !== this.pocket) playSelect(s); this.setPocket(i); });
       this.box.add([t, hit]);
       tabX += tabs[i] + 8;
     });

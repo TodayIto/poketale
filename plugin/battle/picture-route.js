@@ -2,7 +2,7 @@
 export const PICTURE_ROUTES = Object.freeze(['auto', 'direct', 'risu']);
 export const DEFAULT_PICTURE_ROUTE = 'auto';
 
-const SHOWDOWN_HOST = 'play.pokemonshowdown.com';
+export const SHOWDOWN_HOST = 'play.pokemonshowdown.com';
 const WAYS = Object.freeze({
   auto: Object.freeze(['direct', 'host']),
   direct: Object.freeze(['direct']),

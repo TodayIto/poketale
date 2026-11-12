@@ -1,4 +1,5 @@
-import { buildEngine, replaySnapshot, applyInput, fingerprint, stateCheck, checkSnapshot, battlePoint, moveDeniedText, hiddenTrapText, partySlots, partyIndex, isReviving, SNAPSHOT_VERSION } from './index.js';
+import { buildEngine, replaySnapshot, applyInput, fingerprint, stateCheck, checkSnapshot, battlePoint, moveDeniedText, hiddenTrapText, partySlots, isReviving, SNAPSHOT_VERSION } from './index.js';
+import { partyIndex } from './party-slot.js';
 import { isBall } from '../engine/bag.mjs';
 import { autoPick, forcedPicks, joinParts } from './double.js';
 import { moveTargets } from './targets.js';
@@ -27,6 +28,13 @@ function slotOf(side, who) {
   if (!who) return -1;
   if (Number.isInteger(who.slot)) return side.pokemon.findIndex(p => p.set === side.team[who.slot - 1]);
   return namedIn(side.pokemon, who);
+}
+
+function bagPick({ battle, bag, names, lang }, request, command, slot, ...more) {
+  const target = battle.sides[0].pokemon[slot];
+  const move = command.move ? target?.moveSlots.findIndex(s => s.id === command.move) : target?.moveSlots.findIndex(s => s.pp < s.maxpp);
+  const party = partySlots(battle, names, lang, request);
+  return bag.choice({ kind: 'item', item: command.item, slot: partyIndex(party, slot), move: Math.max(move ?? 0, 0) }, party, ...more);
 }
 
 function resolveMine(ctx, request, me) {
@@ -62,9 +70,7 @@ function resolveMine(ctx, request, me) {
     if (!bag || !(bag.counts.get(me.item) > 0)) return { reason: 'noItem' };
     const named = slotOf(side, me.target);
     const slot = named >= 0 ? named : side.pokemon.findIndex(p => p.isActive);
-    const pokemon = side.pokemon[slot];
-    const move = me.move ? pokemon?.moveSlots.findIndex(s => s.id === me.move) : pokemon?.moveSlots.findIndex(s => s.pp < s.maxpp);
-    try { return { choice: bag.choice({ kind: 'item', item: me.item, slot, move: Math.max(move ?? 0, 0) }) }; }
+    try { return { choice: bagPick(ctx, request, me, slot) }; }
     catch { return { reason: 'cantUse' }; }
   }
   if (me.kind === 'run') {
@@ -175,10 +181,8 @@ async function resolveDouble(ctx, request, turn) {
       if (!bag || !((bag.counts.get(command.item) ?? 0) - (taken.get(command.item) ?? 0) > 0)) return no('noItem');
       const named = slotOf(side, command.target);
       const slot = named >= 0 ? named : side.pokemon.indexOf(pokemon);
-      const target = side.pokemon[slot];
-      const move = command.move ? target?.moveSlots.findIndex(s => s.id === command.move) : target?.moveSlots.findIndex(s => s.pp < s.maxpp);
       let pick;
-      try { pick = bag.choice({ kind: 'item', item: command.item, slot, move: Math.max(move ?? 0, 0) }, i, taken); }
+      try { pick = bagPick(ctx, request, command, slot, i, taken); }
       catch { return no('cantUse'); }
       if (isBall(command.item)) return { choice: pick };
       taken.set(command.item, (taken.get(command.item) ?? 0) + 1);

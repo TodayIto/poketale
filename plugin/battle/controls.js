@@ -2,6 +2,9 @@ import { A1, PART_ICON } from '../../view/frame-parts.js';
 
 const PREV = PART_ICON.prev, NEXT = PART_ICON.next;
 
+const KNOB = 24, KNOB_PHONE = 30;
+const SLIDER_GROOVE = 'linear-gradient(90deg,transparent calc(50% - 1px),#789db7 calc(50% - 1px) calc(50% + 1px),transparent calc(50% + 1px)),#dfeaf3';
+
 export const controlsCss = scope => `
   ${scope} .sw { position:relative; flex:none; width:44px; height:26px; padding:0; border:2px solid #7d93a4; border-radius:13px; background:#c3cfd8; cursor:pointer; }
   ${scope} .sw::before { content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; box-shadow:0 1.5px 0 rgba(0,0,0,.25); transition:left .15s; }
@@ -26,6 +29,23 @@ export const controlsCss = scope => `
   ${scope} .seg button[aria-checked="true"] { background:linear-gradient(#ec5a64,#d8434d); color:#fff; box-shadow:0 1.5px 0 var(--red-dark); }
   ${scope} .seg button:disabled { color:#a9b5be; cursor:default; }
   ${scope} .seg button[aria-checked="true"]:disabled { background:#c3cfd8; color:#fff; box-shadow:none; }
+  ${scope} .sld { display:flex; align-items:center; gap:5px; }
+  ${scope} .sld .end { flex:none; font-size:12px; color:#5d7486; white-space:nowrap; }
+  ${scope} .sld input { flex:none; width:118px; height:40px; margin:0; padding:0; background:transparent; -webkit-appearance:none; appearance:none; cursor:pointer; }
+  ${scope} .sld input:focus { outline:none; }
+  ${scope} .sld input::-webkit-slider-runnable-track { height:8px; border:1.5px solid #789db7; border-radius:5px; background:${SLIDER_GROOVE}; }
+  ${scope} .sld input::-moz-range-track { height:8px; border:1.5px solid #789db7; border-radius:5px; background:${SLIDER_GROOVE}; }
+  ${scope} .sld input::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:${KNOB}px; height:${KNOB}px; margin-top:${(8 - KNOB) / 2 - 1.5}px;
+    border:${A1.border}px solid var(--navy-dark); border-radius:${A1.radius}px; background:${A1.paper}; box-shadow:${A1.drop}; }
+  ${scope} .sld input::-moz-range-thumb { box-sizing:border-box; width:${KNOB}px; height:${KNOB}px; border:${A1.border}px solid var(--navy-dark); border-radius:${A1.radius}px; background:${A1.paper}; box-shadow:${A1.drop}; }
+  ${scope} .sld input:focus-visible::-webkit-slider-thumb { outline:2px solid #ffcf4a; }
+  ${scope} .sld .fld { position:relative; flex:none; min-width:50px; height:30px; padding:0 6px; border:2px solid #789db7; border-radius:7px; background:#fff; color:#14304a;
+    font-size:14px; text-align:center; box-shadow:inset 0 1.5px 0 rgba(0,0,0,.08); cursor:pointer; }
+  ${scope} .sld .fld::after { content:""; position:absolute; left:0; right:0; top:50%; height:40px; transform:translateY(-50%); }
+  ${scope} .sld.off { opacity:.45; }
+  @media (max-width:640px) { ${scope} .sld input { width:104px; height:44px; }
+    ${scope} .sld input::-webkit-slider-thumb { width:${KNOB_PHONE}px; height:${KNOB_PHONE}px; margin-top:${(8 - KNOB_PHONE) / 2 - 1.5}px; }
+    ${scope} .sld input::-moz-range-thumb { width:${KNOB_PHONE}px; height:${KNOB_PHONE}px; } }
   @media (prefers-reduced-motion:reduce) { ${scope} .sw::before { transition:none; } }`;
 
 const make = (tag, className, props = {}) => Object.assign(document.createElement(tag), { className, ...props });
@@ -89,4 +109,28 @@ export function stepperControl({ list, value, label, change, words, typed = null
   edit.onclick = () => { if (!off) ask(); };
   set(value);
   return { el, set, disable: on => { off = on; edit.disabled = on; set(now); } };
+}
+
+export const signed = n => (n > 0 ? `+${n}` : n < 0 ? `\u2212${-n}` : '0');
+
+export function sliderControl({ min, max, value, label, change, words, ask }) {
+  const el = make('span', 'sld');
+  el.setAttribute('role', 'group'); el.setAttribute('aria-label', label);
+  const low = make('span', 'end', { textContent: words.low }), high = make('span', 'end', { textContent: words.high });
+  const range = make('input', '', { type: 'range' });
+  Object.assign(range, { min: String(min), max: String(max), step: '1' });
+  range.setAttribute('aria-label', label);
+  const box = make('button', 'fld', { type: 'button' });
+  name(box, `${label}: ${words.type}`);
+  el.append(low, range, high, box);
+  const within = v => Math.min(max, Math.max(min, Math.round(v)));
+  let now = within(value), off = false;
+  const show = v => { range.value = String(v); box.textContent = signed(v); range.setAttribute('aria-valuetext', signed(v)); };
+  const set = v => { now = within(v); show(now); };
+  const pick = v => { const next = within(v); if (next === now) return show(now); set(next); change(next); };
+  range.oninput = () => show(within(Number(range.value)));
+  range.onchange = () => pick(Number(range.value));
+  box.onclick = () => { if (!off) ask(now, v => { if (Number.isFinite(v)) pick(v); }); };
+  set(now);
+  return { el, set, disable: on => { off = on; range.disabled = on; box.disabled = on; el.classList.toggle('off', on); } };
 }

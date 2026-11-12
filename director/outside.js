@@ -4,7 +4,7 @@ import { STATS, displayName, spriteIdOf } from '../engine/mon.mjs';
 import { newMovePp } from '../engine/pp.mjs';
 import { summaryView } from './summary.js';
 import { createLearnSteps, learnMoveOption, loadExpText } from './steps-exp.js';
-import { PLAYER_NAME, EV_TOTAL_MAX } from '../story/rules.mjs';
+import { PLAYER_NAME, EV_TOTAL_MAX, sameNickname } from '../story/rules.mjs';
 import { DEFAULT_LANG } from './lang.js';
 import { DEFAULT_FORMAT } from '../engine/rules.mjs';
 import { enjoymentOf, fullnessOf, gameCandidates } from '../story/amie.mjs';
@@ -80,11 +80,15 @@ export async function showOutsideSummary({ view, ctx, mon, onRename }) {
   const slot = outsideSummarySlot(ctx, mon);
   await view.prepareOutside({ mons: [slot] });
   let nickname = null;
+
+  let current = { nickname: mon.set.name ?? '', shown: slot.name };
   const rename = onRename && (async value => {
+    if (sameNickname(value, current)) return null;
     const accepted = await onRename(value);
     if (accepted === false) return null;
     nickname = value;
-    return value || ctx.names.species(slot.speciesId);
+    current = { nickname: value, shown: value || ctx.names.species(slot.speciesId) };
+    return current.shown;
   });
   await view.showSummary(slot, rename ? { rename } : {});
   return { nickname };

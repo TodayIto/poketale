@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (SummaryUiMode.DEFAULT, Page.PROFILE/STATS/MOVES) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-12. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/party-ui-handler.ts (processSummaryOption) @ 7d7da4a8 (AGPL-3.0-only)
 
 import { placeSprite } from '../sprites/placement.js';
@@ -42,8 +42,10 @@ const SWIPE = 16 * 6;
 
 export function openSummary(menu) {
   const scene = menu.scene;
-  menu.sub = true;
   const screen = scene.summaryScreen ??= new SummaryScreen(scene);
+
+  if (screen.opening || screen.finish) return;
+  menu.sub = true;
   screen.show({ party: menu.party, index: menu.cursor, onOpen: () => { if (menu.finish) menu.clearOptions(); } })
     .catch(error => {
       if (scene.life.signal.aborted) return;
@@ -71,21 +73,25 @@ export class SummaryScreen {
       this.rename = typeof rename === 'function' ? rename : null; this.renaming = false;
       await fadeSwap(s, () => { this.build(); this.showMon(asset, true); });
     } catch (error) { this.clear(); throw error; } finally { this.opening = false; }
-    onOpen?.();
-    const menu = openMenu(s, { input: action => this.input(action), close: () => this.release() });
-    this.finish = menu.finish;
-    this.pointerDown = () => { if (this.finish && !this.renaming && !this.noticing) this.armed = true; };
 
-    this.pointerUp = pointer => {
-      const armed = this.armed;
-      queueMicrotask(() => { this.armed = false; });
-      if (!armed || this.renaming) return;
-      const dx = pointer.upX - pointer.downX, dy = pointer.upY - pointer.downY;
-      if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE) return;
-      if (Math.abs(dx) > Math.abs(dy)) this.input(dx < 0 ? 'right' : 'left');
-      else this.input(dy < 0 ? 'down' : 'up');
-    };
-    s.input.on('pointerdown', this.pointerDown); s.input.on('pointerup', this.pointerUp);
+    let menu;
+    try {
+      onOpen?.();
+      menu = openMenu(s, { input: action => this.input(action), close: () => this.release() });
+      this.finish = menu.finish;
+      this.pointerDown = () => { if (this.finish && !this.renaming && !this.noticing) this.armed = true; };
+
+      this.pointerUp = pointer => {
+        const armed = this.armed;
+        queueMicrotask(() => { this.armed = false; });
+        if (!armed || this.renaming) return;
+        const dx = pointer.upX - pointer.downX, dy = pointer.upY - pointer.downY;
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE) return;
+        if (Math.abs(dx) > Math.abs(dy)) this.input(dx < 0 ? 'right' : 'left');
+        else this.input(dy < 0 ? 'down' : 'up');
+      };
+      s.input.on('pointerdown', this.pointerDown); s.input.on('pointerup', this.pointerUp);
+    } catch (error) { menu?.finish(null); this.clear(); throw error; }
     try { await menu.promise; } catch (error) { this.clear(); throw error; }
     await fadeSwap(s, () => this.clear());
     return null;

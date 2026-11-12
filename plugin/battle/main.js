@@ -4,6 +4,8 @@ import { startStoryLink, openSettings, currentSettings, openLang, queueAction, s
 import { startPanel } from '../panel/panel.js';
 import { createPanelScreens } from '../panel/screens.js';
 import { createPanelPictures } from '../panel/pictures.js';
+import { createRestSound } from '../panel/rest-sound.js';
+import { DEFAULT_ASSET_BASE } from '../../view/assets.js';
 import { probeImage, pokerogueStillUrl } from '../panel/picture-steps.js';
 import { defringeAddress } from '../panel/defringe.js';
 import { personaName } from './persona.js';
@@ -35,13 +37,14 @@ mark('pb:script');
   try {
     const doc = await risuai.getRootDocument();
     if (doc) {
-      useMainDocument(doc);
+      useMainDocument(doc, () => currentSettings().aboveOthers);
       const screens = createPanelScreens({ fetchBytes, settings: currentSettings, lang: openLang, battleFormat,
         show: showWindow, hide: hideWindow, replies: watchReplies, trainer: () => personaName(risuai).catch(() => null) });
       const pictures = createPanelPictures({ route: () => currentSettings().panelPicture, probe: probeImage, fetchBytes, still: pokerogueStillUrl,
         clean: (address, viaHost) => defringeAddress(address, viaHost ? fetchBytes : null) });
       await startPanel({ doc, read: storyNow, queueAction, screens, changes: onStoryChange, resume: resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, botTravel: writeBotTravel, quickImport, importLater, pictures,
-        place: () => currentSettings().outsideScreens, trainer: () => personaName(risuai).catch(() => null) });
+        place: () => currentSettings().outsideScreens, shift: () => currentSettings().panelShift, trainer: () => personaName(risuai).catch(() => null),
+        restSound: createRestSound({ assetBase: DEFAULT_ASSET_BASE, settings: currentSettings, fetchBytes }) });
     }
   } catch (error) { console.warn('[poke-battle] 오른쪽 패널을 끼우지 못함', error); }
 })();

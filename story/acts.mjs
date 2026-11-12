@@ -277,6 +277,7 @@ export function eventOf({ op, before, after }, sim) {
     }
     case 'breed': return op.stop ? { kind: 'breedStop' } : { kind: 'breed', a: refWho(op.a), b: refWho(op.b) };
     case 'hatched': return { kind: 'hatched', who: refWho(op.ref) };
+    case 'rest': return { kind: 'rest' };
     default: return { kind: 'other', op: String(op?.op ?? '?') };
   }
 }
@@ -395,8 +396,9 @@ export function promptText(text, chat, table, { names = null, lang = 'ko', guide
   let out = String(text ?? '');
   const latest = messages.findLastIndex(m => m?.role === 'user');
   const latestText = latest >= 0 ? String(messages[latest].data ?? '') : null;
+  const mine = isLatestOwn(chat, text);
 
-  const commands = taking && latestText === String(text ?? '') ? commandsIn(messages[latest], latest) : [];
+  const commands = taking && mine ? commandsIn(messages[latest], latest) : [];
   const line = commands.length ? answeredLine(commands.every(block => block.own)) : null;
   let slot = !!line;
   const covered = coveredIn(chat);
@@ -414,11 +416,11 @@ export function promptText(text, chat, table, { names = null, lang = 'ko', guide
   let events = [];
   const own = findTags(out).filter(t => table?.acts?.[t.key]);
   if (own.length && own.some(t => latestText?.includes(tagText(t.key)))) events = own.flatMap(t => table.acts[t.key].events ?? []);
-  else if (!own.length && latestText !== null && latestText === String(text ?? '') && nextOwnMessage(chat, readQueue(chat), table) === latest) {
+  else if (!own.length && mine && nextOwnMessage(chat, readQueue(chat), table) === latest) {
     events = readQueue(chat).actions.flatMap(a => a.events ?? []);
   }
 
-  if (ctx && latestText !== null && latestText === String(text ?? '')) events = [...passingTold(chat, ctx, latest), ...events];
+  if (ctx && mine) events = [...passingTold(chat, ctx, latest), ...events];
   out = stripForPrompt(moved ? dropTaken(out) : out);
   if (line) out = out.includes(END_SLOT) ? out.replace(END_SLOT, `\n${line}`) : `${out}\n(OOC: ${line})`;
   const log = pkbLog(events, { lang, en: names });

@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/party-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-12. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/utils/pokemon-icon-anim-helper.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/message-ui-handler.ts (showPrompt) @ 7d7da4a8 (AGPL-3.0-only)
 
@@ -121,9 +121,9 @@ export class PartyMenu {
     this.party = party.map(m => ({ ...m })); this.forced = !!forced || this.revive;
     this.cursor = 0; this.lastRight = 0; this.lastLeft = 0; this.mode = 'party'; this.toggled = false;
     const menu = openMenu(scene, { input: action => this.input(action), close: () => this.clear(),
-      paused: () => this.sub || this.fading,
+      paused: () => this.busy(),
 
-      tapWindows: () => (this.sub || this.fading || !['party', 'options'].includes(this.mode) || (this.forced && this.mode === 'party') ? null : this.windows()) });
+      tapWindows: () => (this.busy() || !['party', 'options'].includes(this.mode) || (this.forced && this.mode === 'party') ? null : this.windows()) });
 
     this.finish = choice => {
       if (this.fading) return;
@@ -131,6 +131,8 @@ export class PartyMenu {
       partyFade(scene, () => menu.finish(choice)).catch(menu.fail);
     };
     this.abort = menu.abort;
+
+    Object.assign(this, { shown: menu.shown, tapped: menu.tapped, tapReady: menu.tapReady });
     this.fading = true;
     partyFade(scene, () => {
       this.fading = false; onOpen?.(); this.draw(icons);
@@ -164,13 +166,14 @@ export class PartyMenu {
     this.optionBox = s.add.container(0, 0);
 
     this.promptHit = s.add.rectangle(0, -180, 320, 180, 0, 0).setOrigin(0).setInteractive().setVisible(false);
-    this.promptHit.on('pointerdown', () => this.input('ok'));
+    this.promptHit.on('pointerdown', this.tapped(() => this.input('ok')));
     c.add([this.messageBox, this.messageText, this.prompt, this.optionBox, this.promptHit]);
     if (this.remember) { this.moveInfo = new MoveInfoOverlay(s); c.add(this.moveInfo.container); }
     this.timer = s.time.addEvent({ delay: fixed(200), loop: true, callback: () => {
       this.toggled = !this.toggled; this.slots.forEach(slot => slot.bob(this.toggled));
     } });
     this.setCursor(0, true);
+    this.shown();
   }
   showText(text) {
 
@@ -182,7 +185,7 @@ export class PartyMenu {
   }
   hideText() { this.messageBox.setVisible(false); this.messageText.setVisible(false); this.prompt.setVisible(false); }
   showPrompt(text) {
-    this.mode = 'prompt';
+    this.mode = 'prompt'; this.shown();
     this.showText(text);
 
     const lines = text.split('\n');
@@ -205,17 +208,19 @@ export class PartyMenu {
     if (index >= battlerCount(this.scene) && index < CANCEL) this.lastRight = index;
     this.setCursor(index);
   }
+
+  busy() { return this.fading || this.sub; }
   tap(index) {
-    if (this.fading) return;
+    if (this.busy() || !this.tapReady()) return;
     if (this.mode === 'prompt') return this.input('ok');
     if (this.mode !== 'party') return;
     this.setCursor(index); this.input('ok');
   }
 
   input(action) {
-    if (this.fading) return;
+    if (this.busy()) return;
     if (this.mode === 'prompt') {
-      if (action === 'ok' || action === 'back') { playSelect(this.scene); this.mode = 'party'; this.promptHit.setVisible(false); this.showText(this.scene.words(TEXT.choose)); }
+      if (action === 'ok' || action === 'back') { playSelect(this.scene); this.mode = 'party'; this.shown(); this.promptHit.setVisible(false); this.showText(this.scene.words(TEXT.choose)); }
       return;
     }
     if (this.mode === 'options') return this.optionInput(action);
@@ -240,6 +245,7 @@ export class PartyMenu {
 
   cancel() { if (!this.forced) { playSelect(this.scene); this.finish(null); } }
   showOptions() {
+    this.shown();
     if (this.remember) return this.showRememberOptions();
     const s = this.scene, slot = this.party[this.cursor];
 
@@ -264,7 +270,7 @@ export class PartyMenu {
       t.setPosition(319 + 19 - width, -1 - 6 - 16 * o - 16);
       const hit = s.add.rectangle(319 - width + 4, -1 - 6 - 16 * o - 16, width - 8, 16, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
       hit.on('pointerover', () => this.setOptionCursor(i));
-      hit.on('pointerdown', () => { this.setOptionCursor(i); this.optionInput('ok'); });
+      hit.on('pointerdown', this.tapped(() => { this.setOptionCursor(i); this.optionInput('ok'); }));
       this.optionBox.add([t, hit]);
     });
     this.optionCursorObj = s.add.image(0, 0, 'cursor').setOrigin(0);
@@ -307,11 +313,11 @@ export class PartyMenu {
       const hit = s.add.rectangle(319 - width + 4, y - 16, width - 8, 16, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
       const scroll = option === 'up' || option === 'down';
       if (!scroll) hit.on('pointerover', () => this.setOptionCursor(i));
-      hit.on('pointerdown', () => {
-        if (this.fading) return;
+      hit.on('pointerdown', this.tapped(() => {
+        if (this.busy()) return;
         if (scroll) { playSelect(s); return this.scrollRemember(option === 'down'); }
         this.setOptionCursor(i); this.optionInput('ok');
-      });
+      }));
       this.optionBox.add([t, hit]);
     });
     this.optionCursorObj = s.add.image(0, 0, 'cursor').setOrigin(0);
@@ -364,7 +370,8 @@ export class PartyMenu {
   }
 
   optionInput(action) {
-    if (this.fading) return;
+
+    if (this.busy()) return;
     if (this.remember) return this.rememberInput(action);
     const count = this.optionList.length, before = this.optionCursor;
     if (action === 'back') { playSelect(this.scene); return this.clearOptions(); }
@@ -395,7 +402,8 @@ export class PartyMenu {
   clearOptions() {
     this.optionRect = null;
     this.optionBox.removeAll(true); this.optionCursorObj = null; this.optionsWidth = 0;
-    this.mode = 'party'; this.showText(this.scene.words(TEXT.choose));
+    this.mode = 'party'; this.shown(); this.showText(this.scene.words(TEXT.choose));
+    this.promptHit.setVisible(false);
   }
   clear() {
     this.moveInfo?.destroy(); this.moveInfo = null;

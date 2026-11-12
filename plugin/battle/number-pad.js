@@ -1,16 +1,17 @@
-// Touch number pad for numeric settings.
 const KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', 'delete'];
 
-export function padText(text, key, { ints, decimals }) {
+export function padText(text, key, { ints, decimals, sign = false }) {
   if (key === 'delete') return text.slice(0, -1);
   if (key === '.') return decimals && !text.includes('.') ? `${text || '0'}.` : text;
+  if (key === '-') return !sign ? text : text.startsWith('-') ? text.slice(1) : `-${text}`;
   if (!/^\d$/.test(key)) return text;
-  if (text === '0') return key;
-  const [int, decimal] = text.split('.');
+  const minus = text.startsWith('-') ? '-' : '';
+  if (text.slice(minus.length) === '0') return minus + key;
+  const [int, decimal] = text.slice(minus.length).split('.');
   return (decimal === undefined ? int.length < ints : decimal.length < decimals) ? text + key : text;
 }
 
-const keyOf = key => (/^\d$/.test(key) || key === '.' ? key : key === 'Backspace' || key === 'Delete' ? 'delete' : null);
+const keyOf = key => (/^\d$/.test(key) || key === '.' || key === '-' ? key : key === 'Backspace' || key === 'Delete' ? 'delete' : null);
 
 export const numberPadCss = scope => `
   ${scope} .npad { position:absolute; inset:0; z-index:5; display:flex; flex-direction:column; justify-content:flex-end; background:rgba(15,24,34,.45); border-radius:inherit; }
@@ -50,8 +51,9 @@ export function openNumberPad({ parent, title, range = '', format = text => text
   const button = (label, press, className = '') => {
     const b = document.createElement('button'); b.type = 'button'; b.className = className; b.textContent = label; b.onclick = press; return b;
   };
-  for (const key of KEYS) {
-    const b = button(key === 'delete' ? '' : key, () => type(key));
+  const minusKey = digits.sign && !digits.decimals;
+  for (const key of KEYS.map(key => (key === '.' && minusKey ? '-' : key))) {
+    const b = button(key === 'delete' ? '' : key === '-' ? '\u2212' : key, () => type(key));
     if (key === 'delete') { b.innerHTML = DELETE_ICON; b.setAttribute('aria-label', words.delete); b.title = words.delete; }
     keys.append(b);
   }

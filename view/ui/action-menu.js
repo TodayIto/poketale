@@ -1,10 +1,10 @@
 // from pokerogue src/ui/handlers/command-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-12. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/fight-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/target-select-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/battle-message-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/text.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/ui-theme.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-30. See view/LICENSE-NOTE.md.
 
 import { addWindow } from './window.js';
 import { addTextObject, pad2 } from './text.js';
@@ -64,7 +64,8 @@ export class ActionMenu {
       paused: () => this.mode === 'party' || this.mode === 'bag' || this.mode === 'message',
 
       tapWindows: () => (this.mode === 'fight' || this.mode === 'target' || (this.mode === 'command' && this.back) ? FIGHT_WINDOWS : null) });
-    Object.assign(this, { finish: menu.finish, fail: menu.fail, abort: menu.abort });
+
+    Object.assign(this, { finish: menu.finish, fail: menu.fail, abort: menu.abort, shown: menu.shown, tapped: menu.tapped });
     try { this.draw(); this.markTurn(); scene.options.parent.focus({ preventScroll: true }); }
     catch (error) { menu.fail(error); }
     return menu.promise;
@@ -163,7 +164,7 @@ export class ActionMenu {
     this.targetHits = POSITIONS.filter(position => s.pokemon[position]?.container.visible).map(position => {
       const { box } = s.pokemon[position].placement;
       const hit = s.add.rectangle(box.left, box.top, box.right - box.left, box.bottom - box.top, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
-      hit.on('pointerdown', () => this.tapTarget(position));
+      hit.on('pointerdown', this.tapped(() => this.tapTarget(position)));
       s.field.add(hit);
       return hit;
     });
@@ -180,7 +181,6 @@ export class ActionMenu {
     });
   }
 
-  // Back to how they were (alpha 0.5 behind a substitute doll)
   stopFlash() {
     for (const { sprite, alpha, info, tweens } of this.flashing ?? []) {
       tweens.forEach(t => t.stop());
@@ -194,7 +194,6 @@ export class ActionMenu {
     this.targetHits?.forEach(hit => hit.destroy()); this.targetHits = null;
   }
 
-  // Double battle: a bobbing marker over the mon whose command this is
   markTurn() {
     const s = this.scene, p = s.double && s.pokemon[this.position];
     if (!p) return;
@@ -224,9 +223,13 @@ export class ActionMenu {
       if (!this.finish) return;
       messages.text.setText('');
       messages.container.setVisible(false); messages.bg.setVisible(false);
-      this.container.setVisible(true);
-      this.mode = back; this.draw();
+      this.reshow(back);
     }, error => { if (this.finish) this.fail(error); });
+  }
+
+  reshow(mode) {
+    this.container.setVisible(true);
+    this.mode = mode; this.shown(); this.draw();
   }
   blockedReason() {
     const move = this.moves[this.cursor];
@@ -245,13 +248,13 @@ export class ActionMenu {
     this.container.add(t); return t;
   }
   draw() {
-
     // Keep hit objects alive while hovering; rebuilding them can retrigger pointerover.
     if (this.drawnMode === this.mode) { this.updateSelection(); return; }
     const s = this.scene, c = this.container;
     this.detailsMask?.destroy(); this.detailsMask = null; c.removeAll(true);
     if (this.drawnMode === 'target') this.clearTargets();
     this.drawnMode = this.mode;
+    this.shown();
     if (this.mode === 'target') { this.gimmick?.stop(); return this.drawTargets(); }
     const fight = this.mode === 'fight';
     s.messages.bg.setVisible(!fight);
@@ -275,7 +278,7 @@ export class ActionMenu {
         this.accuracyLabel = this.text(251,rowY[2],s.words('fight-ui-handler.accuracy'),50).setOrigin(0,.5); this.accuracyText = this.text(309,rowY[2],'',50).setOrigin(1,.5);
       } else { this.powerLabel = this.powerText = this.accuracyLabel = this.accuracyText = null; }
       this.reasonText = this.text(247,info?-23:-18,'',54);
-      this.text(248,info?-8.5:-9,s.words('own.back'),info?44:48).setInteractive({useHandCursor:true}).on('pointerdown',()=>this.input('back'));
+      this.text(248,info?-8.5:-9,s.words('own.back'),info?44:48).setInteractive({useHandCursor:true}).on('pointerdown',this.tapped(()=>this.input('back')));
     } else {
       c.add(addWindow(s,202,-48,118,48));
       this.promptText = this.text(12,-39,'',96,4,5,{wordWrap:{width:1110},maxLines:2},'message');
@@ -287,7 +290,7 @@ export class ActionMenu {
       const hit = s.add.rectangle((fight?8:207)+col*step,-40+row*16,step,16,0,0)
         .setOrigin(0).setInteractive({useHandCursor:true});
       hit.on('pointerover',()=>this.hover(i));
-      hit.on('pointerdown',()=>{this.cursor=i;this.input('ok');}); c.add(hit);
+      hit.on('pointerdown',this.tapped(()=>{this.cursor=i;this.input('ok');})); c.add(hit);
       const label = this.text((fight?18:217)+col*(fight?114:55.8),-38.7+row*16,labels[i] ?? '-',
         fight?96:92,fight?3:4,fight?3:5,fight?{}:{padding:{top:2}});
       const color = fight && this.scene.options.typeHints && hintColor(this.moves[i]);

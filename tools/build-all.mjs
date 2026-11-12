@@ -8,6 +8,7 @@ if (args.some(arg => arg !== '--no-test')) {
 const steps = [
   "tools/build-bgm.mjs",
   "tools/build-levelup.mjs",
+  "tools/build-learnable.mjs",
   "tools/build-exp.mjs",
   "tools/build-names.mjs",
   "tools/build-pokerogue-boxes.mjs",

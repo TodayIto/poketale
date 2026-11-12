@@ -77,7 +77,7 @@ export function partsCss(root) {
 `;
 }
 
-export const ringCss = (R, d) => `
+export const gaugeRingCss = (R, d) => `
   ${R} .ring{position:relative;flex:none;width:${d}px;height:${d}px;pointer-events:auto;}
   ${R} .ring > svg{width:100%;height:100%;}
   ${R} .ring .arc{transition:stroke-dasharray .3s ease-out;}

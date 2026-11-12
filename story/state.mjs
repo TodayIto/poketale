@@ -491,6 +491,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       heal(sim, findMon(state, op.ref, sim).mon, op, format);
       return;
     }
+    case 'rest': return shortRest(state, sim);
     case 'swap': {
 
       const a = findMon(state, op.a, sim, { egg: true }), b = findMon(state, op.b, sim, { egg: true });
@@ -785,7 +786,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       }
       setFullness(mon, fullnessOf(mon) + FULL_PER_FOOD);
       addFriendship(mon, friendship, 'food', ctx);
-      if (mon.hp !== 0) heal(sim, mon, { hpAdd: foodHeal(maxHp(sim, mon.set, format)) }, format);
+      if (mon.hp !== 0 && op.heal !== false) heal(sim, mon, { hpAdd: foodHeal(maxHp(sim, mon.set, format)) }, format);
       return;
     }
     case 'puff': {
@@ -838,8 +839,42 @@ function ppUpsFromSlots(moves, previous) {
 export function healParty(state, ctx, op = {}) {
   const format = stateFormat(state);
   for (const mon of state.party) heal(ctx.sim, mon, op, format);
+  if (fullHeal(op)) delete state.restsUsed;
 }
 
+export const SHORT_RESTS = 2;
+const SHORT_REST_SHARE = 0.5;
+
+export const restsLeft = state => Math.max(0, SHORT_RESTS - (state?.restsUsed ?? 0));
+
+const restShare = max => Math.max(1, Math.floor(max * SHORT_REST_SHARE));
+
+function shortRest(state, sim) {
+  if (!restsLeft(state)) fail('noRest', { max: SHORT_RESTS });
+  if (!restHelps(state, sim)) fail('restNoEffect');
+  const format = stateFormat(state);
+  for (const mon of state.party) {
+    if (isEgg(mon) || mon.hp === 0) continue;
+    const max = maxHp(sim, mon.set, format);
+    const hp = Math.min(max, (mon.hp ?? max) + restShare(max));
+    mon.hp = hp >= max ? null : hp;
+    mon.status = '';
+    for (const id of mon.set.moves) {
+      const { pp, maxpp } = movePp(sim, mon, id, format);
+      const next = Math.min(maxpp, pp + restShare(maxpp));
+      if (next >= maxpp) delete mon.pp[id]; else mon.pp[id] = next;
+    }
+  }
+  state.restsUsed = (state.restsUsed ?? 0) + 1;
+}
+
+export function restHelps(state, sim) {
+  const format = stateFormat(state);
+  const missing = mon => (mon.hp ?? Infinity) < maxHp(sim, mon.set, format) || mon.set.moves.some(id => { const { pp, maxpp } = movePp(sim, mon, id, format); return pp < maxpp; });
+  return state.party.some(mon => !isEgg(mon) && mon.hp !== 0 && (!!mon.status || missing(mon)));
+}
+
+const fullHeal = ({ hpPercent, hpAdd, statusOnly, revive }) => hpPercent === undefined && hpAdd === undefined && !statusOnly && !revive;
 function heal(sim, mon, { hpPercent, hpAdd, statusOnly, revive }, formatid) {
   const fainted = mon.hp === 0;
   if (hpAdd !== undefined) {

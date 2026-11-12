@@ -54,6 +54,9 @@ export const ICON = {
   egg: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8c2.8 0 4.9 3.9 4.9 7.1a4.9 4.9 0 0 1-9.8 0C3.1 5.7 5.2 1.8 8 1.8z" fill="none" stroke="currentColor" stroke-width="1.7"/>'
     + '<circle cx="6.4" cy="9.4" r="1.1" fill="currentColor"/><circle cx="9.5" cy="7.3" r=".95" fill="currentColor"/></svg>',
 
+  rest: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2c.5 1.9 3.1 3 3.1 5.8A3.1 3.1 0 0 1 4.9 7c0-1.4.7-2.2 1.4-2.9.1 1 .6 1.6 1.3 1.8C7.2 4.4 7.3 2.6 8 1.2z" fill="currentColor"/>'
+    + '<path d="M2.6 14.4l10.8-3.3M13.4 14.4L2.6 11.1" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>',
+
   stop: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
   swap: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.8 8a4.8 4.8 0 1 1-2.4-4.16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'
     + '<path d="M12.6 5.1L9.7 3.4l.9-1.6z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
@@ -75,6 +78,13 @@ export const TAB_COLOR = { party: '#d8434d', box: '#3d7196', bag: '#c98a1d', ami
 
 const C = '.x-risu-pkbp';
 
+export const REST_GLOW_MS = 700;
+
+const SPARKS = [[16, 34, 17, 0], [44, 70, 12, 0.09], [64, 26, 14, 0.18], [88, 60, 11, 0.27]];
+const SPARK = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0C10.8 6.6 13.4 9.2 20 10 13.4 10.8 10.8 13.4 10 20 9.2 13.4 6.6 10.8 0 10 6.6 9.2 9.2 6.6 10 0z" fill="#fff"/></svg>';
+const sparks = () => `<span class="x-risu-pkbp-spk" aria-hidden="true">${SPARKS.map(([x, y, size, delay]) =>
+  `<span style="left:${x}%;top:${y}%;width:${z(size)};height:${z(size)};animation-delay:${delay}s">${SPARK}</span>`).join('')}</span>`;
+
 export const PANEL_SHEETS = Object.freeze([[`${C}-icpr span`, PR_ITEMS], [`${C}-icsd`, SD_ITEMS], ...screenSheets(PR_BASE)].map(sheet => Object.freeze(sheet)));
 
 export function sheetCss(address) {
@@ -88,25 +98,46 @@ export function sheetCss(address) {
 export const SIZE = Object.freeze({
   wide: Object.freeze({ top: 84, width: 'clamp(340px, 28vw, 400px)', screenWidth: 'clamp(380px, 31vw, 430px)', text: 15, bottomGap: 12 }),
   phone: Object.freeze({ max: 640, top: 100, text: 13, sheetMax: 380 }),
-  tab: Object.freeze({ w: 40, h: 44, wPhone: 38, hPhone: 38, cur: 46, border: 2.5, gap: 7, pad: 10, foldGap: 4 }),
+  tab: Object.freeze({ w: 40, h: 44, wPhone: 38, hPhone: 38, cur: 46, border: 2.5, gap: 7, pad: 10, foldGap: 4, icon: 24, iconPhone: 22, shadow: 2 }),
+  fold: Object.freeze({ min: 24, minTouch: 32, beside: 4 }),
   touch: Object.freeze({ min: 40, row: 38 }),
+  hostBar: 60,
+  window: Object.freeze({ room: 120 }),
+  shift: Object.freeze({ min: -60, max: 60, default: 0 }),
 });
 
-const TAP_TARGETS = ['back', 'fold', 'smon', 'quill', 'badge', 'brd', 'pairx', 'add', 'nav', 'boxname', 'seg button', 'mini button', 'gclr', 'gnav'];
-const { wide: W, phone: PH, tab: TB } = SIZE;
+export const panelShift = value => (typeof value === 'number' && Number.isFinite(value)
+  ? Math.min(SIZE.shift.max, Math.max(SIZE.shift.min, Math.round(value))) : SIZE.shift.default);
+
+const TAP_TARGETS = ['back', 'fold', 'smon', 'quill', 'badge', 'brd', 'rst', 'pairx', 'add', 'nav', 'boxname', 'seg button', 'mini button', 'gclr', 'gnav'];
+const { wide: W, phone: PH, tab: TB, fold: FD } = SIZE;
+
+const SHIFT = 'var(--pkbp-shift,0px)';
+const BELOW = `var(--pkbp-below,calc(${SIZE.hostBar + W.bottomGap}px + env(safe-area-inset-bottom,0px)))`;
+const topAt = top => `calc(${top}px + ${SHIFT})`;
+const maxBelow = (vh, top) => `calc(${vh} - ${top}px - ${BELOW} - max(${SHIFT},0px))`;
+const DVH = '@supports (height:100dvh)';
 
 const STRIP = TB.cur - TB.border;
 
+const foldFit = (least, normal) => {
+  const room = `var(--pkbp-room,${normal + TB.foldGap + TB.shadow}px)`;
+  return `--pkbp-fg:clamp(0px, ${room} - ${normal + TB.shadow}px, ${TB.foldGap}px);--pkbp-tw:clamp(${least}px, ${room} - ${TB.shadow}px - var(--pkbp-fg), ${normal}px);`;
+};
+
+const iconFit = size => `width:min(${size}px, var(--pkbp-tw) - ${FD.beside}px);height:min(${size}px, var(--pkbp-tw) - ${FD.beside}px);`;
+
 export const BADGE_LIST_H = 312;
 const CSS = [
-  `${C}{position:fixed;right:0;top:${W.top}px;z-index:45;display:flex;align-items:flex-start;--pkbp-z:${W.text / BASE_TEXT};`
+  `${C}{position:fixed;right:0;top:${topAt(W.top)};--pkbp-max:${maxBelow('100vh', W.top)};z-index:45;display:flex;align-items:flex-start;--pkbp-z:${W.text / BASE_TEXT};`
     + `font-family:${FONT};font-weight:400;font-size:${z(BASE_TEXT)};line-height:1.35;color:#23435f;letter-spacing:0;text-align:left;`
 
-    + `transform:translateX(calc(100% - ${TB.w + TB.foldGap}px));transition:transform .2s ease-out;`
+    + `${foldFit(FD.min, TB.w)}transform:translateX(calc(100% - var(--pkbp-tw) - var(--pkbp-fg)));transition:transform .2s ease-out;`
 
     + `pointer-events:none;}`,
 
-  `${C}${C}-open{transform:none;z-index:1100;pointer-events:auto;}`,
+  `${DVH}{${C}{--pkbp-max:${maxBelow('100dvh', W.top)};}}`,
+  `${C}${C}-open{--pkbp-tw:${TB.w}px;transform:none;z-index:1100;pointer-events:auto;}`,
   `${C}-tab,${C}-offer{pointer-events:auto;}`,
   `${C}${C}-gone{display:none;}`,
   `${C} *{box-sizing:border-box;}`,
@@ -116,7 +147,7 @@ const CSS = [
   `${C}{-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;} ${C} input,${C} textarea{user-select:text;-webkit-user-select:text;}`,
 
   `${C}-tabs{display:flex;flex-direction:column;gap:${TB.gap}px;padding:${TB.pad}px 0 12px;position:relative;z-index:2;}`,
-  `${C}-tab{position:relative;display:flex;align-items:center;justify-content:center;width:${TB.w}px;height:${TB.h}px;padding:0;border:${TB.border}px solid #23435f;border-right:0;border-radius:9px 0 0 9px;`
+  `${C}-tab{position:relative;display:flex;align-items:center;justify-content:center;width:var(--pkbp-tw);height:${TB.h}px;padding:0;border:${TB.border}px solid #23435f;border-right:0;border-radius:9px 0 0 9px;`
     + `color:#23435f;box-shadow:-2px 3px 0 #1a3247;cursor:pointer;}`,
   ...Object.entries(TAB_COLOR).map(([tab, color]) => `${C}-t${tab}{background:${color};}`),
   `${C}-tresume{margin-top:6px;background:#23435f;}`,
@@ -124,7 +155,9 @@ const CSS = [
   `${C}-taux{background:#c3cfd8;color:#6f8494;border-color:#7d93a4;box-shadow:-2px 3px 0 #8fa3b3;}`,
   `${C}-taux${C}-on{background:#d8434d;color:#fff;border-color:#23435f;box-shadow:-2px 3px 0 #1a3247;}`,
   `${C}-lit{position:absolute;top:4px;left:4px;width:7px;height:7px;border-radius:50%;background:#ffe36b;box-shadow:0 0 0 1.5px #8e2835,0 0 6px 2px rgba(255,227,107,.85);}`,
-  `${C}-tab svg{display:block;width:24px;height:24px;}`,
+  `${C}-tab svg{display:block;${iconFit(TB.icon)}}`,
+
+  `${C}:not(${C}-open) ${C}-tab::after{content:"";position:absolute;left:-${TB.border}px;right:calc(0px - var(--pkbp-fg));top:-${TB.border + TB.gap / 2}px;bottom:-${TB.border + TB.gap / 2}px;}`,
   `${C}-tab:active{transform:translateY(2px);box-shadow:-2px 1px 0 #1a3247;}`,
   `${C}-open ${C}-tab${C}-cur{width:${TB.cur}px;margin-right:-${TB.border}px;}`,
 
@@ -135,7 +168,7 @@ const CSS = [
   `${C}-sheet{position:relative;z-index:1;display:flex;flex-direction:column;align-self:stretch;visibility:hidden;pointer-events:none;transition:visibility 0s .2s;}`,
   `${C}-open ${C}-sheet{visibility:visible;pointer-events:auto;transition:none;}`,
   `${C}-board{flex:1 0 auto;position:relative;z-index:1;width:${W.width};border:2.5px solid #23435f;border-right:0;border-radius:0 0 0 12px;overflow:hidden;display:flex;flex-direction:column;`
-    + `max-height:calc(100vh - ${W.top + W.bottomGap}px);max-height:calc(100dvh - ${W.top + W.bottomGap}px);background:linear-gradient(160deg,#ffffff,#eef5fa);box-shadow:-3px 4px 0 #1a3247;}`,
+    + `max-height:var(--pkbp-max);background:linear-gradient(160deg,#ffffff,#eef5fa);box-shadow:-3px 4px 0 #1a3247;}`,
   `${C}-board${C}-scr{width:${W.screenWidth};}`,
 
   `${C}-hd{display:flex;align-items:center;gap:7px;margin:0 10px;padding:9px 0 5px;color:#23435f;font-size:${z(15)};border-bottom:2px solid #23435f;}`,
@@ -195,6 +228,24 @@ const CSS = [
   `${C}-brd${C}-off{border-color:#c3cfd8;color:#a9b5be;box-shadow:none;cursor:default;}`,
   `${C}-brd${C}-off${C}-on,${C}-brd${C}-off${C}-no{background:#c3cfd8;border-color:#a9b5be;color:#fff;}`,
   `${C}-brd:not(${C}-off):active{transform:translateY(1px);box-shadow:none;}`,
+
+  `${C}-rst{display:flex;align-items:center;flex:none;gap:3px;height:22px;padding:0 6px 0 5px;border:1.5px solid #3f9a7c;border-radius:7px;background:#fff;color:#2b7a60;font-size:${z(12)};line-height:1;white-space:nowrap;box-shadow:0 1.5px 0 #2b7a60;cursor:pointer;}`,
+  `${C}-rst svg{display:block;width:12px;height:12px;}`,
+  `${C}-rstc{display:flex;gap:2px;margin-left:1px;}`,
+  `${C}-rstc > span{display:block;width:8px;height:8px;border-radius:50%;border:1.5px solid #3f9a7c;background:#3f9a7c;}`,
+  `${C}-rstc > span${C}-used{background:#fff;border-color:#a9b5be;}`,
+  `${C}-rst${C}-off{border-color:#c3cfd8;color:#a9b5be;box-shadow:none;cursor:default;}`,
+  `${C}-rst${C}-off ${C}-rstc > span:not(${C}-used){background:#a9b5be;border-color:#a9b5be;}`,
+  `${C}-rst:not(${C}-off):active{transform:translateY(1px);box-shadow:none;}`,
+
+  `${C}-healed{animation:x-risu-pkbpheal ${REST_GLOW_MS}ms ease-out;}`,
+  `@keyframes x-risu-pkbpheal{30%{border-color:#3f9a7c;box-shadow:0 3px 0 #2b7a60,0 0 10px 2px rgba(78,196,150,.7),inset 0 0 0 60px rgba(122,214,174,.3);} }`,
+  `${C}-spk{position:absolute;inset:0;z-index:1;pointer-events:none;}`,
+  `${C}-spk > span{position:absolute;display:block;opacity:0;transform:translate(-50%,-50%) scale(0);animation:x-risu-pkbpspark .42s ease-out forwards;}`,
+  `${C}-spk svg{display:block;width:100%;height:100%;filter:drop-shadow(0 0 1px #2b7a60) drop-shadow(0 0 3px #4ec496);}`,
+  `@keyframes x-risu-pkbpspark{0%{opacity:0;transform:translate(-50%,-30%) scale(0) rotate(0);} 45%{opacity:1;transform:translate(-50%,-60%) scale(1.1) rotate(20deg);} `
+    + '100%{opacity:0;transform:translate(-50%,-110%) scale(.3) rotate(60deg);} }',
+  `@media (prefers-reduced-motion:reduce){${C}-healed{animation:none;} ${C}-spk{display:none;}}`,
   `${C}-bred{border-color:#e0719a;background:linear-gradient(160deg,#fff,#fdeef4);box-shadow:0 3px 0 #b0476f;}`,
   `${C}-bredno{border-color:#d8434d;background:linear-gradient(160deg,#fff,#fdecee);box-shadow:0 3px 0 #8e2835;}`,
   `${C}-mark{position:absolute;top:-7px;left:-5px;z-index:1;display:flex;align-items:center;justify-content:center;width:19px;height:19px;border:1.5px solid #fff;border-radius:50%;`
@@ -276,11 +327,13 @@ const CSS = [
     + `text-align:center;box-shadow:0 3px 0 #8e2835;cursor:pointer;}`,
   `${C}-bring:active{transform:translateY(1.5px);box-shadow:0 1px 0 #8e2835;}`,
 
-  `${C}-win{flex:none;margin:0 9px 10px;padding:7px 10px 6px;border:2.5px solid #23435f;border-radius:9px;background:#fff;box-shadow:0 3px 0 #1a3247;}`,
+  `${C}-win{flex:none;display:flex;flex-direction:column;max-height:calc(var(--pkbp-max) - ${SIZE.window.room}px);margin:0 9px 10px;padding:7px 10px 6px;`
+    + `border:2.5px solid #23435f;border-radius:9px;background:#fff;box-shadow:0 3px 0 #1a3247;}`,
+  `${C}-wt,${C}-cnt{flex:none;}`,
   `${C}-wt{white-space:pre-line;font-size:${z(13)};color:#14304a;line-height:1.45;}`,
   `${C}-err ${C}-wt{color:#a32634;}`,
-  `${C}-opts{display:flex;flex-direction:column;margin-top:5px;padding-top:4px;border-top:1.5px solid #dbe5ec;}`,
-  `${C}-opt{position:relative;display:block;width:100%;padding:4px 6px 4px 18px;border:0;border-radius:6px;background:transparent;color:#14304a;font-size:${z(13)};text-align:left;cursor:pointer;}`,
+  `${C}-opts{display:flex;flex-direction:column;min-height:0;overflow-y:auto;overscroll-behavior:contain;margin-top:5px;padding-top:4px;border-top:1.5px solid #dbe5ec;}`,
+  `${C}-opt{position:relative;flex:none;display:block;width:100%;padding:4px 6px 4px 18px;border:0;border-radius:6px;background:transparent;color:#14304a;font-size:${z(13)};text-align:left;cursor:pointer;}`,
   `${C}-opt:hover{background:#eef4f9;}`,
   `${C}-opt:hover::before{content:"";position:absolute;left:6px;top:50%;margin-top:-4px;border:4px solid transparent;border-left:6px solid #d8434d;}`,
   `${C}-opt${C}-off{color:#a9b5be;cursor:default;}`,
@@ -319,13 +372,17 @@ const CSS = [
   `${C}-rowk{flex:0 0 ${z(96)};color:#5d7486;}`,
   `${C}-rowv{flex:1;min-width:0;color:#14304a;word-break:keep-all;overflow-wrap:anywhere;}`,
 
+  `@media (pointer:coarse){${C}{${foldFit(FD.minTouch, TB.w)}}}`,
+
   `@media (max-width:${PH.max}px){`
-    + `${C}{top:${PH.top}px;--pkbp-z:${PH.text / BASE_TEXT};transform:translateX(calc(100% - ${TB.wPhone + TB.foldGap}px));}`
-    + `${C}${C}-open{transform:none;}`
-    + `${C}-tab{width:${TB.wPhone}px;height:${TB.hPhone}px;} ${C}-tab svg{width:22px;height:22px;}`
-    + `${C}-board,${C}-board${C}-scr{width:min(${PH.sheetMax}px, calc(100vw - ${TB.wPhone + STRIP}px));`
-    + `max-height:calc(100vh - ${PH.top + W.bottomGap}px);max-height:calc(100dvh - ${PH.top + W.bottomGap}px - env(safe-area-inset-bottom,0px));}`
+    + `${C}{top:${topAt(PH.top)};--pkbp-max:${maxBelow('100vh', PH.top)};--pkbp-z:${PH.text / BASE_TEXT};${foldFit(FD.minTouch, TB.wPhone)}}`
+    + `${C}${C}-open{--pkbp-tw:${TB.wPhone}px;}`
+    + `${C}-tab{height:${TB.hPhone}px;} ${C}-tab svg{${iconFit(TB.iconPhone)}}`
+    + `${C}-board,${C}-board${C}-scr{width:min(${PH.sheetMax}px, calc(100vw - ${TB.wPhone + STRIP}px));}`
     + `}`,
+  `${DVH}{@media (max-width:${PH.max}px){${C}{--pkbp-max:${maxBelow('100dvh', PH.top)};}}}`,
+
+  `${C}-floor{position:fixed;left:0;right:0;bottom:0;height:0;visibility:hidden;pointer-events:none;}`,
 
   `@media (max-width:${PH.max}px),(pointer:coarse){`
     + `:where(${TAP_TARGETS.map(name => `${C}-${name}`).join(',')}){position:relative;}`
@@ -343,17 +400,19 @@ export const COMPAT_TABS_CSS = `${Object.values(COMPAT_TABS).map(name => `.x-ris
 
 const TABS_CLASS = 'x-risu-pkbp-tabs', SHEET_CLASS = 'x-risu-pkbp-sheet', ART_CLASS = 'x-risu-pkbp-art';
 
+export const FLOOR_CLASS = 'x-risu-pkbp-floor';
+
 export const OWN_CLASS = 'x-risu-pkbp-own';
 
 export const PANEL_STATES = Object.freeze({ open: 'x-risu-pkbp-open', locked: 'x-risu-pkbp-locked', gone: 'x-risu-pkbp-gone' });
-const shell = (tabs, sheet, states = []) => `<div><style>${CSS}</style><div class="${ART_CLASS}"></div><div class="${['x-risu-pkbp', ...states].join(' ')}">`
+const shell = (tabs, sheet, states = []) => `<div><style>${CSS}</style><div class="${ART_CLASS}"></div><div class="${FLOOR_CLASS}"></div><div class="${['x-risu-pkbp', ...states].join(' ')}">`
   + `<div class="${TABS_CLASS}">${tabs}</div><div class="${SHEET_CLASS}">${sheet}</div></div></div>`;
 
 export const sheetArt = css => (css ? `<div><style>${css}</style></div>` : '');
 
 export const panelShell = () => shell('', '', [PANEL_STATES.gone]);
 
-export function renderPanel(model, { aux = null, picture = directPicture } = {}) {
+export function renderPanel(model, { aux = null, picture = directPicture, shift = SIZE.shift.default, below = null, room = null, rested = null } = {}) {
   const { lang } = model;
   const t = key => esc(say(lang, key));
   const hits = [];
@@ -378,7 +437,10 @@ export function renderPanel(model, { aux = null, picture = directPicture } = {})
     ? `<div class="x-risu-pkbp-offer" role="dialog" aria-label="${t('panel.offer.ask')}"><div>${t('panel.offer.ask')}</div><div class="x-risu-pkbp-offb">`
       + `<button type="button" class="${cls('x-risu-pkbp-offn', hit({ t: 'later' }))}">${t('panel.offer.later')}</button>`
       + `<button type="button" class="${cls('x-risu-pkbp-offy', hit({ t: 'offer', asked: true }))}">${t('panel.offer.yes')}</button></div></div>` : '';
-  const tabs = sideTabs + resume + auxTab + note + (model.travel ? `<style>${COMPAT_TABS_CSS}</style>` : '');
+  const lift = panelShift(shift);
+  const place = [lift === SIZE.shift.default ? '' : `--pkbp-shift:${lift}px;`, Number.isFinite(below) ? `--pkbp-below:${Math.round(below)}px;` : '',
+    Number.isFinite(room) ? `--pkbp-room:${Math.max(0, Math.floor(room))}px;` : ''].join('');
+  const tabs = sideTabs + resume + auxTab + note + (model.travel ? `<style>${COMPAT_TABS_CSS}</style>` : '') + (place ? `<style>${C}{${place}}</style>` : '');
   const out = [];
   if (model.open && model.screen) {
 
@@ -393,11 +455,11 @@ export function renderPanel(model, { aux = null, picture = directPicture } = {})
 
     out.push(`<div class="${cls('x-risu-pkbp-board', hit({ t: 'blank' }))}">`);
     out.push(`<div class="x-risu-pkbp-hd" style="border-bottom-color:${TAB_COLOR[model.tab]}">${ICON[model.tab]}${tabLabel(model.tab, lang)}`
-      + `<span class="x-risu-pkbp-hdr">${esc(right)}</span>${model.tab === 'party' ? breedButton(model, hit) : ''}`
+      + `<span class="x-risu-pkbp-hdr">${esc(right)}</span>${model.tab === 'party' ? breedButton(model, hit) + restButton(model, hit) : ''}`
       + `<button type="button" class="${cls('x-risu-pkbp-fold', hit({ t: 'fold' }))}" aria-label="${t('panel.fold')}" title="${t('panel.fold')}">${ICON.fold}</button></div>`);
 
     out.push(`<div class="${cls('x-risu-pkbp-bd', model.tab === 'badges' && !model.badges.open && 'x-risu-pkbp-bdg')}">`);
-    if (model.tab === 'party') out.push(partyHtml(model, hit, picture));
+    if (model.tab === 'party') out.push(partyHtml(model, hit, picture, rested));
     else if (model.tab === 'box') out.push(boxHtml(model, hit, picture));
     else if (model.tab === 'amie') out.push(amieHtml(model, hit, picture));
     else if (model.tab === 'travel') out.push(travelHtml(model, hit));
@@ -435,6 +497,16 @@ function breedButton(model, hit) {
     : `<span class="x-risu-pkbp-brd x-risu-pkbp-off${look}" aria-disabled="true">${ICON.egg}${label}</span>`;
 }
 
+function restButton(model, hit) {
+  const { lang } = model;
+  const { left, max, why } = model.rest;
+  const circles = Array.from({ length: max }, (_, i) => `<span${i < left ? '' : ' class="x-risu-pkbp-used"'}></span>`).join('');
+  const label = esc(say(lang, 'panel.rest.label', { left, max }));
+  const inside = `${ICON.rest}${esc(say(lang, 'panel.pill.rest'))}<span class="x-risu-pkbp-rstc">${circles}</span>`;
+  if (why === 'none') return `<span class="x-risu-pkbp-rst x-risu-pkbp-off" aria-disabled="true" aria-label="${label}" title="${label}">${inside}</span>`;
+  return `<button type="button" class="x-risu-pkbp-rst${why ? ' x-risu-pkbp-off' : ''} ${hit({ t: 'rest' })}"${why ? ' aria-disabled="true"' : ''} aria-label="${label}" title="${label}">${inside}</button>`;
+}
+
 const heldMark = (held, lang) => {
   const title = esc(say(lang, 'panel.held', { item: held.name }));
   return held.emoji ? `<span class="x-risu-pkbp-emo x-risu-pkbp-heldemo" title="${title}">${esc(held.emoji)}</span>` : `<span class="x-risu-pkbp-held" title="${title}"></span>`;
@@ -446,7 +518,7 @@ const statusMark = (slot, lang) => (slot.fainted ? `<span class="x-risu-pkbp-st 
 const genderMark = (g, lang, name = '') => ((g === 'M' || g === 'F') && !nameShowsGender(name)
   ? `<span class="x-risu-pkbp-g x-risu-pkbp-g${g.toLowerCase()}">${genderMarkSvg(g, { label: say(lang, `import.gender.${g}`) })}</span>` : '');
 
-function partyHtml(model, hit, picture) {
+function partyHtml(model, hit, picture, rested) {
   const { lang } = model;
   const t = key => esc(say(lang, key));
   const pair = model.breeding;
@@ -465,7 +537,8 @@ function partyHtml(model, hit, picture) {
     const bred = pair && [pair.a, pair.b].includes(slot.uid) ? (pair.ok ? 'bred' : 'bredno') : '';
     const mark = model.breedPick && picked ? '<span class="x-risu-pkbp-mark x-risu-pkbp-markn">1</span>'
       : bred ? `<span class="x-risu-pkbp-mark x-risu-pkbp-mark${bred}">${bred === 'bred' ? '♥' : '!'}</span>` : '';
-    const slotHtml = `<button type="button" class="x-risu-pkbp-slot${i === 0 ? ' x-risu-pkbp-lead' : ''}${bred ? ` x-risu-pkbp-${bred}` : ''}${slot.fainted ? ' x-risu-pkbp-fnt' : ''}${picked ? ' x-risu-pkbp-picked' : ''} ${hit({ t: 'slot', where: 'party', uid: slot.uid })}">`
+    const healed = !!rested?.includes(slot.uid);
+    const slotHtml = `<button type="button" class="x-risu-pkbp-slot${i === 0 ? ' x-risu-pkbp-lead' : ''}${bred ? ` x-risu-pkbp-${bred}` : ''}${slot.fainted ? ' x-risu-pkbp-fnt' : ''}${picked ? ' x-risu-pkbp-picked' : ''}${healed ? ' x-risu-pkbp-healed' : ''} ${hit({ t: 'slot', where: 'party', uid: slot.uid })}">`
       + `<span class="x-risu-pkbp-pic">${monImg(picture(slot))}</span>`
       + '<span class="x-risu-pkbp-info">'
       + `<span class="x-risu-pkbp-nm"><span class="x-risu-pkbp-nmt">${esc(slot.name)}</span>${genderMark(slot.gender, lang, slot.name)}</span>`
@@ -478,7 +551,7 @@ function partyHtml(model, hit, picture) {
     const badge = slot.badge ? (model.locked
       ? `<span class="x-risu-pkbp-badge x-risu-pkbp-off">▲${slot.badge}</span>`
       : `<button type="button" class="x-risu-pkbp-badge ${hit({ t: 'badge', uid: slot.uid })}" aria-label="${t('panel.levelUp')}" title="${t('panel.levelUp')}">▲${slot.badge}</button>`) : '';
-    return `<div class="x-risu-pkbp-cell">${slotHtml}${mark}${badge}</div>`;
+    return `<div class="x-risu-pkbp-cell">${slotHtml}${healed ? sparks() : ''}${mark}${badge}</div>`;
   });
 
   const bring = model.offer?.button ? `<button type="button" class="x-risu-pkbp-bring ${hit({ t: 'offer' })}">${t('panel.offer.button')}</button>` : '';

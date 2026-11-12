@@ -9,7 +9,7 @@ import { say, sayer, perLang } from '../../story/screen-text.mjs';
 import { TAB_COLOR, panelSpriteUrl } from '../../story/panel-html.mjs';
 import { itemName, bagItemName, itemLabel, namesFor } from '../../story/panel.mjs';
 import { natureName, statName, moneyText } from '../../story/diary.mjs';
-import { editMon, setAction, setBag, refillMon, draftProblems, draftPartyCount, bagDraft, canTake, DEBUG_FIELDS, typedRange, pastMainline } from '../../story/import.mjs';
+import { editMon, setAction, setBag, refillMon, draftProblems, draftPartyCount, bagDraft, canTake, DEBUG_FIELDS, typedRange, mainlineBreaks } from '../../story/import.mjs';
 import { EGG_SPRITE } from '../../engine/breeding.mjs';
 import { isCustomItem, customText, DEFAULT_EMOJI, CUSTOM_TAGS } from '../../story/custom-items.mjs';
 import { learnableTms } from '../../story/item-info.mjs';
@@ -344,10 +344,11 @@ const CSS = `
   .pkb-import .f .ctl { min-width:0; display:flex; flex-direction:column; gap:4px; }
   .pkb-import .f .note { font-size:11.5px; color:#5b768b; }
   .pkb-import .f .note.bad { color:var(--red); }
-  /* Editor: the one warning that a value goes past the mainline caps - red, with "!", fixed under the header (it stays while the body scrolls) */
+  /* Editor: the one warning that a value is not possible in the mainline games - red, with "!", fixed under the header (it stays while the body scrolls) */
   .pkb-import .cap { flex:none; display:flex; align-items:center; gap:7px; margin:0; padding:7px 12px; color:var(--red); font-size:13px;
     background:#fff4f4; border-bottom:2px solid #f0c4c7; }
   .pkb-import .cap[hidden] { display:none; }
+  .pkb-import .cap .part { white-space:nowrap; }
   .pkb-import .cap b { flex:none; width:18px; height:18px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:var(--red); color:#fff; font-size:12px; font-weight:400; }
   .pkb-import .lockrow { display:flex; align-items:stretch; justify-content:flex-start; gap:6px; }
   .pkb-import .lockrow input { flex:none; width:6.5em; }
@@ -719,10 +720,14 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     toggle.setAttribute('aria-expanded', String(details));
     toggle.onclick = () => { details = !details; draw(); };
 
-    const past = pastMainline(s);
-    cap.hidden = !past.ivs && !past.evs;
-    fillWith(cap, cap.hidden ? [] : [el('b', { textContent: '!' }),
-      el('span', { textContent: t(`import.pastMainline.${past.ivs && past.evs ? 'both' : past.ivs ? 'ivs' : 'evs'}`, { iv: MAX_IV, ev: EV_STAT_MAX, total: EV_TOTAL_MAX }) })]);
+    const breaks = mainlineBreaks(s, sim);
+    const caps = { iv: MAX_IV, ev: EV_STAT_MAX, total: EV_TOTAL_MAX };
+    const kinds = ['ivs', 'evs', 'moves', 'ability'].filter(kind => breaks[kind]);
+    cap.hidden = !kinds.length;
+    const warning = breaks.moves || breaks.ability
+      ? [`${t('import.notMainline.head')} `, ...kinds.flatMap((kind, i) => [i ? ' · ' : null, el('span', { className: 'part', textContent: t(`import.notMainline.${kind}`, caps) })])]
+      : [t(`import.pastMainline.${breaks.ivs && breaks.evs ? 'both' : breaks.ivs ? 'ivs' : 'evs'}`, caps)];
+    fillWith(cap, cap.hidden ? [] : [el('b', { textContent: '!' }), el('span', {}, ...warning)]);
     fillWith(body,
       el('div', { className: 'ed-top' }, picture(m), el('span', { className: 'who' }, el('b', { textContent: title(m) }), el('span', { className: 'sub', textContent: monSub(m, sim, lang) })), refill),
       m.action !== 'skip' && m.problems.length ? el('ul', { className: 'probs err' }, m.problems.map(p => el('li', { textContent: words(p) }))) : null,
@@ -842,6 +847,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
   async function close() { if (closed) return; closed = true; root.remove(); await onClose(); }
 
   function askClose() {
+    if (busy) return undefined;
     if (mode === 'bag' ? !wanted.item && !wanted.isNew : draft === start) return close();
     closePicker();
     const keep = el('button', { type: 'button', className: 'btn', textContent: t('import.keepEditing') });
@@ -859,6 +865,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
   root.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
     e.preventDefault(); e.stopPropagation();
+    if (busy) return;
     if (picker) closePicker();
     else if (view && mode === 'import') { view = null; draw(); } else askClose();
   });

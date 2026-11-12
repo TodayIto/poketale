@@ -1,5 +1,7 @@
 import { keyAction } from './keys.js';
 
+export const TAP_GUARD_MS = 250;
+
 export function openMenu(scene, { input, paused = () => false, close = () => {}, tapWindows = null }) {
   const parent = scene.options.parent, signal = scene.life.signal;
   const key = e => {
@@ -8,10 +10,14 @@ export function openMenu(scene, { input, paused = () => false, close = () => {},
     if (!action) return;
     e.preventDefault(); e.stopImmediatePropagation(); input(action);
   };
-  const open = scene.openMenus ??= [];
-  const entry = { tapBack: () => { const windows = tapWindows?.(); return windows ? { windows, back: () => input('back') } : null; },
-    canBack: () => !paused() && (!tapWindows || tapWindows() !== null) };
   const menu = {};
+  let shownAt = -Infinity;
+  menu.shown = () => { shownAt = performance.now(); };
+  menu.tapReady = () => performance.now() - shownAt >= TAP_GUARD_MS;
+  menu.tapped = run => (...args) => { if (menu.tapReady()) run(...args); };
+  const open = scene.openMenus ??= [];
+  const entry = { tapBack: () => { const windows = menu.tapReady() ? tapWindows?.() : null; return windows ? { windows, back: () => input('back') } : null; },
+    canBack: () => !paused() && (!tapWindows || tapWindows() !== null) };
   menu.promise = new Promise((resolve, reject) => {
     let settled = false;
     const settle = (done, value) => {

@@ -5,7 +5,7 @@ import { PHONE_CSS, isPhone, layoutOf, mountPhoneLayout } from '../battle/phone.
 import { mountScreenButtons } from '../battle/screen-buttons.js';
 import { mountLoading } from '../battle/loading.js';
 import { UI_VARS, BAND_CSS, stripX, crossIcon, ringCss, ringOnKeys } from '../battle/ui-css.js';
-import { BOX_NAME_MAX, NICKNAME_MAX } from '../../story/rules.mjs';
+import { BOX_NAME_MAX, NICKNAME_MAX, sameNickname } from '../../story/rules.mjs';
 import { viewWords } from '../../view/words.js';
 import { sayer } from '../../story/screen-text.mjs';
 import { esc, FONT } from '../../story/card.mjs';
@@ -237,8 +237,7 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), lang, sh
       return { title: words('menu.renamePokemon'), label: words('menu.nickname'), hint: say('screen.monHint', { species: mon.species }),
         who: { picture: mon.picture, name: mon.name, note: `${mon.species} · Lv${mon.level}` } };
     } });
-
-    return name === null || name === mon.nickname || (!mon.nickname && name === mon.name) ? null : name;
+    return name === null || sameNickname(name, { nickname: mon.nickname, shown: mon.name }) ? null : name;
   }
 
   return { session, renameBox, renameMon, get busy() { return busy; } };

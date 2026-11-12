@@ -1,5 +1,5 @@
 // Petting screen motions and interactions.
-// Modified for PokeTale on 2026-11-10. See THIRD-PARTY-NOTICES.md.
+// Modified for PokeTale on 2026-11-12. See THIRD-PARTY-NOTICES.md.
 // Motions ported from PlayNav (https://github.com/poooooby/PlayNav) src/amie/play.lua - lifeMotion / stepLife (breathing, sway, hops, the wriggle while stroked,
 // the flinch, dozing), reward (a double hop with notes), the wake ("!", a white flash, it turns round), the high five leap, feeding (a flash with stars, then
 // the food held at its mouth shrinking bite by bite, crumbs, the hearts; a full Pokemon turns the food away).
@@ -354,10 +354,11 @@ export class AmieScreen {
           life.flinch = 1.4; this.bump(-0.08);
           this.mark('anger');
           break;
+
         case 'hit':
-          life.flinch = 1.4; this.bump(-0.1);
-          this.mark('anger');
+          this.bump(0.1);
           this.burst('spark', 1, at.x, at.y, { rise: 0, scale: 1.3 });
+          if (e.angry) this.mark('anger');
           break;
         case 'pose': this.reach = { x: at.x, y: at.y }; this.burst('spark', 1, at.x, at.y, { rise: 0 }); break;
         case 'highFive': this.highFive(e, at); break;

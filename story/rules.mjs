@@ -14,4 +14,6 @@ export const BOX_NAME_MAX = 16;
 
 export const NICKNAME_MAX = 20;
 
+export const sameNickname = (name, { nickname = '', shown }) => name === nickname || (!nickname && name === shown);
+
 export const PLAYER_NAME = 'Player';

@@ -33,7 +33,9 @@ Upstream revisions used for the build:
   `build/showdown.mjs` (file-system access replaced by static imports, server-only formats,
   random-team generation and text files left out, some fields unused by battles dropped from the
   data tables). The list of trainer sprite names in `server/chat-commands/avatars.tsx` is read
-  by `tools/build-named-trainers.mjs` to build `data/named-trainers.json`.
+  by `tools/build-named-trainers.mjs` to build `data/named-trainers.json`. The learnsets are not
+  bundled; tables derived from them are (`data/levelup.json` by `tools/build-levelup.mjs`, and
+  `data/learnable.json` - which moves each species can learn - by `tools/build-learnable.mjs`).
 
 ### 1.2 ts-chacha20 — MIT (file header: BSD-3-Clause)
 

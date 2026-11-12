@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/rename-form-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-12. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/form-modal-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/modal-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/text.ts (TOOLTIP_CONTENT, SETTINGS_LABEL, addTextInputObject) @ 7d7da4a8 (AGPL-3.0-only)
@@ -55,7 +55,7 @@ export class RenameForm {
 
       bg.on('pointerover', () => bg.setTint?.(0xbbbbbb));
       bg.on('pointerout', () => bg.clearTint?.());
-      bg.on('pointerdown', () => { if (!this.showing) (i ? this.cancel() : this.submit()); });
+      bg.on('pointerdown', () => (i ? this.cancel() : this.submit()));
       const holder = s.add.container(0, 0);
       holder.add([bg, text]);
       return { holder, width: text.displayWidth + 8 };
@@ -120,13 +120,13 @@ export class RenameForm {
   }
 
   submit() {
-    if (!this.finish) return;
+    if (!this.finish || this.showing) return;
     const value = String(this.input_?.value ?? this.value ?? '').trim().slice(0, NICKNAME_MAX);
     playSelect(this.scene);
     this.finish(value);
   }
 
-  cancel() { this.finish?.(null); }
+  cancel() { if (!this.showing) this.finish?.(null); }
 
   clear() {
     clearTimeout(this.focusTimer);
