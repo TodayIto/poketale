@@ -73,13 +73,20 @@ export class BattleMessage {
     const characters = Array.from(text);
     if (!characters.length) return Promise.resolve();
     return new Promise(resolve => {
-      let index = 0;
-
-      const finish = () => { timer.remove(); this.text.setText(text); this.advance = null; resolve(); };
+      let index = 0, shown = '', pending = false;
+      // The timer catches up several characters in one frame when its delay (20 ms / game speed) is shorter than a frame, and each setText
+      // redraws and uploads the whole text. Only the last state of a frame is drawn, so the text is set once per frame, before rendering.
+      const draw = () => { if (pending) { pending = false; this.text.setText(shown); } };
+      const finish = () => {
+        timer.remove(); this.scene.events.off('postupdate', draw);
+        this.text.setText(text); this.advance = null; resolve();
+      };
       const timer = this.scene.time.addEvent({ delay: 20, repeat: characters.length - 1, callback: () => {
-        this.text.setText(characters.slice(0, ++index).join(''));
+        shown += characters[index++];
+        pending = true;
         if (index === characters.length) finish();
       } });
+      this.scene.events.on('postupdate', draw);
       this.advance = finish;
     });
   }

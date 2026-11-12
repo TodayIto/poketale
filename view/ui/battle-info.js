@@ -56,11 +56,21 @@ export class BattleInfo {
     this.scene.tera?.applyInfo(this, mon.tera);
     this.exp?.set(mon.level, mon.exp ?? 0);
   }
+  // Called on every HP tween tick: reuses the digit images (rightmost first, 8 px apart) instead of recreating them.
   setHpNumbers(hp, maxhp) {
-    this.numbers.removeAll(true);
-    [...`${hp}/${maxhp}`].reverse().forEach((char, i) => this.numbers.add(this.scene.add.image(-i * 8, 0, 'numbers', char)));
+    const text = `${hp}/${maxhp}`, list = this.numbers.list;
+    for (let i = 0; i < text.length; i++) {
+      const char = text[text.length - 1 - i], digit = list[i];
+      if (!digit) { this.numbers.add(this.scene.add.image(-i * 8, 0, 'numbers', char)); continue; }
+      if (digit.texture.key !== 'numbers' || digit.frame.name !== char) digit.setTexture('numbers', char);
+      if (digit.x !== -i * 8 || digit.y !== 0) digit.setPosition(-i * 8, 0);
+    }
+    while (list.length > text.length) this.numbers.remove(list[list.length - 1], true);
   }
-  updateHpFrame() { this.hp.setFrame(this.hp.scaleX > 0.5 ? 'high' : this.hp.scaleX > 0.25 ? 'medium' : 'low'); }
+  updateHpFrame() {
+    const frame = this.hp.scaleX > 0.5 ? 'high' : this.hp.scaleX > 0.25 ? 'medium' : 'low';
+    if (this.hp.frame.name !== frame) this.hp.setFrame(frame);
+  }
   async hpChange(hp, maxhp) {
     const duration = Math.max(250, Math.min(5000, Math.abs(this.mon.hp - hp) * 5));
     await tween(this.scene, { targets: this.hp, scaleX: Math.max(0, Math.min(1, hp / maxhp)), duration, ease: 'Sine.easeOut',
