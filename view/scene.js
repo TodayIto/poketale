@@ -65,6 +65,7 @@ export class BattleScene extends Phaser.Scene {
     this.ui = this.add.container(0, 1080).setScale(6).setDepth(2);
     this.assets = new Assets(this, this.life, this.options);
     this.audio = new BattleAudio(this.assets, this.options.parent, this.options);
+    this.audio.speed = () => this.gameSpeed.speed;
     this.animations = new AnimationPlayer(this, { enabled: this.options.moveAnims !== false });
     this.party = new PartyMenu(this);
     this.actions = new ActionMenu(this);
