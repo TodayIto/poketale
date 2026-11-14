@@ -21,9 +21,25 @@ const PRIORITY = {
 };
 const FOCUS = { 1: 'target', 2: 'user' };
 
+// The tone each sprite's color matrix was last built from, with the pipeline state it produced.
+const appliedTones = new WeakMap();
+
+// Rebuilds the color matrix pipeline only when the frame's tone or the sprite's pipeline changed since the last frame.
+function applyTone(sprite, tone) {
+  const active = !!tone?.some(Boolean), before = appliedTones.get(sprite);
+  if (before && before.active === active && sprite.pipeline === before.pipeline && sprite.pipelineData === before.data
+    && (!active || (tone.length === before.tone.length && tone.every((v, i) => v === before.tone[i])))) return;
+  setColorMatrix(sprite, active ? toneMatrix(tone) : null);
+  appliedTones.set(sprite, { active, pipeline: sprite.pipeline, data: sprite.pipelineData, tone: active ? [...tone] : null });
+}
+
 export class AnimationPlayer {
 
-  constructor(scene, { enabled = true } = {}) { this.scene = scene; this.enabled = enabled; this.running = false; this.diagnostics = new Set(); this.prepared = new Map(); }
+  constructor(scene, { enabled = true } = {}) {
+    this.scene = scene; this.enabled = enabled; this.running = false; this.diagnostics = new Set(); this.prepared = new Map();
+    // Animations whose resources this scene already loaded, and effect sheets still loading (shared by animations using the same graphic).
+    this.resourcesReady = new WeakSet(); this.loadingGraphics = new Map();
+  }
 
   prepare(files) {
 
@@ -44,14 +60,24 @@ export class AnimationPlayer {
     return this.playFile(`common-${name}.json`, side, targetSide);
   }
   async resources(anim) {
+    if (this.resourcesReady.has(anim)) return;
     const { assets, audio } = this.scene;
     const work = [];
     if (anim.graphic) {
       const key = `anim:${anim.graphic}`;
-      if (!assets.scene.textures.exists(key)) work.push(assets.loadImage(assets.url(`images/battle_anims/${encodeURIComponent(anim.graphic)}.png`)).then(img => {
-        assets.life.check();
-        if (!assets.scene.textures.exists(key)) assets.scene.textures.addSpriteSheet(key, img, { frameWidth: 96, frameHeight: 96 });
-      }));
+      if (!assets.scene.textures.exists(key)) {
+        let loading = this.loadingGraphics.get(key);
+        if (!loading) {
+          loading = assets.loadImage(assets.url(`images/battle_anims/${encodeURIComponent(anim.graphic)}.png`)).then(img => {
+            assets.life.check();
+            if (!assets.scene.textures.exists(key)) assets.scene.textures.addSpriteSheet(key, img, { frameWidth: 96, frameHeight: 96 });
+          });
+          this.loadingGraphics.set(key, loading);
+          const done = () => { if (this.loadingGraphics.get(key) === loading) this.loadingGraphics.delete(key); };
+          loading.then(done, done);
+        }
+        work.push(loading);
+      }
     }
     for (const event of Object.values(anim.frameTimedEvents ?? {}).flat()) {
       if (event.eventType === 'AnimTimedAddBgEvent' && event.resourceName) {
@@ -60,6 +86,7 @@ export class AnimationPlayer {
       if (event.eventType === 'AnimTimedSoundEvent' && event.resourceName) work.push(audio.load(`battle_anims/${event.resourceName}`).ready);
     }
     await Promise.all(work);
+    this.resourcesReady.add(anim);
   }
   async playFile(file, side, targetSide, { variant, frameMs = 50, sound = true, onSubstitute = false } = {}) {
     if (!this.enabled) return;
@@ -147,22 +174,32 @@ export class AnimationPlayer {
             sprite.setOrigin(0.5); scene.field.add(sprite); cache[kind][i] = sprite;
             if (kind === 2) priorities[i] = 1;
           }
-          if (kind !== 2) sprite.setTexture(sourceSprite.texture.key, sourceSprite.frame.name);
-          else {
+          // Each setter below runs only when the value differs from the sprite's current one (most frames repeat most values).
+          if (kind !== 2) {
+            const key = sourceSprite.texture.key, name = sourceSprite.frame.name;
+            if (sprite.texture.key !== key || sprite.frame.name !== name) sprite.setTexture(key, name);
+          } else {
             const exists = sprite.texture.has(frame.graphicFrame);
             if (!exists) this.diagnostics.add(`Missing graphic frame ${frame.graphicFrame}: ${file} (using frame 0, as Phaser's missing-frame default)`);
-            sprite.setFrame(exists ? frame.graphicFrame : 0);
+            const name = exists ? frame.graphicFrame : 0;
+            if (sprite.frame.name !== name) sprite.setFrame(name);
           }
           const pos = framePosition(frame, user, target);
           const scale = kind === 2 ? 1 : mon.getSpriteScale();
-          sprite.setPosition(pos.x + (kind === 2 ? 0 : (0.5 - sourceSprite.originX) * sourceSprite.width * scale),
-            pos.y + (kind === 2 ? 0 : -sourceSprite.height / 2 * (scale - 1) + (1-sourceSprite.originY)*sourceSprite.height*scale));
-          sprite.setScale(pos.scaleX * scale, pos.scaleY * scale).setAngle(pos.angle);
-          sprite.setAlpha((frame.opacity ?? 0) / 255).setVisible(!!frame.visible && (kind === 2 || shown[kind]));
-          sprite.setBlendMode(frame.blendType === 1 ? Phaser.BlendModes.ADD : frame.blendType === 2 ? Phaser.BlendModes.DIFFERENCE : Phaser.BlendModes.NORMAL);
+          const x = pos.x + (kind === 2 ? 0 : (0.5 - sourceSprite.originX) * sourceSprite.width * scale);
+          const y = pos.y + (kind === 2 ? 0 : -sourceSprite.height / 2 * (scale - 1) + (1-sourceSprite.originY)*sourceSprite.height*scale);
+          const scaleX = pos.scaleX * scale, scaleY = pos.scaleY * scale, alpha = (frame.opacity ?? 0) / 255;
+          const visible = !!frame.visible && (kind === 2 || shown[kind]);
+          const blend = frame.blendType === 1 ? Phaser.BlendModes.ADD : frame.blendType === 2 ? Phaser.BlendModes.DIFFERENCE : Phaser.BlendModes.NORMAL;
+          if (sprite.x !== x || sprite.y !== y) sprite.setPosition(x, y);
+          if (sprite.scaleX !== scaleX || sprite.scaleY !== scaleY) sprite.setScale(scaleX, scaleY);
+          if (sprite.angle !== pos.angle) sprite.setAngle(pos.angle);
+          if (sprite.alpha !== alpha) sprite.setAlpha(alpha);
+          if (sprite.visible !== visible) sprite.setVisible(visible);
+          if (sprite.blendMode !== blend) sprite.setBlendMode(blend);
 
-          setColorMatrix(sprite, frame.tone?.some(Boolean) ? toneMatrix(frame.tone) : null);
-          sprite.setData('locked', !!frame.locked);
+          applyTone(sprite, frame.tone);
+          if (sprite.getData('locked') !== !!frame.locked) sprite.setData('locked', !!frame.locked);
           if (kind === 2 && priorities[i] !== frame.priority) { priorities[i] = frame.priority; setPriority(sprite, frame); }
         }
         for (let k = 0; k < 3; k++) for (let i = cache[k].length - 1; i >= counts[k]; i--) {
@@ -178,7 +215,7 @@ export class AnimationPlayer {
     } finally {
       tweens.forEach(t => t.remove());
       if (bg) { scene.tweens.killTweensOf(bg); bg.destroy(); }
-      cache.flat().forEach(s => s.destroy());
+      for (const sprites of cache) for (const s of sprites) s.destroy();
       originals.forEach((s, i) => { if (s.scene) s.setVisible(visible[i]); });
       this.running = false;
       mark('pb:anim-end', { framesAt });

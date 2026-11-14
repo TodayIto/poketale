@@ -30,7 +30,7 @@ export function typeWithCodes(message, page, { delays, sounds }, offset = 0) {
   text.setText(''); prompt.setVisible(false);
   const characters = Array.from(page);
   return new Promise(resolve => {
-    let index = 0, seen = offset, timer = null, done = false;
+    let index = 0, seen = offset, timer = null, done = false, shown = '';
     const finish = () => {
       if (done) return;
       done = true; timer?.remove?.(); text.setText(page); message.advance = null; resolve();
@@ -40,7 +40,8 @@ export function typeWithCodes(message, page, { delays, sounds }, offset = 0) {
       timer = scene.time.delayedCall(20, () => {
         if (done) return;
         const ch = characters[index++];
-        text.setText(characters.slice(0, index).join(''));
+        shown += ch;
+        text.setText(shown);
         if (/\s/.test(ch)) step();
         else at(++seen);
       });

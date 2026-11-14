@@ -16,6 +16,9 @@ const INDEX = new Map();
 }
 const KEEP = 8;
 const chunks = new Map();
+// Decoded animations by file, most recently used last. Players only read them, so one object can serve every battle.
+const DECODED_KEEP = 64;
+const decoded = new Map();
 const decoder = new TextDecoder();
 let all;
 
@@ -44,13 +47,19 @@ export function animation(file) {
   if (all) return all.then(data => data[file]);
   const at = INDEX.get(file);
   if (!at) return Promise.resolve(undefined);
+  const hit = decoded.get(file);
+  if (hit) { decoded.delete(file); decoded.set(file, hit); return hit; }
   const [chunk, start, end] = at;
   const t0 = globalThis.performance?.now?.();
-  return inflated(chunk).then(bytes => {
+  const work = inflated(chunk).then(bytes => {
     const anim = decode(bytes, start, end);
     globalThis.performance?.measure?.(`pb:anim:${file}`, { start: t0 });
     return anim;
   });
+  decoded.set(file, work);
+  while (decoded.size > DECODED_KEEP) decoded.delete(decoded.keys().next().value);
+  work.catch(() => { if (decoded.get(file) === work) decoded.delete(file); });
+  return work;
 }
 
 export function animationData() {

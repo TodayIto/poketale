@@ -145,12 +145,14 @@ export async function createBattleView(options) {
     return true;
   };
 
+  // Runs on every frame, so compares the small button state field by field instead of serializing it.
+  const samePages = (a, b) => a === b || (!!a && !!b && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(k => a[k] === b[k]));
   view.watchButtons = fn => {
     let last = null;
     const check = () => {
       if (destroyed) return;
-      const now = screenButtons(scene), key = JSON.stringify(now);
-      if (key !== last) { last = key; fn(now); }
+      const now = screenButtons(scene);
+      if (!last || now.back !== last.back || !samePages(now.pages, last.pages)) { last = now; fn(now); }
     };
     check();
     scene.events.on('postupdate', check);
