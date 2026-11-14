@@ -1,11 +1,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { buildBattle } from '../build/plugins.mjs';
 
+const version = '0.0.7.1';
 const result = await buildBattle();
 const code = `//@name poke_battle
-//@display-name PokéTale
+//@display-name PokéTale ${version}
 //@api 3.0
-//@version 0.0.7
+//@version ${version}
 //@update-url https://raw.githubusercontent.com/TodayIto/poketale/main/dist/poke-battle.js
 ` + result.code;
 mkdirSync('dist', { recursive: true });

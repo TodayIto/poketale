@@ -1,7 +1,7 @@
 //@name poke_battle
-//@display-name PokéTale
+//@display-name PokéTale 0.0.7.1
 //@api 3.0
-//@version 0.0.7
+//@version 0.0.7.1
 //@update-url https://raw.githubusercontent.com/TodayIto/poketale/main/dist/poke-battle.js
 // SPDX-License-Identifier: AGPL-3.0-only
 // License: GNU Affero General Public License v3.0 only (LICENSE in the source)
