@@ -189,7 +189,11 @@ export function mountScene(scene, svg, { prefix = 'pkb-scene', front = ['L5', 'L
     back, front: fore, keys, bytes, pieces,
     update(t = clock()) {
       if (gone) return;
-      for (const { image, p } of movers) { const m = motionAt(p.motion, t); image.setPosition(p.x + m.x, p.y + m.y).setAlpha(p.alpha * m.alpha); }
+      for (const { image, p } of movers) {
+        const m = motionAt(p.motion, t), x = p.x + m.x, y = p.y + m.y, alpha = p.alpha * m.alpha;
+        if (image.x !== x || image.y !== y) image.setPosition(x, y);
+        if (image.alpha !== alpha) image.setAlpha(alpha);
+      }
     },
     setVisible(on) { if (!gone) { back.setVisible(on); fore.setVisible(on); } },
     destroy() {

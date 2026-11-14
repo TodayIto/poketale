@@ -106,19 +106,21 @@ function officialFrom(chat, count) {
 export function storyMentions(chat) {
   const messages = chat?.message ?? [];
   const out = new Set();
-  if (!messages.length) return out;
-  const from = officialFrom(chat, messages.length);
   const chatKey = String(chat?.id ?? '');
+  if (!messages.length) { cache.delete(chatKey); return out; }
+  const from = officialFrom(chat, messages.length);
   let kept = cache.get(chatKey);
   if (!kept) {
     if (cache.size >= CACHE_CHATS) cache.clear();
     cache.set(chatKey, kept = new Map());
   }
+  const live = new Set();
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
     if (message?.role !== 'char' || typeof message.data !== 'string' || !message.data) continue;
     const official = i >= from;
     const key = messageId(message, i);
+    live.add(key);
     let hit = kept.get(key);
     if (!hit || hit.official !== official || hit.text !== message.data) {
       scanStats.scanned++;
@@ -127,5 +129,7 @@ export function storyMentions(chat) {
     }
     for (const n of hit.nums) out.add(n);
   }
+  // Removed or no longer searchable messages must not keep their old text alive.
+  for (const key of kept.keys()) if (!live.has(key)) kept.delete(key);
   return out;
 }
