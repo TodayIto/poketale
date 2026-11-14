@@ -112,7 +112,7 @@ export class AnimationPlayer {
     if (!anim) throw new Error(`Missing variant ${index}: ${file}`);
     if (this.running) throw new Error('Animation already playing');
     this.running = true;
-    const cache = [[], [], []], sounds = [], tweens = [];
+    const cache = [[], [], []], spareEffects = [], sounds = [], tweens = [];
     let bg, tail = 0;
     if (opposite) { [user, target] = [target, user]; shown.reverse(); }
     const originals = [...new Set([user.getSprite(), target.getSprite()])];
@@ -169,10 +169,17 @@ export class AnimationPlayer {
           let sprite = cache[kind][i];
           const mon = kind === 0 ? user : target, sourceSprite = mon.getSprite();
           if (!sprite) {
-            sprite = kind === 2 ? scene.add.sprite(0, 0, `anim:${anim.graphic}`, frame.graphicFrame)
-              : scene.add.sprite(0, 0, sourceSprite.texture.key, sourceSprite.frame.name);
-
-            sprite.setOrigin(0.5); scene.field.add(sprite); cache[kind][i] = sprite;
+            sprite = kind === 2 ? spareEffects.pop() : null;
+            if (sprite) {
+              sprite.setActive(true);
+              // A fresh sprite would be appended here, including when priority is 1.
+              scene.field.bringToTop(sprite);
+            } else {
+              sprite = kind === 2 ? scene.add.sprite(0, 0, `anim:${anim.graphic}`, frame.graphicFrame)
+                : scene.add.sprite(0, 0, sourceSprite.texture.key, sourceSprite.frame.name);
+              sprite.setOrigin(0.5); scene.field.add(sprite);
+            }
+            cache[kind][i] = sprite;
             if (kind === 2) priorities[i] = 1;
           }
 
@@ -204,7 +211,12 @@ export class AnimationPlayer {
           if (kind === 2 && priorities[i] !== frame.priority) { priorities[i] = frame.priority; setPriority(sprite, frame); }
         }
         for (let k = 0; k < 3; k++) for (let i = cache[k].length - 1; i >= counts[k]; i--) {
-          if (!cache[k][i].getData('locked')) { cache[k][i].destroy(); cache[k].splice(i, 1); if (k === 2) priorities.splice(i, 1); }
+          const sprite = cache[k][i];
+          if (!sprite.getData('locked')) {
+            if (k === 2) { sprite.setVisible(false).setActive(false); spareEffects.push(sprite); }
+            else sprite.destroy();
+            cache[k].splice(i, 1); if (k === 2) priorities.splice(i, 1);
+          }
         }
         for (const event of anim.frameTimedEvents?.[f] ?? []) eventAt(event);
         if (frameMs) await delay(scene, frameMs);
@@ -217,6 +229,7 @@ export class AnimationPlayer {
       tweens.forEach(t => t.remove());
       if (bg) { scene.tweens.killTweensOf(bg); bg.destroy(); }
       for (const sprites of cache) for (const s of sprites) s.destroy();
+      for (const s of spareEffects) s.destroy();
       originals.forEach((s, i) => { if (s.scene) s.setVisible(visible[i]); });
       this.running = false;
       mark('pb:anim-end', { framesAt });

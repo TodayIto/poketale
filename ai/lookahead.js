@@ -30,46 +30,68 @@ export function lookahead({ sim, json, seed, probe, sideId, mine, forcedSwitches
     else if (out.capped) problems.push({ type: 'capped', cap: 'forcedSwitches', limit: forcedSwitches, choice, reply });
     return out.copy ?? null;
   };
-  const rows = [];
-  mine.forEach((choice, i) => {
-    const replies = [];
-    theirs.forEach((reply, j) => {
-      const copy = turn(json, deriveSeed('look', ...seed, i, j), choice, reply);
-      if (!copy) return;
-      const side = copy.getSide(sideId);
-      replies.push({ reply, value: value(copy, sideId),
-        next: copy.ended ? null : { json: copyJson(copy), mine: moveChoices(side.active[0]), theirs: moveChoices(side.foe.active[0]) } });
-      copy.destroy();
+  const rows = [], retained = new Set();
+  const destroy = copy => { retained.delete(copy); copy.destroy(); };
+  const discard = reply => {
+    if (!reply.next) return;
+    destroy(reply.next.copy);
+    reply.next = null;
+  };
+  try {
+    mine.forEach((choice, i) => {
+      const replies = [];
+      theirs.forEach((reply, j) => {
+        const copy = turn(json, deriveSeed('look', ...seed, i, j), choice, reply);
+        if (!copy) return;
+        retained.add(copy);
+        const side = copy.getSide(sideId);
+        replies.push({ reply, value: value(copy, sideId),
+          next: copy.ended ? null : { copy, mine: moveChoices(side.active[0]), theirs: moveChoices(side.foe.active[0]) } });
+        if (copy.ended) destroy(copy);
+        // Appending replies cannot bring an already discarded reply back into
+        // the worst two. Include ended replies so ties and deep seeds stay put.
+        const keep = new Set(worstReplies(replies));
+        for (const entry of replies) if (!keep.has(entry)) discard(entry);
+      });
+      if (replies.length) rows.push({ choice, order: i, replies, value: combine(replies.map(r => r.value)) });
+      // Retain at most two replies for each of the best two rows, plus the
+      // current row. Serialize only the positions actually searched next.
+      const keep = new Set(rows.slice().sort(rankRows).slice(0, BEAM));
+      for (const row of rows) if (!keep.has(row)) row.replies.forEach(discard);
     });
-    if (replies.length) rows.push({ choice, order: i, replies, value: combine(replies.map(r => r.value)) });
-  });
-  if (!rows.length) return null;
-  rows.sort((a, b) => b.value - a.value || a.order - b.order);
-  if (rows.length > 1) {
-    for (const row of rows.slice(0, BEAM)) {
-      const worst = row.replies.slice().sort((a, b) => a.value - b.value).slice(0, REPLIES);
-      row.deep = combine(worst.map((reply, k) => {
-        if (!reply.next || !reply.next.mine.length || !reply.next.theirs.length) return reply.value;
-        let best = -Infinity;
-        reply.next.mine.forEach((choice, e) => {
-          const values = [];
-          reply.next.theirs.forEach((answer, p) => {
-            const copy = turn(reply.next.json, deriveSeed('look2', ...seed, row.order, k, e, p), choice, answer);
-            if (!copy) return;
-            values.push(value(copy, sideId));
-            copy.destroy();
+    if (!rows.length) return null;
+    rows.sort(rankRows);
+    if (rows.length > 1) {
+      for (const row of rows.slice(0, BEAM)) {
+        row.deep = combine(worstReplies(row.replies).map((reply, k) => {
+          if (!reply.next || !reply.next.mine.length || !reply.next.theirs.length) return reply.value;
+          const { copy, mine, theirs } = reply.next;
+          const next = copyJson(copy);
+          discard(reply);
+          let best = -Infinity;
+          mine.forEach((choice, e) => {
+            const values = [];
+            theirs.forEach((answer, p) => {
+              const branch = turn(next, deriveSeed('look2', ...seed, row.order, k, e, p), choice, answer);
+              if (!branch) return;
+              try { values.push(value(branch, sideId)); } finally { branch.destroy(); }
+            });
+            if (values.length) best = Math.max(best, combine(values));
           });
-          if (values.length) best = Math.max(best, combine(values));
-        });
-        return best === -Infinity ? reply.value : best;
-      }));
+          return best === -Infinity ? reply.value : best;
+        }));
+      }
     }
+    const deep = rows.filter(row => row.deep !== undefined);
+    const pick = deep.length ? deep.reduce((a, b) => (b.deep > a.deep || (b.deep === a.deep && b.order < a.order) ? b : a)) : rows[0];
+    return { choice: pick.choice, sims, rejected, rows: rows.map(r => ({ choice: r.choice, value: round(r.value), ...(r.deep !== undefined ? { deep: round(r.deep) } : {}) })) };
+  } finally {
+    for (const copy of retained) copy.destroy();
   }
-  const deep = rows.filter(row => row.deep !== undefined);
-  const pick = deep.length ? deep.reduce((a, b) => (b.deep > a.deep || (b.deep === a.deep && b.order < a.order) ? b : a)) : rows[0];
-  return { choice: pick.choice, sims, rejected, rows: rows.map(r => ({ choice: r.choice, value: round(r.value), ...(r.deep !== undefined ? { deep: round(r.deep) } : {}) })) };
 }
 
+const rankRows = (a, b) => b.value - a.value || a.order - b.order;
+const worstReplies = replies => replies.slice().sort((a, b) => a.value - b.value).slice(0, REPLIES);
 const round = x => Math.round(x * 1000) / 1000;
 const combine = values => PESSIMISM * Math.min(...values) + (1 - PESSIMISM) * values.reduce((s, v) => s + v, 0) / values.length;
 
