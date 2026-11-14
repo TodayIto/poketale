@@ -5,16 +5,19 @@ const USER = '{{user}}';
 
 const SIDE = { p1: 'mine', p2: 'theirs', p3: 'mine', p4: 'theirs' };
 
-export function readLog(log, { from = 0, to = log?.length ?? 0 } = {}) {
+export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {}) {
   const at = new Map();
   const met = [];
   const sent = new Set();
   const turns = [{ turn: 0, events: [] }];
-  const summary = { sent: [], fainted: [], winner: null, caught: null, ran: false, turns: 0 };
+  const summary = { sent: [], gimmicks: [], fainted: [], winner: null, caught: null, ran: false, turns: 0 };
   const players = { mine: null, theirs: null };
   let split = 0;
   let recent = null, recentLive = false;
   let weather = null;
+  let changed = null;
+  let zpower = null;
+  let resized = null;
   const lines = log ?? [];
   const end = Math.min(to, lines.length);
   const identOf = ident => /^(p\d)([a-z]?):\s*(.*)$/.exec(ident).slice(1);
@@ -39,6 +42,13 @@ export function readLog(log, { from = 0, to = log?.length ?? 0 } = {}) {
   };
   const pct = mon => (mon.maxhp ? Math.round(mon.hp / mon.maxhp * 100) : 0);
 
+  const seen = ident => {
+    if (!/^p\d[a-z]?:/.test(ident)) return null;
+    const [player, letter, name] = identOf(ident);
+    return (letter && at.get(player + letter)) || named(player, name) || null;
+  };
+  const types = typeWatch(dex, seen, () => [...at.values()]);
+
   for (let i = 0; i < end; i++) {
     const line = lines[i];
     if (split === 1) { split = 0; continue; }
@@ -58,9 +68,14 @@ export function readLog(log, { from = 0, to = log?.length ?? 0 } = {}) {
       return recent;
     };
     const silent = args.includes('[silent]');
+
+    const gimmick = event => {
+      push(event, false);
+      if (live && !event.ended) summary.gimmicks.push(event);
+    };
     switch (cmd) {
     case 'player': if (SIDE[args[0]] && args[1]) players[SIDE[args[0]]] = args[1]; break;
-    case 'turn': turns.push({ turn: Number(args[0]), events: [] }); summary.turns = Number(args[0]); recent = null; break;
+    case 'turn': turns.push({ turn: Number(args[0]), events: [] }); summary.turns = Number(args[0]); recent = null; zpower = null; break;
     case 'switch': case 'drag': {
       const [player, letter, name] = identOf(args[0]);
       const field = new Set(at.values());
@@ -94,11 +109,33 @@ export function readLog(log, { from = 0, to = log?.length ?? 0 } = {}) {
     case 'move': {
       const mon = who(args[0]);
       const target = args[2] ? who(args[2]) : null;
-      push({ type: 'move', mon: ref(mon), move: args[1], target: target && target !== mon ? ref(target) : null, miss: args.includes('[miss]'), effects: [] });
+      const z = zpower === mon;
+      if (z) zpower = null;
+      const event = { type: 'move', mon: ref(mon), move: args[1], target: target && target !== mon ? ref(target) : null, miss: args.includes('[miss]'), ...(z ? { z } : {}), effects: [] };
+      push(event);
+      if (z && live) summary.gimmicks.push(event);
+      break;
+    }
+
+    case 'detailschange': changed = { at: i, mon: who(args[0]), species: args[1].split(',')[0] }; break;
+    case '-mega': case '-primal': case '-burst': {
+      const mon = who(args[0]);
+      const into = changed?.at === i - 1 && changed.mon === mon ? changed.species : null;
+      gimmick({ type: cmd.slice(1), mon: ref(mon), ...(cmd === '-primal' ? {} : { into }) });
+      break;
+    }
+    case '-zpower': zpower = who(args[0]); break;
+    case '-terastallize': gimmick({ type: 'tera', mon: ref(who(args[0])), tera: args[1] }); break;
+    case '-start': case '-end': {
+      if (args[1] !== 'Dynamax') break;
+      const mon = who(args[0]);
+      resized = { mon, at: i };
+      gimmick(cmd === '-start' ? { type: 'dynamax', mon: ref(mon), gmax: args[2] === 'Gmax' } : { type: 'dynamax', mon: ref(mon), ended: true });
       break;
     }
     case '-damage': case '-heal': {
       const mon = who(args[0]);
+      if (silent && resized?.mon === mon && i - resized.at <= 2) { setHp(mon, args[1]); break; }
       const before = setHp(mon, args[1]);
       const from = fromOf(args);
       const delta = before === null ? 0 : Math.round(mon.hp / mon.maxhp * 100 - before * 100);
@@ -111,7 +148,7 @@ export function readLog(log, { from = 0, to = log?.length ?? 0 } = {}) {
     case '-supereffective': case '-resisted': case '-crit': case '-immune': case '-miss': {
       const prev = moveOf();
       const tag = { '-supereffective': 'super effective', '-resisted': 'not very effective', '-crit': 'critical hit', '-immune': 'no effect', '-miss': 'missed' }[cmd];
-      if (prev) prev.effects.push({ kind: 'tag', tag, mon: args[0] ? ref(who(args[0])) : null });
+      if (prev) prev.effects.push({ kind: 'tag', tag, mon: args[0] ? ref(who(args[0])) : null, ...causeOf(cmd, args, types) });
       break;
     }
     case '-status': push({ type: 'status', mon: ref(who(args[0])), status: args[1] }); break;
@@ -160,8 +197,149 @@ export function readLog(log, { from = 0, to = log?.length ?? 0 } = {}) {
     }
     default: break;
     }
+    types.line(cmd, args);
   }
   return { turns: turns.filter(t => t.events.length), summary, players };
+}
+
+function causeOf(cmd, args, types) {
+  if (cmd === '-immune') {
+    const from = fromOf(args);
+    if (from) return from.kind === 'abilities' ? { from } : {};
+  }
+  if (!['-supereffective', '-resisted', '-immune'].includes(cmd) || !args[0]) return {};
+  const found = types.cause(cmd, args[0]);
+  return found?.length ? { types: found } : {};
+}
+
+const WEATHER_TYPE = { SunnyDay: 'Fire', DesolateLand: 'Fire', RainDance: 'Water', PrimordialSea: 'Water', Sandstorm: 'Rock', Hail: 'Ice', Snowscape: 'Ice' };
+const TERRAIN_TYPE = { electricterrain: 'Electric', grassyterrain: 'Grass', mistyterrain: 'Fairy', psychicterrain: 'Psychic' };
+const DRIVE_TYPE = { Douse: 'Water', Shock: 'Electric', Burn: 'Fire', Chill: 'Ice' };
+const ATE = new Set(['pixilate', 'aerilate', 'refrigerate', 'galvanize']);
+
+function typeWatch(dex, seen, field = () => []) {
+  const none = { line() {}, cause: () => null };
+  if (!dex) return none;
+
+  const state = new WeakMap();
+  let turn = 0, weather = null, terrain = null, deluge = -1, moveType = null, moveId = null;
+  const of = mon => {
+    if (!state.has(mon)) state.set(mon, { species: null, types: null, added: '', tera: null, roost: -1, electrify: -1, calm: false, balloon: false, risen: false });
+    return state.get(mon);
+  };
+  const speciesOf = mon => dex.species.get(of(mon).species ?? mon.species);
+  const mayHave = (mon, ids) => Object.values(speciesOf(mon).abilities ?? {}).some(name => ids.includes(toID(name)));
+  const typesOf = mon => {
+    const s = of(mon);
+    if (s.tera && s.tera !== 'Stellar') return [s.tera];
+    const species = speciesOf(mon);
+    let list = s.types ?? (species.exists ? [...species.types] : null);
+    if (!list) return null;
+    if (s.added && !list.includes(s.added)) list = [...list, s.added];
+    if (s.roost === turn) list = list.filter(t => t !== 'Flying');
+    return list.length ? list : ['Normal'];
+  };
+  const CALM = ['cloudnine', 'airlock'];
+  const calmField = () => field().some(mon => of(mon).calm);
+  const airborne = mon => of(mon).balloon || of(mon).risen || !!typesOf(mon)?.includes('Flying') || mayHave(mon, ['levitate']);
+  const typeOfMove = (user, name) => {
+    const move = dex.moves.get(name);
+    if (!user || !move.exists) return null;
+    const s = of(user), species = speciesOf(user), forme = species.forme ?? '';
+    let type = move.type;
+    switch (move.id) {
+    case 'terablast': if (s.tera) type = s.tera; break;
+    case 'weatherball':
+      if ((weather && calmField()) || mayHave(user, ['megasol'])) return null;
+      type = WEATHER_TYPE[weather] ?? 'Normal'; break;
+    case 'terrainpulse':
+      if (terrain && airborne(user)) return null;
+      type = TERRAIN_TYPE[toID(terrain)] ?? 'Normal'; break;
+    case 'revelationdance': type = s.tera && s.tera !== 'Stellar' ? s.tera : typesOf(user)?.[0]; break;
+    case 'judgment': case 'multiattack': type = species.types[0]; break;
+    case 'ivycudgel': case 'ragingbull': type = species.types[1] ?? species.types[0]; break;
+    case 'aurawheel': type = forme === 'Hangry' ? 'Dark' : 'Electric'; break;
+    case 'technoblast': type = DRIVE_TYPE[forme] ?? 'Normal'; break;
+    default: if (move.onModifyType) return null;
+    }
+
+    for (const id of Object.values(species.abilities ?? {}).map(toID)) {
+      const ability = dex.abilities.get(id);
+      if (!ability.onModifyType) continue;
+      if (!ATE.has(id) || type === 'Normal') return null;
+    }
+    if (s.electrify === turn || (deluge === turn && type === 'Normal')) type = 'Electric';
+    return !type || type === 'Stellar' || type === '???' ? null : type;
+  };
+  return {
+    line(cmd, args) {
+      const mon = seen(args[0] ?? '');
+      switch (cmd) {
+      case 'turn': turn = Number(args[0]); break;
+      case 'switch': case 'drag': if (mon) Object.assign(of(mon), { calm: false, balloon: false, risen: false });
+      case 'replace': if (mon) Object.assign(of(mon), { species: null, types: null, added: '', roost: -1, electrify: -1 }); break;
+      case 'detailschange': case '-formechange': if (mon) Object.assign(of(mon), { species: args[1].split(',')[0], types: null, added: '' }); break;
+      case '-terastallize': if (mon) of(mon).tera = args[1]; break;
+      case '-transform': {
+        const into = seen(args[1]);
+        if (mon && into) Object.assign(of(mon), { types: typesOf(into), added: '', calm: of(into).calm });
+        break;
+      }
+      case '-start': {
+        if (!mon) break;
+        const value = args[2] && !args[2].startsWith('[') ? args[2] : null;
+        if (args[1] === 'typechange') {
+          const from = args.find(a => a.startsWith('[of]'))?.replace(/^\[of\]\s*/, '');
+          const list = value ? value.split('/') : from && seen(from) ? typesOf(seen(from)) : null;
+          if (list) Object.assign(of(mon), { types: list, added: '' });
+        } else if (args[1] === 'typeadd' && value) of(mon).added = value;
+        else if (/^(move: )?(Magnet Rise|Telekinesis)$/.test(args[1])) of(mon).risen = true;
+        break;
+      }
+      case '-end':
+        if (mon && args[1] === 'typechange') of(mon).types = null;
+        if (mon && /^(move: )?(Magnet Rise|Telekinesis)$/.test(args[1])) of(mon).risen = false;
+
+        if (args[1] === 'ability: Neutralizing Gas') for (const one of field()) if (mayHave(one, CALM)) of(one).calm = true;
+        break;
+      case '-ability': if (mon && CALM.includes(toID(args[1]))) of(mon).calm = true; break;
+      case '-endability': if (mon) of(mon).calm = false; break;
+      case '-activate': {
+        const other = seen(args.find(a => a.startsWith('[of]'))?.replace(/^\[of\]\s*/, '') ?? '');
+        if (mon && other && args[1] === 'move: Skill Swap') [of(mon).calm, of(other).calm] = [of(other).calm, of(mon).calm];
+        break;
+      }
+      case '-item': if (mon && args[1] === 'Air Balloon') of(mon).balloon = true; break;
+      case '-enditem': if (mon && args[1] === 'Air Balloon') of(mon).balloon = false; break;
+      case '-singleturn':
+        if (mon && args[1] === 'move: Roost') of(mon).roost = turn;
+        if (mon && args[1] === 'move: Electrify') of(mon).electrify = turn;
+        break;
+      case '-fieldactivate': if (args[0] === 'move: Ion Deluge') deluge = turn; break;
+      case '-weather': weather = args[0] === 'none' ? null : args[0]; break;
+      case '-fieldstart': case '-fieldend': {
+        const name = String(args[0] ?? '').replace(/^move:\s*/, '');
+        if (/Terrain$/.test(name)) terrain = cmd === '-fieldstart' ? name : null;
+        break;
+      }
+      case 'move': moveType = typeOfMove(mon, args[1]); moveId = toID(args[1]); break;
+      default: break;
+      }
+    },
+    cause(cmd, ident) {
+      const target = seen(ident);
+      const list = target && moveType ? typesOf(target) : null;
+      if (!list) return null;
+      if (cmd === '-immune') return list.filter(t => !dex.getImmunity(moveType, t));
+
+      const mods = list.map(t => dex.getEffectiveness(moveType, t) + (moveId === 'freezedry' && t === 'Water' ? 2 : 0)
+        + (moveId === 'flyingpress' ? dex.getEffectiveness('Flying', t) : 0));
+      const total = mods.reduce((a, b) => a + b, 0);
+      const sign = cmd === '-supereffective' ? 1 : -1;
+      if (Math.sign(total) !== sign) return null;
+      return list.filter((t, i) => Math.sign(mods[i]) === sign);
+    },
+  };
 }
 
 const plain = s => String(s ?? '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
@@ -231,21 +409,47 @@ function sentOutText(owner, mons, sides) {
   return `${ownerName(owner, sides)} sent out ${mons}`;
 }
 
+function userText(m, namer, sides) {
+  const owner = ownerOf(m, sides);
+  return owner === 'partner' || owner === 'second' ? `${ownerName(owner, sides)}'s ${monText(m, namer)}` : monText(m, namer);
+}
+
+const zMoveName = (move, namer) => (/^Z-./.test(move) ? namer.zStatus(move.slice(2)) : namer.moves(move));
+
+function gimmickText(e, namer, sides) {
+  const user = () => userText(e.mon, namer, sides);
+  switch (e.type) {
+  case 'mega': return e.into ? `${user()} Mega Evolved into ${namer.forme(e.into)}` : `${user()} Mega Evolved`;
+  case 'primal': return `${user()} underwent Primal Reversion`;
+
+  case 'burst': return `${user()} underwent Ultra Burst and became ${namer.forme(e.into ?? 'Necrozma-Ultra')}`;
+  case 'dynamax': return e.ended ? `${user()} returned to normal size` : `${user()} ${e.gmax ? 'Gigantamaxed' : 'Dynamaxed'}`;
+  case 'tera': return `${user()} Terastallized into the ${e.tera} type`;
+  case 'move': return e.z ? `${user()} used the Z-Move ${zMoveName(e.move, namer)}` : null;
+  default: return null;
+  }
+}
+
+function tagText(x, mon, namer) {
+  const text = x.tag === 'no effect' && x.mon ? `no effect on ${mon(x.mon)}` : x.tag;
+  if (x.types) return `${text} (${x.types.join('/')} type)`;
+  return x.from ? `${text}${fromText(x.from, namer)}` : text;
+}
+
 function eventText(e, namer, sides) {
   const mon = m => monText(m, namer);
   switch (e.type) {
   case 'switch': return sentOutText(ownerOf(e.mon, sides), mon(e.mon), sides);
   case 'move': {
 
-    const owner = ownerOf(e.mon, sides);
-    const user = owner === 'partner' || owner === 'second' ? `${ownerName(owner, sides)}'s ${mon(e.mon)}` : mon(e.mon);
+    const user = userText(e.mon, namer, sides);
 
-    const head = e.cont ? `${user}'s ${namer.moves(e.move)}` : `${user} used ${namer.moves(e.move)}`;
+    const head = e.cont ? `${user}'s ${namer.moves(e.move)}` : e.z ? gimmickText(e, namer, sides) : `${user} used ${namer.moves(e.move)}`;
     if (e.miss) return `${head} → missed`;
 
     const parts = [
       ...e.effects.filter(x => x.kind === 'hp').map(x => hpText(mon(x.mon), x)),
-      ...e.effects.filter(x => x.kind === 'tag').map(x => (x.tag === 'no effect' && x.mon ? `no effect on ${mon(x.mon)}` : x.tag)),
+      ...e.effects.filter(x => x.kind === 'tag').map(x => tagText(x, mon, namer)),
     ];
     return parts.length ? `${head} → ${parts.join(', ')}` : head;
   }
@@ -268,6 +472,7 @@ function eventText(e, namer, sides) {
 
     return `${WEATHER_EN[e.weather]?.[0] ?? `The weather became ${e.weather}`}${e.of && e.from?.kind ? ` from ${mon(e.of)}'s ${namer[e.from.kind](e.from.name)}` : fromText(e.from, namer)}`;
   case 'field': return `${namer.moves(e.field)} ${e.ended ? 'ended' : 'started'}`;
+  case 'mega': case 'primal': case 'burst': case 'dynamax': case 'tera': return gimmickText(e, namer, sides);
   default: return '';
   }
 }
@@ -299,6 +504,7 @@ export function summaryLine(read, namer, { evolutions = [], sides = {} } = {}) {
     const sent = s.sent.filter(m => ownerOf(m, who) === owner);
     if (sent.length) parts.push(`${sentOutText(owner, list(sent), who)}.`);
   }
+  for (const e of s.gimmicks ?? []) parts.push(`${gimmickText(e, namer, who)}.`);
   if (s.fainted.length) parts.push(`Fainted: ${list(s.fainted)}.`);
   if (s.caught) parts.push(`Caught: ${monText(s.caught.mon, namer)} with ${namer.items(s.caught.ball)}.`);
   else if (s.ran) parts.push('Ran away.');

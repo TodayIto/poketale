@@ -30,19 +30,27 @@ const PUFF_COLORS = {
 
 const BERRY_ROWS = ['....LL...', '...LL....', '..XXXXX..', '.XBBBBBX.', 'XBSBBBBBX', 'XBSBBBBBX', 'XBBBBBBBX', 'XBBBBBBDX', '.XBBBBDX.', '..XXXXX..'];
 const BERRY_COLORS = ['#e0405a', '#5a50c8', '#f0d040', '#9ad04a', '#f080c0', '#3a8a5a', '#f0e8a0'];
+const berryColors = color => ({ X: '#3a2a2a', B: color, S: '#ffffffcc', D: '#00000040', L: '#3a9a3a' });
 
-const BALL_ROWS = ['..XXXXX..', '.XWWWWWX.', 'XSSWWWSSX', 'XWSSSSSWX', 'XWWWWWWWX', 'XSSWWWSSX', 'XWSSSSSWX', '.XWWWWWX.', '..XXXXX..'];
+export const berrySvg = i => pixelSvg(BERRY_ROWS, berryColors(BERRY_COLORS[i]));
+
+const BALL_ROWS = ['...XXXXX...', '.XXTTTTTXX.', '.XTHTTTTTX.', 'XTHTTTTTTTX', 'XTTTXXXTTTX', 'XXXXXWXXXXX', 'XWWWXXXWWWX', 'XWWWWWWWWWX', '.XWWWWWWWX.', '.XXWWWWWXX.', '...XXXXX...'];
 const BALL_COLORS = ['#e0405a', '#3a7ad8', '#e8a020'];
 const PURPLE_BALL = '#9a4ad8';
+const ballColors = top => ({ X: '#2a2a3a', W: '#fbfbf4', H: '#ffffff', T: top });
 
 const GIANT_D = 21;
 const GIANT_ROWS = Array.from({ length: GIANT_D }, (_, y) => Array.from({ length: GIANT_D }, (_, x) => {
-  const r = GIANT_D / 2, d = Math.hypot(x + 0.5 - r, y + 0.5 - r);
+  const r = GIANT_D / 2, dy = y + 0.5 - r, d = Math.hypot(x + 0.5 - r, dy);
   if (d > r) return '.';
-  if (d > r - 1.2) return 'X';
-  if (Math.hypot(x + 0.5 - r * 0.6, y + 0.5 - r * 0.55) < 1.6) return 'H';
-  return 'AWBWCW'[Math.floor((x + y) / 3) % 6];
+  if (d > r - 1.2 || (d >= 2.3 && d < 3.9) || (Math.abs(dy) < 1.2 && d >= 2.3)) return 'X';
+  if (d < 2.3 || dy > 0) return 'W';
+  if (Math.hypot(x + 0.5 - r * 0.58, y + 0.5 - r * 0.5) < 1.5) return 'H';
+  return y + 0.5 < r * 0.33 ? 'A' : y + 0.5 < r * 0.62 ? 'B' : 'C';
 }).join(''));
+const GIANT_COLORS = { ...ballColors(), A: BALL_COLORS[0], B: BALL_COLORS[1], C: BALL_COLORS[2] };
+
+export const ballSvg = kind => (kind === 'giant' ? pixelSvg(GIANT_ROWS, GIANT_COLORS) : pixelSvg(BALL_ROWS, ballColors(kind === 'purple' ? PURPLE_BALL : BALL_COLORS[kind] || BALL_COLORS[0])));
 
 export const FOOD_ART = Object.freeze({
   cookie: { emoji: ['🍪'], rows: [
@@ -122,8 +130,8 @@ export function artSvg(name) {
     return pixelSvg(on.map((row, y) => row.slice(0, 5) + off[y].slice(5).replace(/X/g, 'O')), { ...PIXELS.star.colors, O: PIXELS.starOff.colors.X });
   }
   if (PIXELS[name]) return pixelSvg(PIXELS[name].rows, PIXELS[name].colors);
-  if (name === 'berry') return pixelSvg(BERRY_ROWS, { X: '#3a2a2a', B: BERRY_COLORS[0], S: '#ffffffcc', D: '#00000040', L: '#3a9a3a' });
-  if (name === 'head') return pixelSvg(BALL_ROWS, { X: '#2a2a3a', W: '#fbfbf4', S: BALL_COLORS[1] });
+  if (name === 'berry') return berrySvg(0);
+  if (name === 'head') return ballSvg(1);
   if (name === 'tile') {
     return pixelSvg(['XXXXXXXXX', 'XAAAXBBBX', 'XAAAXBBBX', 'XAAAXBBBX', 'XXXXXXXXX', 'XCCCXAAAX', 'XCCCXAAAX', 'XCCCXAAAX', 'XXXXXXXXX'],
       { X: '#23435f', A: '#7cc4e8', B: '#9ad04a', C: '#f0d040' });
@@ -131,7 +139,7 @@ export function artSvg(name) {
   return '';
 }
 
-function paint(scene, key, rows, colors, edge) {
+export function paint(scene, key, rows, colors, edge) {
   if (scene.textures.exists(key)) return;
   const pad = edge ? 1 : 0;
   const canvas = scene.textures.createCanvas(key, rows[0].length + pad * 2, rows.length + pad * 2);
@@ -155,10 +163,10 @@ export function amieTextures(scene) {
       paint(scene, `amie-puff-${flavor}_${grade}`, PUFF_ROWS[grade], { X: '#5a3424', W: '#fffaf2', R: '#e02838', G: '#ffd84a', ...PUFF_COLORS[flavor] });
     }
   }
-  BERRY_COLORS.forEach((color, i) => paint(scene, `amie-berry-${i}`, BERRY_ROWS, { X: '#3a2a2a', B: color, S: '#ffffffcc', D: '#00000040', L: '#3a9a3a' }));
-  BALL_COLORS.forEach((color, i) => paint(scene, `amie-ball-${i}`, BALL_ROWS, { X: '#2a2a3a', W: '#fbfbf4', S: color }));
-  paint(scene, 'amie-ball-purple', BALL_ROWS, { X: '#2a2a3a', W: '#fbfbf4', S: PURPLE_BALL });
-  paint(scene, 'amie-ball-giant', GIANT_ROWS, { X: '#2a2a3a', W: '#fbfbf4', H: '#ffffff', A: BALL_COLORS[0], B: BALL_COLORS[1], C: BALL_COLORS[2] });
+  BERRY_COLORS.forEach((color, i) => paint(scene, `amie-berry-${i}`, BERRY_ROWS, berryColors(color)));
+  BALL_COLORS.forEach((color, i) => paint(scene, `amie-ball-${i}`, BALL_ROWS, ballColors(color)));
+  paint(scene, 'amie-ball-purple', BALL_ROWS, ballColors(PURPLE_BALL));
+  paint(scene, 'amie-ball-giant', GIANT_ROWS, GIANT_COLORS);
   for (const [kind, { colors }] of Object.entries(EMOTES)) paint(scene, `amie-emote-${kind}`, emoteRows(kind), { X: '#23435f', W: '#ffffff', ...colors });
 
   if (!scene.textures.exists('amie-shadow')) {

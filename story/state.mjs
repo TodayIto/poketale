@@ -21,16 +21,17 @@ import { surveyBattles, dropOocs } from './chat.mjs';
 import { statusIn, battleScene, COMPAT_LINE_RE, FIELD_WEATHERS } from './compat.mjs';
 import { badgeCount, earnedBadges, readLeague, leaguePlaces, leagueAt, leagueDate, keepRecords, LEAGUE_VAR, UNOVA_ERA_VAR } from './badges.mjs';
 import { changeFriendship, moveFriendship, friendshipStep, baseFriendship, friendshipLocked, FRIEND_BALL_FRIENDSHIP, FRIENDSHIP_STEPS, FOND_FRIENDSHIP } from '../engine/friendship.mjs';
-import { entry as nameEntry } from '../names/index.js';
+import { entry as nameEntry, koSpellings } from '../names/index.js';
 import { SAVE_VAR } from './save.mjs';
 import { boxOf } from './diary.mjs';
 import { QUEUE_VAR, runAction } from './acts.mjs';
 import { IMPORT_VAR, readImports, applyImport, importPlace, inForce } from './import.mjs';
-import { SETTING_CHANGES_VAR, foldCtxAt, foldSettings } from './setting-changes.mjs';
+import { SETTING_CHANGES_VAR, foldCtxAt, foldValues, ruleValues } from './setting-changes.mjs';
 import { enjoymentOf, setEnjoyment, friendshipFor, afterMessage, ENJOY_STEP, canEat, fullnessOf, setFullness, FULL_PER_FOOD, foodFriendship, parsePuff, puffFriendship,
-  FREE_GRADE, puffCount, addPuffs, eatsFood } from './amie.mjs';
+  FREE_GRADE, puffCount, addPuffs, eatsFood, FULL_MAX } from './amie.mjs';
 import { eggChance, breedEgg, giftEgg, eggCycles, hatchSpeed, HATCH_FRIENDSHIP } from '../engine/breeding.mjs';
 import { evGain, statRoom, clearBags, bagOf, traineeOf, setTrainee, isHungBag, setHungBag, refillEnergy } from './training.mjs';
+import { beatsRecord, recordOf, validRecord } from './amie-games.mjs';
 
 export const TABLE_VAR = '$pkb_states';
 
@@ -147,11 +148,13 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
     imports.set(at, [...imports.get(at) ?? [], imp]);
   }
   const importsAt = i => imports.get(i) ?? [];
-  const applyImportsAt = (i, start, at) => importsAt(i).reduce((cur, imp) => applyImport(cur, imp, at), start);
-  const importKey = i => [...(i === 0 ? importsAt(-1) : []), ...importsAt(i)].map(imp => hashKey(JSON.stringify(imp))).join(',');
 
   const ctxAt = foldCtxAt(chat, ctx);
-  const settingsOf = i => foldSettings(ctxAt(i));
+  const settingsOf = i => foldValues(ctxAt(i));
+
+  const applyImportsAt = (i, start, at) => importsAt(i).reduce((cur, imp) => applyImport(cur, imp, { ...at, ...ruleValues(ctxAt(i, imp.time)) }), start);
+  const importKeysAt = i => importsAt(i).map(imp => `${hashKey(JSON.stringify(imp))}:${Object.values(ruleValues(ctxAt(i, imp.time))).join(':')}`);
+  const importKey = i => [...(i === 0 ? importKeysAt(-1) : []), ...importKeysAt(i)].join(',');
 
   const league = readLeague(chat);
   const places = league && leaguePlaces(league, chat);
@@ -179,7 +182,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
     const info = meta?.blockKey && survey.battles.get(meta.blockKey);
     if (!info || (meta.storyEnd ? info.ended?.outcome : meta.outcome) !== 'win') return null;
     const block = battlesIn(messages[info.index], info.index).find(b => b.key === meta.blockKey);
-    const spec = block && parseBattle(block.body).spec;
+    const spec = block && parseBattle(block.body, ctxAt(info.index)).spec;
     if (!spec?.boss) return null;
     return { index: i, date: status?.date ?? null, party: hatchedParty(now).map(mon => ({ species: mon.set.species, ...(mon.set.name ? { name: mon.set.name } : {}) })),
       opponents: [spec.name, spec.foePartner?.name].filter(Boolean) };
@@ -240,7 +243,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
         continue;
       }
       if (held.has(changeAt(i, event.n))) continue;
-      const { ops } = parseChange(event.body);
+      const { ops } = parseChange(event.body, here);
       const before = Object.keys(table.fills).length;
       state = applyOps(state, ops, at, `${name}:${event.key}`, table).state;
       if (Object.keys(table.fills).length !== before) changed = true;
@@ -298,14 +301,14 @@ function names(text, name) {
   return new RegExp(`(?<!\\p{Script=Hangul})${escapeRe(want)}${after}`, 'u').test(text.toLowerCase());
 }
 
-function callNames(sim, mon) {
-  const base = nameEntry('species', sim.Dex.species.get(mon.set.species).baseSpecies);
-  return [mon.set.name, base?.ko, base?.en].filter(Boolean);
+function callNames(ctx, mon) {
+  const base = nameEntry('species', ctx.sim.Dex.species.get(mon.set.species).baseSpecies);
+  return [mon.set.name, ...koSpellings(base, ctx), base?.en].filter(Boolean);
 }
 
 export function storyMention(state, text, ctx) {
   const plain = storyText(text);
-  const named = state.party.filter(mon => !isEgg(mon) && callNames(ctx.sim, mon).some(name => names(plain, name)));
+  const named = state.party.filter(mon => !isEgg(mon) && callNames(ctx, mon).some(name => names(plain, name)));
   if (!named.length) return state;
   const next = clone(state);
   for (const mon of next.party) {
@@ -323,11 +326,13 @@ export const hatched = mons => mons.filter(mon => !isEgg(mon));
 export const hatchedParty = state => hatched(state.party);
 
 export function newEgg(ctx, set, uid, ball) {
-  return { ...newMon(ctx, { ...set, item: '', name: '' }, uid), egg: { cycles: eggCycles(ctx.sim.Dex, set.species) }, ...(ball && ball !== 'pokeball' ? { ball } : {}) };
+  const { full: _, ...mon } = newMon(ctx, { ...set, item: '', name: '' }, uid);
+  return { ...mon, egg: { cycles: eggCycles(ctx.sim.Dex, set.species) }, ...(ball && ball !== 'pokeball' ? { ball } : {}) };
 }
 
 function hatch(state, ctx, mon) {
   delete mon.egg;
+  if (ruleValues(ctx).startFull) mon.full = FULL_MAX;
   mon.friendship = HATCH_FRIENDSHIP;
   mon.pending.hatched = true;
   markDex(state, ctx.sim, mon.set.species, true);
@@ -477,7 +482,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       return;
     }
     case 'level': {
-      const { list, index, mon } = findMon(state, op.ref, sim);
+      const { list, index, mon } = findMon(state, op.ref, ctx);
       const delta = op.to !== undefined ? op.to - mon.set.level : op.delta;
       if (!Number.isInteger(delta) || delta <= 0) fail('levelUpOnly', { mon: monLabel(mon), level: mon.set.level });
       if (mon.set.level >= MAX_LEVEL) fail('maxLevel', { mon: monLabel(mon), max: MAX_LEVEL });
@@ -488,13 +493,13 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'heal': {
       if (op.ref === 'all') return healParty(state, ctx, op);
-      heal(sim, findMon(state, op.ref, sim).mon, op, format);
+      heal(sim, findMon(state, op.ref, ctx).mon, op, format);
       return;
     }
     case 'rest': return shortRest(state, sim);
     case 'swap': {
 
-      const a = findMon(state, op.a, sim, { egg: true }), b = findMon(state, op.b, sim, { egg: true });
+      const a = findMon(state, op.a, ctx, { egg: true }), b = findMon(state, op.b, ctx, { egg: true });
       if (a.mon.uid === b.mon.uid) fail('swapSame', { mon: monLabel(a.mon) });
       a.list[a.index] = b.mon;
       b.list[b.index] = a.mon;
@@ -511,29 +516,29 @@ function applyOp(state, op, ctx, fillKey, fill) {
       return;
     }
     case 'release': {
-      const { list, index } = findMon(state, op.ref, sim, { egg: true });
+      const { list, index } = findMon(state, op.ref, ctx, { egg: true });
       list.splice(index, 1);
       return;
     }
     case 'deposit': {
-      const { list, index, mon } = findMon(state, op.ref, sim, { egg: true });
+      const { list, index, mon } = findMon(state, op.ref, ctx, { egg: true });
       if (list !== state.party) fail('inBox', { mon: monLabel(mon) });
       state.box.push(...list.splice(index, 1));
       return;
     }
     case 'withdraw': {
-      const { list, index, mon } = findMon(state, op.ref, sim, { boxFirst: true, egg: true });
+      const { list, index, mon } = findMon(state, op.ref, ctx, { boxFirst: true, egg: true });
       if (list !== state.box) fail('inParty', { mon: monLabel(mon) });
       if (state.party.length >= PARTY_MAX) fail('partyFull', { max: PARTY_MAX, mon: monLabel(mon) });
       state.party.push(...list.splice(index, 1));
       return;
     }
     case 'nickname': {
-      findMon(state, op.ref, sim).mon.set.name = String(op.name ?? '').trim();
+      findMon(state, op.ref, ctx).mon.set.name = String(op.name ?? '').trim();
       return;
     }
     case 'hold': {
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       const item = op.item ? itemId(op.item) : '';
       takeCustom(state, item, op);
       if (op.fromBag) {
@@ -547,12 +552,12 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'evolve': {
 
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       evolve(state, ctx, mon, op.species, { decoration: op.decoration });
       return;
     }
     case 'teach': {
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       const move = sim.Dex.moves.get(op.move);
       if (!move.exists) fail('unknownMove', { move: op.move });
       if (mon.set.moves.includes(move.id)) fail('knowsMove', { mon: monLabel(mon), move: move.name });
@@ -579,7 +584,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
 
     case 'learn': {
 
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       const move = sim.Dex.moves.get(op.move);
       if (!move.exists) fail('unknownMove', { move: op.move });
       mon.pending.moves = mon.pending.moves.filter(m => m !== move.id);
@@ -600,14 +605,14 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'noevolve': {
 
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       mon.pending.evolve = null;
       settlePending(mon);
       return;
     }
     case 'pp': {
 
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       const ids = op.move ? [toID(op.move)] : [...mon.set.moves];
       if (op.move && !mon.set.moves.includes(ids[0])) fail('moveNotKnown', { mon: monLabel(mon), move: op.move });
       for (const id of ids) {
@@ -619,7 +624,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'ppup': {
 
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       const id = toID(op.move);
       if (!mon.set.moves.includes(id)) fail('moveNotKnown', { mon: monLabel(mon), move: op.move });
       const move = sim.Dex.moves.get(id);
@@ -635,7 +640,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
 
     case 'evs': {
 
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       const stat = String(op.stat ?? '');
       if (!STATS.includes(stat)) fail('unknownStat', { stat: op.stat });
       const evs = mon.set.evs ??= {};
@@ -650,7 +655,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'exp': {
 
-      const { list, index, mon } = findMon(state, op.ref, sim);
+      const { list, index, mon } = findMon(state, op.ref, ctx);
       const growth = growthOf(ctx, mon.set.species);
       if (!growth) fail('noGrowth', { mon: monLabel(mon) });
       if (mon.set.level >= MAX_LEVEL) fail('maxLevel', { mon: monLabel(mon), max: MAX_LEVEL });
@@ -666,7 +671,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'ability': {
 
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       const species = sim.Dex.species.get(mon.set.species);
       const ability = Object.values(species.abilities).find(a => toID(a) === toID(op.ability));
       if (!ability) fail('abilityNot', { mon: monLabel(mon), ability: op.ability });
@@ -676,7 +681,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'nature': {
 
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       const nature = sim.Dex.natures.get(op.nature);
       if (!nature.exists) fail('unknownNature', { nature: op.nature });
       if (nature.name === mon.set.nature) fail('natureSame', { mon: monLabel(mon), nature: nature.name });
@@ -687,7 +692,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'hypertrain': {
 
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       if (mon.set.level < HYPER_TRAIN_LEVEL) fail('hyperLevel', { mon: monLabel(mon), level: HYPER_TRAIN_LEVEL });
       const stats = op.stats === 'all' ? STATS : [].concat(op.stats ?? []);
       if (!stats.length || stats.some(s => !STATS.includes(s))) fail('unknownStat', { stat: op.stats });
@@ -702,7 +707,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'friendship': {
 
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       const source = String(op.source ?? '');
       const amount = op.amount === undefined || op.amount === null ? null : Number(op.amount);
       if (!/^[a-z]{1,16}$/.test(source) || (amount === null ? !Object.hasOwn(FRIENDSHIP_STEPS, source) : !Number.isInteger(amount) || !amount)) {
@@ -725,7 +730,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
     case 'breed': {
 
       if (op.stop) { delete state.breeding; return; }
-      const a = findMon(state, op.a, sim), b = findMon(state, op.b, sim);
+      const a = findMon(state, op.a, ctx), b = findMon(state, op.b, ctx);
       if (a.mon.uid === b.mon.uid) fail('breedSame', { mon: monLabel(a.mon) });
       for (const { list, mon } of [a, b]) if (list !== state.party) fail('breedBox', { mon: monLabel(mon) });
       state.breeding = [a.mon.uid, b.mon.uid];
@@ -733,13 +738,13 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'hatched': {
 
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       delete mon.pending.hatched;
       return;
     }
     case 'amie': {
 
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       const have = enjoymentOf(mon);
       const gains = op.gains ?? [op.spend];
       const ok = Array.isArray(gains) && gains.length > 0 && gains.every(g => Number.isInteger(g) && g > 0 && g % ENJOY_STEP === 0);
@@ -751,7 +756,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'train': {
 
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       const bags = Array.isArray(op.bags) ? op.bags : [];
       const bad = bags.find(id => !bagOf(id)) ?? (op.hung && !isHungBag(op.hung) ? op.hung.id ?? '' : undefined);
       if (bad !== undefined || (!bags.length && op.hung === undefined)) fail('trainBag', { bag: bad ?? '' });
@@ -765,7 +770,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'feed': {
 
-      const { mon } = findMon(state, op.ref, sim);
+      const { mon } = findMon(state, op.ref, ctx);
       const species = sim.Dex.species.get(mon.set.species);
       if (!eatsFood(species.num)) fail('feedNever', { mon: monLabel(mon) });
       if (!canEat(mon)) fail('feedFull', { mon: monLabel(mon) });
@@ -795,6 +800,13 @@ function applyOp(state, op, ctx, fillKey, fill) {
       if (puff.grade === FREE_GRADE || !Number.isInteger(op.delta) || !op.delta) fail('unknownPuff', { puff: op.puff });
       if (puffCount(state, op.puff) + op.delta < 0) fail('puffNone', { puff: op.puff });
       addPuffs(state, op.puff, op.delta);
+      return;
+    }
+    case 'amieRecord': {
+
+      if (!validRecord(op)) fail('unknownOp', { op: 'amieRecord' });
+      if (!beatsRecord(op.game, op.score, recordOf(state.amieRecords, op.game, op.level))) return;
+      state.amieRecords = { ...state.amieRecords, [op.game]: { ...state.amieRecords?.[op.game], [op.level]: op.score } };
       return;
     }
   }
@@ -932,6 +944,7 @@ export function newMon(ctx, set, uid) {
     uid, set, hp: null, status: '', pp: {},
     exp: growth ? expForLevel(growth, set.level) : 0,
     pending: { levels: 0, moves: [], evolve: null },
+    ...(ruleValues(ctx).startFull ? { full: FULL_MAX } : {}),
   };
 }
 
@@ -1114,7 +1127,7 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
     if (mon && !mon.set.moves.includes(move) && !mon.pending.moves.includes(move)) mon.pending.moves.push(move);
   }
 
-  for (const foe of theirs?.team ?? []) markDex(state, sim, foe.species, false);
+  for (const foe of theirs?.team ?? []) if (foe.appeared !== false) markDex(state, sim, foe.species, false);
 
   const who = battle && trainerKey(battle);
   if (who) {
@@ -1314,7 +1327,7 @@ function continuePast(sim, set, past) {
   return out;
 }
 
-export function findMon(state, ref, sim, { boxFirst = false, egg = false } = {}) {
+export function findMon(state, ref, ctx, { boxFirst = false, egg = false } = {}) {
 
   const found = (list, index) => {
     if (isEgg(list[index]) && !egg) fail('isEgg');
@@ -1346,11 +1359,11 @@ export function findMon(state, ref, sim, { boxFirst = false, egg = false } = {})
     const mon = list.find(m => m.set.name && m.set.name.normalize('NFKC').toLowerCase().replace(/\s+/g, '') === key);
     if (mon) return at(mon);
   }
-  const species = speciesName(name);
+  const species = speciesName(name, ctx);
   if (species) {
     const id = toID(species);
     for (const list of lists) {
-      const mon = list.find(m => toID(m.set.species) === id) ?? list.find(m => toID(sim.Dex.species.get(m.set.species).baseSpecies) === id);
+      const mon = list.find(m => toID(m.set.species) === id) ?? list.find(m => toID(ctx.sim.Dex.species.get(m.set.species).baseSpecies) === id);
       if (mon) return at(mon);
     }
   }

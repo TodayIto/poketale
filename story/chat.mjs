@@ -1,8 +1,9 @@
-import { findBlocks, findTags, findMarks, markText, parseEnd, parseBattle, battlesIn, messageId, hashKey, MARK } from './blocks.mjs';
+import { findBlocks, findTags, findMarks, markText, parseEnd, parseBattle, battlesIn, battlesInText, blockAnchorIn, actsIn, messageId, hashKey, MARK } from './blocks.mjs';
 import { readTable, writeTable, storyEndTrainer, rosterMon, changeAt } from './state.mjs';
-import { readSave } from './save.mjs';
+import { readSave, writeSave } from './save.mjs';
 import { escapeRe } from './norm.mjs';
 import { RESULT_LINE_RE as RESULT_LINE } from './prompts.mjs';
+import { rulesAt } from './setting-changes.mjs';
 
 export { MARK };
 
@@ -41,6 +42,8 @@ export function writeLast(chat, last) {
   if (last) chat.scriptstate[LAST_VAR] = JSON.stringify({ v: 1, ...last });
   else delete chat.scriptstate[LAST_VAR];
 }
+
+export const readBattleAt = (chat, index, body) => parseBattle(body, rulesAt(chat)(index));
 
 const resultOf = (table, tagKey, blockKey) => { const meta = table.meta?.[tagKey]; return !!meta && !meta.storyEnd && meta.blockKey === blockKey; };
 
@@ -225,6 +228,155 @@ export function setMark(chat, key, kind) {
   return true;
 }
 
+const BLOCK_MARKS = [MARK.open, MARK.moved, MARK.discarded];
+
+function sameBlockMessage(chat, table) {
+  const messages = chat?.message ?? [];
+  const save = readSave(chat);
+  const times = new Map();
+  for (const rec of [...Object.values(table?.meta ?? {}), readLast(chat), save?.start, save?.record, save?.attempt]) {
+    if (typeof rec?.blockKey !== 'string' || typeof rec.blockTime !== 'number') continue;
+    if (!times.has(rec.blockKey)) times.set(rec.blockKey, new Set());
+    times.get(rec.blockKey).add(rec.blockTime);
+  }
+  const holds = (key, index) => {
+    const text = String(messages[index]?.data ?? '');
+    return findTags(text).some(tag => table?.meta?.[tag.key]?.blockKey === key)
+      || findMarks(text).some(mark => mark.key === key && BLOCK_MARKS.includes(mark.kind));
+  };
+  return (key, index) => {
+    const time = messages[index]?.time;
+    if (times.has(key) && typeof time === 'number') return times.get(key).has(time);
+    return holds(key, index);
+  };
+}
+
+export function renamedKeys(chat, table = readTable(chat)) {
+  const now = new Set(), renamed = [], seen = new Map();
+  const same = sameBlockMessage(chat, table);
+  const count = text => { seen.set(text, (seen.get(text) ?? 0) + 1); return text; };
+  (chat?.message ?? []).forEach((message, index) => {
+    const text = String(message?.data ?? '');
+    if (!/<\s*pkb-/i.test(text)) return;
+    const battles = battlesIn(message, index), acts = actsIn(message, index);
+    for (const block of [...battles, ...acts]) now.add(block.key);
+    const texts = [...battles.map(b => count(`b:${b.hash}`)), ...acts.filter(a => !a.own).map(a => count(`a:${hashKey(a.body.trim())}`))];
+    if (!message.chatId) return;
+    battlesInText(text, `#${index}`).forEach((block, n) => { if (same(block.key, index)) renamed.push([block.key, battles[n].key, texts[n]]); });
+    actsIn({ data: text }, index).filter(block => !block.own).forEach((block, n) => renamed.push([block.key, acts.filter(a => !a.own)[n].key, texts[battles.length + n]]));
+  });
+  return new Map(renamed.filter(([key, to, text]) => !now.has(key) && key !== to && seen.get(text) === 1).map(([key, to]) => [key, to]));
+}
+
+function placeIndex(messages, place) {
+  const at = messages.findIndex((m, i) => messageId(m, i) === place?.on);
+  if (at >= 0 || !place) return at;
+  const fresh = messages[place.at];
+  if (!fresh || fresh.role === 'user' || place.at < 1 || messageId(messages[place.at - 1], place.at - 1) !== place.above) return -1;
+  return place.at;
+}
+
+export function relinkedKeys(chat, { table = readTable(chat), renamed = renamedKeys(chat, table) } = {}) {
+  const save = readSave(chat), last = readLast(chat);
+  if (!save?.attempt?.block && !last?.block && !Object.values(table.meta ?? {}).some(m => m?.block)) return new Map();
+  const messages = chat?.message ?? [];
+  const blocks = [], texts = new Map(), marks = [];
+  messages.forEach((message, index) => {
+    const text = String(message?.data ?? '');
+    if (!/<\s*pkb/i.test(text)) return;
+    for (const b of battlesIn(message, index)) { blocks.push({ key: b.key, hash: b.hash, index }); texts.set(b.hash, (texts.get(b.hash) ?? 0) + 1); }
+    for (const m of findMarks(text)) marks.push({ ...m, index });
+  });
+  const present = new Set(blocks.map(b => b.key));
+
+  const taken = new Set([...Object.values(table.meta ?? {}).map(m => m?.blockKey), last?.blockKey, save?.start?.blockKey, save?.record?.blockKey, save?.attempt?.blockKey,
+    ...marks.map(m => m.key)]);
+  for (const [key, to] of renamed) if (taken.has(key)) taken.add(to);
+  const claims = new Map();
+  const same = sameBlockMessage(chat, table);
+  const claim = (rec, holds) => {
+    const key = rec.blockKey;
+    if (!key || typeof rec.block !== 'string' || present.has(key) || renamed.has(key) || texts.get(rec.block) !== 1) return;
+    const block = blocks.find(b => b.hash === rec.block);
+    if (taken.has(block.key) || !holds(block) || !same(key, block.index)) return;
+    claims.set(key, claims.has(key) && claims.get(key) !== block ? null : block);
+  };
+  messages.forEach((message, index) => {
+    for (const tag of findTags(message?.data ?? '')) {
+      const meta = table.meta?.[tag.key];
+      if (meta && !meta.storyEnd) claim(meta, block => block.index <= index);
+    }
+  });
+  if (last?.place && last.line && table.meta?.[last.tag]) {
+    const at = placeIndex(messages, last.place);
+    claim(last, block => at >= 0 && block.index <= at);
+  }
+  const attempt = save?.attempt;
+  if (attempt) claim(attempt, block => marks.some(m => m.kind === MARK.open && m.key === attempt.blockKey && m.index === block.index));
+  const targets = [...claims.values()].filter(Boolean);
+  return new Map([...claims].filter(([, block]) => block && targets.filter(b => b === block).length === 1).map(([key, block]) => [key, block.key]));
+}
+
+export function battleMoves(chat, table = readTable(chat)) {
+  const renamed = renamedKeys(chat, table), relinked = relinkedKeys(chat, { table, renamed });
+  return { renamed, relinked, all: new Map([...renamed, ...relinked]) };
+}
+
+export const currentKey = (chat, key) => (findBlockMessage(chat, key) >= 0 ? key : battleMoves(chat).all.get(key) ?? null);
+
+export function rekeyBattles(chat, { table: read = null, moves = battleMoves(chat, read ?? readTable(chat)).all, dry = false } = {}) {
+  if (!moves.size) return false;
+  const messages = chat?.message ?? [];
+  const to = key => moves.get(key) ?? key;
+  const placeName = id => { const at = /^#(\d+)$/.exec(id ?? '')?.[1]; return (at !== undefined && messages[Number(at)]?.chatId) || id; };
+
+  const moved = rec => {
+    const { blockTime: _, ...rest } = rec;
+    const time = typeof rec.block === 'string' ? blockAnchorIn(chat, to(rec.blockKey)).blockTime : undefined;
+    return { ...rest, blockKey: to(rec.blockKey), ...(time !== undefined ? { blockTime: time } : {}) };
+  };
+  let changed = false;
+  for (const message of messages) {
+    let text = String(message?.data ?? '');
+    const original = text;
+    for (const mark of findMarks(text).reverse()) if (moves.has(mark.key)) text = text.slice(0, mark.start) + markText(mark.kind, to(mark.key)) + text.slice(mark.end);
+    text = text.replace(STORY_RE, whole => whole.replace(/^(<pkb-story\b[^>]*?\sbattle=")([a-z0-9]+)"/, (s, head, key) => `${head}${to(key)}"`));
+    if (text === original) continue;
+    if (dry) return true;
+    message.data = text; changed = true;
+  }
+  const table = dry && read ? read : readTable(chat);
+  let metaMoved = false;
+  for (const [tag, meta] of Object.entries(table.meta ?? {})) {
+    if (!moves.has(meta?.blockKey)) continue;
+    if (dry) return true;
+    table.meta[tag] = moved(meta); metaMoved = true;
+  }
+  if (metaMoved) { writeTable(chat, table); changed = true; }
+  const save = readSave(chat);
+  if (save) {
+    const part = p => {
+      const battle = moves.has(p?.blockKey), acts = !!p?.plans?.some(row => moves.has(row.act));
+      if (!battle && !acts) return p;
+      return { ...(battle ? moved(p) : p), ...(battle && p.opened ? { opened: { on: placeName(p.opened.on), above: placeName(p.opened.above) } } : {}),
+        ...(acts ? { plans: p.plans.map(row => ({ ...row, act: to(row.act) })) } : {}) };
+    };
+    const next = { start: part(save.start), record: part(save.record), attempt: part(save.attempt) };
+    if (['start', 'record', 'attempt'].some(which => next[which] !== save[which])) {
+      if (dry) return true;
+      writeSave(chat, next); changed = true;
+    }
+  }
+  const last = readLast(chat);
+  if (last && moves.has(last.blockKey)) {
+    if (dry) return true;
+    const { v: _, ...rest } = last;
+    writeLast(chat, { ...moved(rest), ...(last.place ? { place: { ...last.place, on: placeName(last.place.on), above: placeName(last.place.above) } } : {}) });
+    changed = true;
+  }
+  return changed;
+}
+
 function lastResultAt(chat, blockKey, table) {
   let at = null;
   (chat?.message ?? []).forEach((message, i) => {
@@ -339,14 +491,11 @@ export function lostResult(chat, last, table = readTable(chat)) {
   if (messages.some(m => findTags(m?.data ?? '').some(t => t.key === last.tag))) return -1;
   const block = findBlockMessage(chat, last.blockKey);
   const info = surveyBattles(chat, table).battles.get(last.blockKey);
-  if (block < 0 || info?.phase !== 'ready') return -1;
-  let at = messages.findIndex((m, i) => messageId(m, i) === place.on);
-  if (at < 0) {
-    const fresh = messages[place.at];
-    if (!fresh || fresh.role === 'user' || place.at < 1 || messageId(messages[place.at - 1], place.at - 1) !== place.above) return -1;
-    at = place.at;
-  }
-  return Math.max(at - 1, block);
+
+  const stale = info?.phase === 'open' && readSave(chat)?.attempt?.blockKey !== last.blockKey;
+  if (block < 0 || (info?.phase !== 'ready' && !stale)) return -1;
+  const at = placeIndex(messages, place);
+  return at < 0 ? -1 : Math.max(at - 1, block);
 }
 
 export function restoreResult(chat, table = readTable(chat)) {
@@ -354,6 +503,7 @@ export function restoreResult(chat, table = readTable(chat)) {
   const index = lostResult(chat, last, table);
   if (index < 0) return -1;
   appendResult(chat.message[index], last.line, last.tag);
+  setMark(chat, last.blockKey, null);
   writeLast(chat, { ...last, place: resultPlace(chat, index) });
   return index;
 }
@@ -368,7 +518,7 @@ export function storyEndFixes(chat, table = readTable(chat), survey = surveyBatt
   for (const info of survey.battles.values()) {
     if (info.committed !== 'story') continue;
     const block = battlesIn(messages[info.index], info.index).find(b => b.key === info.key);
-    const battle = block ? parseBattle(block.body).spec : null;
+    const battle = block ? readBattleAt(chat, info.index, block.body).spec : null;
     const autosave = info.ended.attempt && attempt?.blockKey === info.key ? attempt.auto ?? null : null;
     if (battle) ends.push({ key: info.key, index: info.ended.index, source: info.ended.source, outcome: info.ended.outcome, battle, autosave });
   }

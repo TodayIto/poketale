@@ -51,7 +51,7 @@ const GENDER_LABEL = perLang(t => ({ M: t('import.gender.M'), F: t('import.gende
 
 function screenNames(sim, lang) {
   const names = namesFor(lang, sim);
-  return { species: names.species, moves: names.move, abilities: names.ability, item: id => itemName(id, names), bagItem: id => bagItemName(id, names),
+  return { species: names.speciesFull, moves: names.move, abilities: names.ability, item: id => itemName(id, names), bagItem: id => bagItemName(id, names),
     nature: name => natureName(name, lang), names };
 }
 
@@ -176,7 +176,7 @@ export function monSub(mon, sim, lang) {
   if (mon.egg) return '';
   const t = sayer(lang);
   const species = sim.Dex.species.get(mon.set.species);
-  const kind = species.exists ? choicesFor(sim, lang).species.label(species.name) : mon.set.species ? t('rule.import.unknownSpecies', { species: mon.set.species }) : t('import.speciesBlank');
+  const kind = species.exists ? namesFor(lang, sim).species(species.id) : mon.set.species ? t('rule.import.unknownSpecies', { species: mon.set.species }) : t('import.speciesBlank');
   return `${kind} · ${Number.isInteger(mon.set.level) ? `Lv${mon.set.level}` : t('import.levelBlank')}`;
 }
 
@@ -200,7 +200,7 @@ export function quickSummary(draft, ctx, lang) {
   const label = m => {
     if (m.egg) return say(lang, 'panel.egg');
     const found = sim.Dex.species.get(m.set.species);
-    const species = found.exists ? choicesFor(sim, lang).species.label(found.name) : String(m.set.species ?? '');
+    const species = found.exists ? namesFor(lang, sim).species(found.id) : String(m.set.species ?? '');
     const name = m.set.name && m.set.name !== species ? say(lang, 'import.quick.nick', { name: m.set.name, species }) : species;
     return Number.isInteger(m.set.level) ? `${name} Lv${m.set.level}` : name;
   };
@@ -398,6 +398,12 @@ const CSS = `
   .pkb-import .q-link > svg { width:10px; height:10px; }
   .pkb-import .q-note { margin:8px 0 0; font-size:11.5px; color:#7d8c98; text-align:center; }
   .pkb-import .q-body .err { margin:10px 0 0; }
+  /* Helper-model mode: the question and its two buttons */
+  .pkb-import .q-ask { margin:12px 0 0; font-size:15px; color:#14304a; }
+  /* the three buttons fill the card's width in equal parts: [enter it myself] [no] [yes] (only yes red); narrow: [yes] [no] half each, then "enter it myself" as a small link */
+  .pkb-import .q-row { display:grid; grid-template-columns:repeat(3, 1fr); grid-template-areas:"manual no yes"; gap:8px; margin:12px 0 0; }
+  .pkb-import .q-row button { min-width:0; padding:9px 8px; font-size:14px; }
+  .pkb-import .q-row .q-manual { grid-area:manual; } .pkb-import .q-row .q-no { grid-area:no; } .pkb-import .q-row .q-yes { grid-area:yes; }
   @media (max-width:640px) {
     .pkb-import { padding:0; background:#0f1822; }
     .pkb-import .card { width:100%; height:100%; border:0; border-radius:0; box-shadow:none; }
@@ -406,6 +412,8 @@ const CSS = `
     .pkb-import .moves { grid-template-columns:1fr; }
     .pkb-import.quick { padding:16px; background:rgba(15,24,34,.82); }
     .pkb-import.quick .card { height:auto; ${CARD_FRAME} }
+    .pkb-import .q-row { grid-template-columns:1fr 1fr; grid-template-areas:"yes no" "manual manual"; }
+    .pkb-import .q-row .q-manual { justify-self:center; padding:4px; border:0; background:transparent; box-shadow:none; color:#3d7196; font-size:12.5px; text-decoration:underline; text-underline-offset:3px; }
   }
 `;
 
@@ -430,13 +438,13 @@ function fromBadge(from, lang, text = FROM_LABEL(lang)[from], mode = 'import') {
 }
 
 export function mountImportScreen({ parent = document.body, mode: firstMode = 'import', draft: given = null, state = null, ctx, seed = () => [1, 2, 3, 4], lang, money = null,
-  onApply = async () => {}, onClose = () => {} }) {
+  readAi = null, manual = null, onApply = async () => {}, onClose = () => {} }) {
   loadFont(SHEET_FONT).catch(error => console.warn('[poke-battle] 가져오기 화면 글꼴을 올리지 못함 — 대체 글꼴로', error));
   const { sim } = ctx;
   const t = sayer(lang);
   const lists = choicesFor(sim, lang);
   let mode = firstMode;
-  let text = MODES(lang)[mode === 'quick' ? 'import' : mode];
+  let text = MODES(lang)[mode === 'quick' || mode === 'aiAsk' ? 'import' : mode];
   const fieldLabel = FIELD_LABEL(lang), fromLabel = FROM_LABEL(lang);
   const badge = (from, label) => fromBadge(from, lang, label, mode);
   const title = m => monTitle(m, sim, lang);
@@ -447,8 +455,8 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
 
   let wanted = { item: null, name: '', emoji: DEFAULT_EMOJI, add: 1, isNew: false, tags: undefined };
   const fromPick = () => bagDraft(state, { ...(wanted.isNew ? { name: wanted.name, emoji: wanted.emoji } : { item: wanted.item }), add: wanted.add, tags: wanted.tags });
-  const start = mode === 'bag' ? fromPick() : given;
-  let draft = start, busy = false, failure = '', picker = null, details = false;
+  let start = mode === 'bag' ? fromPick() : mode === 'aiAsk' ? manual : given;
+  let draft = start, busy = false, failure = '', picker = null, details = false, reading = false;
   let view = one ? start.mons[0].key : null;
 
   const root = el('section', { className: 'pkb-import' });
@@ -805,14 +813,38 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       failure ? el('p', { className: 'err', textContent: failure }) : null));
   }
 
+  const toListWith = next => { start = next; draft = next; failure = ''; toList(); };
+  async function readWithAi() {
+    if (reading) return;
+    reading = true; draw();
+    let read;
+    try { read = await readAi(); } catch (error) { console.warn('[poke-battle] 보조 모델로 파티를 읽지 못함', error); read = manual; }
+    reading = false;
+    if (closed) return;
+    toListWith(read);
+  }
+  function drawAiAsk() {
+    const no = el('button', { type: 'button', className: 'btn q-no', textContent: t('import.no'), disabled: reading });
+    const yes = el('button', { type: 'button', className: 'apply q-yes', textContent: reading ? t('import.ai.busy') : t('import.yes'), disabled: reading });
+    no.onclick = () => close();
+    yes.onclick = readWithAi;
+    const link = el('button', { type: 'button', className: 'btn q-manual', textContent: t('import.ai.manual'), disabled: reading });
+    link.onclick = () => toListWith({ ...manual, warnings: [] });
+    fillWith(body, el('div', { className: 'q-body' },
+      el('p', { className: 'q-ask', textContent: t('import.ai.question') }),
+      el('div', { className: 'q-row' }, link, no, yes)));
+    if (!reading) yes.focus?.();
+  }
+
   function draw() {
     const top = body.scrollTop;
-    const quick = mode === 'quick';
+    const quick = mode === 'quick' || mode === 'aiAsk';
     cap.hidden = true;
     root.classList.toggle('quick', quick);
     foot.hidden = quick;
     heading.textContent = quick ? t('import.quick.title') : text.title;
-    if (quick) { back.hidden = true; drawQuick(); }
+    if (mode === 'aiAsk') { back.hidden = true; drawAiAsk(); }
+    else if (quick) { back.hidden = true; drawQuick(); }
     else if (mode === 'bag') drawBag();
     else {
       const editing = view && mon(view);
@@ -848,6 +880,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
 
   function askClose() {
     if (busy) return undefined;
+    if (mode === 'aiAsk') return close();
     if (mode === 'bag' ? !wanted.item && !wanted.isNew : draft === start) return close();
     closePicker();
     const keep = el('button', { type: 'button', className: 'btn', textContent: t('import.keepEditing') });

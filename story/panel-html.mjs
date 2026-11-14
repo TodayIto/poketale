@@ -1,4 +1,4 @@
-import { esc, FONT } from './card.mjs';
+import { esc, FONT, ICON_BALL } from './card.mjs';
 import { statusShort, PARTY_MAX, BOX_SIZE } from './panel.mjs';
 import { say } from './screen-text.mjs';
 import { moneyText } from './diary.mjs';
@@ -7,6 +7,7 @@ import { EGG_SPRITE } from '../engine/breeding.mjs';
 import { POKEAPI_BASE } from '../view/sprites/sources.js';
 import { genderMarkSvg, textGenderSigns, nameShowsGender } from '../view/gender-mark.js';
 import { badgeCaseHtml, BADGE_CSS } from './badge-case-html.mjs';
+import { subBarHtml, dexListHtml, dexDetailHtml, DEX_CSS, DEX_ICONS } from './dex-html.mjs';
 import { BASE_TEXT, z } from './panel-zoom.mjs';
 import { screenCss, screenHtml, screenSheets } from './panel-screens-html.mjs';
 import { ringSvg, RING_ICON, RING_COLOR } from './gauge-ring.mjs';
@@ -25,8 +26,7 @@ const SD_ITEMS = 'https://play.pokemonshowdown.com/sprites/itemicons-sheet.png';
 
 export const ICON = {
   // Poke Ball for the party tab; box and bag icons
-  party: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#fff" stroke="#23435f" stroke-width="2"/>'
-    + '<path d="M2 12a10 10 0 0 1 20 0z" fill="#e84d4d" stroke="#23435f" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="#fff" stroke="#23435f" stroke-width="2"/></svg>',
+  party: ICON_BALL,
   box: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v9.3a1.7 1.7 0 0 1-1.7 1.7H5.7A1.7 1.7 0 0 1 4 19.3z" fill="#d6e6f2" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
     + '<path d="M2.6 5.6A1.6 1.6 0 0 1 4.2 4h15.6a1.6 1.6 0 0 1 1.6 1.6V10H2.6z" fill="#7fa6c4" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
     + '<path d="M9.3 14h5.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="7" r="1.2" fill="currentColor"/></svg>',
@@ -37,9 +37,6 @@ export const ICON = {
 
   amie: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.5 20.6l-7.2-7A4.5 4.5 0 0 1 11.5 7.2a4.5 4.5 0 0 1 7.2 6.4z" fill="#fff" stroke="#23435f" stroke-width="2" stroke-linejoin="round"/>'
     + '<path d="M19.6 1.8l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" fill="#fff" stroke="#23435f" stroke-width="1" stroke-linejoin="round"/></svg>',
-
-  badges: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 13.5L5.5 22l3.8-1.8L12 23l1-9.5zM16 13.5l2.5 8.5-3.8-1.8L12 23l-1-9.5z" fill="#d8434d" stroke="#23435f" stroke-width="1.5" stroke-linejoin="round"/>'
-    + '<circle cx="12" cy="9.5" r="7.5" fill="#ffd84a" stroke="#23435f" stroke-width="2"/><path d="M12 5.2l1.3 2.8 3 .3-2.3 2 .7 3-2.7-1.6-2.7 1.6.7-3-2.3-2 3-.3z" fill="#fff" stroke="#23435f" stroke-width="1" stroke-linejoin="round"/></svg>',
 
   travel: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.6" fill="#fff" stroke="#23435f" stroke-width="2"/>'
     + '<path d="M12 4.6l2.7 7.4H9.3z" fill="#d8434d" stroke="#23435f" stroke-width="1.4" stroke-linejoin="round"/>'
@@ -74,7 +71,7 @@ export const ICON = {
 };
 const tabLabel = (tab, lang) => esc(say(lang, `panel.tab.${tab}`));
 
-export const TAB_COLOR = { party: '#d8434d', box: '#3d7196', bag: '#c98a1d', amie: '#e0719a', badges: '#8a6cc7', travel: '#2f9a6e' };
+export const TAB_COLOR = { party: '#d8434d', box: '#3d7196', bag: '#c98a1d', amie: '#e0719a', travel: '#2f9a6e' };
 
 const C = '.x-risu-pkbp';
 
@@ -85,10 +82,11 @@ const SPARK = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0C10.8 6
 const sparks = () => `<span class="x-risu-pkbp-spk" aria-hidden="true">${SPARKS.map(([x, y, size, delay]) =>
   `<span style="left:${x}%;top:${y}%;width:${z(size)};height:${z(size)};animation-delay:${delay}s">${SPARK}</span>`).join('')}</span>`;
 
-export const PANEL_SHEETS = Object.freeze([[`${C}-icpr span`, PR_ITEMS], [`${C}-icsd`, SD_ITEMS], ...screenSheets(PR_BASE)].map(sheet => Object.freeze(sheet)));
+export const PANEL_SHEETS = Object.freeze([[`${C}-icpr span`, PR_ITEMS], [`${C}-icsd`, SD_ITEMS], ...screenSheets(PR_BASE), [`${C}-dxi`, DEX_ICONS]].map(sheet => Object.freeze(sheet)));
 
-export function sheetCss(address) {
+export function sheetCss(address, { dexIcons = true } = {}) {
   return PANEL_SHEETS.map(([selector, url]) => {
+    if (url === DEX_ICONS && !dexIcons) return '';
     const now = address(url);
     if (now === url) return '';
     return `${selector}{background-image:${now === null ? 'none' : `url("${now}")`};}`;
@@ -109,7 +107,7 @@ export const SIZE = Object.freeze({
 export const panelShift = value => (typeof value === 'number' && Number.isFinite(value)
   ? Math.min(SIZE.shift.max, Math.max(SIZE.shift.min, Math.round(value))) : SIZE.shift.default);
 
-const TAP_TARGETS = ['back', 'fold', 'smon', 'quill', 'badge', 'brd', 'rst', 'pairx', 'add', 'nav', 'boxname', 'seg button', 'mini button', 'gclr', 'gnav'];
+const TAP_TARGETS = ['back', 'fold', 'smon', 'quill', 'badge', 'brd', 'rst', 'pairx', 'add', 'nav', 'boxname', 'seg button', 'mini button', 'gclr', 'gnav', 'dxarr', 'dxback', 'dxlk', 'dxpg'];
 const { wide: W, phone: PH, tab: TB, fold: FD } = SIZE;
 
 const SHIFT = 'var(--pkbp-shift,0px)';
@@ -393,6 +391,7 @@ const CSS = [
 
   `@media (prefers-reduced-motion:reduce){${C},${C}-sheet,${C}-swk::after{transition:none !important;}}`,
   BADGE_CSS,
+  DEX_CSS,
   screenCss(PR_BASE),
 ].join(' ');
 
@@ -442,6 +441,8 @@ export function renderPanel(model, { aux = null, picture = directPicture, shift 
     Number.isFinite(room) ? `--pkbp-room:${Math.max(0, Math.floor(room))}px;` : ''].join('');
   const tabs = sideTabs + resume + auxTab + note + (model.travel ? `<style>${COMPAT_TABS_CSS}</style>` : '') + (place ? `<style>${C}{${place}}</style>` : '');
   const out = [];
+
+  let base = null, slots = null;
   if (model.open && model.screen) {
 
     const fold = `<button type="button" class="${cls('x-risu-pkbp-fold', hit({ t: 'fold' }))}" aria-label="${t('panel.fold')}" title="${t('panel.fold')}">${ICON.fold}</button>`;
@@ -451,29 +452,48 @@ export function renderPanel(model, { aux = null, picture = directPicture, shift 
   } else if (model.open) {
     const right = model.tab === 'party' ? `${model.party.filter(Boolean).length}/${PARTY_MAX}`
       : model.tab === 'box' ? `${model.box.cells.filter(Boolean).length}/${BOX_SIZE}`
-      : model.tab === 'badges' ? `${model.badges.count}/${model.badges.total}` : '';
+      : model.tab === 'travel' && model.sub === 'badge' ? `${model.badges.count}/${model.badges.total}` : '';
 
     out.push(`<div class="${cls('x-risu-pkbp-board', hit({ t: 'blank' }))}">`);
-    out.push(`<div class="x-risu-pkbp-hd" style="border-bottom-color:${TAB_COLOR[model.tab]}">${ICON[model.tab]}${tabLabel(model.tab, lang)}`
+    out.push(`<div class="x-risu-pkbp-hd" style="border-bottom-color:${TAB_COLOR[model.tab]}">${ICON[model.tab]}${model.tab === 'travel' && model.subs?.length === 1 ? esc(say(lang, `panel.sub.${model.subs[0]}`)) : tabLabel(model.tab, lang)}`
       + `<span class="x-risu-pkbp-hdr">${esc(right)}</span>${model.tab === 'party' ? breedButton(model, hit) + restButton(model, hit) : ''}`
       + `<button type="button" class="${cls('x-risu-pkbp-fold', hit({ t: 'fold' }))}" aria-label="${t('panel.fold')}" title="${t('panel.fold')}">${ICON.fold}</button></div>`);
 
-    out.push(`<div class="${cls('x-risu-pkbp-bd', model.tab === 'badges' && !model.badges.open && 'x-risu-pkbp-bdg')}">`);
-    if (model.tab === 'party') out.push(partyHtml(model, hit, picture, rested));
-    else if (model.tab === 'box') out.push(boxHtml(model, hit, picture));
-    else if (model.tab === 'amie') out.push(amieHtml(model, hit, picture));
-    else if (model.tab === 'travel') out.push(travelHtml(model, hit));
-    else if (model.tab === 'badges') out.push(badgeCaseHtml(model.badges, lang, hit, { img: url => monImg(picture({ url })), icon: iconHtml }, { icon: ICON, swipe }));
-    else out.push(bagHtml(model, hit));
-    out.push('</div>');
+    if (model.tab === 'travel' && model.subs.length > 1) out.push(subBarHtml(model.subs, model.sub, hit, lang));
+    const sub = model.tab === 'travel' ? model.sub : null;
+    if (sub === 'dex') {
+
+      out.push(`<div class="x-risu-pkbp-dxw">${dexListHtml(model.dex, hit, lang, ICON)}<div class="x-risu-pkbp-dxov">${SLOT.over}</div></div>`);
+    } else {
+
+      out.push(`<div class="${cls('x-risu-pkbp-bd', sub === 'badge' && !model.badges.open && 'x-risu-pkbp-bdg')}">`);
+      if (model.tab === 'party') out.push(partyHtml(model, hit, picture, rested));
+      else if (model.tab === 'box') out.push(boxHtml(model, hit, picture));
+      else if (model.tab === 'amie') out.push(amieHtml(model, hit, picture));
+      else if (sub === 'trip') out.push(travelHtml(model, hit));
+      else if (sub === 'badge') out.push(badgeCaseHtml(model.badges, lang, hit, { img: url => monImg(picture({ url })), icon: iconHtml }, { icon: ICON, swipe }));
+      else out.push(bagHtml(model, hit));
+      out.push('</div>');
+    }
     out.push(debugRow(model, hit));
-    if (model.window) out.push(windowHtml(model.window, hit, lang));
+
+    if (sub) out.push(`<div class="x-risu-pkbp-wslot">${SLOT.win}</div>`);
+    else if (model.window) out.push(windowHtml(model.window, hit, lang));
     out.push('</div>');
+    if (sub) {
+      base = out.join('');
+      slots = {
+        'x-risu-pkbp-dxov': model.dex?.open ? dexDetailHtml(model.dex.open, hit, lang, { img: slot => monImg(picture(slot)), icon: ICON, swipe }) : '',
+        'x-risu-pkbp-wslot': model.window ? windowHtml(model.window, hit, lang) : '<span></span>',
+      };
+    }
   }
-  const sheet = out.join('');
+  const sheet = base === null ? out.join('') : base.replace(SLOT.over, () => slots['x-risu-pkbp-dxov']).replace(SLOT.win, () => slots['x-risu-pkbp-wslot']);
   const states = [model.open && PANEL_STATES.open, model.locked && PANEL_STATES.locked].filter(Boolean);
-  return { tabs, sheet, open: !!model.open, locked: !!model.locked, html: shell(tabs, sheet, states), hits };
+  return { tabs, sheet, base, slots, dexIcons: !!(model.open && model.dex), open: !!model.open, locked: !!model.locked, html: shell(tabs, sheet, states), hits };
 }
+
+const SLOT = Object.freeze({ over: '\u0000over\u0000', win: '\u0000win\u0000' });
 
 function debugRow(model, hit) {
   const { lang } = model;
@@ -482,7 +502,7 @@ function debugRow(model, hit) {
   const pills = [];
   if (model.tab === 'party' && model.heal) pills.push(pill({ t: 'heal' }, 'heal', 'panel.pill.heal', say(lang, 'panel.debugAdd', { what: say(lang, 'panel.debugHeal') })));
   if (model.add?.[model.tab]) pills.push(pill({ t: 'add', where: model.tab }, 'add', 'panel.pill.add', say(lang, 'panel.debugAdd', { what: say(lang, `panel.add.${model.tab}`) })));
-  const grant = model.tab === 'badges' ? model.badges.open?.grant : null;
+  const grant = model.tab === 'travel' && model.sub === 'badge' ? model.badges.open?.grant : null;
   if (grant && !grant.off) pills.push(pill({ t: 'gymGrant' }, 'add', grant.earned ? 'badge.take' : 'badge.give'));
   return pills.length ? `<div class="x-risu-pkbp-dbg"><span class="x-risu-pkbp-dbgk">${esc(say(lang, 'panel.debugRow'))}</span>${pills.join('')}</div>` : '';
 }

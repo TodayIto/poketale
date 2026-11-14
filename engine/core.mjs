@@ -61,10 +61,12 @@ export function extractResult(sim, battle) {
 
 	const [mine, theirs, ally, other] = battle.sides;
 	const own = p => !p.m.partner && !p.m.trainer;
-	const half = (side, extra) => {
+
+	const foeMon = p => ({ ...resultMon(sim, p), appeared: p.previouslySwitchedIn > 0 });
+	const half = (side, extra, mon) => {
 		const team = [...side.pokemon.filter(own), ...extra];
 		return { id: side.id, name: side.name, pokemonLeft: team.length === side.pokemon.length ? side.pokemonLeft : team.filter(p => !p.fainted).length,
-			team: team.map(p => resultMon(sim, p)) };
+			team: team.map(mon) };
 	};
 	const split = other ? other.pokemon.filter(p => p.m.split) : [];
 	const partner = [...mine.pokemon, ...(ally?.pokemon ?? [])].filter(p => p.m.partner);
@@ -74,11 +76,11 @@ export function extractResult(sim, battle) {
 		turn: battle.turn,
 
 		...(battle.activePerHalf > 1 ? { double: true } : {}),
-		sides: [half(mine, []), half(theirs, split)],
+		sides: [half(mine, [], p => resultMon(sim, p)), half(theirs, split, foeMon)],
 
 		...(partner.length ? { partner: partner.map(p => resultMon(sim, p)) } : {}),
 
-		...(foePartner.length ? { foePartner: foePartner.map(p => resultMon(sim, p)) } : {}),
+		...(foePartner.length ? { foePartner: foePartner.map(foeMon) } : {}),
 
 		...extensionResults(battle),
 	};

@@ -314,6 +314,7 @@ export function readStatusWindow(inner) {
     location: fields.location ?? null,
     date: fields.date ?? null,
     money: Number.isSafeInteger(money) ? money : null,
+    indoors,
   };
 }
 
@@ -329,6 +330,8 @@ export function latestStatus(chat, upto = Infinity) {
   }
   return null;
 }
+
+export const bagMoney = (chat, compat) => (compat ? statusMoney(chat) : null);
 
 export function statusMoney(chat) {
   const messages = chat?.message ?? [];

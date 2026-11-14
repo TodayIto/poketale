@@ -1,4 +1,4 @@
-import { esc, FONT, noteRule } from './card.mjs';
+import { esc, FONT, noteRule, ICON_BALL } from './card.mjs';
 import { say } from './screen-text.mjs';
 import { checkLang } from '../director/lang.js';
 import { STATS } from '../engine/mon.mjs';
@@ -223,6 +223,8 @@ export const DIARY_CSS = [
   `.x-risu-pkb-fgask{position:absolute;top:6px;left:68px;display:flex;align-items:center;gap:5px;width:max-content;max-width:calc(100% - 68px);min-height:25px;padding:2px 4px 2px 7px;box-sizing:border-box;border:1.5px solid #315a77;border-radius:7px;background:#fff;color:#23435f;font-family:${FONT};font-size:11px;line-height:1.3;box-shadow:0 2px 0 #23435f;animation:x-risu-pkbask .15s ease-out;}`,
   `.x-risu-pkb-fgask>span{min-width:0;overflow-wrap:anywhere;}`,
   `.x-risu-pkb-fgask .x-risu-pkb-fgok{display:inline-flex;flex:none;align-items:center;justify-content:center;width:23px;height:21px;padding:0;border:1.5px solid #315a77;border-radius:5px;background:#eef4f9;color:#23435f;font:700 14px/1 sans-serif;box-shadow:0 1px 0 #23435f;}`,
+  `.x-risu-pkb-fgask .x-risu-pkb-fgok svg{display:block;width:15px;height:15px;}`,
+  `.x-risu-pkb-fgask .x-risu-pkb-fgok:active{transform:translateY(1px);box-shadow:none;}`,
   `.x-risu-pkb-fgs:only-child .x-risu-pkb-fgask{left:34px;max-width:calc(100% - 34px);}`,
   `@keyframes x-risu-pkbask{from{opacity:0;transform:translateX(-4px);}to{opacity:1;transform:none;}}`,
   noteRule('.x-risu-pkb-fgnote', 'info'),
@@ -292,6 +294,10 @@ const ICON_SWORD = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M15.6 2
   + '<path d="M4.3 9.5 8.5 13.7" stroke="#d8434d" stroke-width="2.1" stroke-linecap="round"/><path d="M6.3 11.7 3.3 14.7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
   + '<circle cx="2.7" cy="15.3" r="1.2" fill="currentColor"/></svg>';
 
+const ICON_GRASS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 21.5C4.8 17 4.6 12 2.6 7.6c4 2.2 5.8 7.4 5.4 13.9zM8 21.5c.7-6.8 2-12.6 4-18 2 5.4 3.3 11.2 4 18zM21.5 21.5c-2.3-4.5-2.1-9.5-.1-13.9-4 2.2-5.8 7.4-5.4 13.9z"'
+  + ' fill="#7cc25e" stroke="#23435f" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 9v10" stroke="#3f8a5a" stroke-width="1.4" stroke-linecap="round"/></svg>';
+const FORGE_PICKS = [['wild', 'forge.wild', ICON_GRASS], ['trainer', 'forge.trainer', ICON_BALL]];
+
 export function renderForge({ key, on = false, busy = false, ask = false }, lang) {
   if (!on && !busy) return '';
   const t = name => esc(say(lang, name));
@@ -299,6 +305,7 @@ export function renderForge({ key, on = false, busy = false, ask = false }, lang
   const button = `<button type="button" class="x-risu-pkb-btn x-risu-pkb-fg${busy ? ' x-risu-pkb-busy' : ''} x-risu-pkbk-${key} x-risu-pkba-forge x-risu-pkbi-{{chat_index}}"`
     + ` title="${label}" aria-label="${label}" aria-expanded="${ask && !busy}"${busy ? ' disabled' : ''}>${ICON_SWORD}</button>`;
   const lines = busy ? `<div class="x-risu-pkb-fgnote">${t('forge.busy')}<span class="x-risu-pkb-fgsub">${t('forge.hold')}</span></div>` : '';
-  const confirm = ask && !busy ? `<span class="x-risu-pkb-fgask" role="group" aria-label="${t('forge.confirm')}"><span>${t('forge.ask')}</span><button type="button" class="x-risu-pkb-btn x-risu-pkb-fgok x-risu-pkbk-${key} x-risu-pkba-forgeok x-risu-pkbi-{{chat_index}}" title="${t('forge.confirm')}" aria-label="${t('forge.confirm')}">✓</button></span>` : '';
+  const picks = FORGE_PICKS.map(([kind, name, icon]) => `<button type="button" class="x-risu-pkb-btn x-risu-pkb-fgok x-risu-pkbk-${key} x-risu-pkba-forge${kind} x-risu-pkbi-{{chat_index}}" title="${t(name)}" aria-label="${t(name)}">${icon}</button>`).join('');
+  const confirm = ask && !busy ? `<span class="x-risu-pkb-fgask" role="group" aria-label="${t('forge.confirm')}"><span>${t('forge.ask')}</span>${picks}</span>` : '';
   return button + confirm + lines;
 }

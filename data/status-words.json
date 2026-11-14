@@ -24,7 +24,7 @@
 	"places": {
 		"town": ["town","village","city","street","타운","마을","시티","거리","광장","町","村","タウン","シティ","街"],
 		"plains": ["route","road","path","field","도로","길","들판","道路","番道路","ばんどうろ","草原"],
-		"forest": ["forest","woods","woodland","숲","森","林"],
+		"forest": ["forest","woods","woodland","숲","숲길","숲속","森","林"],
 		"cave": ["cave","cavern","tunnel","grotto","동굴","터널","洞窟","どうくつ","トンネル"],
 		"mountain": ["mountain","mt","mount","peak","summit","hill","산","고개","봉우리","정상","언덕","山","峠","頂上"],
 		"sea": ["sea","ocean","bay","바다","해역","수로","海","水道"],

@@ -16,7 +16,7 @@ const INDEX = new Map();
 }
 const KEEP = 8;
 const chunks = new Map();
-// Decoded animations by file, most recently used last. Players only read them, so one object can serve every battle.
+
 const DECODED_KEEP = 64;
 const decoded = new Map();
 const decoder = new TextDecoder();
@@ -78,7 +78,6 @@ export const TYPE_FALLBACK = Object.freeze({
   Steel: 'metal-claw', Fairy: 'fairy-wind', Stellar: 'tackle',
 });
 
-// With data, checks that table; otherwise checks the embedded bundle list for the file.
 export function moveFile(id, data) {
   const record = entry('moves', id);
   if (record?.anim && (data ? data[record.anim] : hasAnimation(record.anim))) return record.anim;

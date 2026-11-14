@@ -102,8 +102,20 @@ function translate(kind, english) {
   return { ko: ko || null, src: ko ? 'pokeapi' : null };
 }
 
-function translateSpecies(s) {
+const OFFICIAL_SPECIES_KO = {
+  pignite: { ko: '차오꿀', was: '챠오꿀' },
+};
+
+function baseSpeciesName(s, official) {
   const base = translate('species', s.baseSpecies);
+  const fix = OFFICIAL_SPECIES_KO[toID(s.baseSpecies)];
+  if (!fix) return base;
+  if (base.ko !== fix.was) throw new Error(`OFFICIAL_SPECIES_KO.${toID(s.baseSpecies)}: 원본 표기가 "${base.ko}" 로 바뀌었다 (예전 "${fix.was}")`);
+  return official ? { ko: fix.ko, src: 'official' } : base;
+}
+
+function translateSpecies(s, official = true) {
+  const base = baseSpeciesName(s, official);
   if (!s.forme || !base.ko) return base;
   const direct = rogueForms.get(s.id) || formKo[rogueFormAliases[s.id]];
   if (direct) {
@@ -151,7 +163,14 @@ for (const kind of kinds) {
     const name = kind === 'species' ? translateSpecies(entry) : translate(kind, entry.name);
     const sim = SimDex[kind].get(entry.id).exists;
     table[entry.id] = { ko: name.ko, en: entry.name };
-    if (kind === 'species') Object.assign(table[entry.id], { num: entry.num, forme: entry.forme });
+    if (kind === 'species') {
+      Object.assign(table[entry.id], { num: entry.num, forme: entry.forme });
+
+      if (entry.baseSpecies !== entry.name) table[entry.id].base = toID(entry.baseSpecies);
+
+      const before = translateSpecies(entry, false).ko;
+      if (before && before !== name.ko) table[entry.id].old = [before];
+    }
     if (kind === 'moves') {
       table[entry.id].type = entry.type;
       table[entry.id].anim = animations.get(toID(entry.name)) || null;

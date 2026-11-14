@@ -25,12 +25,12 @@ function legacyEnd(log, upto) {
   return next < 0 ? log.length : next;
 }
 
-export function sendRange({ sent = { upto: -1 }, log = [], to = log.length, ended = false }) {
+export function sendRange({ sent = { upto: -1 }, log = [], to = log.length, ended = false, dex = null }) {
   const first = !(sent?.count > 0 || sent?.upto >= 0);
   const from = first ? 0 : Number.isInteger(sent?.logEnd) ? sent.logEnd : legacyEnd(log, sent?.upto);
   const end = Math.min(Math.max(to ?? 0, 0), log.length);
   if (ended && sent?.ended && from >= end) return null;
-  const read = readLog(log, { from, to: end });
+  const read = readLog(log, { from, to: end, dex });
   if (!hasEvents(read) && !(ended && !sent?.ended)) return null;
   return { from, to: end, first, read };
 }
@@ -43,14 +43,22 @@ export function buildOoc(format, source, range, { screenFrom = 0, screenTo, lang
   return { text, info: { battle: source.key ?? '', turns: span ? [span.fromTurn, span.toTurn] : null, result: ended ? outcomeOf(source.result) : '', ...(guide ? { form: format } : {}) } };
 }
 
-export function markOoc(text, info = {}, newId = () => globalThis.crypto.randomUUID()) {
+export function newUuid(crypto = globalThis.crypto) {
+  if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+export function markOoc(text, info = {}, newId = () => newUuid()) {
   const mark = hashKey(newId());
   return { wrapped: wrapOoc(text, { ...info, mark }), mark };
 }
 
 export const oocAhead = (wrapped, text) => `${wrapped}\n\n${String(text ?? '').replace(/^\s+/, '')}`;
 
-export function insertOoc(chat, { text, info = {}, tail = '', newId = () => globalThis.crypto.randomUUID(), now = Date.now() }) {
+export function insertOoc(chat, { text, info = {}, tail = '', newId = () => newUuid(), now = Date.now() }) {
   chat.message ??= [];
   const messages = chat.message;
   const { wrapped, mark } = markOoc(text, info, newId);

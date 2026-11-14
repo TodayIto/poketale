@@ -25,6 +25,10 @@ export function entry(kind, value) {
   return record ? Object.freeze(record) : null;
 }
 
+export const readsOfficial = reading => reading?.officialKo !== false;
+
+export const koSpellings = (record, reading) => (readsOfficial(reading) ? [record?.ko, ...(record?.old ?? [])] : record?.old ?? [record?.ko]).filter(Boolean);
+
 function lookup(kind, value, lang = 'ko') {
   const { id, fallback } = input(value);
   const record = entry(kind, value);
@@ -51,5 +55,12 @@ export function namesIn(lang) {
 }
 
 export const names = namesIn('ko');
+
+export const baseKo = ko => String(ko ?? '').replace(/\s*\([^()]*\)$/, '');
+
+export function shownSpecies(value, lang = 'ko') {
+  const base = entry('species', value)?.base ?? value;
+  return lang === 'en' ? lookup('species', base, 'en') : baseKo(lookup('species', base, 'ko'));
+}
 
 export default names;

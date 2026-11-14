@@ -1,4 +1,4 @@
-import { namesIn } from '../../names/index.js';
+import { namesIn, shownSpecies } from '../../names/index.js';
 import { DEFAULT_LANG } from '../../director/lang.js';
 
 const KINDS = [['species', 'species'], ['move', 'moves'], ['ability', 'abilities'], ['item', 'items']];
@@ -10,7 +10,9 @@ export function battleNamesIn(lang = DEFAULT_LANG, dex) {
     const found = typeof value === 'string' && value ? dex[kind].get(value) : null;
     return found?.exists ? found.name : names[kind](value);
   };
-  return Object.freeze(Object.fromEntries(KINDS.map(([key, kind]) => [key, lang === 'en' ? english(kind) : names[kind]])));
+  const table = Object.fromEntries(KINDS.map(([key, kind]) => [key, lang === 'en' ? english(kind) : names[kind]]));
+
+  return Object.freeze({ ...table, speciesFull: table.species, species: value => shownSpecies(value, lang) });
 }
 
 // Korean names (the default language)

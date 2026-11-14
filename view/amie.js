@@ -1,12 +1,11 @@
-// Petting screen motions and interactions.
-// Modified for PokeTale on 2026-11-12. See THIRD-PARTY-NOTICES.md.
+// Modified for PokeTale on 2026-11-14. See THIRD-PARTY-NOTICES.md.
 // Motions ported from PlayNav (https://github.com/poooooby/PlayNav) src/amie/play.lua - lifeMotion / stepLife (breathing, sway, hops, the wriggle while stroked,
 // the flinch, dozing), reward (a double hop with notes), the wake ("!", a white flash, it turns round), the high five leap, feeding (a flash with stars, then
 // the food held at its mouth shrinking bite by bite, crumbs, the hearts; a full Pokemon turns the food away).
 // PlayNav is MIT License, Copyright (c) 2026 poooooby - THIRD-PARTY-NOTICES.md.
 
 import { createPetting, cellAt, bodyPixel, spotsFor, strokable, spinOf, MIDDLE_CELL, TICK_HZ, ENJOY_MAX, FULL_MAX, FULL_PER_FOOD, bitesOf, biteSeconds, eatsFood } from '../story/amie.mjs';
-import { GAME_SPEND, GAMES, LEVELS, DEFAULT_LEVEL } from '../story/amie-games.mjs';
+import { GAME_SPEND, GAMES, LEVELS, DEFAULT_LEVEL, recordOf, recordScore, beatsRecord } from '../story/amie-games.mjs';
 import { tween } from './lifetime.js';
 import { keyAction, playSelect, playError } from './ui/keys.js';
 import { loadItemIcons } from './ui/bag.js';
@@ -16,8 +15,12 @@ import { amieTextures, loadItemSheet, foodPicture, foodElement, HEARTS, emote } 
 import { playGame } from './amie-games.js';
 import { fieldFor, fitCanvas, restoreCanvas, frameFor, petScale, gameBarFor } from './amie-layout.js';
 import { mountAmieFrame } from './amie-frame.js';
+import { petScene, storyPlace } from './amie-scenes.js';
+import { mountScene, stillPictures } from './scene-bake.js';
 import { closeWindow } from './frame-parts.js';
 import { closePress } from './reply-notice.js';
+import { amieSound, PET_SOUNDS } from './amie-sound.js';
+import { moodOf, moodMotion, moodHop } from './amie-mood.js';
 
 const TICK_MS = 1000 / TICK_HZ;
 
@@ -44,35 +47,34 @@ const level = (value, steps) => steps.filter(t => value >= t).length;
 export class AmieScreen {
   constructor(scene) { this.scene = scene; this.isOpen = false; }
 
-  async load(mon, biome, party) {
+  async load(mon, party) {
     const s = this.scene;
     const [front, back, others] = await Promise.all([s.assets.mon(mon, false), s.assets.mon(mon, true).catch(() => null),
       Promise.all(party.map(other => s.assets.mon(other, false).catch(() => null))),
-      s.assets.image(`${biome}_bg`, `images/arenas/${biome}_bg.png`, null), loadItemIcons(s).catch(() => {}), loadItemSheet(s).catch(() => {})]);
+      loadItemIcons(s).catch(() => {}), loadItemSheet(s).catch(() => {})]);
     s.life.check();
 
     return { front, back, others: party.flatMap((other, i) => (others[i] ? [{ uid: other.uid, enjoy: other.enjoy, asset: others[i] }] : [])) };
   }
 
-  async open({ mon, num = 0, biome = 'grass', species = [], enjoy = ENJOY_MAX, full = 0, friendship, party = [], foods = [], puffFood, words, debug = false, spins = false,
-    awake = false, trainWhy = null, lock = null, notice = null, onChange = () => {}, onOpen = () => {} }) {
+  async open({ mon, num = 0, scene: story = {}, species = [], enjoy = ENJOY_MAX, full = 0, friendship, party = [], foods = [], puffFood, words, debug = false, spins = false,
+    awake = false, trainWhy = null, lock = null, notice = null, records = {}, onChange = () => {}, onOpen = () => {} }) {
     const s = this.scene;
     if (this.isOpen) throw new Error('Petting screen already open');
-    const { front, back, others } = await this.load(mon, biome, party);
+    const { front, back, others } = await this.load(mon, party);
     amieTextures(s);
     loadFont(FRAME_FONT).catch(error => console.warn('[poke-battle] 쓰다듬기 글꼴을 올리지 못함 — 대체 글꼴로', error));
     this.isOpen = true;
     Object.assign(this, { mon, num, words, onChange, gained: 0, spins, spun: null, train: false, trainWhy, full, done: [], foods: foods.map(f => ({ ...f })), puffFood,
-      friendship, debug, biomeKey: `${biome}_bg`, lock: debug && lock ? { on: !!lock.on, set: lock.set, writing: false } : null });
+      friendship, debug, records: structuredClone(records ?? {}), place: storyPlace(story), time: story.time || 'day', still: stillPictures(), lock: debug && lock ? { on: !!lock.on, set: lock.set, writing: false } : null });
     const parent = s.options.parent, size = { width: parent.clientWidth, height: parent.clientHeight };
     this.shape(fieldFor(size.width, size.height), size);
     const W = this.W, H = this.H, f = frameFor(size.width, size.height);
     const c = this.container = s.add.container(0, -180);
     s.ui.addAt(c, 0);
 
-    const bg = s.add.image(W / 2, H, `${biome}_bg`).setOrigin(0.5, 1);
-    bg.setScale(Math.max(W / bg.width, H / bg.height));
-    c.add(bg);
+    this.backdrop = mountScene(s, petScene({ place: this.place, time: this.time, w: W, h: H, px: this.unit, animate: !this.still, bleed: true }), { prefix: 'amie-scene' });
+    c.add(this.backdrop.back);
 
     const box = front.bounds, bw = box.right - box.left, bh = box.bottom - box.top;
     this.feetY = this.toField(0, size.height - f.feet).y;
@@ -92,7 +94,7 @@ export class AmieScreen {
     this.flash = s.add.rectangle(0, 0, W, H, 0xffffff).setOrigin(0).setAlpha(0);
     this.fx = s.add.container(0, 0);
     this.pet = s.add.container(0, 0, [this.shadow, this.holder, this.fx]);
-    c.add(this.pet);
+    c.add([this.pet, this.backdrop.front]);
     this.asset = front;
     this.mates = others;
     this.players = [front, ...others.slice(0, 2).map(one => one.asset)];
@@ -102,7 +104,7 @@ export class AmieScreen {
     const turned = !!this.back && !awake;
     this.petting = createPetting({ spots: spotsFor(species), enjoy, friendship, back: turned, stroke: strokable(num), friends: others });
     this.faceBack(turned);
-    this.life = { calm: 0, hop: null, nextHop: 1.5, excite: 0, lean: 0, stroke: 0, flinch: 0, phase: 0, t: 0, jump: null, sink: 0, turn: 0 };
+    this.life = { calm: 0, hop: null, nextHop: 1.5, excite: 0, lean: 0, stroke: 0, flinch: 0, phase: 0, t: 0, jump: null, sink: 0, turn: 0, moodK: 0 };
     this.lively = 0.25 + 0.75 * Math.min(1, (level(friendship, [1, 50, 100, 150, 255]) + 2 * level(enjoy, [1, 20, 40, 60, 100])) / 12);
     c.add(this.flash);
 
@@ -131,6 +133,10 @@ export class AmieScreen {
     this.eating = null;
     this.playing = null;
     this.acc = 0; this.strokeT = 0; this.zT = 0; this.cryAt = -Infinity; this.tiredAt = -Infinity;
+
+    this.sound = amieSound(s.audio);
+    this.sound.preload(PET_SOUNDS);
+    this.sound.music('room');
     return new Promise(resolve => {
       this.resolve = resolve;
       this.listen();
@@ -171,6 +177,15 @@ export class AmieScreen {
   }
 
   get gameBar() { return this.hud.game; }
+
+  recordOf(game, lv) { return recordOf(this.records, game, lv); }
+
+  noteRecord(game, lv, value) {
+    const score = recordScore(value);
+    if (!beatsRecord(game, score, this.recordOf(game, lv))) return;
+    this.records = { ...this.records, [game]: { ...this.records[game], [lv]: score } };
+    this.done.push({ record: { game, level: lv, score } });
+  }
 
   puffName(id) { return this.puffFood(id).name; }
   puffPicture(id) { return foodElement(this.scene, { puff: id }, this.scene.options.parent.ownerDocument); }
@@ -292,7 +307,7 @@ export class AmieScreen {
   goBack() {
     if (!this.isOpen) return;
     if (this.hud.answer(false)) return;
-    if (this.playing) this.playing.stop();
+    if (this.playing) { if (!this.hud.game.back()) this.playing.stop(); }
     else if (!this.hud.back() && !this.eating) this.close();
   }
 
@@ -306,9 +321,11 @@ export class AmieScreen {
     this.isOpen = false;
     this.unhook?.();
     this.playing?.stop();
+    this.sound.stopMusic();
     this.scene.game.canvas.style.cursor = '';
     this.hud.remove();
     this.container.destroy();
+    this.backdrop.destroy();
     this.unshape();
     this.resolve({ ...this.result(), spin: this.spun, train: this.train });
   }
@@ -316,6 +333,7 @@ export class AmieScreen {
   frame(delta) {
     if (!this.isOpen) return;
     const dt = Math.min(250, delta) / 1000;
+    if (!this.playing) this.backdrop.update();
     if (this.playing) { if (!this.hud.asking) this.playing.frame(dt); return; }
     this.acc += dt * 1000;
 
@@ -352,11 +370,13 @@ export class AmieScreen {
         case 'reward': this.reward(e); break;
         case 'dislike':
           life.flinch = 1.4; this.bump(-0.08);
+          this.sound.play('dislike');
           this.mark('anger');
           break;
 
         case 'hit':
           this.bump(0.1);
+          this.sound.play('tap');
           this.burst('spark', 1, at.x, at.y, { rise: 0, scale: 1.3 });
           if (e.angry) this.mark('anger');
           break;
@@ -397,6 +417,7 @@ export class AmieScreen {
     const h = this.head(), life = this.life;
     if (e.spent > 0) {
       this.burst('heart', HEARTS, h.x, h.y - 6);
+      this.sound.play('reward');
       this.cry();
     } else this.tired();
     life.hop = { t: 0, dur: 0.32, h: 14, again: true };
@@ -476,6 +497,7 @@ export class AmieScreen {
       }
       this.eating.stage = 'flash';
       this.burst('spark', 3, m.x, m.y, { rise: 0.4, scale: 1.2 });
+      this.sound.play('serve');
     }, () => {});
   }
 
@@ -492,6 +514,7 @@ export class AmieScreen {
     e.taken++;
     const m = this.mouth();
     this.bump(0.08);
+    this.sound.play(e.taken < e.bites ? 'bite' : 'eaten');
     this.burst('crumb', 3, m.x, m.y + 6, { rise: -0.4, scale: 1 });
 
     e.picture.setScale(e.picture.scaleX * (1 - 1 / (e.bites - e.taken + 1)) || 0.001);
@@ -513,8 +536,9 @@ export class AmieScreen {
 
   async startGame(game, lv) {
     if (this.playing || this.eating) return;
-    this.pet.setVisible(false); this.hud.show(false);
+    this.pet.setVisible(false); this.hud.show(false); this.backdrop.setVisible(false);
     const joined = this.petting.pickFriends();
+    this.sound.music('game');
     this.players = [this.asset, ...joined.map(uid => this.mates.find(one => one.uid === uid).asset)];
     let again = false;
     try {
@@ -523,6 +547,7 @@ export class AmieScreen {
         this.petting.spendFriends(joined, GAME_SPEND);
         const paid = this.petting.spend(GAME_SPEND);
         this.done.push({ won: result.prizes });
+        this.noteRecord(game, lv, result.value);
         for (const id of result.prizes) this.winPuff(id);
         this.hud.setFoods(this.foods);
         this.gained += paid.friendship;
@@ -532,7 +557,7 @@ export class AmieScreen {
       }
     } finally {
       this.playing = null;
-      if (this.isOpen) { this.pet.setVisible(true); this.hud.show(true); }
+      if (this.isOpen) { this.pet.setVisible(true); this.hud.show(true); this.backdrop.setVisible(true); this.sound.music('room'); }
     }
 
     const after = this.afterGame;
@@ -565,10 +590,13 @@ export class AmieScreen {
     const target = this.finger ? Math.max(-1, Math.min(1, (this.finger.x - W / 2) / 60)) : 0;
     life.lean += (target - life.lean) * (1 - Math.exp(-5 * dt));
 
+    const mood = this.mood = moodOf({ status: this.mon.status, enjoy: this.petting.enjoy, full: this.full });
+    const hopK = moodHop(mood);
+
     if (life.hop && (life.hop.t += dt) >= life.hop.dur) life.hop = life.hop.again ? { t: 0, dur: life.hop.dur, h: life.hop.h * 0.7 } : null;
     life.nextHop -= dt;
     if (!life.hop && life.nextHop <= 0) {
-      if (!still && energy > 0.55 && stage === 'awake') life.hop = { t: 0, dur: 0.32, h: 6 + 14 * Math.min(1, energy), again: energy > 0.95 };
+      if (!still && energy > 0.55 && stage === 'awake' && hopK > 0) life.hop = { t: 0, dur: 0.32, h: (6 + 14 * Math.min(1, energy)) * hopK, again: energy > 0.95 && hopK === 1 };
       life.nextHop = (energy > 0.9 ? 1.4 : 2.6) + Math.random() * 1.6;
     }
     const free = 1 - life.calm, t = life.t, ph = life.phase;
@@ -604,6 +632,13 @@ export class AmieScreen {
       sy -= k; sx += k * 0.6;
     }
 
+    life.moodK += ((stage === 'awake' && !still && !life.jump ? 1 : 0) - life.moodK) * (1 - Math.exp(-4 * dt));
+    if (life.moodK > 0.01) {
+      const g = moodMotion(mood, t, { still: this.still });
+      dx += g.dx * life.moodK; lift += g.lift * life.moodK; tilt += g.tilt * life.moodK;
+      sx += g.sx * life.moodK; sy += g.sy * life.moodK;
+    }
+
     let jx = 0, jy = 0;
     if (life.jump) {
       const j = life.jump;
@@ -614,6 +649,7 @@ export class AmieScreen {
       jy = Math.min(0, (j.y - h.y) * 0.75 + lift) * up - 18 * up;
       if (!j.slapped && f >= 0.4) {
         j.slapped = true;
+        this.sound.play('highFive');
         this.burst('spark', 2, j.x, j.y, { rise: 0, scale: 1.4 });
       }
       if (f >= 1) life.jump = null;

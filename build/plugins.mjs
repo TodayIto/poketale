@@ -120,7 +120,6 @@ function viewPlugin({ pokemonAtlases }) {
 				party_slot_main: 'images/ui/party_slot_main.json', party_slot: 'images/ui/party_slot.json',
 				party_pb: 'images/ui/party_pb.json', party_cancel: 'images/ui/party_cancel.json',
 				party_slot_hp_overlay: 'images/ui/party_slot_hp_overlay.json', prompt: 'images/ui/prompt.json',
-
 				// Stat stage panel (view/ui/battle-stats.js)
 				pbinfo_stat_numbers: 'images/ui/pbinfo_stat_numbers.json', pbinfo_stat: 'images/ui/text_images/ko/battle_ui/pbinfo_stat_ko.json',
 
@@ -134,7 +133,6 @@ function viewPlugin({ pokemonAtlases }) {
 					files[path] = path + '.json';
 				}
 			}
-
 			// Text image atlases of the other languages (view/lang-images.js)
 			for (const [key, path] of Object.entries(files)) for (const lang of LANGS) if (langPath(path, lang) !== path) files[langAtlasKey(key, lang)] = langPath(path, lang);
 			const atlases = Object.fromEntries(Object.entries(files).map(([key, path]) => [key, JSON.parse(readFileSync(`${PR_ASSETS}/${path}`, 'utf8'))]));
@@ -251,7 +249,7 @@ export function slimNameTable(path) {
 	const keepItemEn = /items\.json$/.test(path);
 	return Object.fromEntries(Object.entries(table).map(([id, r]) => [id, Object.fromEntries(Object.entries({
 		ko: r.ko || undefined, en: r.ko && !keepEn && !(keepItemEn && r.sim === false) ? undefined : r.en, type: r.type, anim: r.anim || undefined,
-		move: r.move,
+		move: r.move, old: r.old, base: r.base, num: keepEn ? r.num : undefined,
 	}).filter(([, v]) => v !== undefined))]));
 }
 

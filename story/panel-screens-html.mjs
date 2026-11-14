@@ -147,7 +147,7 @@ const categoryBadge = category => {
   const K = SHEET_FRAMES.categories, at = Math.max(0, K.order.indexOf(String(category).toLowerCase()));
   return `<span class="x-risu-pkbp-cat" style="background-position:calc(-${at * K.w * CATEGORY_SCALE}px * var(--pkbp-z)) 0" title="${esc(category)}"></span>`;
 };
-const ballBadge = id => {
+export const ballBadge = id => {
   const B = SHEET_FRAMES.balls, y = B.y[ballFrame(id)] ?? B.y.pb;
   return `<span class="x-risu-pkbp-ball" style="background-position:0 calc(-${y * BALL_SCALE}px * var(--pkbp-z))"></span>`;
 };
@@ -227,10 +227,9 @@ function statsHtml(stats, hit) {
     const value = c.of ? `${c.value}<small>/${c.of}</small>` : esc(c.value);
     return `<div class="x-risu-pkbp-st2"><span class="x-risu-pkbp-stk${look}">${esc(c.label)}${c.up ? UP : c.down ? DOWN : ''}</span><b>${value}</b></div>`;
   }).join('');
-  const note = stats.note.text ? esc(stats.note.text)
-    : `<span class="x-risu-pkbp-up">${UP} ${esc(stats.note.up)}</span> · <span class="x-risu-pkbp-down">${DOWN} ${esc(stats.note.down)}</span>`;
+  const note = stats.note ? `<div class="x-risu-pkbp-foot">${esc(stats.note.text)}</div>` : '';
   const exp = stats.exp;
-  return sec(stats.title, `<div class="x-risu-pkbp-stg">${cells}</div><div class="x-risu-pkbp-foot">${note}</div>`, toggle)
+  return sec(stats.title, `<div class="x-risu-pkbp-stg">${cells}</div>${note}`, toggle)
     + (exp ? sec(exp.title, row(exp.labels.total, esc(exp.total)) + row(exp.labels.next, esc(exp.next))
       + `<div class="x-risu-pkbp-expl"><span>Lv${exp.level}</span><span class="x-risu-pkbp-expb"><span style="width:${Math.round(exp.ratio * 1000) / 10}%"></span></span>${exp.nextLevel ? `<span>Lv${exp.nextLevel}</span>` : ''}</div>`) : '');
 }

@@ -221,9 +221,7 @@ export async function hatchOutside({ view, ctx, mon }) {
 
 export const amieDebugLine = (say, { enjoy, max, full, friendship, now, locked = false }) => say(locked ? 'amie.debugLocked' : 'amie.debug', { enjoy, max, full, friendship, now });
 
-const AMIE_BIOME = 'grass';
-
-export async function amieOutside({ view, ctx, mon, state = null, party = [], debug = false, awake = false, trainWhy = null, lock = null }) {
+export async function amieOutside({ view, ctx, mon, state = null, party = [], debug = false, awake = false, trainWhy = null, lock = null, scene = null }) {
   const plan = readOutside(ctx, mon, made => {
     const species = made.pokemon.species;
     return { shown: monViewOf(ctx, made, mon), ids: [species.id, made.battle.dex.species.get(species.baseSpecies).id], num: species.num };
@@ -238,6 +236,8 @@ export async function amieOutside({ view, ctx, mon, state = null, party = [], de
     enjoy: say('amie.enjoy'), fullness: say('amie.fullness'), prev: say('window.prevPage'), next: say('window.nextPage'),
     foodTitle: say('amie.foodTitle'),
     playTitle: say('amie.playTitle'), levelTitle: say('amie.levelTitle'), time: say('amie.time'), ready: say('amie.ready'), go: say('amie.go'), fever: say('amie.fever'), gameBack: say('amie.gameBack'), again: say('amie.again'),
+    timeUp: say('amie.timeUp'), done: say('amie.done'), newRecord: say('amie.newRecord'), viewPicture: say('amie.viewPicture'), backToResult: say('amie.backToResult'),
+    best: values => say('amie.best', values),
     games: Object.fromEntries(GAMES.map(game => [game, say(`amie.game.${game}`)])), levels: Object.fromEntries(LEVELS.map(lv => [lv, say(`amie.level.${lv}`)])),
     score: Object.fromEntries(GAMES.map(game => [game, values => say(`amie.score.${game}`, values)])),
     debug: values => amieDebugLine(say, values), lock: say('import.friendshipLock'), unlock: say('import.friendshipUnlock'), back: say('window.back'), close: say('screen.close'),
@@ -248,8 +248,8 @@ export async function amieOutside({ view, ctx, mon, state = null, party = [], de
   const result = { spent: 0, gains: [], friends: [], done: [], spin: null, train: false };
   try {
     const { spent, gains, friends, done, spin, train } = await view.startAmie({
-      mon: plan.shown, num: plan.num, biome: AMIE_BIOME, species: plan.ids, enjoy: enjoymentOf(mon), full: fullnessOf(mon), friendship: friendshipOf(ctx, mon),
-      party: others, foods, puffFood: id => food(puffFood(id, lang)), words, debug, spins: canSpin(ctx.sim.Dex, { species: mon.set.species, item: mon.set.item }),
+      mon: plan.shown, num: plan.num, scene: scene ?? undefined, species: plan.ids, enjoy: enjoymentOf(mon), full: fullnessOf(mon), friendship: friendshipOf(ctx, mon),
+      party: others, foods, puffFood: id => food(puffFood(id, lang)), words, debug, records: state?.amieRecords ?? {}, spins: canSpin(ctx.sim.Dex, { species: mon.set.species, item: mon.set.item }),
       awake, trainWhy: trainWhy ? say(`panel.trainWhy.${trainWhy}`) : null, lock: debug && lock ? { on: friendshipLocked(mon), set: lock } : null,
       onChange: now => Object.assign(result, { spent: now.spent, gains: now.gains, friends: now.friends ?? [], done: now.done }),
     });
@@ -261,9 +261,7 @@ export async function amieOutside({ view, ctx, mon, state = null, party = [], de
   return result;
 }
 
-const TRAINING_BIOME = 'dojo';
-
-export async function trainingOutside({ view, ctx, mon }) {
+export async function trainingOutside({ view, ctx, mon, scene = null }) {
   const plan = readOutside(ctx, mon, made => ({ shown: monViewOf(ctx, made, mon), base: { ...made.pokemon.species.baseStats } }));
   const say = sayer(langOf(ctx));
   const stat = Object.fromEntries(STATS.map(s => [s, say(`stat.${s}`)]));
@@ -285,7 +283,7 @@ export async function trainingOutside({ view, ctx, mon }) {
   const result = { bags: [], hung };
   try {
     const { bags, hung: left } = await view.startTraining({
-      mon: plan.shown, biome: TRAINING_BIOME, base: plan.base, trainee: traineeOf(mon), hung, energyMax: ENERGY_MAX, words,
+      mon: plan.shown, time: scene?.time ?? 'day', base: plan.base, trainee: traineeOf(mon), hung, energyMax: ENERGY_MAX, words,
       onChange: now => Object.assign(result, now),
     });
     Object.assign(result, { bags, hung: left });

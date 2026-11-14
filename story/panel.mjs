@@ -16,9 +16,11 @@ import { withParticle, statName, natureName, listOf, boxLabel } from './diary.mj
 import { say } from './screen-text.mjs';
 import { battleNamesIn } from '../plugin/battle/names.js';
 import bagIcons from '../data/bag-icons.json' with { type: 'json' };
-import { CUSTOM_PREFIX, isCustomItem, customInfo, itemId } from './custom-items.mjs';
+import { CUSTOM_PREFIX, isCustomItem, customInfo, itemId, isDexItem } from './custom-items.mjs';
 import { hungBagOf, effortOn } from './training.mjs';
 import { badgeCaseModel, badgePress } from './badge-case.mjs';
+import { dexView, dexPress } from './dex.mjs';
+import { beatsRecord, validRecord, recordScore } from './amie-games.mjs';
 import { canPet, enjoymentOf, parsePuff, puffId, puffCount, puffFriendship, foodFriendship, feedHeals, FREE_GRADE, PUFF_FLAVORS, PUFF_GRADES } from './amie.mjs';
 
 export { PARTY_MAX, BOX_SIZE };
@@ -26,9 +28,13 @@ export { PARTY_MAX, BOX_SIZE };
 export const SCREEN_PLACES = Object.freeze(['panel', 'window']);
 export const DEFAULT_SCREEN_PLACE = 'panel';
 export const BOX_COUNT = 32;
-export const TABS = Object.freeze(['party', 'box', 'bag', 'amie', 'badges']);
+export const TABS = Object.freeze(['party', 'box', 'bag', 'amie', 'travel']);
 
-const TRAVEL_TAB = 'travel';
+export const TRAVEL_SUBS = Object.freeze(['trip', 'dex', 'badge']);
+
+const travelSubs = ({ trip, badges }) => TRAVEL_SUBS.filter(sub => (sub === 'trip' ? trip : sub === 'badge' ? badges : true));
+
+const travelSub = (ui, subs) => (subs.includes(ui.sub) ? ui.sub : subs.includes('trip') ? 'trip' : 'dex');
 
 const refOf = mon => ({ uid: mon.uid });
 
@@ -266,7 +272,7 @@ export function useOps(mon, itemId, { sim }, { move, stat } = {}) {
 }
 
 export function holdableItems(state, sim) {
-  return Object.entries(state.bag ?? {}).filter(([id, n]) => n > 0 && !NOT_HOLDABLE.has(itemKind(id, sim))).map(([id]) => id);
+  return Object.entries(state.bag ?? {}).filter(([id, n]) => n > 0 && !NOT_HOLDABLE.has(itemKind(id, sim)) && !isDexItem(state, id)).map(([id]) => id);
 }
 
 const bagText = (state, id, sim, lang) => (isCustomItem(id) ? itemLabel(state, id, namesFor(lang, sim))
@@ -375,6 +381,17 @@ export function petAction(mon, result) {
   return ops.length ? { type: evolution?.evolved ? 'evolve' : 'amie', ops } : null;
 }
 
+export function recordAction(result) {
+  const best = new Map();
+  for (const step of result?.done ?? []) {
+    const r = step?.record;
+    if (!r) continue;
+    const one = { game: r.game, level: r.level, score: recordScore(r.score) }, key = `${one.game}:${one.level}`;
+    if (validRecord(one) && beatsRecord(one.game, one.score, best.get(key)?.score)) best.set(key, one);
+  }
+  return best.size ? { type: 'record', ops: [...best.values()].map(r => ({ op: 'amieRecord', ...r })) } : null;
+}
+
 export function trainAction(mon, result) {
   const bags = result?.bags ?? [], before = hungBagOf(mon), hung = result?.hung ?? null;
   const same = (before?.id ?? null) === (hung?.id ?? null) && (before?.hits ?? 0) === (hung?.hits ?? 0);
@@ -428,6 +445,7 @@ export function bagMenu(id, { locked = false, sim, state, trade }, lang) {
   const kind = itemKind(id, sim, trade);
   if (NOT_TOSSABLE.has(kind)) return null;
   const r = row(lang);
+  if (isDexItem(state, id)) return [r('use', 'use'), r('cancel', 'cancel')];
   const list = [];
   if (USABLE.has(kind)) list.push(r('use', 'use', locked || !state.party.length));
   if (!NOT_HOLDABLE.has(kind)) list.push(r('give', 'hold', locked || !state.party.length));
@@ -513,7 +531,8 @@ export function foodList(state, sim, lang) {
   return [...free, ...prizes, ...items];
 }
 
-export function panelModel({ state, ctx, lang, locked = false, resume = false, debug = false, offer = null, travel = null, ui, screen = null, money = state.money === null ? null : state.money ?? 0 }) {
+export function panelModel({ state, ctx, lang, locked = false, resume = false, debug = false, offer = null, travel = null, compat = !!travel, dexHome = null,
+  dexRegions = [], dexMentions = [], ui, screen = null, money = state.money === null ? null : state.money ?? 0 }) {
   const { sim } = ctx;
   const party = Array.from({ length: PARTY_MAX }, (_, i) => (state.party[i] ? slotView(state.party[i], ctx, state, lang) : null));
   const count = boxCount(state);
@@ -522,9 +541,12 @@ export function panelModel({ state, ctx, lang, locked = false, resume = false, d
     const mon = state.box[index * BOX_SIZE + i];
     return mon ? slotView(mon, ctx, state, lang) : null;
   });
-  const tabs = travel ? [...TABS, TRAVEL_TAB] : TABS;
+  const tabs = TABS;
+  const tab = tabs.includes(ui.tab) ? ui.tab : 'party';
+  const subs = travelSubs({ trip: !!(compat && travel), badges: !!(compat || debug) }), sub = travelSub(ui, subs);
   return {
-    lang, open: !!ui.open, tab: tabs.includes(ui.tab) ? ui.tab : 'party', tabs, travel, locked, resume: !!resume, screen,
+    lang, open: !!ui.open, tab, tabs, travel: compat ? travel : null, compat: !!compat, subs, sub, locked, resume: !!resume, screen,
+    dex: tab === 'travel' && sub === 'dex' && !screen ? dexView({ state, sim, lang, names: namesFor(lang, sim), ui, home: dexHome, regions: dexRegions, mentions: dexMentions }) : null,
     alerts: { party: state.party.some(m => pendingCount(m) > 0), box: false, bag: false },
     party, box: { index, count, name: boxName(state, index, lang), cells },
     bag: { money, groups: bagView(state, sim, lang, ctx.tradeEvolution) },
@@ -580,9 +602,10 @@ function windowOf(ui, lang, sim) {
   return null;
 }
 
-export const initialUi = () => ({ open: false, tab: 'party', box: 0, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null, gym: null, screen: null, pairHidden: false });
+export const initialUi = () => ({ open: false, tab: 'party', box: 0, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null, gym: null, screen: null, pairHidden: false,
+  sub: null, dex: null, dexOpen: null });
 
-const calm = ui => ({ ...ui, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null, gym: null });
+const calm = ui => ({ ...ui, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null, gym: null, dexOpen: null });
 const findIn = (list, uid) => list.find(m => m.uid === uid) ?? null;
 
 const fold = ui => ({ ui: { ...ui, open: false }, effect: null });
@@ -593,6 +616,7 @@ export function backStep(ui) {
   if (ui.ask) return { t: 'no' };
   if (ui.moves || ui.stats || ui.count || ui.menu || ui.select) return { t: 'opt', id: 'cancel' };
   if (ui.gym) return { t: 'gymClose' };
+  if (ui.dexOpen) return { t: 'dexClose' };
   if (ui.screen) return { t: 'scBack' };
   return { t: 'fold' };
 }
@@ -618,6 +642,7 @@ export function reduce(ui, hit, { state, ctx, lang, locked = false, debug = fals
   }
   const env = { state, ctx, locked, debug, panel: place === 'panel', w: wordsOf(lang, ctx.sim, state) };
   const out = hit?.t?.startsWith('gym') ? badgePress(ui, hit, { state, lang, debug, locked })
+    : hit?.t?.startsWith('dex') ? dexPress(ui, hit, { state, sim: ctx.sim, lang })
     : hit?.t?.startsWith('sc') ? screenPress(ui, hit, env) : reduceRaw(ui, hit, env);
 
   if (locked && out.effect && !LOCK_FREE_EFFECTS.has(out.effect.kind)) return { ui: out.ui, effect: null };
@@ -648,6 +673,7 @@ function reduceRaw(ui, hit, env) {
       if (ui.tab === hit.tab) return { ui: { ...ui, open: true }, effect: null };
       return { ui: { ...calm(ui), open: true, tab: hit.tab, screen: null }, effect: null };
     case 'fold': return fold(ui);
+    case 'sub': return { ui: { ...calm(ui), sub: hit.sub }, effect: null };
     case 'lvnext': {
       const mon = findIn(party, hit.uid);
       return mon && !locked ? levelUpNext(ui, mon) : same;
@@ -892,6 +918,8 @@ function optionPress(ui, hit, { state, ctx, panel, w }) {
   }
   if (menu.where === 'bag') {
     const item = menu.item;
+
+    if (hit.id === 'use' && isDexItem(state, item)) return { ui: { ...calm(ui), tab: 'travel', sub: 'dex', screen: null }, effect: null };
     if (hit.id === 'use' && partyWide(item)) {
 
       if (!state.party.some(m => m.hp === 0)) return { ui: { ...calm(ui), message: { text: noEffect(w.lang) } }, effect: null };

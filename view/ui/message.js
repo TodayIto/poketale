@@ -1,7 +1,7 @@
 // from pokerogue src/ui/handlers/message-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-14. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/battle-message-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/message-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
 import { addTextObject } from './text.js';
 import { keyAction, playSelect } from './keys.js';
 import { delay } from '../lifetime.js';
@@ -15,7 +15,6 @@ const checkMs = (name, value) => {
   return value;
 };
 
-// Moves focus to the battle view parent so it receives keys. Left as is if focus is already inside
 export function focusStage(parent) {
   const active = parent?.ownerDocument?.activeElement;
   if (!parent?.focus || active === parent || parent.contains?.(active)) return;
@@ -51,7 +50,6 @@ export class BattleMessage {
     const coded = parseCodes(text), codes = coded.delays.size || coded.sounds.size ? coded : null;
     if (coded.plain !== String(text ?? '')) text = coded.plain;
     let shown = 0;
-
     // Split paragraphs and wrap into two-line pages, so long messages cannot disappear below the window.
     const lines = this.text.getWrappedText(text);
     for (let i = 0; i < Math.max(1, lines.length); i += 2) {
@@ -74,11 +72,14 @@ export class BattleMessage {
     if (!characters.length) return Promise.resolve();
     return new Promise(resolve => {
       let index = 0, shown = '', pending = false;
-      // The timer catches up several characters in one frame when its delay (20 ms / game speed) is shorter than a frame, and each setText
-      // redraws and uploads the whole text. Only the last state of a frame is drawn, so the text is set once per frame, before rendering.
+
       const draw = () => { if (pending) { pending = false; this.text.setText(shown); } };
+
+      const events = this.scene.events;
+      const stop = () => { events.off('postupdate', draw); events.off('shutdown', stop); events.off('destroy', stop); };
+
       const finish = () => {
-        timer.remove(); this.scene.events.off('postupdate', draw);
+        timer.remove(); stop();
         this.text.setText(text); this.advance = null; resolve();
       };
       const timer = this.scene.time.addEvent({ delay: 20, repeat: characters.length - 1, callback: () => {
@@ -86,7 +87,7 @@ export class BattleMessage {
         pending = true;
         if (index === characters.length) finish();
       } });
-      this.scene.events.on('postupdate', draw);
+      events.on('postupdate', draw); events.on('shutdown', stop); events.on('destroy', stop);
       this.advance = finish;
     });
   }

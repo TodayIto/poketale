@@ -1,5 +1,6 @@
 // Display-only settlement tags. The bot's own display rules render its buttons and its Lua handles clicks.
-import { battlesIn, parseBattle } from './blocks.mjs';
+import { battlesIn } from './blocks.mjs';
+import { readBattleAt } from './chat.mjs';
 import { SETTLEMENT_BOT, hasSettlement } from './compat.mjs';
 import { opponentGender } from './trainer-look.mjs';
 
@@ -40,7 +41,7 @@ export async function victoryChoices({ chat, index, survey, myGender = null }) {
   const tail = messages.slice(index).map(m => String(m?.data ?? '')).join('\n');
   if (/\[(?:Settlement (?:Choice|Outcome)\s*\||Select (?:Money|Sexual Forfeit)(?:\s*\||\]))/.test(tail)) return '';
   const block = battlesIn(messages[info.index], info.index).find(b => b.key === info.key);
-  const battle = block && parseBattle(block.body).spec;
+  const battle = block && readBattleAt(chat, info.index, block.body).spec;
   if (!battle || battle.wild) return '';
   const vars = chat.scriptstate ?? {};
   const choices = ['Money'];

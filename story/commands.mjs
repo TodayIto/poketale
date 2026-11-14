@@ -1,15 +1,18 @@
 import { actsIn, parseAct } from './blocks.mjs';
+import { rulesAt } from './setting-changes.mjs';
 import { findOocs } from './chat.mjs';
 import { readSave, writeSave, partFor, liveSends } from './save.mjs';
 
 const spot = (index, start) => index * 1e6 + start;
+
+export const readActAt = (chat, index, body) => parseAct(body, rulesAt(chat)(index));
 
 export const commandsIn = (message, index) => (message?.role === 'user' ? actsIn(message, index) : []);
 
 export function actBlocks(chat) {
   const messages = chat?.message ?? [];
   const blocks = messages.flatMap((message, index) => actsIn(message, index)
-    .map(block => ({ ...block, index, at: spot(index, block.start), ...parseAct(block.body) })));
+    .map(block => ({ ...block, index, at: spot(index, block.start), ...readActAt(chat, index, block.body) })));
   return blocks.filter(block => !answersCommands(chat, block.index));
 }
 

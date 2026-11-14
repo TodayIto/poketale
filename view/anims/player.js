@@ -1,5 +1,5 @@
 // from pokerogue src/data/battle-anims.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-14. See view/LICENSE-NOTE.md.
 
 import Phaser from 'phaser';
 import { animation, moveFile } from './data.js';
@@ -21,10 +21,8 @@ const PRIORITY = {
 };
 const FOCUS = { 1: 'target', 2: 'user' };
 
-// The tone each sprite's color matrix was last built from, with the pipeline state it produced.
 const appliedTones = new WeakMap();
 
-// Rebuilds the color matrix pipeline only when the frame's tone or the sprite's pipeline changed since the last frame.
 function applyTone(sprite, tone) {
   const active = !!tone?.some(Boolean), before = appliedTones.get(sprite);
   if (before && before.active === active && sprite.pipeline === before.pipeline && sprite.pipelineData === before.data
@@ -37,8 +35,8 @@ export class AnimationPlayer {
 
   constructor(scene, { enabled = true } = {}) {
     this.scene = scene; this.enabled = enabled; this.running = false; this.diagnostics = new Set(); this.prepared = new Map();
-    // Animations whose resources this scene already loaded, and effect sheets still loading (shared by animations using the same graphic).
-    this.resourcesReady = new WeakSet(); this.loadingGraphics = new Map();
+
+    this.resourcesReady = new WeakMap(); this.loadingGraphics = new Map();
   }
 
   prepare(files) {
@@ -60,11 +58,13 @@ export class AnimationPlayer {
     return this.playFile(`common-${name}.json`, side, targetSide);
   }
   async resources(anim) {
-    if (this.resourcesReady.has(anim)) return;
     const { assets, audio } = this.scene;
-    const work = [];
+
+    if (this.resourcesReady.get(anim)?.every(key => assets.scene.textures.exists(key))) return;
+    const work = [], textures = [];
     if (anim.graphic) {
       const key = `anim:${anim.graphic}`;
+      textures.push(key);
       if (!assets.scene.textures.exists(key)) {
         let loading = this.loadingGraphics.get(key);
         if (!loading) {
@@ -81,12 +81,13 @@ export class AnimationPlayer {
     }
     for (const event of Object.values(anim.frameTimedEvents ?? {}).flat()) {
       if (event.eventType === 'AnimTimedAddBgEvent' && event.resourceName) {
+        textures.push(`anim-bg:${event.resourceName}`);
         work.push(assets.image(`anim-bg:${event.resourceName}`, `images/battle_anims/${encodeURIComponent(event.resourceName)}.png`, null));
       }
       if (event.eventType === 'AnimTimedSoundEvent' && event.resourceName) work.push(audio.load(`battle_anims/${event.resourceName}`).ready);
     }
     await Promise.all(work);
-    this.resourcesReady.add(anim);
+    this.resourcesReady.set(anim, textures);
   }
   async playFile(file, side, targetSide, { variant, frameMs = 50, sound = true, onSubstitute = false } = {}) {
     if (!this.enabled) return;
@@ -174,7 +175,7 @@ export class AnimationPlayer {
             sprite.setOrigin(0.5); scene.field.add(sprite); cache[kind][i] = sprite;
             if (kind === 2) priorities[i] = 1;
           }
-          // Each setter below runs only when the value differs from the sprite's current one (most frames repeat most values).
+
           if (kind !== 2) {
             const key = sourceSprite.texture.key, name = sourceSprite.frame.name;
             if (sprite.texture.key !== key || sprite.frame.name !== name) sprite.setTexture(key, name);

@@ -1,4 +1,4 @@
-import { panelModel, reduce, initialUi, levelUpPlan, levelUpAction, evolutionMoves, evolveAction, teachAction, rememberAction, petAction, trainAction, spinInto, actions, boxName,
+import { panelModel, reduce, initialUi, levelUpPlan, levelUpAction, evolutionMoves, evolveAction, teachAction, rememberAction, petAction, recordAction, trainAction, spinInto, actions, boxName,
   pendingCount, DEFAULT_SCREEN_PLACE, liveScreen, screenTab, slotView, namesFor, restedSlots } from '../../story/panel.mjs';
 import { screenView } from '../../story/panel-screens.mjs';
 import { loadExpText } from '../../director/steps-exp.js';
@@ -8,7 +8,10 @@ import { renderPanel, panelShell, PANEL_STATES, OWN_CLASS, sheetCss, sheetArt, R
 import { unreadableLine } from '../../story/stored.mjs';
 import { WHAT, failureText } from '../../story/failure.mjs';
 import { CHAT_SCREEN } from '../battle/stage.js';
-import { statusMoney, compatTravel } from '../../story/compat.mjs';
+import { bagMoney, compatTravel } from '../../story/compat.mjs';
+import { dexHome, preStoryRegions } from '../../story/dex.mjs';
+import { storyMentions } from '../../story/dex-mentions.mjs';
+import { sceneNow } from '../../story/scene-now.mjs';
 import { belowSheet } from './host-bar.js';
 import { chatRoom } from './chat-room.js';
 
@@ -43,7 +46,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
   let now = null;
   let chatId;
   const chatScreens = new Map();
-  let shown = { tabs: null, sheet: null, states: PANEL_STATES.gone, art: '' };
+  let shown = { tabs: null, sheet: null, base: null, slots: null, states: PANEL_STATES.gone, art: '' };
   let lastSig = null, busy = false, stopped = false;
   let away = false;
   let line = Promise.resolve(), queued = false, missed = false;
@@ -78,7 +81,10 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
 
     const travel = cur?.on && cur.compat ? compatTravel(cur.chat) : null;
 
-    const sig = JSON.stringify([cur?.key ?? null, cur?.lang ?? null, !!cur?.on, battle.phase, chatScreen, !!cur?.compat, !!cur?.debug, cur?.aux?.on ?? null, cur?.offer ?? null, travel,
+    const dex = cur?.on ? { home: dexHome(cur.chat, !!cur.compat), regions: cur.compat ? preStoryRegions(cur.chat) : [],
+      mentions: [...storyMentions(cur.chat)].sort((a, b) => a - b) } : null;
+
+    const sig = JSON.stringify([cur?.key ?? null, cur?.lang ?? null, !!cur?.on, battle.phase, chatScreen, !!cur?.compat, !!cur?.debug, cur?.aux?.on ?? null, cur?.offer ?? null, travel, dex,
       pictures?.route() ?? null, place(), shift(), below, room]);
     if (!force && sig === lastSig) return;
     if ((cur?.id ?? null) !== chatId) {
@@ -101,7 +107,9 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     if (now) { now.below = below; now.room = room; }
     if (now) {
       now.travel = travel;
-      now.money = cur.compat ? statusMoney(cur.chat) : undefined;
+      now.money = bagMoney(cur.chat, cur.compat);
+      now.compat = !!cur.compat;
+      now.dex = dex;
     }
     await draw();
     lastSig = sig;
@@ -162,6 +170,16 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     for (const [element, listener] of blanks) await element.addEventListener('click', listener);
   }
 
+  async function fillSlots(view) {
+    for (const [name, html] of Object.entries(view.slots)) {
+      if (shown.slots?.[name] === html) continue;
+      const list = await sheetBox.querySelectorAll(`.${name}`);
+      if (!(await list.length())) return false;
+      await fill(await list.at(0), html, view.hits);
+    }
+    return true;
+  }
+
   let swipeFrom = null, swipedAt = 0;
   const swipedJust = () => Date.now() - swipedAt < 400;
 
@@ -199,14 +217,17 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
 
     const shownUi = now.unreadable && !ui.message ? { ...ui, message: { text: unreadableLine(now.lang), error: true } } : ui;
     const view = renderPanel(panelModel({ state: now.state, ctx: now.ctx, lang: now.lang, locked: now.locked, resume: now.resume, debug: now.debug, offer: now.offer, travel: now.travel,
-      ui: shownUi, screen, money: now.money }), { aux: now.aux, picture: pictures?.src, shift: shift(), below: now.below, room: now.room,
+      compat: now.compat, dexHome: now.dex?.home ?? null, dexRegions: now.dex?.regions ?? [], dexMentions: now.dex?.mentions ?? [], ui: shownUi, screen, money: now.money }), { aux: now.aux, picture: pictures?.src, shift: shift(), below: now.below, room: now.room,
       rested: glow && Date.now() < glow.until ? glow.uids : null });
     const states = [view.open && PANEL_STATES.open, view.locked && PANEL_STATES.locked].filter(Boolean);
 
-    if (view.open && view.sheet !== shown.sheet) { await fill(sheetBox, view.sheet, view.hits); shown.sheet = view.sheet; }
+    if (view.open && view.sheet !== shown.sheet) {
+      if (!(view.base !== null && view.base === shown.base && await fillSlots(view))) await fill(sheetBox, view.sheet, view.hits);
+      shown.sheet = view.sheet; shown.base = view.base; shown.slots = view.slots;
+    }
 
     if (view.open && pictures && artBox) {
-      const art = sheetCss(url => pictures.src({ url }));
+      const art = sheetCss(url => pictures.src({ url }), { dexIcons: view.dexIcons });
       if (art !== shown.art) { await artBox.setInnerHTML(sheetArt(art)); shown.art = art; }
     }
 
@@ -374,6 +395,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
 
           let mon = findMon(effect.uid);
           if (!mon) return;
+          const scene = sceneNow(now.chat);
           const settle = async action => (action ? queue(action, undefined, target, lang) : (await refresh({ force: true }), true));
           away = true;
           await draw();
@@ -381,13 +403,17 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
             for (let awake = false; mon && !open.closed; awake = true) {
               const ctx = now.ctx;
               const lock = now.debug ? locked => debugLock(effect.uid, locked, target) : null;
-              const pet = await open.amie(mon, { debug: now.debug, state: now.state, party: now.state.party, awake, trainWhy: trainBlock(mon, ctx), lock });
+              const pet = await open.amie(mon, { debug: now.debug, state: now.state, party: now.state.party, awake, trainWhy: trainBlock(mon, ctx), lock, scene });
               const into = pet.spin ? spinInto(ctx, mon, pet.spin) : null;
               const result = into ? { ...pet, evolution: { into, ...await open.evolution(mon, into, species => evolutionMoves(ctx, mon, species)) } } : pet;
-              if (!await settle(petAction(mon, result)) || into || !pet.train || open.closed) return;
+
+              const record = recordAction(result);
+              if (record) await queue(record, undefined, target, lang);
+              const settled = await settle(petAction(mon, result));
+              if (!settled || into || !pet.train || open.closed) return;
               mon = findMon(effect.uid);
               if (!mon) return;
-              if (!await settle(trainAction(mon, await open.training(mon)))) return;
+              if (!await settle(trainAction(mon, await open.training(mon, scene)))) return;
               mon = findMon(effect.uid);
             }
           }).finally(() => { away = false; });
@@ -397,7 +423,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
 
           const mon = findMon(effect.uid);
           if (!mon) return;
-          const result = await screens.session(open => open.training(mon));
+          const result = await screens.session(open => open.training(mon, sceneNow(now.chat)));
           const action = trainAction(mon, result);
           if (action) await queue(action, undefined, target, lang);
           else await refresh({ force: true });

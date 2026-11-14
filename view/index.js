@@ -1,5 +1,5 @@
 // from pokerogue src/main.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-14. See view/LICENSE-NOTE.md.
 // from pokerogue src/scene-base.ts @ 7d7da4a8 (AGPL-3.0-only)
 import Phaser from 'phaser';
 import { BattleScene } from './scene.js';
@@ -145,7 +145,6 @@ export async function createBattleView(options) {
     return true;
   };
 
-  // Runs on every frame, so compares the small button state field by field instead of serializing it.
   const samePages = (a, b) => a === b || (!!a && !!b && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(k => a[k] === b[k]));
   view.watchButtons = fn => {
     let last = null;

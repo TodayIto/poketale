@@ -1,4 +1,4 @@
-import { namesIn } from '../names/index.js';
+import { shownSpecies } from '../names/index.js';
 import { PARTY_MAX, PAIR_TEAM_MAX } from './rules.mjs';
 import { WHAT, failureText } from './failure.mjs';
 import { say } from './screen-text.mjs';
@@ -21,7 +21,7 @@ export function placeName(place, lang) {
   return biome ? say(lang, `place.${biome}`) : String(place);
 }
 
-const speciesName = (species, lang) => namesIn(lang).species(species);
+const speciesName = (species, lang) => shownSpecies(species, lang === 'en' ? 'en' : 'ko');
 
 const subLine = (spec, lang) => placeName(spec.place, lang);
 
@@ -306,6 +306,9 @@ function foeBalls(spec, foes) {
 export const blockBalls = spec => ({ theirs: (spec.team ?? []).map(() => 'ok'), ...(spec.foePartner ? { foePartner: spec.foePartner.team.map(() => 'ok') } : {}) });
 
 export const ICON_PLANE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2.5 20.5 22 12 2.5 3.5l.02 6.6L16 12 2.52 13.9z"/></svg>';
+
+export const ICON_BALL = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#fff" stroke="#23435f" stroke-width="2"/>'
+  + '<path d="M2 12a10 10 0 0 1 20 0z" fill="#e84d4d" stroke="#23435f" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="#fff" stroke="#23435f" stroke-width="2"/></svg>';
 const ICON_X = '<svg viewBox="0 0 10 10" aria-hidden="true"><path stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M1.5 1.5l7 7M8.5 1.5l-7 7"/></svg>';
 
 function btn(key, action, inner, { cls = '', label = '' } = {}) {

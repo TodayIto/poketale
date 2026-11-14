@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/message-ui-handler.ts (showTextInternal @c/@d/@s/@f codes) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-10-28. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-14. See view/LICENSE-NOTE.md.
 
 export const frameMs = frames => Math.floor((1000 / 60) * frames);
 
@@ -20,7 +20,6 @@ export function parseCodes(text) {
   return { plain, delays, sounds };
 }
 
-// The same position count (message.js uses it to subtract the characters of earlier pages)
 export const visibleCount = text => Array.from(String(text ?? '')).filter(ch => !/\s/.test(ch)).length;
 
 export const soundPath = key => (/\.\w+$/.test(key) ? key : `${key}.wav`);

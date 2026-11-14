@@ -37,7 +37,7 @@ mark('pb:script');
   try {
     const doc = await risuai.getRootDocument();
     if (doc) {
-      useMainDocument(doc, () => currentSettings().aboveOthers);
+      useMainDocument(doc, () => currentSettings().aboveOthers, () => currentSettings().debug);
       const screens = createPanelScreens({ fetchBytes, settings: currentSettings, lang: openLang, battleFormat,
         show: showWindow, hide: hideWindow, replies: watchReplies, trainer: () => personaName(risuai).catch(() => null) });
       const pictures = createPanelPictures({ route: () => currentSettings().panelPicture, probe: probeImage, fetchBytes, still: pokerogueStillUrl,

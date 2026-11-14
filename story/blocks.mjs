@@ -5,7 +5,7 @@ import itemsTable from '../data/names/items.json' with { type: 'json' };
 import storyNames from '../data/story-names.json' with { type: 'json' };
 import { PARTY_MAX, PAIR_TEAM_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, OT_NAME_MAX } from './rules.mjs';
 import { STATS } from '../engine/mon.mjs';
-import { toID } from '../names/index.js';
+import { toID, koSpellings, readsOfficial } from '../names/index.js';
 import { DEFAULT_EMOJI, customItemId, splitEmoji } from './custom-items.mjs';
 import { ruleNote } from './failure.mjs';
 import { readTime } from './compat.mjs';
@@ -22,41 +22,44 @@ const ITEM_ALIASES = Object.freeze({
   electirizer: ['일렉트라이저'], magmarizer: ['마그마라이저'], sachet: ['향주머니'],
 });
 
-function buildReverse(kind) {
+function buildReverse(kind, official) {
   const names = new Map(), aliases = new Map();
   const add = (k, id) => { if (!k) return; const old = names.get(k); if (old === undefined || id.length < old.length) names.set(k, id); };
   const alias = (k, id) => { if (!k) return; aliases.set(k, aliases.has(k) && aliases.get(k) !== id ? null : id); };
   for (const [id, r] of Object.entries(TABLES[kind])) {
     if (r.en) add(toID(r.en), id), add(norm(r.en), id);
     if (kind === 'items') for (const other of ITEM_ALIASES[id] ?? []) alias(norm(other), id);
-    if (!r.ko) continue;
-    add(norm(r.ko), id);
-    if (kind === 'items' && r.ko.includes('의')) alias(norm(r.ko.replaceAll('의', '')), id);
+    const [ko, ...before] = koSpellings(r, { officialKo: official });
+    if (!ko) continue;
+    add(norm(ko), id);
+    for (const other of before) alias(norm(other), id);
+    if (kind === 'items' && ko.includes('의')) alias(norm(ko.replaceAll('의', '')), id);
 
-    const m = /^(.+?)\s*\((.+)\)$/.exec(r.ko);
+    const m = /^(.+?)\s*\((.+)\)$/.exec(ko);
     if (kind !== 'species' || !m) continue;
     const base = norm(m[1]), inner = norm(m[2]);
     if (inner.includes(base)) alias(inner, id);
     const region = /^(.+)의 ?모습$/.exec(m[2].trim());
     if (region) alias(norm(region[1]) + base, id), alias(base + norm(region[1]), id);
   }
-  return reverse[kind] = { names, aliases };
+  return reverse[`${kind}:${official}`] = { names, aliases };
 }
 
 const NON_LATIN = /(?=\p{L})\P{Script=Latin}/u;
 
-export function lookupId(kind, raw, { allLetters = false } = {}) {
+export function lookupId(kind, raw, { allLetters = false, reading } = {}) {
   const table = TABLES[kind];
   if (!table) throw new TypeError(`모르는 이름표: ${kind}`);
   const id = allLetters && NON_LATIN.test(String(raw ?? '')) ? '' : toID(raw);
   if (id && Object.hasOwn(table, id)) return id;
-  const { names, aliases } = reverse[kind] ?? buildReverse(kind);
+  const official = readsOfficial(reading);
+  const { names, aliases } = reverse[`${kind}:${official}`] ?? buildReverse(kind, official);
   const k = norm(raw);
-  return names.get(id) ?? names.get(k) ?? aliases.get(k) ?? (kind === 'items' ? tmId(raw) : null);
+  return names.get(id) ?? names.get(k) ?? aliases.get(k) ?? (kind === 'items' ? tmId(raw, reading) : null);
 }
 
 let tmByMove;
-function tmId(raw) {
+function tmId(raw, reading) {
   const m = /^\s*(?:tm|기술\s*머신)\s*[-:.#]?\s*(.+?)\s*$/i.exec(raw) ?? /^\s*(.+?)\s*[-:.]?\s*(?:tm|기술\s*머신)\s*$/i.exec(raw);
   if (!m) return null;
   if (/^\d{1,3}$/.test(m[1])) {
@@ -64,19 +67,19 @@ function tmId(raw) {
     return Object.hasOwn(itemsTable, id) ? id : null;
   }
   tmByMove ??= new Map(Object.entries(itemsTable).filter(([, r]) => r.move).map(([id, r]) => [r.move, id]));
-  const move = lookupId('moves', m[1]);
+  const move = lookupId('moves', m[1], { reading });
   return (move && tmByMove.get(move)) ?? null;
 }
 
-export function speciesName(raw) {
-  const id = lookupId('species', raw);
+export function speciesName(raw, reading) {
+  const id = lookupId('species', raw, { reading });
   return id ? speciesTable[id].en : null;
 }
 
 const note = (rule, values) => ruleNote(`block.${rule}`, values);
 
-function need(kind, raw, errors) {
-  const id = lookupId(kind, raw);
+function need(kind, raw, errors, reading) {
+  const id = lookupId(kind, raw, { reading });
   if (!id) errors.push(note(`unknown.${kind}`, { name: String(raw).trim() }));
   return id;
 }
@@ -147,6 +150,15 @@ export const battleKey = (id, n, body) => hashKey(`${id}\n${n}\n${hashKey(String
 export const battlesInText = (text, id) => findBlocks(text).filter(b => b.kind === 'battle').map((b, n) => ({ ...b, hash: b.key, key: battleKey(id, n, b.body) }));
 
 export const battlesIn = (message, index) => battlesInText(message?.data ?? '', messageId(message, index));
+
+export function blockAnchorIn(chat, key) {
+  const messages = chat?.message ?? [];
+  for (let i = 0; i < messages.length; i++) {
+    const block = battlesIn(messages[i], i).find(b => b.key === key);
+    if (block) return { block: block.hash, ...(typeof messages[i].time === 'number' ? { blockTime: messages[i].time } : {}) };
+  }
+  return {};
+}
 
 export const actsIn = (message, index) => findBlocks(message?.data ?? '').filter(b => b.kind === 'act').map((b, n) => {
   const id = ACT_ID_RE.exec(b.body)?.[1];
@@ -253,7 +265,7 @@ function readIvs(v) {
   return { ivs: Object.fromEntries(STATS.map((s, i) => [s, Number(nums[i])])) };
 }
 
-function parseSet(value, errors, dest, warnings = errors) {
+function parseSet(value, errors, dest, warnings = errors, reading) {
   const warn = text => warnings.push(text);
   const segs = String(value).split(/[|｜]/).map(s => s.trim()).filter(Boolean);
   if (!segs.length) { errors.push(note('emptyMon')); return null; }
@@ -303,14 +315,14 @@ function parseSet(value, errors, dest, warnings = errors) {
       const n = /^(?:lv\.?\s*)?(\d{1,3})$/i.exec(v);
       if (n) level = Number(n[1]); else errors.push(note('badLevel', { value: v }));
     } else if (k === 'ability') {
-      const id = need('abilities', v, errors); if (id) set.ability = id;
+      const id = need('abilities', v, errors, reading); if (id) set.ability = id;
     } else if (k === 'item') {
       // A name-table item, else a custom item under the name as written (the same reading as item / hold lines)
       const { emoji, rest: name } = splitEmoji(v);
-      const item = itemOf(name, emoji, v, errors);
+      const item = itemOf(name, emoji, v, errors, reading);
       if (item) { set.item = item.item; custom = item.custom ?? null; }
     } else if (k === 'moves') {
-      const moves = v.split(/[,，、\/]/).map(s => s.trim()).filter(Boolean).map(s => need('moves', s, errors)).filter(Boolean);
+      const moves = v.split(/[,，、\/]/).map(s => s.trim()).filter(Boolean).map(s => need('moves', s, errors, reading)).filter(Boolean);
       if (moves.length > MAX_MOVES) errors.push(note('tooManyMoves', { max: MAX_MOVES, n: moves.length }));
       if (moves.length) set.moves = [...new Set(moves)].slice(0, MAX_MOVES);
     } else if (k === 'nature') {
@@ -333,14 +345,20 @@ function parseSet(value, errors, dest, warnings = errors) {
     }
   }
   if (!rest) { errors.push(note('noMonName', { seg: segs[0] })); return null; }
-  const species = speciesName(rest);
+  const species = speciesName(rest, reading);
   if (!species) { errors.push(note('unknown.species', { name: rest })); return null; }
   if (level == null) { errors.push(note('noLevel', { name: rest })); return null; }
   if (level < 1 || level > MAX_LEVEL) { errors.push(note('monLevelRange', { max: MAX_LEVEL, name: rest, level })); return null; }
   return { set: { species, level, ...set }, to, ...(ot ? { ot } : {}), ...(custom ? { custom } : {}) };
 }
 
-export function parseBattle(body) {
+export function parseMonLine(value) {
+  const errors = [];
+  const r = parseSet(value, errors, true);
+  return r ? { set: r.set, to: r.to, errors } : { errors };
+}
+
+export function parseBattle(body, reading) {
   const errors = [];
   let fatal = false;
   const spec = { wild: null, name: null, gender: null, look: null, trainerClass: null, boss: null, place: null, time: null, team: [] };
@@ -351,7 +369,7 @@ export function parseBattle(body) {
     const k = BATTLE_KEYS.get(key);
     if (!k) { errors.push(note('unknownKey', { line })); continue; }
     if (k === 'pokemon' || k === 'partnerPokemon' || k === 'foePartnerPokemon') {
-      const r = parseSet(value, errors, false);
+      const r = parseSet(value, errors, false, errors, reading);
       if (r) ({ pokemon: spec.team, partnerPokemon: partnerTeam, foePartnerPokemon: foePartnerTeam })[k].push(r.set); else fatal = true;
       continue;
     }
@@ -435,20 +453,20 @@ function ref(str, errors) {
   return { name: s };
 }
 
-function headRef(value, rest = true) {
+function headRef(value, rest = true, reading) {
   const s = value.trim();
   const slot = /^(#\s*\d+(?:번)?)\s*(.*)$/.exec(s);
   if (slot) return [slot[1], slot[2].trim()];
   const parts = s.split(/\s+/).filter(Boolean);
   for (let n = parts.length - (rest ? 1 : 0); n >= 2; n--) {
     const head = parts.slice(0, n).join(' ');
-    if (speciesName(head)) return [head, parts.slice(n).join(' ')];
+    if (speciesName(head, reading)) return [head, parts.slice(n).join(' ')];
   }
   return parts.length ? [parts[0], parts.slice(1).join(' ')] : ['', ''];
 }
 
-function itemOf(name, emoji, value, errors) {
-  const id = lookupId('items', name);
+function itemOf(name, emoji, value, errors, reading) {
+  const id = lookupId('items', name, { reading });
   if (id) return { item: id };
   if (!/\p{L}/u.test(name)) { errors.push(note('noItemName', { value: value.trim() })); return null; }
   return { item: customItemId(name), custom: { name, emoji: emoji || DEFAULT_EMOJI } };
@@ -472,7 +490,7 @@ const HEAL_MODS = words({ status: ['status', 'statusonly', 'cure', '상태', '�
 const ALL = words({ all: ['all', 'party', 'everyone', '전체', '모두', '전부', '파티'] });
 const NONE = words({ none: ['none', 'nothing', 'remove', '없음', '빼기', '없애기', '해제'] });
 
-export function parseChange(body) {
+export function parseChange(body, reading) {
   const errors = [], warnings = [];
   const ops = [];
   for (const { key, value, line } of lines(body, errors)) {
@@ -480,7 +498,7 @@ export function parseChange(body) {
     if (!op) { errors.push(note('unknownKey', { line })); continue; }
     if (!value) { errors.push(note('noValue', { text: line })); continue; }
     const errs = [], warns = [];
-    const r = parseOp(op, value, errs, warns);
+    const r = parseOp(op, value, errs, warns, reading);
     errors.push(...errs, ...warns);
     warnings.push(...warns);
 
@@ -489,17 +507,17 @@ export function parseChange(body) {
   return { ops, errors, warnings };
 }
 
-function parseOp(op, value, errors, warnings) {
+function parseOp(op, value, errors, warnings, reading) {
   const warn = text => warnings.push(text);
   switch (op) {
     case 'add': {
-      const r = parseSet(value, errors, true, warnings);
+      const r = parseSet(value, errors, true, warnings, reading);
       return r && { op, set: r.set, to: r.to, ...(r.ot ? { ot: r.ot } : {}), ...(r.custom ? { custom: r.custom } : {}) };
     }
     case 'egg': {
 
       const m = /^(.*?)(?:\s*[,/|]?\s*(box|박스))?$/i.exec(value.trim());
-      const species = need('species', m[1], errors);
+      const species = need('species', m[1], errors, reading);
       return species && { op, species: speciesTable[species].en, ...(m[2] ? { to: 'box' } : {}) };
     }
     case 'level': {
@@ -535,7 +553,7 @@ function parseOp(op, value, errors, warnings) {
       const { emoji, rest } = splitEmoji(value);
 
       const { name, n } = /^\s*(?:tm|기술\s*머신)\s*[-:.#]?\s*\d{1,3}\s*$/i.test(rest) ? { name: rest, n: 1 } : tailCount(rest, 1);
-      const item = itemOf(name, emoji, value, errors);
+      const item = itemOf(name, emoji, value, errors, reading);
       if (!item) return null;
       if (!Number.isSafeInteger(n)) { errors.push(note('itemCountBig', { value })); return null; }
       if (!n) { errors.push(note('itemCountZero', { value })); return null; }
@@ -546,31 +564,31 @@ function parseOp(op, value, errors, warnings) {
       return who && { op, ref: who };
     }
     case 'nickname': {
-      const [h, name] = headRef(value);
+      const [h, name] = headRef(value, true, reading);
       if (!name) { errors.push(note('noNickname', { value })); return null; }
       const who = ref(h, errors);
       return who && { op, ref: who, name };
     }
     case 'hold': {
-      const [h, rest] = atEmoji(value) ?? headRef(value, false);
+      const [h, rest] = atEmoji(value) ?? headRef(value, false, reading);
       const who = ref(h, errors);
       if (!who) return null;
       if (!rest || NONE.has(norm(rest))) return { op, ref: who, item: null };
       const { emoji, rest: name } = splitEmoji(rest);
-      const item = itemOf(name, emoji, value, errors);
+      const item = itemOf(name, emoji, value, errors, reading);
       return item && { op, ref: who, ...item };
     }
     case 'evolve': {
-      const [h, rest] = headRef(value);
+      const [h, rest] = headRef(value, true, reading);
       if (!rest) { errors.push(note('noEvolveTo', { value })); return null; }
       const who = ref(h, errors);
       if (!who) return null;
-      const species = speciesName(rest);
+      const species = speciesName(rest, reading);
       if (!species) { errors.push(note('unknown.species', { name: rest })); return null; }
       return { op, ref: who, species };
     }
     case 'teach': {
-      const [h, rest] = headRef(value);
+      const [h, rest] = headRef(value, true, reading);
       const who = ref(h, errors);
       if (!who) return null;
 
@@ -580,8 +598,8 @@ function parseOp(op, value, errors, warnings) {
       if (f) [learn, forget] = [f[1], f[2]];
       else if (d) [forget, learn] = [d[1], d[2]];
       if (!learn) { errors.push(note('noLearn', { value })); return null; }
-      const move = need('moves', learn, errors);
-      const old = forget ? need('moves', forget, errors) : null;
+      const move = need('moves', learn, errors, reading);
+      const old = forget ? need('moves', forget, errors, reading) : null;
       if (!move || (forget && !old)) return null;
       return old ? { op, ref: who, move, forget: old } : { op, ref: who, move };
     }
@@ -633,14 +651,14 @@ const ACT_SLOTS = words({ '': ['left', '1', '왼쪽', '왼', '첫째'], 2: ['rig
 const ACT_ALLY = words({ ally: ['ally', 'partner', '아군', '동료', '짝', '옆'], self: ['self', 'itself', 'myself', '자신', '자기', '자기자신'] });
 const TARGET_RE = /\s*(?:>|→|->|@)\s*/;
 
-const nameOf = s => ({ species: lookupId('species', s), name: s });
+const nameOf = (s, reading) => ({ species: lookupId('species', s, { reading }), name: s });
 
-function actTarget(raw) {
+function actTarget(raw, reading) {
   const s = String(raw ?? '').trim();
   if (!s) return null;
   const slot = /^#\s*(\d+)(?:번)?$/.exec(s);
   if (slot) return { slot: Number(slot[1]) };
-  return nameOf(s);
+  return nameOf(s, reading);
 }
 
 export const sameName = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
@@ -663,24 +681,24 @@ function sideOf(text) {
 
 const otherOf = key => (key.endsWith('2') ? key.slice(0, -1) : `${key}2`);
 
-function targetOf(text, side, user, errors) {
+function targetOf(text, side, user, errors, reading) {
   const relative = rel => (user ? (rel === 'self' ? user : otherOf(user)) : { rel });
   const ally = ACT_ALLY.get(norm(text));
   if (ally) return relative(ally);
   const where = sideOf(text);
   if (!where) { errors.push(note('act.badTarget', { text })); return null; }
   if (where.slotted) return where.key;
-  if (where.rest) return { side: where.side, who: nameOf(where.rest) };
+  if (where.rest) return { side: where.side, who: nameOf(where.rest, reading) };
   return where.side === side ? relative('ally') : null;
 }
 
-function actPart(rest, side, errors, key = side, names = lookupId) {
+function actPart(rest, side, errors, key = side, { allLetters = false, reading } = {}) {
   const toks = rest.trim().split(/\s+/).filter(Boolean);
   const verb = ACT_VERBS.get(norm(toks[0]));
   const after = toks.slice(verb ? 1 : 0).join(' ');
   if (verb === 'run') return side === 'me' ? { kind: 'run' } : null;
   if (verb === 'switch') {
-    const target = actTarget(after);
+    const target = actTarget(after, reading);
     if (!target) errors.push(note('act.noSwitchTarget', { text: rest }));
     return target && { kind: 'switch', target };
   }
@@ -689,8 +707,8 @@ function actPart(rest, side, errors, key = side, names = lookupId) {
 
     const raw = (m?.[1] ?? after).trim();
     const { emoji, rest: name } = splitEmoji(raw);
-    const item = itemOf(name, emoji, raw, errors);
-    const target = actTarget(m?.[2] ?? m?.[3]);
+    const item = itemOf(name, emoji, raw, errors, reading);
+    const target = actTarget(m?.[2] ?? m?.[3], reading);
     return { kind: 'item', item: item?.item ?? null, ...(item?.custom ? { raw } : {}), ...(target ? { target } : {}) };
   }
 
@@ -698,19 +716,19 @@ function actPart(rest, side, errors, key = side, names = lookupId) {
   const words = what.split(/\s+/).filter(Boolean);
   const gimmick = words.length > 1 ? GIMMICKS.get(norm(words.at(-1))) : undefined;
   const name = (gimmick ? words.slice(0, -1) : words).join(' ');
-  const move = names('moves', name);
+  const move = lookupId('moves', name, { allLetters, reading });
   if (!move) errors.push(note('unknown.moves', { name }));
-  const at = aim === undefined ? null : targetOf(aim, side, key, errors);
+  const at = aim === undefined ? null : targetOf(aim, side, key, errors, reading);
   return { kind: 'move', move, ...(gimmick ? { gimmick } : {}), ...(move ? {} : { raw: name }), ...(at ? { at } : {}) };
 }
 
-function namedPart(rest, side) {
+function namedPart(rest, side, reading) {
   const toks = rest.trim().split(/\s+/);
   const what = rest.split(TARGET_RE, 1)[0].trim().split(/\s+/);
-  const reads = text => { const errors = []; actPart(text, side, errors, null, (kind, name) => lookupId(kind, name, { allLetters: true })); return !errors.length; };
+  const reads = text => { const errors = []; actPart(text, side, errors, null, { allLetters: true, reading }); return !errors.length; };
   if (reads(what.join(' '))) return null;
   for (let i = 1; i < what.length; i++) {
-    if (reads(what.slice(i).join(' '))) return { who: nameOf(toks.slice(0, i).join(' ')), action: toks.slice(i).join(' ') };
+    if (reads(what.slice(i).join(' '))) return { who: nameOf(toks.slice(0, i).join(' '), reading), action: toks.slice(i).join(' ') };
   }
   return null;
 }
@@ -720,7 +738,7 @@ const namedKey = (side, name) => `${side}:${name.trim().toLowerCase()}`;
 export const sideParts = (turn, side) => [[side, turn[side]], [`${side}2`, turn[`${side}2`]], ...Object.entries(turn).filter(([key]) => key.startsWith(`${side}:`))]
   .filter(([, command]) => command);
 
-export function parseAct(body) {
+export function parseAct(body, reading) {
   const errors = [], turns = [];
   for (const { key, value, line } of lines(body, errors)) {
     if (key === 'id') continue;
@@ -729,10 +747,10 @@ export function parseAct(body) {
     for (const part of value.split('|').map(p => p.trim()).filter(Boolean)) {
       const where = sideOf(part);
       if (!where || !where.rest) { errors.push(note('act.badSide', { part })); continue; }
-      const named = namedPart(where.rest, where.side);
+      const named = namedPart(where.rest, where.side, reading);
       const byName = named && !where.slotted;
       const at = byName ? namedKey(where.side, named.who.name) : where.key;
-      const command = actPart(named?.action ?? where.rest, where.side, errors, byName ? null : at);
+      const command = actPart(named?.action ?? where.rest, where.side, errors, byName ? null : at, { reading });
       turn[at] = byName && command ? { ...command, who: named.who } : command;
     }
     if (!sideParts(turn, 'me').length) { errors.push(note('act.noMine', { line })); continue; }

@@ -24,10 +24,10 @@ export function createOutsideScreens({ sim, createView, fetchBytes, levelUp, exp
 
     openRememberMove: ({ parent, mon, moves, party, theme }) => withView({ parent, theme }, (view, ctx) => rememberMoveOutside({ view, ctx, mon, moves, party })),
 
-    openAmie: ({ parent, mon, state, party, debug, awake, trainWhy, lock, theme }) => withView({ parent, theme }, (view, ctx) => amieOutside({ view, ctx, mon, state, party, debug, awake, trainWhy, lock })),
+    openAmie: ({ parent, mon, state, party, debug, awake, trainWhy, lock, scene, theme }) => withView({ parent, theme }, (view, ctx) => amieOutside({ view, ctx, mon, state, party, debug, awake, trainWhy, lock, scene })),
 
     openHatch: ({ parent, mon, theme }) => withView({ parent, theme }, (view, ctx) => hatchOutside({ view, ctx, mon })),
 
-    openTraining: ({ parent, mon, theme }) => withView({ parent, theme }, (view, ctx) => trainingOutside({ view, ctx, mon })),
+    openTraining: ({ parent, mon, scene, theme }) => withView({ parent, theme }, (view, ctx) => trainingOutside({ view, ctx, mon, scene })),
   };
 }

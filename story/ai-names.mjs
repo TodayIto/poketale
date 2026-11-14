@@ -12,14 +12,33 @@ export function createNamer({ lang = 'ko', en = null, ko = tableKo } = {}) {
     seenKeys.add(k);
     return false;
   };
-  const name = kind => value => {
-    const english = (en && en(kind, value)) || tableEn(kind, value) || String(value ?? '');
-    if (seen(kind, value)) return english;
+  const englishOf = (kind, value) => (en && en(kind, value)) || tableEn(kind, value) || String(value ?? '');
+
+  const write = (kind, key, english, local) => {
+    if (seen(kind, key)) return english;
     if (lang !== 'ko') return english;
-    const local = ko(kind, value);
     return local && /[가-힣]/.test(local) && local !== english ? `${english}(${local})` : english;
   };
-  return { species: name('species'), moves: name('moves'), items: name('items'), abilities: name('abilities'), seen };
+  const name = kind => value => write(kind, value, englishOf(kind, value), ko(kind, value));
+
+  const forme = value => {
+    const official = officialForme(value);
+    return official ? write('species', official.en, official.en, official.ko) : name('species')(value);
+  };
+
+  const zStatus = move => {
+    const local = ko('moves', move);
+    return write('moves', `Z-${englishOf('moves', move)}`, `Z-${englishOf('moves', move)}`, local ? `Z${local}` : null);
+  };
+  return { species: name('species'), moves: name('moves'), items: name('items'), abilities: name('abilities'), forme, zStatus, seen };
+}
+
+function officialForme(value) {
+  const record = entry('species', value), base = record?.base ? entry('species', record.base) : null;
+  if (!record?.en || !base?.en || !record.en.startsWith(`${base.en}-`)) return null;
+  const forme = /^(Mega|Primal|Ultra)(?:-(.+))?$/.exec(record.en.slice(base.en.length + 1));
+  if (!forme) return null;
+  return { en: [forme[1], base.en, forme[2]].filter(Boolean).join(' '), ko: /\(([^()]+)\)$/.exec(record.ko ?? '')?.[1] ?? null };
 }
 
 export const STATUS_EN = { '': 'Normal', par: 'Paralyzed', brn: 'Burned', slp: 'Asleep', frz: 'Frozen', psn: 'Poisoned', tox: 'Badly Poisoned', fnt: 'Fainted' };

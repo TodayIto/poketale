@@ -53,7 +53,6 @@ export async function decodeGif(bytes) {
   } finally { decoder.close(); }
 }
 
-// Same results as rgbaBounds and opaquePixels on each cell, in one pass over the sheet's alpha bytes without copying cells out.
 function frameMetrics(grid) {
   const { canvas, width: w, height: h } = grid, stride = canvas.width * 4;
   const data = grid.context.getImageData(0, 0, canvas.width, canvas.height).data;
@@ -135,55 +134,33 @@ function copyCanvas(source) {
   return canvas;
 }
 
-// Packed sheets of decoded GIFs, most recently used last, so a sprite seen again (also in a later battle, whose Phaser game is new)
-// skips decoding, pixel analysis and packing. Keyed by the downloaded bytes, which sources.js keeps and passes again for the same sprite.
-// The canvases are private copies: Phaser owns the ones it was given.
-const SHEET_BUDGET = 8 * 1024 * 1024, SHEET_KEEP = 12;
-const sheets = new Map();
-let sheetBytes = 0;
+const copySheet = sheet => ({ ...sheet, canvas: copyCanvas(sheet.canvas), cuts: sheet.cuts.map(c => ({ ...c })),
+  bounds: { ...sheet.bounds }, durations: [...sheet.durations] });
 
-function storedSheet(bytes, url, limit) {
-  const entry = sheets.get(bytes);
-  if (!entry || entry.url !== url || entry.limit !== limit) return null;
-  sheets.delete(bytes); sheets.set(bytes, entry);
-  return { ...entry, canvas: copyCanvas(entry.canvas), cuts: entry.cuts.map(c => ({ ...c })), bounds: { ...entry.bounds }, durations: [...entry.durations] };
-}
-
-function storeSheet(bytes, url, limit, sheet) {
-  const size = sheet.canvas.width * sheet.canvas.height * 4;
-  if (!(size > 0 && size <= SHEET_BUDGET)) return;
-  const old = sheets.get(bytes);
-  if (old) { sheetBytes -= old.size; sheets.delete(bytes); }
-  sheets.set(bytes, { ...sheet, url, limit, size, canvas: copyCanvas(sheet.canvas), cuts: sheet.cuts.map(c => ({ ...c })),
-    bounds: { ...sheet.bounds }, durations: [...sheet.durations] });
-  sheetBytes += size;
-  while (sheetBytes > SHEET_BUDGET || sheets.size > SHEET_KEEP) {
-    const [oldest, entry] = sheets.entries().next().value;
-    sheetBytes -= entry.size; sheets.delete(oldest);
-  }
-}
-
-export async function showdownSprite(assets, mon, back, key, url, bytes, failures, cached) {
+export async function showdownSprite(assets, mon, back, key, url, bytes, failures, cached, entry = null) {
   const kind = imageKind(bytes);
   const png = url.endsWith('.png');
   if (kind !== (png ? 'image/png' : 'image/gif')) throw new Error('Unexpected image signature (404 or non-image response)');
   if (!png) {
-    const stored = storedSheet(bytes, url, textureLimit(assets));
-    if (stored) { assets.life.check(); return installSheet(assets, mon, back, key, url, stored, failures, cached); }
+    const stored = entry?.sheet;
+    if (stored && stored.url === url && stored.limit === textureLimit(assets)) {
+      assets.life.check();
+      return installSheet(assets, mon, back, key, url, copySheet(stored), failures, cached);
+    }
   }
   let grid;
   if (png) {
     const objectUrl = URL.createObjectURL(new Blob([bytes], { type: kind }));
     try { grid = await imageGrid(assets, objectUrl); } finally { URL.revokeObjectURL(objectUrl); }
   } else grid = await decodeGif(bytes);
-  return sheetSprite(assets, mon, back, key, url, grid, failures, cached, png ? null : bytes);
+  return sheetSprite(assets, mon, back, key, url, grid, failures, cached, png ? null : entry);
 }
 
 export async function imageSprite(assets, mon, back, key, url, failures) {
   return sheetSprite(assets, mon, back, key, url, await imageGrid(assets, url), failures, false);
 }
 
-function sheetSprite(assets, mon, back, key, url, grid, failures, cached, keepFor = null) {
+function sheetSprite(assets, mon, back, key, url, grid, failures, cached, entry = null) {
   assets.life.check();
   const { width, height, durations } = grid;
   const metrics = frameMetrics(grid);
@@ -194,7 +171,7 @@ function sheetSprite(assets, mon, back, key, url, grid, failures, cached, keepFo
   const { canvas, cuts } = packFrames(grid, metrics.map(f => f.bounds), limit);
   grid.canvas.width = 0;
   const sheet = { canvas, cuts, width, height, bounds, medianOpaquePixels, durations };
-  if (keepFor) storeSheet(keepFor, url, limit, sheet);
+  if (entry) entry.sheet = { ...copySheet(sheet), url, limit, size: canvas.width * canvas.height * 4 };
   return installSheet(assets, mon, back, key, url, sheet, failures, cached);
 }
 

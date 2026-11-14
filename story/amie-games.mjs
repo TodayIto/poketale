@@ -1,5 +1,4 @@
-// Petting minigames and their rewards.
-// Modified for PokeTale on 2026-11-12. See THIRD-PARTY-NOTICES.md.
+// Modified for PokeTale on 2026-11-14. See THIRD-PARTY-NOTICES.md.
 // Ported from PlayNav (https://github.com/poooooby/PlayNav): src/amie/games/common.lua (THRESHOLDS, REWARDS, rewardList), src/amie/games/berry_picker.lua
 // (rotation, patience, kinds, slots), src/amie/games/head_it.lua with data/head_it_rules.lua (stages, flights, crush / purple / giant balls, hit windows, points, combos),
 // src/amie/games/tile_puzzle.lua (grids, the swap shuffle). PlayNav is MIT License, Copyright (c) 2026 poooooby - THIRD-PARTY-NOTICES.md.
@@ -54,6 +53,19 @@ export function prizesFor(game, level, value, random = Math.random) {
     return Array.from({ length: Number(n) }, () => puffId(PUFF_FLAVORS[Math.floor(random() * PUFF_FLAVORS.length)], GRADE_OF[code]));
   });
 }
+
+const RECORD_MOST = 99999;
+
+export const recordScore = value => Math.round(Number(value) || 0);
+
+export const beatsRecord = (game, score, best) => best == null || (game === 'tile' ? score < best : score > best);
+
+export const recordOf = (records, game, level) => {
+  const score = records?.[game]?.[level];
+  return Number.isInteger(score) ? score : null;
+};
+
+export const validRecord = ({ game, level, score } = {}) => GAMES.includes(game) && LEVELS.includes(level) && Number.isInteger(score) && score >= 0 && score <= RECORD_MOST;
 
 export const BERRY_RULES = Object.freeze({
   SECONDS: 60, SLOTS: 3, PATIENCE: 3, RISE: 0.22, REST: 0.3, REST_SERVED: 0.2,

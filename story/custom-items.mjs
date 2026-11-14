@@ -32,6 +32,18 @@ export function customText(holder, id) {
   return info ? `${info.emoji} ${info.name}` : null;
 }
 
+const DEX_WORDS = ['도감', 'pokedex', 'rotomdex', 'rotomphone', 'smartrotom', '로토무폰', '스마트로토무', 'pokemonencyclopedia'];
+const DEX_NOT = ['페이지', '케이스', '커버', '부품', '업그레이드', '조각', '데이터칩', '스티커', '포스터', '책장', 'page', 'case', 'cover', 'upgrade',
+  'sticker', 'poster', 'chip', 'shelf', 'scanner', 'module'];
+
+const nameKey = text => String(text ?? '').normalize('NFKD').replace(/\p{M}/gu, '').normalize('NFC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+const dexName = text => { const key = nameKey(text); return !!key && DEX_WORDS.some(w => key.includes(w)) && !DEX_NOT.some(w => key.includes(w)); };
+
+export function isDexItem(holder, id) {
+  if (!isCustomItem(id)) return false;
+  return dexName(id.slice(CUSTOM_PREFIX.length)) || dexName(holder?.customItems?.[id]?.name);
+}
+
 const PICTO = '\\p{Extended_Pictographic}[\\uFE0E\\uFE0F]?\\p{Emoji_Modifier}?(?:[\\u{E0020}-\\u{E007E}]+\\u{E007F})?';
 const ONE = `(?:\\p{Regional_Indicator}{2}|[0-9#*]\\uFE0F?\\u20E3|${PICTO}(?:\\u200D${PICTO})*)`;
 const LEAD_RE = new RegExp(`^\\s*(${ONE})(?:\\s*${ONE})*\\s*`, 'u');

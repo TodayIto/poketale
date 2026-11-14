@@ -3,7 +3,6 @@ import { effectText, typeNameIn } from './steps-effects.js';
 import { nameWithAffix } from './text.js';
 import { DEFAULT_LANG } from './lang.js';
 
-// Lines this module handles (steps.js dispatch table)
 export const MEGA_KINDS = ['-terastallize', '-mega', '-primal', '-burst', '-zpower', '-zbroken'];
 
 export function gimmickOptions(request, { teraOrb = true } = {}, slot = 0) {
@@ -22,7 +21,7 @@ export function gimmickSuffix(choice, request, allow, slot = 0) {
 }
 
 export function megaFormName(names, species) {
-  const full = names.species(species.id);
+  const full = (names.speciesFull ?? names.species)(species.id);
   const inner = /\(([^()]+)\)\s*$/.exec(full)?.[1];
   if (inner) return inner;
   const mega = /^Mega(?:-(\w+))?$/.exec(species.forme ?? '');

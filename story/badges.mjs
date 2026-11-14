@@ -1,4 +1,3 @@
-// Badge records and matching battles.
 import table from '../data/badges.json' with { type: 'json' };
 import WORDS from '../data/milestone-words.json' with { type: 'json' };
 import { POKEAPI_ROOT } from '../view/sprites/sources.js';
@@ -78,11 +77,13 @@ export function readLeague(chat) {
   return { slots, era, entries: BADGES.filter(badge => slots.has(badge.slot) && shownIn(badge.region, era)) };
 }
 
-export function unovaEra(chat, slots) {
+export const unovaEra = (chat, slots) => knownUnovaEra(chat, slots) ?? 'unova';
+
+export function knownUnovaEra(chat, slots) {
   const set = ERAS.get(String(chat?.scriptstate?.[`$${UNOVA_ERA_VAR}`] ?? '').trim());
   if (set) return set;
   const filled = Object.entries(ERA_ONLY).filter(([, own]) => own.some(slot => slots.has(slot))).map(([era]) => era);
-  return filled.length === 1 ? filled[0] : 'unova';
+  return filled.length === 1 ? filled[0] : null;
 }
 
 const shownIn = (region, era) => !era || !(region in ERA_ONLY) || region === era;

@@ -1,7 +1,7 @@
 import { findBlocks, findTags, parseChange, hashKey, stripForPrompt, messageId } from './blocks.mjs';
 import { readTable, writeTable, computeState, isReflected, heldChanges, changeAt, applyOps, findMon, hpPercentOf, movePp, toID, hatchedParty, storyTick, isEgg, stateFormat } from './state.mjs';
 import { readStored } from './stored.mjs';
-import { foldCtxAt } from './setting-changes.mjs';
+import { foldCtxAt, rulesAt } from './setting-changes.mjs';
 import { refusal, ruleError, ruleText } from './failure.mjs';
 import { findOocs, unwrapOocs } from './chat.mjs';
 import { pkbLog } from './prompts.mjs';
@@ -51,7 +51,7 @@ export function runAction(state, action, ctx, { normalize = false } = {}) {
   let cur = state;
   const ops = [], steps = [], errors = [], notes = [];
   (action.ops ?? []).forEach((raw, i) => {
-    const op = normalize ? withUids(cur, raw, ctx.sim) : raw;
+    const op = normalize ? withUids(cur, raw, ctx) : raw;
     const result = applyOps(cur, [op], ctx, `act:${action.id ?? 'x'}:${i}`, null, { trace: true });
     cur = result.state;
     ops.push(op);
@@ -61,7 +61,7 @@ export function runAction(state, action, ctx, { normalize = false } = {}) {
   });
   if (errors.length) return { state, ops, events: [], errors, notes };
   const ok = steps;
-  let events = ok.map(step => eventOf(step, ctx.sim));
+  let events = ok.map(step => eventOf(step, ctx));
 
   if (action.type === 'use' && action.item) {
     const effects = events.filter(e => !(e.kind === 'item' && e.item === itemId(action.item)));
@@ -73,12 +73,12 @@ export function runAction(state, action, ctx, { normalize = false } = {}) {
 }
 
 const REF_FIELDS = ['ref', 'a', 'b'];
-function withUids(state, op, sim) {
+function withUids(state, op, ctx) {
   const out = { ...op };
   for (const field of REF_FIELDS) {
     const ref = op[field];
     if (!ref || ref === 'all' || typeof ref.uid === 'string') continue;
-    try { out[field] = { uid: findMon(state, ref, sim, { boxFirst: op.op === 'withdraw', egg: true }).mon.uid }; } catch {                                            }
+    try { out[field] = { uid: findMon(state, ref, ctx, { boxFirst: op.op === 'withdraw', egg: true }).mon.uid }; } catch {                                            }
   }
   return out;
 }
@@ -156,13 +156,14 @@ export function adoptQueue(chat, ctx, { salt = '' } = {}) {
   return index;
 }
 
-export function eventOf({ op, before, after }, sim) {
+export function eventOf({ op, before, after }, ctx) {
+  const sim = ctx?.sim;
   const all = state => (state ? [...state.party, ...state.box] : []);
   const byUid = (state, uid) => all(state).find(m => m.uid === uid) ?? null;
 
   const who = mon => (mon ? (isEgg(mon) ? { uid: mon.uid, egg: true, species: '', name: '' } : { uid: mon.uid, species: mon.set.species, name: mon.set.name || '' }) : null);
   const refWho = (ref, opts) => {
-    try { if (before) return who(findMon(before, ref, sim, { ...opts, egg: true }).mon); } catch {             }
+    try { if (before) return who(findMon(before, ref, ctx, { ...opts, egg: true }).mon); } catch {             }
     return { ref: ref?.slot ? `#${ref.slot}` : ref?.box ? `box ${ref.box}` : ref?.name ?? '?' };
   };
   const pair = w => [byUid(before, w?.uid), byUid(after, w?.uid)];
@@ -270,6 +271,8 @@ export function eventOf({ op, before, after }, sim) {
     case 'train': return { kind: 'train', who: refWho(op.ref) };
     case 'puff': return { kind: 'puff' };
 
+    case 'amieRecord': return { kind: 'amieRecord' };
+
     case 'egg': {
       const added = all(after).find(m => !byUid(before, m.uid));
       const at = added ? after.box.indexOf(added) : -1;
@@ -304,19 +307,21 @@ export function changesIn(text, chat, ctx, lang) {
   if (index >= 0 && ctx) ({ state, table, status } = computeState(chat, ctx, { uptoIndex: index - 1 }));
 
   const at = ctx && { ...(index >= 0 ? foldCtxAt(chat, ctx)(index) : ctx), status: statusIn(messages[index]) ?? status };
+
+  const reading = index >= 0 ? rulesAt(chat)(index) : undefined;
   const chatId = index >= 0 ? messageId(messages[index], index) : null;
   const held = index >= 0 ? heldChanges(chat, table ?? readTable(chat)) : new Set();
   const events = [], errors = [];
   for (const [n, block] of blocks.entries()) {
     if (held.has(changeAt(index, n))) { errors.push(heldLine(lang)); continue; }
-    const { ops, errors: unread } = parseChange(block.body);
+    const { ops, errors: unread } = parseChange(block.body, reading);
     errors.push(...unread.map(note => ruleText(note, lang)));
     if (!state) { events.push(...ops.map(op => eventOf({ op, before: null, after: null }, null))); continue; }
     const result = applyOps(state, ops, at, `${chatId}:${block.key}`, table, { trace: true });
     state = result.state;
     for (const step of result.steps) {
       if (step.error) errors.push(step.notes.length ? step.notes.map(note => ruleText(note, lang)).join(' / ') : step.error);
-      else events.push(eventOf(step, ctx.sim));
+      else events.push(eventOf(step, at));
     }
   }
   return { events, errors };

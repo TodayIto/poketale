@@ -99,7 +99,7 @@ teach: #N Move | #N Move forget Move
 - add: A new Pokémon joins {{user}}; it goes to storage when the party is full or with box. It takes the same optional fields as a Battle Block pokemon line; anything left out is filled in automatically.
   ot is the original trainer's name, only when {{user}} receives a Pokémon someone else raised (e.g., a trade).
 - egg: An Egg {{user}} receives. Write only the species that will hatch from it; everything else is filled in automatically. It goes to storage when the party is full or with box.
-- level: When time passes in the story (e.g., days of travel, a time skip), raise levels as fits that time, even if no one mentions it. Pokémon in storage stay as they are.
+- level: When time passes in the story (e.g., days of travel, a time skip), raise levels as that time warrants, even if no one mentions it. Pokémon in storage stay as they are.
 - heal: Restores HP fully or by a percentage, cures status only, or revives a fainted Pokémon (e.g., a Pokémon Center visit or a full night's sleep anywhere → heal: all).
 - teach: Adds a move; with forget, it replaces that move. Without forget, {{user}} chooses later which move to forget.
 - item, hold: Start every item name with one emoji that fits the item (e.g., 🧪 Potion, 🗺️ Old Map). An item that exists only in the story keeps the name you give it, written in the story's language.
@@ -125,15 +125,27 @@ const section = (text, name) => {
 
 export const BATTLE_BLOCK_PART = ['Format', 'Field Descriptions', 'Example'].map(name => section(BATTLE_ENTRY, name)).join('\n\n');
 
+export const LEVEL_LINE = "- Choose an opponent and levels that fit the story and {{user}}'s party. Named characters keep their usual strength.";
+const FIELDS_END = '\n\n### Battle Results\n';
+if (BATTLE_ENTRY.split(FIELDS_END).length !== 2) throw new Error('BATTLE_ENTRY: no single Battle Results heading after Field Descriptions');
+
+export const BATTLE_ENTRY_OTHER = BATTLE_ENTRY.replace(FIELDS_END, `\n${LEVEL_LINE}${FIELDS_END}`);
+
 const PREFIX = '포켓몬 배틀 · ';
 const TRAINER_PREFIX = `${PREFIX}지난 배틀 · `;
 const comment = (name, content) => `${PREFIX}${name} (판 ${hashKey(content).slice(0, 6)})`;
 
 const LORE_INSERT_ORDER = 935;
-export const LORE_ENTRIES = [
-  { name: '배틀 블록', content: BATTLE_ENTRY },
+const entriesOf = battle => [
+  { name: '배틀 블록', content: battle },
   { name: '포켓몬 변경', content: CHANGE_ENTRY },
 ].map(e => ({ ...e, comment: comment(e.name, e.content) }));
+
+export const LORE_ENTRIES = entriesOf(BATTLE_ENTRY);
+
+export const LORE_ENTRIES_OTHER = entriesOf(BATTLE_ENTRY_OTHER);
+
+const entriesFor = (chat, other) => ((other ?? kindIn(chat) ?? false) ? LORE_ENTRIES_OTHER : LORE_ENTRIES);
 
 const isOurs = entry => typeof entry?.comment === 'string' && entry.comment.startsWith(PREFIX);
 const isTrainer = entry => isOurs(entry) && entry.comment.startsWith(TRAINER_PREFIX);
@@ -141,10 +153,10 @@ const isFixed = entry => isOurs(entry) && !isTrainer(entry);
 
 const newUuid = () => globalThis.crypto.randomUUID();
 
-export function setLore(chat, on, { newId = newUuid } = {}) {
-  if (loreInLine(chat, on)) return false;
+export function setLore(chat, on, { newId = newUuid, other = null } = {}) {
+  if (loreInLine(chat, on, other)) return false;
   const before = chat.localLore ?? [];
-  chat.localLore = on ? [...before.filter(entry => !isFixed(entry)), ...LORE_ENTRIES.map((e, i) => ({ key: '', secondkey: '', insertorder: LORE_INSERT_ORDER - i, comment: e.comment, mode: 'normal',
+  chat.localLore = on ? [...before.filter(entry => !isFixed(entry)), ...entriesFor(chat, other).map((e, i) => ({ key: '', secondkey: '', insertorder: LORE_INSERT_ORDER - i, comment: e.comment, mode: 'normal',
     alwaysActive: true, selective: false, useRegex: false, id: newId(), content: e.content }))] : before.filter(entry => !isOurs(entry));
   // Compatibility-mode marker: entries wrapped in the bot card (story/compat.mjs) are dropped in this chat
   chat.scriptstate ??= {};
@@ -156,12 +168,20 @@ const COMPAT_KEY = `$${COMPAT_VAR}`;
 const compatOn = chat => chat?.scriptstate?.[COMPAT_KEY] === '1';
 export const hasLore = chat => (chat?.localLore ?? []).some(isOurs);
 
-export const loreInLine = (chat, on) => (on ? loreUpToDate(chat)
+export const loreInLine = (chat, on, other = null) => (on ? loreUpToDate(chat, other)
   : !hasLore(chat) && !(COMPAT_KEY in (chat?.scriptstate ?? {})) && !Object.values(VARS).some(name => name in (chat?.scriptstate ?? {})));
 
-export function loreUpToDate(chat) {
+export function loreUpToDate(chat, other = null) {
+  return compatOn(chat) && entriesAre(chat, entriesFor(chat, other));
+}
+function entriesAre(chat, entries) {
   const ours = (chat?.localLore ?? []).filter(isFixed);
-  return compatOn(chat) && ours.length === LORE_ENTRIES.length && LORE_ENTRIES.every((e, i) => ours[i]?.comment === e.comment && ours[i]?.content === e.content && ours[i]?.insertorder === LORE_INSERT_ORDER - i);
+  return ours.length === entries.length && entries.every((e, i) => ours[i]?.comment === e.comment && ours[i]?.content === e.content && ours[i]?.insertorder === LORE_INSERT_ORDER - i);
+}
+
+function kindIn(chat) {
+  if (entriesAre(chat, LORE_ENTRIES_OTHER)) return true;
+  return entriesAre(chat, LORE_ENTRIES) ? false : null;
 }
 
 export function pastBattleLine(trainer, { lang = 'ko', en = null } = {}) {

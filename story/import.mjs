@@ -295,7 +295,8 @@ function monProblems(mon, ctx, kind) {
 
 function draftMon(found, place, key, ctx, seed) {
   const mon = blankMon(key, place, seed);
-  const record = (field, value) => { if (field in mon.set) mon.set[field] = value; else mon[field] = value; mon.from[field] = 'record'; };
+  const from = found.from === 'ai' ? 'ai' : 'record';
+  const record = (field, value) => { if (field in mon.set) mon.set[field] = value; else mon[field] = value; mon.from[field] = from; };
   record('place', place);
   if (found.egg) return { ...mon, egg: true, action: 'skip' };
   record('species', found.species);
@@ -307,6 +308,8 @@ function draftMon(found, place, key, ctx, seed) {
     if (found.hpPercent !== undefined) record('hpPercent', found.hpPercent);
     if (found.status !== undefined) record('status', found.status);
   }
+  const species = ctx.sim.Dex.species.get(found.species ?? '');
+  for (const [field, value] of Object.entries(found.extra ?? {})) if (species.exists && usable(ctx.sim, species, field, value, MAINLINE_RANGE)) record(field, clone(value));
   fillAuto(mon, ctx, SET_FIELDS);
   return mon;
 }
@@ -372,8 +375,8 @@ function rematch(draft, ctx) {
   }
 }
 
-export function makeDraft(chat, state, ctx, { seed = 0, format } = {}) {
-  const found = readCompat(chat, ctx, format ? { format } : {});
+export function makeDraft(chat, state, ctx, { seed = 0, format, found: given = null } = {}) {
+  const found = given ?? readCompat(chat, ctx, format ? { format } : {});
   const pool = [...(state?.party ?? []).map(m => [m, 'party']), ...(state?.box ?? []).map(m => [m, 'box'])]
     .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level, now: valuesOf(ctx, state, m), ...(isEgg(m) ? { egg: true } : {}) }));
   const bag = Object.fromEntries(Object.entries(state?.bag ?? {}).filter(([, n]) => n > 0).map(([id, n]) => [id, { count: n, from: 'current' }]));
@@ -383,6 +386,7 @@ export function makeDraft(chat, state, ctx, { seed = 0, format } = {}) {
     v: 1,
     mons: [...found.party.map((f, i) => draftMon(f, 'party', `p${i + 1}`, ctx, seed)), ...found.box.map((f, i) => draftMon(f, 'box', `b${i + 1}`, ctx, seed))],
     bag, warnings: found.warnings, pool, base: { bag: Object.fromEntries(Object.entries(bag).map(([id, e]) => [id, e.count])) }, customItems,
+    ...(given?.source ? { source: given.source } : {}),
   };
   rematch(draft, ctx);
   for (const mon of draft.mons) mon.problems = monProblems(mon, ctx, draft.kind);
@@ -398,11 +402,21 @@ export function importTurn(chat) {
 }
 
 export function importOffer(chat, state, ctx, { allowed = false, seed = 0 } = {}) {
-  if (!allowed || !state) return null;
-  const turn = importTurn(chat);
-  if (isUnreadable(turn.status) || turn.moved || turn.declined || (!turn.back && state.party.length)) return null;
+  if (!offerOpen(chat, state, allowed)) return null;
   const draft = makeDraft(chat, state, ctx, { seed });
   return draft.mons.length ? draft : null;
+}
+
+function offerOpen(chat, state, allowed) {
+  if (!allowed || !state) return false;
+  const turn = importTurn(chat);
+  return !(isUnreadable(turn.status) || turn.moved || turn.declined || (!turn.back && state.party.length));
+}
+
+export function importOfferAi(chat, state, { allowed = false } = {}) {
+  if (!offerOpen(chat, state, allowed)) return false;
+  const said = role => (chat?.message ?? []).some(m => m?.role === role && recordText(m?.data).trim());
+  return said('user') && said('char');
 }
 
 export const HANDBACK_KIND = 'handback';

@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/PokeAPI/pokeapi",
+  "commit": "8a92bfa7dab2f12b84b5d151562f9857c133ff30",
+  "files": [
+    "pokedexes.csv",
+    "pokemon_dex_numbers.csv"
+  ],
+  "sha256": {
+    "pokedexes.csv": "aa6570e15092f80750431a59a8712410cc114d74ffffb75b3334df64b33b3d07",
+    "pokemon_dex_numbers.csv": "b8fe3353eec2b0ba4fc37e07e94ffa9f33ce96a7f9856c643a18b3ad518cd393"
+  },
+  "normalization": "UTF-8, CRLF normalized to LF before hashing",
+  "license": "PokeAPI data - see data/sources/pokeapi/LICENSE.md"
+}

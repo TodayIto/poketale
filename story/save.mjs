@@ -1,5 +1,5 @@
 import { findOocs } from './chat.mjs';
-import { messageId } from './blocks.mjs';
+import { messageId, blockAnchorIn } from './blocks.mjs';
 import { readStored } from './stored.mjs';
 
 export const SAVE_VAR = '$pkb_save';
@@ -20,8 +20,9 @@ const startOf = s => (s?.spec ? { blockKey: s.blockKey, spec: s.spec } : null);
 const recordOf = r => (r ? { blockKey: r.blockKey, sends: r.sends ?? [], ...(r.plans?.length ? { plans: r.plans.map(p => ({ act: p.act, turns: p.turns })) } : {}) } : null);
 const placeOf = o => (typeof o?.on === 'string' ? { on: o.on, above: typeof o.above === 'string' ? o.above : null } : null);
 
-const attemptOf = a => (a ? { blockKey: a.blockKey, auto: a.auto ?? null, balls: a.balls ?? null, sends: [...a.sends ?? [], ...a.prepared ? [a.prepared] : []],
-  opened: placeOf(a.opened), ...(a.plans?.length ? { plans: a.plans } : {}) } : null);
+const attemptOf = a => (a ? { blockKey: a.blockKey, ...(typeof a.block === 'string' ? { block: a.block } : {}),
+  ...(typeof a.blockTime === 'number' ? { blockTime: a.blockTime } : {}), auto: a.auto ?? null, balls: a.balls ?? null,
+  sends: [...a.sends ?? [], ...a.prepared ? [a.prepared] : []], opened: placeOf(a.opened), ...(a.plans?.length ? { plans: a.plans } : {}) } : null);
 
 function openedHere(chat) {
   const messages = chat?.message ?? [], at = messages.length - 1;
@@ -73,14 +74,14 @@ export const latestCheckpoint = (chat, of) => (of ? furthest(liveSends(chat, of.
 
 export function freshAttempt(chat, blockKey) {
   const save = readSave(chat) ?? empty;
-  writeSave(chat, { start: null, record: save.record, attempt: attemptOf({ blockKey, opened: openedHere(chat) }) });
+  writeSave(chat, { start: null, record: save.record, attempt: attemptOf({ blockKey, ...blockAnchorIn(chat, blockKey), opened: openedHere(chat) }) });
 }
 
 export function retryAttempt(chat, blockKey, of = 'record', { restart = false } = {}) {
   const save = readSave(chat) ?? empty;
   const source = partFor(save, blockKey, of);
   const checkpoint = restart ? null : latestCheckpoint(chat, source);
-  const base = { blockKey, balls: source?.balls ?? null, opened: openedHere(chat) };
+  const base = { blockKey, ...blockAnchorIn(chat, blockKey), balls: source?.balls ?? null, opened: openedHere(chat) };
   if (!checkpoint) {
     writeSave(chat, { ...save, attempt: attemptOf(base) });
     return null;

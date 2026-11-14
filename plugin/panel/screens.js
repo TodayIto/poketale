@@ -166,9 +166,9 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), lang, sh
         learnMove: screen('learnMove', (mon, move, party) => screens.openLearnMove({ parent, mon, move, party })),
         evolution: screen('evolution', (mon, into, learn) => screens.openEvolution({ parent, mon, into, learn })),
         rememberMove: screen('rememberMove', (mon, moves, party) => screens.openRememberMove({ parent, mon, moves, party })),
-        amie: screen('amie', (mon, { debug, state, party, awake, trainWhy, lock } = {}) => screens.openAmie({ parent, mon, state, party, debug, awake, trainWhy, lock })),
+        amie: screen('amie', (mon, { debug, state, party, awake, trainWhy, lock, scene } = {}) => screens.openAmie({ parent, mon, state, party, debug, awake, trainWhy, lock, scene })),
         hatch: screen('evolution', mon => screens.openHatch({ parent, mon })),
-        training: screen('training', mon => screens.openTraining({ parent, mon })),
+        training: screen('training', (mon, scene) => screens.openTraining({ parent, mon, scene })),
 
         get closed() { return host.left; },
       });

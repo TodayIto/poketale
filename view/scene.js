@@ -1,5 +1,5 @@
 // from pokerogue src/battle-scene.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-05. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-14. See view/LICENSE-NOTE.md.
 // from pokerogue src/field/arena.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/field/arena-base.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/summon-phase.ts @ 7d7da4a8 (AGPL-3.0-only)

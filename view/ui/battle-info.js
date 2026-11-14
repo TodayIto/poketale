@@ -1,5 +1,5 @@
 // from pokerogue src/ui/battle-info/battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-14. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/battle-info/player-battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/battle-info/enemy-battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
 import { addTextObject, addGenderMark, STATUS_FRAMES, GENDER_COLORS } from './text.js';
@@ -56,7 +56,7 @@ export class BattleInfo {
     this.scene.tera?.applyInfo(this, mon.tera);
     this.exp?.set(mon.level, mon.exp ?? 0);
   }
-  // Called on every HP tween tick: reuses the digit images (rightmost first, 8 px apart) instead of recreating them.
+
   setHpNumbers(hp, maxhp) {
     const text = `${hp}/${maxhp}`, list = this.numbers.list;
     for (let i = 0; i < text.length; i++) {

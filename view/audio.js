@@ -1,5 +1,5 @@
 // from pokerogue src/audio/audio-manager.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-10. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-14. See view/LICENSE-NOTE.md.
 // from pokerogue src/audio/background-music.ts @ 7d7da4a8 (AGPL-3.0-only)
 
 import { battleMusic, bgmKey, loopPoint, victoryMusic } from './bgm.js';
@@ -109,7 +109,7 @@ export class BattleAudio {
     this.unlock = () => { if (this.suspended) return; for (const track of this.tracks) if (track.wanted) track.play(); };
     this.suspended = false;
     this.clock = new Clock(); this.wake = null; this.woken = null;
-    // Game speed (the scene sets it). Waiting on a sound follows it like other battle timings; the sound itself plays unchanged.
+
     this.speed = () => 1;
     parent.addEventListener('pointerdown', this.unlock);
     parent.addEventListener('keydown', this.unlock);
@@ -280,7 +280,7 @@ export class BattleAudio {
         this.active.delete(voice); this.finishes.delete(finish); resolve();
       };
       cancel = this.clock.timeout(Math.min(maxMs, (Number.isFinite(audio.duration) ? audio.duration / rate + 1 : 16) * 1000), finish);
-      // Above 1x the caller waits the sound's length divided by the speed, while the voice plays to its end and cleans up in finish.
+
       const speed = this.speed();
       if (speed > 1 && Number.isFinite(audio.duration)) {
         cancelWait = this.clock.timeout(Math.min(maxMs, audio.duration / rate * 1000) / speed, () => { cancelWait = null; resolve(); });
