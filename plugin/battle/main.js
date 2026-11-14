@@ -11,8 +11,10 @@ import { defringeAddress } from '../panel/defringe.js';
 import { personaName } from './persona.js';
 import { useMainDocument } from './stage.js';
 import { POKE_BALL_ICON } from './settings.js';
+import { guardContextMenu } from './contextmenu.js';
 
 mark('pb:script');
+guardContextMenu(document);
 
 (async () => {
   const fetchBytes = createFetchBytes(risuai);
