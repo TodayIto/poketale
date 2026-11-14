@@ -3,7 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node tools/build-all.mjs"
+    "build": "node tools/build-all.mjs",
+    "test:dex-mentions": "node --test tests/dex-mentions.test.mjs",
+    "test:panel-bind": "node --test tests/panel-bind.test.mjs",
+    "test:scene-bake": "node --test tests/scene-bake.test.mjs",
+    "test:water-net": "node --test tests/water-net.test.mjs",
+    "test:bag-widths": "node --test tests/bag-widths.test.mjs",
+    "test:optimizations": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "esbuild": "0.28.2",

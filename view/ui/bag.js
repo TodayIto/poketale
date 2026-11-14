@@ -61,6 +61,7 @@ export class BagMenu {
     scene.life.check();
     if (this.finish) throw new Error('Bag menu already open');
     this.bag = bag; this.party = party; this.prompt = prompt;
+    this.measuredWidths = new Map();
     this.pocket = Math.max(0, bag.pockets.findIndex(p => p.items.length)); this.cursor = 0; this.scroll = 0; this.sub = false;
     const menu = openMenu(scene, { input: action => this.input(action), close: () => this.clear(),
       paused: () => this.sub,
@@ -76,6 +77,29 @@ export class BagMenu {
   windows() { return this.rect ? [this.rect] : []; }
 
   get length() { return this.items.length + 1; }
+  measureWidths() {
+    const s = this.scene, widths = this.measuredWidths ??= new Map();
+    let probe;
+    const measure = str => {
+      let width = widths.get(str);
+      if (width === undefined) {
+        probe ??= windowText(s, 0, 0, '');
+        probe.setText(str);
+        width = probe.displayWidth;
+        widths.set(str, width);
+      }
+      return width;
+    };
+    try {
+      const all = this.bag.pockets.flatMap(p => p.items);
+      const namesWidth = Math.max(0, ...all.map(i => measure(i.name)));
+      const countsWidth = Math.max(0, ...all.map(i => measure(`×${i.count}`)));
+      const tabs = this.bag.pockets.map(p => measure(p.name));
+      const tabsWidth = tabs.reduce((a, b) => a + b, 0) + 8 * (tabs.length - 1);
+      const content = Math.max(64, namesWidth + 4 + countsWidth, measure(s.words(CANCEL_TEXT)), TAB_LEFT + tabsWidth + TAB_LEFT - 50);
+      return { namesWidth, countsWidth, tabs, content };
+    } finally { probe?.destroy(); }
+  }
   draw() {
     const s = this.scene;
     this.container?.destroy();
@@ -84,14 +108,7 @@ export class BagMenu {
     this.promptText = windowText(s, 12, -39, this.prompt, { wordWrap: { width: 1110 }, maxLines: 2 }, 'WINDOW_WHITE');
     c.add(this.promptText);
 
-    const measure = str => { const t = windowText(s, 0, 0, str); const w = t.displayWidth; t.destroy(); return w; };
-    const all = this.bag.pockets.flatMap(p => p.items);
-    const namesWidth = Math.max(0, ...all.map(i => measure(i.name)));
-    const countsWidth = Math.max(0, ...all.map(i => measure(`×${i.count}`)));
-
-    const tabs = this.bag.pockets.map(p => measure(p.name));
-    const tabsWidth = tabs.reduce((a, b) => a + b, 0) + 8 * (tabs.length - 1);
-    const content = Math.max(64, namesWidth + 4 + countsWidth, measure(s.words(CANCEL_TEXT)), TAB_LEFT + tabsWidth + TAB_LEFT - 50);
+    const { namesWidth, countsWidth, tabs, content } = this.measureWidths();
     const width = 50 + content, height = 128, x = 320 - 51 - content, top = -49 - height;
     this.box = s.add.container(x, 0); c.add(this.box);
     this.box.add(addWindow(s, 0, top, width, height));
@@ -242,6 +259,7 @@ export class BagMenu {
   }
   clear() {
     this.finish = this.fail = null;
+    this.measuredWidths?.clear();
     const input = this.scene.input;
     if (input?.off) { input.off('wheel', this.onWheel); input.off('pointerdown', this.onDown); input.off('pointermove', this.onMove); input.off('pointerup', this.onUp); input.off('pointerupoutside', this.onUp); }
     this.drag = null;

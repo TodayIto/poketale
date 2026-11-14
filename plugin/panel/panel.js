@@ -20,6 +20,7 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const SWIPE_PX = 40;
 
 const ECHO_MS = 400;
+const HIT_BIND_BATCH = 16;
 
 const TYPING = ':is(input, textarea, select, [contenteditable]:not([contenteditable="false"])):focus';
 
@@ -129,17 +130,27 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     const list = await box.querySelectorAll('.x-risu-pkbp-hit');
     const n = await list.length();
     const blanks = [];
-    for (let i = 0; i < n; i++) {
-      const element = await list.at(i);
-      const index = Number((await element.getClassName()).match(/x-risu-pkbp-h(\d+)/)?.[1]);
-      const hit = hits[index];
-      if (!hit) continue;
-      const listener = event => {
-        if (swipedJust()) return;
-        if (hit.t === 'blank' ? echo(event) : (took(event), false)) return;
-        press(hit).catch(error => console.warn('[poke-battle] 패널', error));
-      };
-      if (hit.t === 'blank') blanks.push([element, listener]); else await element.addEventListener('click', listener);
+    for (let start = 0; start < n; start += HIT_BIND_BATCH) {
+      // Different elements can bind together; keep blank handlers last, in DOM order.
+      // Drain the batch on failure so no old bindings outlive a failed draw.
+      const bound = await Promise.allSettled(Array.from({ length: Math.min(HIT_BIND_BATCH, n - start) }, async (_, offset) => {
+        const element = await list.at(start + offset);
+        const index = Number((await element.getClassName()).match(/x-risu-pkbp-h(\d+)/)?.[1]);
+        const hit = hits[index];
+        if (!hit) return null;
+        const listener = event => {
+          if (swipedJust()) return;
+          if (hit.t === 'blank' ? echo(event) : (took(event), false)) return;
+          press(hit).catch(error => console.warn('[poke-battle] 패널', error));
+        };
+        if (hit.t === 'blank') return [element, listener];
+        await element.addEventListener('click', listener);
+        return null;
+      }));
+      for (const one of bound) {
+        if (one.status === 'rejected') throw one.reason;
+        if (one.value) blanks.push(one.value);
+      }
     }
 
     const own = await box.querySelectorAll(`.${OWN_CLASS}`);

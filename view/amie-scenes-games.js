@@ -199,9 +199,16 @@ function waterNet(c, y0, y1, line) {
   for (let y = y0 + 2; y < y1 - 2; y += DOT) {
     let start = null;
     for (let x = -4; x <= c.w + 4; x += DOT) {
-      let d1 = 1e9, d2 = 1e9;
-      for (const [px, py] of pts) { const d = Math.hypot(px - x - 1, (py - y - 1) * 2); if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d; }
-      const on = x <= c.w + 2 && d2 - d1 < 1.8;
+      // Rank squared distances, then retain hypot's rounding for the visible edge.
+      let d1 = 1e18, d2 = 1e18, near1 = null, near2 = null;
+      for (const point of pts) {
+        const dx = point[0] - x - 1, dy = (point[1] - y - 1) * 2, d = dx * dx + dy * dy;
+        if (d < d1) { d2 = d1; near2 = near1; d1 = d; near1 = point; }
+        else if (d < d2) { d2 = d; near2 = point; }
+      }
+      const first = near1 ? Math.hypot(near1[0] - x - 1, (near1[1] - y - 1) * 2) : 1e9;
+      const second = near2 ? Math.hypot(near2[0] - x - 1, (near2[1] - y - 1) * 2) : 1e9;
+      const on = x <= c.w + 2 && second - first < 1.8;
       if (on && start === null) start = x; else if (!on && start !== null) { rows.push([y, start, x]); start = null; }
     }
   }
