@@ -70,9 +70,11 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
   let lift = null;                              // { id, y, from, moved } while a press on the tabs may become a drag
   let dragged = null, liftWrite = Promise.resolve(), liftPending = null;
   let screenSize = null;                        // host page size, read when the panel is recomputed
-  // with the drag option off the height stays inside the slider's range, exactly as before the option existed
+  // The height is kept on the screen. With the drag option off the slider's whole range stays allowed as before the
+  // option existed, and a height that was dragged to earlier stays where it is.
   const fitShift = value => {
-    const { min, max } = drag() ? shiftLimits({ ...screenSize, below: now?.below ?? undefined }) : SIZE.shift;
+    const fits = shiftLimits({ ...screenSize, below: now?.below ?? undefined });
+    const min = drag() ? fits.min : Math.min(SIZE.shift.min, fits.min), max = drag() ? fits.max : Math.max(SIZE.shift.max, fits.max);
     return panelShift(Math.min(max, Math.max(min, value)));
   };
   const shiftNow = () => dragged ?? fitShift(shift());
