@@ -7,6 +7,7 @@ import { customText, customInfo, ownerName } from './custom-items.mjs';
 import { TOOL_EFFECTS } from './tools.mjs';
 import { ITEM_EFFECTS_READY } from './item-effects.mjs';
 import { battleStatusLines, actRules } from './act-prompts.mjs';
+import { formatGen, DEFAULT_GEN } from '../engine/rules.mjs';
 
 const FOE_LOOK_FORMAT = 'foe partner gender: male|female\nfoe partner look: preschooler|boy|girl|young man|young woman|middle-aged man|middle-aged woman|old man|old woman';
 const LOOK_FORMAT = 'look: preschooler|boy|girl|young man|young woman|middle-aged man|middle-aged woman|old man|old woman';
@@ -299,6 +300,8 @@ export function varTexts(state, { sim, battle = null, lang = 'ko', en = null, ef
       if (battle.commands && battle.now) party.push(...battleStatusLines(battle.now, namer, spec), actRules(battle.now, { tools: battle.tools !== false }));
     }
   }
+  // The generation battles are fought in: Champions is generation 9 whatever the story's generation
+  const era = formatGen(stateFormat(state)) ?? DEFAULT_GEN;
   (state?.party ?? []).forEach((mon, i) => {
 
     if (isEgg(mon)) { party.push(`[${ownLabel(i + 1)} | Egg]`); return; }
@@ -307,8 +310,8 @@ export function varTexts(state, { sim, battle = null, lang = 'ko', en = null, ef
     const fields = [ownLabel(i + 1), `Species: ${namer.species(mon.set.species)}`];
     if (mon.set.name) fields.push(`Nickname: ${mon.set.name}`);
     fields.push(`Level: ${mon.set.level}`, `HP: ${hp}%`, `Status: ${status}`);
-    if (mon.set.ability) fields.push(`Ability: ${namer.abilities(mon.set.ability)}`);
-    fields.push(`Item: ${mon.set.item ? item(mon.set.item) : 'None'}`);
+    if (mon.set.ability && era >= 3) fields.push(`Ability: ${namer.abilities(mon.set.ability)}`);
+    if (era >= 2) fields.push(`Item: ${mon.set.item ? item(mon.set.item) : 'None'}`);
     fields.push(`Moves: ${(mon.set.moves ?? []).map(m => namer.moves(m)).join(', ') || 'None'}`);
     party.push(`[${fields.join(' | ')}]`);
   });

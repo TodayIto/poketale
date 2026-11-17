@@ -1,5 +1,6 @@
 import { applyPpUps } from './pp.mjs';
 import { injectStatus, restoreSpread } from './showdown-compat.mjs';
+import { heldItemForm } from './mon.mjs';
 
 export function installInitialState(sim, battle, seats, sets) {
 	const baseFormat = battle.format;
@@ -13,11 +14,15 @@ export function installInitialState(sim, battle, seats, sets) {
 	});
 }
 
-export function recordStartForms(battle, sets) {
+export function recordStartForms(sim, battle, sets) {
 	for (const side of battle.sides) {
 		for (const pokemon of side.pokemon) {
 			const set = sets[side.id][side.team.indexOf(pokemon.set)];
-			pokemon.m.start = { species: battle.dex.species.get(set.species).name, ability: set.ability };
+			// The whole set as it started, before an older generation switched parts of it off (engine/era.mjs). The Tera type
+			// is the one its held-item form carries in generation 9 (an Ogerpon without its mask would turn Grass)
+			const { teraType } = heldItemForm(sim.Dex, set);
+			pokemon.m.start = { species: battle.dex.species.get(set.species).name, ability: set.ability, nature: set.nature, item: set.item, gender: set.gender,
+				...(set.ivs ? { ivs: { ...set.ivs } } : {}), ...(teraType ? { teraType } : {}) };
 		}
 	}
 }
@@ -44,7 +49,11 @@ function applyInitialState(sim, side, team, sets) {
 
 		for (const [moveid, pp] of Object.entries(member.pp || {})) {
 			const slot = pokemon.moveSlots.find(s => s.id === sim.Dex.toID(moveid));
-			if (!slot) throw new Error(`${member.uid}: 기술 "${moveid}" 이 없습니다`);
+			if (!slot) {
+				// A foe's later move the battle generation does not have was dropped (engine/core.mjs), and its PP with it
+				if ((member.set?.moves ?? []).some(m => sim.Dex.toID(m) === sim.Dex.toID(moveid))) continue;
+				throw new Error(`${member.uid}: 기술 "${moveid}" 이 없습니다`);
+			}
 			slot.pp = Math.max(0, Math.min(slot.maxpp, pp));
 		}
 

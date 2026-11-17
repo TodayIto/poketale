@@ -5,6 +5,7 @@ import { TOOL_TURNS } from './tools.mjs';
 const USER = '{{user}}';
 
 const SIDE = { p1: 'mine', p2: 'theirs', p3: 'mine', p4: 'theirs' };
+const IDENT = /^p\d[a-z]?:/;
 
 export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {}) {
   const at = new Map();
@@ -281,7 +282,14 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       if (args[2] === 'boost' && ABSORB.has(toID(args[1])) && absorbed(who(args[0]), args[1])) break;
       push({ type: 'ability', mon: ref(who(args[0])), ability: args[1], from: fromOf(args) }, false);
       break;
-    case '-item': if (!silent) push({ type: 'helditem', mon: ref(who(args[0])), item: args[1], from: fromOf(args) }, false); break;
+    case '-item': {
+      if (silent) break;
+      // Generations 4-5 Frisk names the item but not the foe holding it
+      const holder = IDENT.test(args[0] ?? '') ? args[0] : null, finder = tagArg(args, 'of');
+      if (holder) push({ type: 'helditem', mon: ref(who(holder)), item: args[1], from: fromOf(args) }, false);
+      else if (finder && IDENT.test(finder)) push({ type: 'helditem', mon: ref(who(finder)), item: args[1], from: fromOf(args), foe: true }, false);
+      break;
+    }
     case '-enditem': {
       if (silent) break;
       const from = fromOf(args);
@@ -713,7 +721,7 @@ function eventText(e, namer, sides, ctx = reasonCtx(null, null)) {
   case 'levelup': return `${mon(e.mon)} grew to Lv${e.level}`;
 
   case 'ability': return `${mon(e.mon)}'s ${namer.abilities(e.ability)} activated${fromText(e.from, namer)}`;
-  case 'helditem': return e.from?.kind === 'moves' ? `${mon(e.mon)} obtained ${namer.items(e.item)}${fromText(e.from, namer)}` : `${mon(e.mon)} is holding ${namer.items(e.item)}${fromText(e.from, namer)}`;
+  case 'helditem': return e.foe ? `${mon(e.mon)} found a foe holding ${namer.items(e.item)}${fromText(e.from, namer)}` : e.from?.kind === 'moves' ? `${mon(e.mon)} obtained ${namer.items(e.item)}${fromText(e.from, namer)}` : `${mon(e.mon)} is holding ${namer.items(e.item)}${fromText(e.from, namer)}`;
   case 'enditem':
     if (e.how === 'eat') return `${mon(e.mon)} ate its ${namer.items(e.item)}`;
     if (e.how === 'lost') return `${mon(e.mon)} lost its ${namer.items(e.item)}${fromText(e.from, namer)}`;

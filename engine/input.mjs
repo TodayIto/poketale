@@ -20,6 +20,7 @@ export function engineMember(mon, customItems = null) {
 	if (mon.friendshipCarry) member.friendshipCarry = mon.friendshipCarry;
 	if (friendshipLocked(mon)) member.friendshipLocked = true;
 	if (mon.counts) member.counts = { ...mon.counts };
+	if (mon.statExp) member.statExp = { ...mon.statExp };
 	return member;
 }
 

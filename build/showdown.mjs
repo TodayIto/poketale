@@ -12,18 +12,29 @@ const tables = {
   Conditions: 'conditions', TypeChart: 'typechart',
 };
 
+// Champions and the main-series generations 1-8 (generation 9 is the base data)
+export const SHOWDOWN_ROOTS = Object.freeze(['champions', ...Array.from({ length: 8 }, (_, i) => `gen${i + 1}`)]);
+
 export function showdownMods() {
   const mods = new Set();
-  function visit(mod) {
+  function visit(mod, chain = []) {
     if (mod === 'base' || mod === 'gen9') return;
-    if (mods.has(mod)) throw new Error(`Circular Showdown inheritance: ${mod}`);
+    if (chain.includes(mod)) throw new Error(`Circular Showdown inheritance: ${mod}`);
+    if (mods.has(mod)) return;
     mods.add(mod);
     const { Scripts } = require(join(dist, 'data/mods', mod, 'scripts.js'));
-    visit(Scripts.inherit || 'base');
+    visit(Scripts.inherit || 'base', [...chain, mod]);
   }
-  visit('champions');
+  for (const root of SHOWDOWN_ROOTS) visit(root);
   return [...mods];
 }
+
+// The custom games the plugin plays: singles of every generation, doubles from generation 3, and Champions
+export const SHOWDOWN_FORMATS = Object.freeze([
+  ...Array.from({ length: 9 }, (_, i) => `[Gen ${i + 1}] Custom Game`),
+  ...Array.from({ length: 7 }, (_, i) => `[Gen ${i + 3}] Doubles Custom Game`),
+  '[Gen 9 Champions] Custom Game', '[Gen 9 Champions] Doubles Custom Game',
+]);
 
 export const DROPPED_FIELDS = {
   Pokedex: ['color', 'heightm', 'formeOrder', 'canHatch'],
@@ -106,10 +117,12 @@ export const showdownBrowser = {
       } else if (file === 'dex-formats.js') {
 
         const formats = readFileSync(join(dist, 'config/formats.js'), 'utf8');
-        const selected = [...formats.matchAll(/\n  \{\n[\s\S]*?\n  \},?/g)]
+        const named = new Map([...formats.matchAll(/\n  \{\n[\s\S]*?\n  \},?/g)]
           .map(m => m[0].trim().replace(/,$/, ''))
-          .filter(s => /name: "\[Gen 9(?: Champions)?\] (?:Doubles )?Custom Game"/.test(s));
-        if (selected.length !== 4) throw new Error('Expected the upstream singles and doubles custom games (Gen 9, Gen 9 Champions)');
+          .map(s => [/name: "([^"]*)"/.exec(s)?.[1], s]));
+        const missing = SHOWDOWN_FORMATS.filter(name => !named.has(name));
+        if (missing.length) throw new Error(`Expected the upstream custom games: ${missing.join(', ')}`);
+        const selected = SHOWDOWN_FORMATS.map(name => named.get(name));
         patch(/    let customFormats;[\s\S]*?    let section = "";/,
           `    const Formats = [${selected.join(',')}];\n    let section = "";`);
       } else if (file === 'dex-text.js') {

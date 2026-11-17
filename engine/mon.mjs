@@ -14,26 +14,46 @@ export const STATS = Object.freeze(['hp', 'atk', 'def', 'spa', 'spd', 'spe']);
 
 export const NON_HP_STATS = Object.freeze(STATS.slice(1));
 
+// Generations 1-2 have one Special stat in place of Sp. Atk and Sp. Def
+export const hasOneSpecial = gen => Number.isInteger(gen) && gen <= 2;
+
 export const STATUS_IDS = Object.freeze(new Set(['', 'brn', 'par', 'slp', 'frz', 'psn', 'tox']));
 
 export const toID = text => String(text ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 
-export function completeSet(dex, set, rng, { levelUp, label = set.species, tera = true } = {}) {
+// The level-up moves known at a level: the last four learned, or those learned at level 0
+function levelUpMoves(learnset, level, known = () => true) {
+	const moves = [];
+	for (const [at, move] of learnset) {
+		if (at > level) break;
+		if (at < 1 || moves.includes(move) || !known(move)) continue;
+		if (moves.length === MAX_MOVES) moves.shift();
+		moves.push(move);
+	}
+	return moves.length ? moves : [...new Set(learnset.filter(([at, move]) => at === 0 && known(move)).map(([, move]) => move))].slice(-MAX_MOVES);
+}
+
+// oneSpecial: made in generation 1 or 2, so one IV is drawn for both special stats. movesUpTo: a foe in a battle of that
+// generation brings only the generation's moves (owner's decision: later moves are the player's edge); a given later
+// move is dropped and its slot filled from the level-up moves, and a set left with no move keeps its moves as they were
+export function completeSet(dex, set, rng, { levelUp, label = set.species, tera = true, oneSpecial = false, movesUpTo = null } = {}) {
 	const out = { ...set };
 	const species = dex.species.get(out.species);
+	const known = move => !movesUpTo || !(dex.moves.get(move).gen > movesUpTo);
+	const learnset = levelUp?.[species.id];
+	if (movesUpTo && out.moves?.length && !out.moves.every(known)) {
+		const kept = out.moves.filter(known);
+		// Moves may come by name ('Thunder') where the level-up table has ids
+		const have = new Set(kept.map(toID));
+		const fill = Array.isArray(learnset) ? levelUpMoves(learnset, out.level, known).filter(move => !have.has(toID(move))).reverse() : [];
+		while (kept.length < Math.min(out.moves.length, MAX_MOVES) && fill.length) kept.push(fill.shift());
+		if (kept.length) out.moves = kept;
+	}
 	if (!out.moves?.length) {
 		if (!levelUp) throw new Error(`${label}: 기술이 없습니다 (레벨업 기술 표가 없습니다)`);
-		const learnset = levelUp[species.id];
 		if (!Array.isArray(learnset)) throw new Error(`${label}: 레벨업 기술 표가 없습니다 (${species.id})`);
-		out.moves = [];
-		for (const [level, move] of learnset) {
-			if (level > out.level) break;
-			if (level < 1 || out.moves.includes(move)) continue;
-			if (out.moves.length === MAX_MOVES) out.moves.shift();
-			out.moves.push(move);
-		}
-
-		if (!out.moves.length) out.moves = [...new Set(learnset.filter(([level]) => level === 0).map(([, move]) => move))].slice(-MAX_MOVES);
+		out.moves = (movesUpTo && levelUpMoves(learnset, out.level, known)) || [];
+		if (!out.moves.length) out.moves = levelUpMoves(learnset, out.level);
 		if (!out.moves.length) throw new Error(`${label}: 레벨 ${out.level}에 채울 레벨업 기술이 없습니다 (${species.id})`);
 	}
 	if (!out.ability) {
@@ -53,6 +73,9 @@ export function completeSet(dex, set, rng, { levelUp, label = set.species, tera 
 		if (out.ivs[s] === undefined) out.ivs[s] = rng.random(MAX_IV + 1);
 		if (out.evs[s] === undefined) out.evs[s] = 0;
 	}
+	// Both are still drawn so the draws after them stay the same; a given one wins over a drawn one
+	if (oneSpecial && open.includes('spd')) out.ivs.spd = out.ivs.spa;
+	else if (oneSpecial && open.includes('spa')) out.ivs.spa = out.ivs.spd;
 	if (!out.gender) {
 		if (species.gender) out.gender = species.gender === 'N' ? '' : species.gender;
 		else out.gender = rng.random() < species.genderRatio.M ? 'M' : 'F';

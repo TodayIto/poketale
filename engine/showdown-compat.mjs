@@ -1,6 +1,9 @@
 export function injectStatus(battle, pokemon, status, { sleepTurns, freezeTurns } = {}) {
+	// Generations 1-2 keep bad poison only inside the battle it started in; it is plain poison outside
+	if (status === 'tox' && battle.gen <= 2) status = 'psn';
 	pokemon.status = status;
 	pokemon.statusState = battle.initEffectState({ id: status, target: pokemon });
+	statusDrops(pokemon);
 	if (status === 'slp') pokemon.statusState.startTime = pokemon.statusState.time = sleepTurns;
 	if (status === 'frz' && freezeTurns) pokemon.statusState.startTime = pokemon.statusState.time = freezeTurns;
 	if (status === 'tox') pokemon.statusState.stage = 0;
@@ -13,14 +16,40 @@ export function setLevel(battle, pokemon, level) {
 	refreshStats(battle, pokemon);
 }
 
+// Generation 1 keeps the stats it fights with in modifiedStats, with paralysis and burn applied to them when the status
+// starts or the stats are recalculated (Showdown's species change does the same)
+function statusDrops(pokemon) {
+	if (!pokemon.modifiedStats || typeof pokemon.modifyStat !== 'function') return;
+	if (pokemon.status === 'par') pokemon.modifyStat('spe', 0.25);
+	if (pokemon.status === 'brn') pokemon.modifyStat('atk', 0.5);
+}
+
+// Generation 1's own recalculation of a boosted stat (its Pokemon.boostBy)
+const GEN1_RAISE = [1, 1.5, 2, 2.5, 3, 3.5, 4], GEN1_DROP = [100, 66, 50, 40, 33, 28, 25], GEN1_CAP = 999;
+
+function reapplyBoosts(pokemon) {
+	if (!pokemon.modifiedStats || typeof pokemon.modifyStat !== 'function') return;
+	for (const s of Object.keys(pokemon.modifiedStats)) {
+		const boost = pokemon.boosts[s] ?? 0;
+		if (!boost) continue;
+		pokemon.modifyStat(s, boost > 0 ? GEN1_RAISE[boost] : GEN1_DROP[-boost] / 100);
+		if (boost > 0 && pokemon.modifiedStats[s] > GEN1_CAP) pokemon.modifiedStats[s] = GEN1_CAP;
+	}
+}
+
 function refreshStats(battle, pokemon) {
 	const species = pokemon.transformed ? pokemon.baseSpecies : pokemon.species;
 	const stats = battle.spreadModify(species.baseStats, pokemon.set);
 	if (species.maxHP) stats.hp = species.maxHP;
 	pokemon.baseStoredStats = stats;
 	if (!pokemon.transformed) {
-		for (const s of Object.keys(pokemon.storedStats)) pokemon.storedStats[s] = stats[s];
+		for (const s of Object.keys(pokemon.storedStats)) {
+			pokemon.storedStats[s] = stats[s];
+			if (pokemon.modifiedStats) pokemon.modifiedStats[s] = stats[s];
+		}
 		pokemon.speed = pokemon.storedStats.spe;
+		reapplyBoosts(pokemon);
+		statusDrops(pokemon);
 	}
 	const oldMax = pokemon.maxhp;
 	pokemon.baseMaxhp = stats.hp;
@@ -53,6 +82,42 @@ export function battleFromJSON(sim, json) {
 		Object.assign(pokemon.set.evs, given[i][j].evs);
 	}));
 	return battle;
+}
+
+// Older generations' move code sometimes lets a move fail without a word (generation 2 Sleep Talk while awake,
+// generation 3 Mirror Coat with nothing to reflect). Such a move gets the failure line the later code prints. From
+// generation 2 Showdown records the failure (moveThisTurnResult false), so a move that works silently (Wish) is left
+// alone; generation 1 records nothing, so there a move followed by nothing failed when it changed nothing either (later
+// moves can work silently there: Baton Pass only asks for a switch, Mean Look traps without a word).
+// Generation 9 is left as it is. Hints are not shown in the story (generation 3 First Impression after the first turn
+// gives only a hint).
+const QUIET_LINE = /^\|(t:|split\||debug\||-hint\||$)/;
+
+// What a move can change without a line: switches it asks for, volatiles, side, slot and field conditions, HP
+const quietState = battle => JSON.stringify([
+	battle.sides.map(side => [Object.keys(side.sideConditions), side.slotConditions.map(Object.keys),
+		side.pokemon.map(p => [p.hp, p.status, p.switchFlag, p.fainted, Object.keys(p.volatiles)])]),
+	battle.field.weather, battle.field.terrain, Object.keys(battle.field.pseudoWeather),
+]);
+
+export function sayQuietFailures(battle) {
+	if (!(battle.gen < 9)) return;
+	const { actions } = battle;
+	const runMove = actions.runMove;
+	if (runMove.quietFailures) return;
+	const wrapped = function (move, pokemon, ...rest) {
+		const from = battle.log.length;
+		const before = battle.gen === 1 ? quietState(battle) : null;
+		const result = runMove.call(this, move, pokemon, ...rest);
+		const ident = `${pokemon}`;
+		const lines = battle.log.slice(from).filter(line => !QUIET_LINE.test(line));
+		const at = lines.findIndex(line => line.startsWith(`|move|${ident}|`));
+		const failed = battle.gen === 1 ? quietState(battle) === before : pokemon.moveThisTurnResult === false;
+		if (at >= 0 && at === lines.length - 1 && failed && !battle.ended) battle.add('-fail', pokemon);
+		return result;
+	};
+	wrapped.quietFailures = true;
+	actions.runMove = wrapped;
 }
 
 export function allowRayquazaMega(battle) {

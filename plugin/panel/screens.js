@@ -133,7 +133,7 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), lang, sh
 
   async function screensFor(host, shown, notice) {
     const options = settings();
-    return createOutsideScreens({ sim, fetchBytes, levelUp: loadLevelUp, exp: EXP_TABLE, trainer, battleFormat, lang: shown,
+    return createOutsideScreens({ sim, fetchBytes, levelUp: loadLevelUp, exp: EXP_TABLE, trainer, battleFormat, lang: shown, eraGimmicks: () => settings().eraGimmicks,
       viewOptions: { theme: options.theme, sound: options.sound, pictureWays: viewPictureWays(options.panelPicture) },
       createView: async viewOptions => {
         host.loading.show();

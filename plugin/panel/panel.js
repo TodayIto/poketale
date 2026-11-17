@@ -38,7 +38,7 @@ export const isTap = (down, up) => !!down && Math.hypot(up.x - down.x, up.y - do
 export const TAB_MARGIN = 10;
 
 export async function startPanel({ doc, read, queueAction, screens, changes = () => () => {}, resume = async () => {}, toggleAux = async () => null, debugAdd = async () => {}, debugEdit = async () => {}, debugHeal = async () => {}, debugBadges = async () => {}, debugLock = async () => {},
-  botTravel = async () => {}, quickImport = async () => {}, importLater = async () => {}, pictures = null, place = () => DEFAULT_SCREEN_PLACE, trainer = async () => null, shift = () => 0,
+  botTravel = async () => {}, setGeneration = async () => {}, quickImport = async () => {}, importLater = async () => {}, pictures = null, place = () => DEFAULT_SCREEN_PLACE, trainer = async () => null, shift = () => 0,
   restSound = () => {} }) {
   const body = await doc.querySelector('body');
   if (!body) return null;
@@ -132,8 +132,8 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     const dex = cur?.on ? { home: dexHome(cur.chat, !!cur.compat), regions: cur.compat ? preStoryRegions(cur.chat) : [],
       mentions: [...storyMentions(cur.chat)].sort((a, b) => a - b) } : null;
 
-    const sig = JSON.stringify([cur?.key ?? null, cur?.lang ?? null, !!cur?.on, battle.phase, chatScreen, !!cur?.compat, !!cur?.debug, cur?.aux?.on ?? null, cur?.offer ?? null, travel, dex,
-      pictures?.route() ?? null, place(), shift(), below, room]);
+    const sig = JSON.stringify([cur?.key ?? null, cur?.lang ?? null, !!cur?.on, battle.phase, chatScreen, !!cur?.compat, !!cur?.debug, cur?.aux?.on ?? null, cur?.offer ?? null, travel, cur?.generation ?? null, dex,
+      cur?.ctx?.eraGimmicks ?? null, pictures?.route() ?? null, place(), shift(), below, room]);
     if (!force && sig === lastSig) return;
     if ((cur?.id ?? null) !== chatId) {
       const id = cur?.id ?? null;
@@ -155,6 +155,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     if (now) { now.below = below; now.room = room; }
     if (now) {
       now.travel = travel;
+      now.generation = cur.generation ?? null;
       now.money = bagMoney(cur.chat, cur.compat, cur.state);
       now.compat = !!cur.compat;
       now.dex = dex;
@@ -274,7 +275,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     const screen = await screenNow();
 
     const shownUi = now.unreadable && !ui.message ? { ...ui, message: { text: unreadableLine(now.lang), error: true } } : ui;
-    const view = renderPanel(panelModel({ state: now.state, ctx: now.ctx, lang: now.lang, locked: now.locked, resume: now.resume, debug: now.debug, offer: now.offer, travel: now.travel,
+    const view = renderPanel(panelModel({ state: now.state, ctx: now.ctx, lang: now.lang, locked: now.locked, resume: now.resume, debug: now.debug, offer: now.offer, travel: now.travel, generation: now.generation,
       compat: now.compat, dexHome: now.dex?.home ?? null, dexRegions: now.dex?.regions ?? [], dexMentions: now.dex?.mentions ?? [], ui: shownUi, screen, money: now.money }), { aux: now.aux, picture: pictures?.src, shift: shift(), below: now.below, room: now.room,
       rested: glow && Date.now() < glow.until ? glow.uids : null });
     const states = [view.open && PANEL_STATES.open, view.locked && PANEL_STATES.locked, view.gathered && PANEL_STATES.gathered].filter(Boolean);
@@ -508,6 +509,10 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
             await debugBadges(effect.badges, target);
             say(effect.after);
           } catch (error) { say(failureText(WHAT.debugBadges, error, lang), true); }
+          return void await refresh({ force: true });
+        }
+        case 'generation': {
+          try { await setGeneration(effect.value, target); } catch (error) { say(failureText(WHAT.botSetting, error, lang), true); }
           return void await refresh({ force: true });
         }
         case 'botTravel': {

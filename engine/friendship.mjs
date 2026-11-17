@@ -41,7 +41,8 @@ export const FOND_FRIENDSHIP = 220;
 
 const ENDURE = [[255, 20], [220, 15], [180, 10]];
 const CURE_PERCENT = 20, EVADE_POINTS = 10;
-const CRIT_ODDS = [0, 24, 8, 2, 1];
+// Critical-hit odds by stage (Showdown getDamage): generation 6 still had 1 in 16 at stage 1
+const CRIT_ODDS = [0, 24, 8, 2, 1], CRIT_ODDS_GEN6 = [0, 16, 8, 2, 1];
 export const enduresPercent = value => ENDURE.find(([from]) => value >= from)?.[1] ?? 0;
 
 export const friendlyExp = value => value >= FOND_FRIENDSHIP;
@@ -65,6 +66,9 @@ export function stepInBattle(battle, pokemon, kind) {
 }
 
 export const isCarry = value => Number.isFinite(value) && value >= 0 && value < 1;
+
+// A close bond's battle perks (enduring, curing, evading, critical hits) are a generation 6 system (Pokémon-Amie)
+const PERKS_FROM = 6;
 
 export function installFriendship(sim, battle, spec, { exp: table } = {}) {
 	const members = new Map(spec.p1.team.map(m => [m.uid, m]));
@@ -100,6 +104,8 @@ export function installFriendship(sim, battle, spec, { exp: table } = {}) {
 		stepInBattle(battle, target, foeLevel - target.level >= FAINT_LEVEL_GAP ? 'faintHigh' : 'faint');
 	});
 
+	if (battle.gen < PERKS_FROM) return state;
+
 	battle.onEvent('Damage', battle.format, PRIORITY.damage, function (damage, target, source, effect) {
 		const value = friendshipOf(battle, target);
 		if (value === undefined || typeof damage !== 'number' || effect?.effectType !== 'Move' || damage < target.hp || target.hp <= 1) return;
@@ -134,7 +140,7 @@ export function installFriendship(sim, battle, spec, { exp: table } = {}) {
 	battle.onEvent('ModifyCritRatio', battle.format, PRIORITY.crit, function (critRatio, source, target, move) {
 		const value = friendshipOf(battle, source);
 		if (value !== FRIENDSHIP_MAX || move.willCrit !== undefined || !(critRatio >= 1 && critRatio < 4)) return;
-		const n = CRIT_ODDS[Math.trunc(critRatio)];
+		const n = (battle.gen === 6 ? CRIT_ODDS_GEN6 : CRIT_ODDS)[Math.trunc(critRatio)];
 		if (battle.randomChance(1, n)) return 4;
 		if (!battle.randomChance(1, n - 1)) return 0;
 		battle.add('-story-friendship', source, 'crit');
