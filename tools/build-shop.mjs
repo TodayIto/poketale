@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { csv, toID } from './sources.mjs';
 import { OUTSIDE_ITEMS } from '../story/items.mjs';
+import { tmMove } from '../story/item-info.mjs';
 
 const require = createRequire(import.meta.url);
 const { Dex } = require('../vendor/pokemon-showdown/dist/sim/index.js');
@@ -55,8 +56,7 @@ const DEPARTMENT = [
 ];
 const DEPARTMENT_PICKS = { min: 10, max: 14 };
 
-const TM_MOVES = JSON.parse(read('data/items-outside.json')).tms;
-const tmPrice = id => { const power = Dex.moves.get(TM_MOVES[Number(id.slice(2)) - 1] ?? '').basePower || 0; return power >= 90 ? 5000 : power >= 70 ? 4000 : 3000; };
+const tmPrice = id => { const power = Dex.moves.get(tmMove(id) ?? '').basePower || 0; return power >= 90 ? 5000 : power >= 70 ? 4000 : 3000; };
 
 const MEGA_STEP = { 100000: 30000, 70000: 20000, 50000: 15000, 30000: 10000 };
 const MEGA_TIER = {

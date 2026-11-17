@@ -1,10 +1,11 @@
 import { snapshot, restore } from '../ai/engine-copy.js';
+import { moveCategory } from '../engine/later-moves.mjs';
 
 export function moveMenuInfo(battle, moveId, user, target, { sim, abilityShown = () => false } = {}) {
   const move = battle.dex.moves.get(moveId);
   const type = moveType(battle, moveId, user, target);
   const info = {
-    type, category: move.category,
+    type, category: moveCategory(battle, move),
     power: move.category !== 'Status' && move.basePower > 0 ? move.basePower : null,
     accuracy: move.accuracy === true ? null : move.accuracy,
   };

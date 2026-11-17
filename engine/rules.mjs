@@ -1,5 +1,5 @@
 import { ppUpCount } from './pp.mjs';
-import { STATS, MAX_IV } from './mon.mjs';
+import { STATS, MAX_IV, hasOneSpecial } from './mon.mjs';
 
 export const MAINLINE_FORMAT = 'gen9customgame@@@!Team Preview';
 
@@ -7,20 +7,34 @@ export const CHAMPIONS_FORMAT = 'gen9championscustomgame@@@!Team Preview,Level C
 
 export const DEFAULT_FORMAT = MAINLINE_FORMAT;
 
+export const DEFAULT_GEN = 9;
+export const GENS = Object.freeze(Array.from({ length: DEFAULT_GEN }, (_, i) => i + 1));
+export const isGen = value => GENS.includes(value);
+
+// Main-series rules of a generation. Generations 1-4 have no team preview to switch off
+export const mainlineFormat = (gen = DEFAULT_GEN) => (gen === DEFAULT_GEN ? MAINLINE_FORMAT : gen <= 4 ? `gen${gen}customgame` : `gen${gen}customgame@@@!Team Preview`);
+
 const RULE_FORMATS = Object.freeze({ mainline: MAINLINE_FORMAT, champions: CHAMPIONS_FORMAT });
 export const RULE_IDS = Object.freeze(Object.keys(RULE_FORMATS));
 export const DEFAULT_RULE = 'mainline';
-export const ruleFormat = (rule = DEFAULT_RULE) => RULE_FORMATS[rule];
+// Champions is generation 9 only, whatever the story's generation
+export const ruleFormat = (rule = DEFAULT_RULE, gen = DEFAULT_GEN) => (rule === 'mainline' && isGen(gen) ? mainlineFormat(gen) : RULE_FORMATS[rule]);
 
 export function formatRule(format) {
-	const rule = RULE_IDS.find(id => RULE_FORMATS[id] === format);
+	const rule = RULE_IDS.find(id => RULE_FORMATS[id] === format) ?? (GENS.some(gen => mainlineFormat(gen) === format) ? 'mainline' : null);
 	if (!rule) throw new Error(`No rule for the format ${format}`);
 	return rule;
 }
 
+// The generation of a main-series format; null for Champions, which keeps no generation of its own
+export const formatGen = format => GENS.find(gen => mainlineFormat(gen) === format) ?? null;
+
+// Generations 1 and 2 have no double battles
+export const hasDoubles = format => Number(/^gen(\d)/.exec(String(format))?.[1] ?? DEFAULT_GEN) >= 3;
+
 export function doublesFormat(format) {
 	const [id, rules] = String(format).split('@@@');
-	const doubles = id.replace(/^gen9(champions)?customgame$/, 'gen9$1doublescustomgame');
+	const doubles = hasDoubles(id) ? id.replace(/^gen(\d)(champions)?customgame$/,'gen$1$2doublescustomgame') : id;
 	if (doubles === id) throw new Error(`No double-battle format for ${format}`);
 	return rules === undefined ? doubles : `${doubles}@@@${rules}`;
 }
@@ -52,6 +66,11 @@ export const EV_STAT_MAX = 252, EV_TOTAL_MAX = 510;
 
 export const NO_EVS = Object.freeze(Object.fromEntries(STATS.map(s => [s, 0])));
 
+const higherSpecial = evs => {
+	const special = Math.max(evs.spa ?? 0, evs.spd ?? 0);
+	return { spa: special, spd: special };
+};
+
 const cache = new WeakMap();
 const wrapped = new WeakSet();
 
@@ -75,7 +94,17 @@ export function formatRules(sim, format = DEFAULT_FORMAT) {
 
 		stat: (baseStats, set, statName) => statModify.call(self, baseStats, rules.engineSet(set), statName),
 
-		engineSet: set => (champions ? { ...set, evs: NO_EVS } : set),
+		engineSet: set => {
+			const own = champions ? { ...set, evs: NO_EVS } : set;
+			if (!hasOneSpecial(self.gen)) return own;
+			// Generations 1-2 have no natures, keep even IVs only (Showdown) and have one Special. Its IV and its EVs (stat
+			// experience) are the higher of the two special stats', so training either one counts and saves made in later
+			// generations keep their better side. Battles and stats outside them are reckoned so; the saved set keeps both
+			const ivs = Object.fromEntries(Object.entries(own.ivs ?? {}).map(([s, v]) => [s, v & 30]));
+			if (own.ivs && (own.ivs.spa !== undefined || own.ivs.spd !== undefined)) ivs.spa = ivs.spd = Math.max(own.ivs.spa ?? MAX_IV, own.ivs.spd ?? MAX_IV) & 30;
+			const evs = own.evs ? { ...own.evs, ...higherSpecial(own.evs) } : own.evs;
+			return { ...own, nature: '', ivs, ...(evs ? { evs } : {}) };
+		},
 
 		maxPp(moveId, ups = 0) {
 			const move = dex.moves.get(moveId);
@@ -96,10 +125,10 @@ export function formatRules(sim, format = DEFAULT_FORMAT) {
 
 export function applyFormatRules(sim, battle) {
 	const rules = formatRules(sim, battle.format);
-	if (rules.effort || wrapped.has(battle)) return rules;
+	if ((rules.effort && !hasOneSpecial(rules.dex.gen)) || wrapped.has(battle)) return rules;
 	const statModify = battle.statModify;
 	battle.statModify = function (baseStats, set, statName) {
-		return statModify.call(this, baseStats, { ...set, evs: NO_EVS }, statName);
+		return statModify.call(this, baseStats, rules.engineSet(set), statName);
 	};
 	wrapped.add(battle);
 	return rules;

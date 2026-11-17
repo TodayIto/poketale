@@ -11,8 +11,10 @@ import { MAX_LEVEL, NON_HP_STATS } from '../engine/mon.mjs';
 export function summaryView(battle, names, entry, pokemon, options = {}, lang = DEFAULT_LANG) {
   const phrases = PHRASES[checkLang(lang)];
   const species = pokemon.baseSpecies;
-  const nature = battle.dex.natures.get(pokemon.set.nature ?? '');
-  const ability = battle.dex.abilities.get(entry.baseAbility ?? pokemon.baseAbility);
+  const saved = pokemon.m?.start ?? {};
+  const nature = battle.dex.natures.get(saved.nature ?? pokemon.set.nature ?? '');
+  const own = entry.baseAbility ?? pokemon.baseAbility;
+  const ability = battle.dex.abilities.get(battle.dex.toID(own) === 'noability' && saved.ability ? saved.ability : own);
   const summary = {
     dexNumber: species.num,
     types: [...species.types],
@@ -20,7 +22,7 @@ export function summaryView(battle, names, entry, pokemon, options = {}, lang = 
     trainer: pokemon.m?.ot || pokemon.side.name,
     ability: { name: names.ability(ability.id), description: phrases[`ability.${ability.id}`] ?? '' },
 
-    item: pokemon.item ? names.item(pokemon.item) : pokemon.m?.heldCustom ?? null,
+    item: (battle.gen === 1 ? battle.dex.toID(saved.item ?? '') : pokemon.item) ? names.item(battle.gen === 1 ? battle.dex.toID(saved.item) : pokemon.item) : pokemon.m?.heldCustom ?? null,
 
     stats: { hp: pokemon.hp, maxhp: pokemon.maxhp, ...Object.fromEntries(NON_HP_STATS.map(s => [s, entry.stats?.[s] ?? pokemon.baseStoredStats[s]])) },
     friendship: pokemon.happiness,
@@ -36,10 +38,10 @@ export function summaryView(battle, names, entry, pokemon, options = {}, lang = 
     if (shown !== nature) summary.nature.mint = ownText('own.mintNote', { itemName: names.item(`${nature.id}mint`) }, lang);
   }
 
-  if (!battle.dex.currentMod.startsWith('champions')) summary.ivs = { hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31, ...pokemon.set.ivs };
+  if (!battle.dex.currentMod.startsWith('champions')) summary.ivs = { hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31, ...(saved.ivs ?? pokemon.set.ivs) };
   else if (battle.ruleTable.has('levelclausemod')) summary.ivs = { hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31 };
 
-  if (entry.teraType) summary.teraType = entry.teraType;
+  if (entry.teraType && battle.gen === 9) summary.teraType = entry.teraType;
   const exp = expInfo(battle, pokemon, options.exp);
   if (exp) summary.exp = exp;
   return summary;

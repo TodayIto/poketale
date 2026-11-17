@@ -78,7 +78,7 @@ function effectLine(event, lang, k) {
   if (event.kind === 'evolve') return t('diary.fx.evolve', { species: k.p(k.sp(event.species), '으로/로') });
   if (event.kind === 'teach') return t('diary.fx.teach', { move: k.move(event.move) });
 
-  if (event.kind === 'evs') return t(event.to > event.from ? 'diary.fx.evs' : 'diary.fx.evsDown', { stat: statName(event.stat, lang) });
+  if (event.kind === 'evs') return t(event.to > event.from ? 'diary.fx.evs' : 'diary.fx.evsDown', { stat: event.stats ? statList(event.stats, lang) : statName(event.stat, lang) });
   if (event.kind === 'exp') return `${t('diary.fx.exp', { n: count(event.amount, lang) })}${event.to > event.from ? `, Lv${event.from} → ${event.to}` : ''}`;
   if (event.kind === 'ability') return t('diary.fx.ability', { from: k.ability(event.from), to: k.ability(event.to) });
   if (event.kind === 'nature') return t('diary.fx.nature', { nature: natureName(event.nature, lang) });

@@ -10,6 +10,7 @@ import { EXP_SHARE_MODES } from '../../story/items.mjs';
 import { EXP_RATES, RATES, DEFAULT_EXP_RATE, EXP_RATE_DIGITS, EXP_RATE_MIN, EXP_RATE_MAX, isExpRate, isExpRateSetting } from '../../engine/exp.mjs';
 import { TRADE_EVOLUTIONS as TRADE_EVOLUTION_IDS, DEFAULT_TRADE_EVOLUTION_SETTING } from '../../engine/evolution.mjs';
 import { FOE_GIMMICK_MODES, DEFAULT_FOE_GIMMICKS } from '../../story/gimmicks.mjs';
+import { ERA_GIMMICK_MODES, DEFAULT_ERA_GIMMICKS } from '../../engine/era-gimmicks.mjs';
 import { numberPadCss, openNumberPad } from './number-pad.js';
 import { pushBack } from './contextmenu.js';
 import { controlsCss, switchControl, stepperControl, segmentControl, sliderControl } from './controls.js';
@@ -37,7 +38,7 @@ export const langOf = tag => (/^ko\b/i.test(String(tag ?? '')) ? 'ko' : 'en');
 
 export const hostLang = () => langOf(globalThis.navigator?.language);
 export const DEFAULT_SETTINGS = Object.freeze({ iron: false, sound: false, sendFormat: 'key', theme: DEFAULT_THEME, orientation: 'portrait', lang: null, autoSend: false, commands: false, aux: false, auxRecent: 8, oocTrial: false, difficulty: 'normal',
-  rule: DEFAULT_RULE, expShare: 'always', expRate: DEFAULT_EXP_RATE, friendshipRate: DEFAULT_EXP_RATE, hatchRate: DEFAULT_EXP_RATE, tradeEvolution: DEFAULT_TRADE_EVOLUTION_SETTING, speed: DEFAULT_SPEED, typeHints: false, effectItems: false, foeGimmicks: DEFAULT_FOE_GIMMICKS, moveAnims: true, quality: 'high', panelPicture: DEFAULT_PICTURE_ROUTE, outsideScreens: DEFAULT_SCREEN_PLACE, panelShift: PANEL_SIZE.shift.default, aboveOthers: true, importRecent: IMPORT_AI_RECENT,
+  rule: DEFAULT_RULE, expShare: 'always', expRate: DEFAULT_EXP_RATE, friendshipRate: DEFAULT_EXP_RATE, hatchRate: DEFAULT_EXP_RATE, tradeEvolution: DEFAULT_TRADE_EVOLUTION_SETTING, speed: DEFAULT_SPEED, typeHints: false, effectItems: false, foeGimmicks: DEFAULT_FOE_GIMMICKS, eraGimmicks: DEFAULT_ERA_GIMMICKS, moveAnims: true, quality: 'high', panelPicture: DEFAULT_PICTURE_ROUTE, outsideScreens: DEFAULT_SCREEN_PLACE, panelShift: PANEL_SIZE.shift.default, aboveOthers: true, importRecent: IMPORT_AI_RECENT,
   silhouette: true, looks: Object.freeze({}), oldLook: null, debug: false,
   bots: Object.freeze([]), botsOff: Object.freeze([]) });
 
@@ -56,6 +57,7 @@ export const RULES = labelled(RULE_IDS, 'settings.rule');
 export const EXP_SHARES = labelled(EXP_SHARE_MODES, 'settings.expShare');
 export const TRADE_EVOLUTIONS = labelled(TRADE_EVOLUTION_IDS, 'settings.tradeEvolution');
 export const FOE_GIMMICKS = labelled(FOE_GIMMICK_MODES, 'settings.foeGimmicks');
+export const ERA_GIMMICKS = labelled(ERA_GIMMICK_MODES, 'settings.eraGimmicks');
 const rateChoices = rates => perLang(t => Object.freeze(rates.map(rate => Object.freeze([rate, t('settings.expRate', { rate })]))));
 
 export const EXP_RATE_CHOICES = rateChoices(EXP_RATES);
@@ -119,7 +121,7 @@ export const SETTING_TABS = perLang((t, lang) => {
   return Object.freeze([
     { id: 'battle', rows: [row('rule', RULES(lang)), row('expShare', EXP_SHARES(lang)), row('expRate', EXP_RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }),
       row('friendshipRate', RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }), row('hatchRate', RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }),
-      row('tradeEvolution', TRADE_EVOLUTIONS(lang)), row('iron', onOff), row('difficulty', DIFFICULTIES(lang), ordered), row('foeGimmicks', FOE_GIMMICKS(lang)), row('speed', SPEEDS(lang), ordered), row('typeHints', onOff),
+      row('tradeEvolution', TRADE_EVOLUTIONS(lang)), row('iron', onOff), row('difficulty', DIFFICULTIES(lang), ordered), row('foeGimmicks', FOE_GIMMICKS(lang)), row('eraGimmicks', ERA_GIMMICKS(lang)), row('speed', SPEEDS(lang), ordered), row('typeHints', onOff),
 
       ...(ITEM_EFFECTS_READY ? [row('effectItems', onOff)] : [])] },
     { id: 'screen', rows: [
@@ -186,6 +188,7 @@ export function normalizeSettings(raw) {
     typeHints: s.typeHints === true,
     effectItems: ITEM_EFFECTS_READY && s.effectItems === true,
     foeGimmicks: pick(s.foeGimmicks, FOE_GIMMICK_MODES, DEFAULT_SETTINGS.foeGimmicks),
+    eraGimmicks: pick(s.eraGimmicks, ERA_GIMMICK_MODES, DEFAULT_SETTINGS.eraGimmicks),
     moveAnims: s.moveAnims !== false,
     quality: pick(s.quality, QUALITY_IDS, DEFAULT_SETTINGS.quality),
     panelPicture: pick(s.panelPicture, PICTURE_ROUTES, DEFAULT_SETTINGS.panelPicture),

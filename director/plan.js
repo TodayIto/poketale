@@ -183,7 +183,7 @@ async function resolveDouble(ctx, request, turn) {
     }
     if (command.kind === 'item') {
 
-      if (!bag || !((bag.counts.get(command.item) ?? 0) - (taken.get(command.item) ?? 0) > 0)) return no('noItem');
+      if (!bag || !(bag.remaining(command.item, taken) > 0)) return no('noItem');
       const named = slotOf(side, command.target), cheered = bag.cheerSlot(command.item);
       const slot = named >= 0 ? named : cheered >= 0 ? cheered : side.pokemon.indexOf(pokemon);
       let pick;

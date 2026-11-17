@@ -2,10 +2,11 @@ import { battleNamesIn } from './names.js';
 import { DEFAULT_LANG } from '../../director/lang.js';
 import { showOutsideSummary, learnMoveOutside, evolveOutside, rememberMoveOutside, amieOutside, hatchOutside, trainingOutside } from '../../director/outside.js';
 
-export function createOutsideScreens({ sim, createView, fetchBytes, levelUp, exp, lang = DEFAULT_LANG, viewOptions = {}, trainer, battleFormat } = {}) {
+export function createOutsideScreens({ sim, createView, fetchBytes, levelUp, exp, lang = DEFAULT_LANG, viewOptions = {}, trainer, battleFormat, eraGimmicks } = {}) {
   if (!sim?.Battle || typeof createView !== 'function') throw new TypeError('sim and createView are required');
   const names = battleNamesIn(lang, sim.Dex);
   const context = async () => ({ sim, names, lang, exp, battleFormat: typeof battleFormat === 'function' ? await battleFormat() : battleFormat, trainer: typeof trainer === 'function' ? await trainer() : trainer,
+    eraGimmicks: typeof eraGimmicks === 'function' ? eraGimmicks() : eraGimmicks,
     levelUp: typeof levelUp === 'function' ? await levelUp() : await levelUp });
 
   async function withView({ parent, theme }, work) {
