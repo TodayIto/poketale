@@ -666,7 +666,7 @@ export function reduce(ui, hit, { state, ctx, lang, locked = false, debug = fals
   return out;
 }
 
-const LOCK_FREE_EFFECTS = new Set(['summary', 'rename', 'renameBox', 'resume']);
+const LOCK_FREE_EFFECTS = new Set(['summary', 'rename', 'renameBox', 'resume', 'panelSet']);
 
 function wordsOf(lang, sim, state) {
   const names = namesFor(lang, sim);
@@ -758,6 +758,7 @@ function reduceRaw(ui, hit, env) {
     case 'rebreed': return locked || !state.breeding || hatchedParty(state).length < 2 ? same : { ui: { ...calm(ui), pairHidden: false, select: breedPick(null, w) }, effect: null };
     case 'unbreed': return locked || !state.breeding ? same : { ui: { ...calm(ui), pairHidden: false }, effect: { kind: 'queue', action: actions.unbreed() } };
     case 'later': return locked ? same : { ui: calm(ui), effect: { kind: 'importLater' } };
+    case 'panelSet': return { ui: calm(ui), effect: { kind: 'panelSet', key: hit.key, on: !!hit.on } };
     case 'botSet': return locked ? same : { ui: calm(ui), effect: { kind: 'botTravel', change: { key: hit.key, on: !!hit.on } } };
     case 'guideClear': return locked ? same : { ui: calm(ui), effect: { kind: 'botTravel', change: { clear: 'guide' } } };
 

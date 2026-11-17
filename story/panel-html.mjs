@@ -102,11 +102,23 @@ export const SIZE = Object.freeze({
   touch: Object.freeze({ min: 40, row: 38 }),
   hostBar: 60,
   window: Object.freeze({ room: 120 }),
-  shift: Object.freeze({ min: -60, max: 60, default: 0 }),
+  // how far the panel may sit from its normal height. min..max is the settings slider's range, as in 0.0.8.
+  // farMin..farMax is the widest a dragged panel may go (option "drag the panel"); the panel narrows that to the
+  // screen it is on (shiftLimits)
+  shift: Object.freeze({ min: -60, max: 60, default: 0, farMin: -100, farMax: 900, edge: 8, minSheet: 320 }),
 });
 
+// The range the panel can move on a screen `height` px tall (`below` = px kept free at the bottom for the chat
+// input): up until its top is `edge` px from the top, down until `minSheet` px are left for an open sheet.
+export function shiftLimits({ width, height, below = SIZE.hostBar + SIZE.wide.bottomGap } = {}) {
+  if (!(height > 0)) return { min: SIZE.shift.min, max: SIZE.shift.max };
+  const top = width > 0 && width <= SIZE.phone.max ? SIZE.phone.top : SIZE.wide.top;
+  return { min: Math.max(SIZE.shift.farMin, SIZE.shift.edge - top),
+    max: Math.min(SIZE.shift.farMax, Math.max(SIZE.shift.max, Math.floor(height - below - top - SIZE.shift.minSheet))) };
+}
+
 export const panelShift = value => (typeof value === 'number' && Number.isFinite(value)
-  ? Math.min(SIZE.shift.max, Math.max(SIZE.shift.min, Math.round(value))) : SIZE.shift.default);
+  ? Math.min(SIZE.shift.farMax, Math.max(SIZE.shift.farMin, Math.round(value))) : SIZE.shift.default);
 
 const TAP_TARGETS = ['back', 'fold', 'smon', 'quill', 'badge', 'brd', 'rst', 'pairx', 'add', 'nav', 'boxname', 'seg button', 'mini button', 'gclr', 'gnav', 'dxarr', 'dxback', 'dxlk', 'dxpg'];
 const { wide: W, phone: PH, tab: TB, fold: FD, bar: MB } = SIZE;
@@ -431,7 +443,7 @@ export const sheetArt = css => (css ? `<div><style>${css}</style></div>` : '');
 
 export const panelShell = () => shell('', '', [PANEL_STATES.gone]);
 
-export function renderPanel(model, { aux = null, picture = directPicture, shift = SIZE.shift.default, below = null, room = null, rested = null } = {}) {
+export function renderPanel(model, { aux = null, picture = directPicture, shift = SIZE.shift.default, below = null, room = null, rested = null, panelSwitches = null } = {}) {
   const { lang } = model;
   const t = key => esc(say(lang, key));
   const hits = [];
@@ -495,7 +507,7 @@ export function renderPanel(model, { aux = null, picture = directPicture, shift 
       if (model.tab === 'party') out.push(partyHtml(model, hit, picture, rested));
       else if (model.tab === 'box') out.push(boxHtml(model, hit, picture));
       else if (model.tab === 'amie') out.push(amieHtml(model, hit, picture));
-      else if (sub === 'trip') out.push(travelHtml(model, hit));
+      else if (sub === 'trip') out.push(travelHtml(model, hit, panelSwitches));
       else if (sub === 'badge') out.push(badgeCaseHtml(model.badges, lang, hit, { img: url => monImg(picture({ url })), icon: iconHtml }, { icon: ICON, swipe }));
       else out.push(bagHtml(model, hit));
       out.push('</div>');
@@ -636,7 +648,7 @@ function amieHtml(model, hit, picture) {
   return `<div class="x-risu-pkbp-hint">${t(model.locked ? 'panel.amieLocked' : 'panel.amieHint')}</div><div class="x-risu-pkbp-party">${cells.join('')}</div>`;
 }
 
-function travelHtml(model, hit) {
+function travelHtml(model, hit, panelSwitches = null) {
   const { travel, lang, locked } = model;
   const t = key => esc(say(lang, key));
   const cls = (...list) => list.filter(Boolean).join(' ');
@@ -661,6 +673,9 @@ function travelHtml(model, hit) {
   return sec('panel.travel.guide', guide + goal)
     + (locked ? `<div class="x-risu-pkbp-hint">${t('panel.travel.locked')}</div>` : '')
     + sec('panel.travel.settings', switches)
+    // the panel's own switches (kept on this device); the same three are in the plugin settings
+    + (panelSwitches?.length ? sec('panel.travel.panel', panelSwitches.map(({ key, on }) => `<button type="button" class="${cls('x-risu-pkbp-sw', on && 'x-risu-pkbp-on', hit({ t: 'panelSet', key, on: !on }))}" role="switch" `
+      + `aria-checked="${on}" title="${t(on ? 'panel.travel.on' : 'panel.travel.off')}"><span>${t(`settings.row.${key}`)}</span><span class="x-risu-pkbp-swk"></span></button>`).join('')) : '')
     + (start ? sec('panel.travel.start', start) : '');
 }
 

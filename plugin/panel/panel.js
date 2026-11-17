@@ -4,7 +4,7 @@ import { screenView } from '../../story/panel-screens.mjs';
 import { loadExpText } from '../../director/steps-exp.js';
 import { rememberableMoves } from '../../story/state.mjs';
 import { trainBlock } from '../../story/training.mjs';
-import { renderPanel, panelShell, PANEL_STATES, OWN_CLASS, sheetCss, sheetArt, REST_GLOW_MS } from '../../story/panel-html.mjs';
+import { renderPanel, panelShell, PANEL_STATES, OWN_CLASS, sheetCss, sheetArt, REST_GLOW_MS, panelShift, shiftLimits, SIZE } from '../../story/panel-html.mjs';
 import { unreadableLine } from '../../story/stored.mjs';
 import { WHAT, failureText } from '../../story/failure.mjs';
 import { CHAT_SCREEN } from '../battle/stage.js';
@@ -39,7 +39,7 @@ export const TAB_MARGIN = 10;
 
 export async function startPanel({ doc, read, queueAction, screens, changes = () => () => {}, resume = async () => {}, toggleAux = async () => null, debugAdd = async () => {}, debugEdit = async () => {}, debugHeal = async () => {}, debugBadges = async () => {}, debugLock = async () => {},
   botTravel = async () => {}, quickImport = async () => {}, importLater = async () => {}, pictures = null, place = () => DEFAULT_SCREEN_PLACE, trainer = async () => null, shift = () => 0,
-  restSound = () => {} }) {
+  restSound = () => {}, fold = () => true, drag = () => false, moveShift = async () => {}, stay = () => false, panelSwitches = () => null, setPanelSwitch = async () => {} }) {
   const body = await doc.querySelector('body');
   if (!body) return null;
   const root = await doc.createElement('div');
@@ -62,6 +62,67 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
   let glow = null;
 
   const tabsOut = () => !!now?.show && !away && (ui.open || !ui.gathered);
+
+  // Dragging the panel up and down (setting panelDrag). A press that starts on the tab strip and moves more than
+  // DRAG_START px up or down drags; only the vertical distance counts, so the panel stays on the right edge.
+  // While dragging only the newest position is written (one style write at a time); the height is saved on release.
+  const DRAG_START = 6;
+  let lift = null;                              // { id, y, from, moved } while a press on the tabs may become a drag
+  let dragged = null, liftWrite = Promise.resolve(), liftPending = null;
+  let screenSize = null;                        // host page size, read when the panel is recomputed
+  // with the drag option off the height stays inside the slider's range, exactly as before the option existed
+  const fitShift = value => {
+    const { min, max } = drag() ? shiftLimits({ ...screenSize, below: now?.below ?? undefined }) : SIZE.shift;
+    return panelShift(Math.min(max, Math.max(min, value)));
+  };
+  const shiftNow = () => dragged ?? fitShift(shift());
+  function writeLift(value) {
+    liftPending = value;
+    liftWrite = liftWrite.then(async () => {
+      if (liftPending === null) return;
+      const v = liftPending;
+      liftPending = null;
+      await outer.setStyleAttribute(`--pkbp-shift:${v}px;`);
+    }).catch(error => console.warn('[poke-battle] 패널 끌기', error));
+    return liftWrite;
+  }
+  let foldWas = null;                           // the "tuck the tabs away" setting at the last draw
+
+  const liftListeners = {
+    pointerdown: async ({ clientX, clientY, pointerId, button }) => {
+      if (stopped || busy || !drag() || !now?.show || away || button > 0 || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+      const press = { id: pointerId, y: clientY, from: shiftNow(), moved: false, on: false };
+      lift = press;
+      try {
+        const r = await tabsBox.getBoundingClientRect();
+        press.on = r.width > 0 && clientX >= r.left - TAB_MARGIN && clientX <= r.right + TAB_MARGIN && clientY >= r.top - TAB_MARGIN && clientY <= r.bottom + TAB_MARGIN;
+      } catch { press.on = false; }
+      if (!press.on && lift === press) lift = null;
+    },
+    pointermove: ({ clientX, clientY, pointerId }) => {
+      const press = lift;
+      if (!press || !press.on || press.id !== pointerId || !Number.isFinite(clientY)) return;
+      const dy = clientY - press.y;
+      if (!press.moved && Math.abs(dy) < DRAG_START) return;
+      press.moved = true;
+      dragged = fitShift(press.from + dy);
+      writeLift(dragged);
+    },
+    pointerup: async ({ pointerId }) => {
+      const press = lift;
+      if (!press || press.id !== pointerId) return;
+      lift = null;
+      if (!press.moved) return;
+      swipedAt = Date.now();                    // the click that ends a drag is not a press on a tab
+      const value = dragged;
+      try { await liftWrite; await moveShift(value); } catch (error) { console.warn('[poke-battle] 패널 끌기', error); }
+      dragged = null;
+      await draw().catch(() => {});
+      await outer.setStyleAttribute('').catch(() => {});
+    },
+  };
+  liftListeners.pointercancel = liftListeners.pointerup;
+
   let down = null;
   const outsideListeners = {
     pointerdown: ({ clientX, clientY }) => { down = Number.isFinite(clientX) && Number.isFinite(clientY) ? { x: clientX, y: clientY, at: Date.now() } : null; },
@@ -73,6 +134,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
         const [sheet, tabs] = await Promise.all([sheetBox.getBoundingClientRect(), tabsBox.getBoundingClientRect()]);
         const within = (r, m) => r.width > 0 && r.height > 0 && clientX >= r.left - m && clientX <= r.right + m && clientY >= r.top - m && clientY <= r.bottom + m;
         if ((ui.open && within(sheet, 0)) || within(tabs, TAB_MARGIN)) return;
+        if (ui.open && stay()) return;                       // setting: an open panel stays open
         if (!stopped && !busy && tabsOut()) await press({ t: 'outside' });
       } catch (error) { console.warn('[poke-battle] 패널', error); }
     },
@@ -129,11 +191,15 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
 
     const travel = cur?.on && cur.compat ? compatTravel(cur.chat) : null;
 
+    if (cur?.on && chatScreen) {
+      try { screenSize = { width: Number(await doc.clientWidth()), height: Number(await doc.clientHeight()) }; } catch { screenSize = null; }
+    }
+
     const dex = cur?.on ? { home: dexHome(cur.chat, !!cur.compat), regions: cur.compat ? preStoryRegions(cur.chat) : [],
       mentions: [...storyMentions(cur.chat)].sort((a, b) => a - b) } : null;
 
     const sig = JSON.stringify([cur?.key ?? null, cur?.lang ?? null, !!cur?.on, battle.phase, chatScreen, !!cur?.compat, !!cur?.debug, cur?.aux?.on ?? null, cur?.offer ?? null, travel, dex,
-      pictures?.route() ?? null, place(), shift(), below, room]);
+      pictures?.route() ?? null, place(), shift(), below, room, screenSize]);
     if (!force && sig === lastSig) return;
     if ((cur?.id ?? null) !== chatId) {
       const id = cur?.id ?? null;
@@ -238,7 +304,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
   }
 
   let swipeFrom = null, swipedAt = 0;
-  const swipedJust = () => Date.now() - swipedAt < 400;
+  const swipedJust = () => Date.now() - swipedAt < 400 || !!lift?.moved;
 
   let taken = null;
   const took = event => { taken = { x: event?.clientX, y: event?.clientY, at: Date.now() }; };
@@ -271,12 +337,15 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
       return setStates([PANEL_STATES.gone]);
     }
     if (away) { listenOutside(false); return setStates([PANEL_STATES.gone]); }
+    if (!fold() && ui.gathered) ui = { ...ui, gathered: false };          // setting: the tabs never tuck away
+    if (fold() && foldWas === false) ui = { ...ui, gathered: true };      // the setting was just turned on: tucked again (seen once the panel is closed)
+    foldWas = fold();
     const screen = await screenNow();
 
     const shownUi = now.unreadable && !ui.message ? { ...ui, message: { text: unreadableLine(now.lang), error: true } } : ui;
     const view = renderPanel(panelModel({ state: now.state, ctx: now.ctx, lang: now.lang, locked: now.locked, resume: now.resume, debug: now.debug, offer: now.offer, travel: now.travel,
-      compat: now.compat, dexHome: now.dex?.home ?? null, dexRegions: now.dex?.regions ?? [], dexMentions: now.dex?.mentions ?? [], ui: shownUi, screen, money: now.money }), { aux: now.aux, picture: pictures?.src, shift: shift(), below: now.below, room: now.room,
-      rested: glow && Date.now() < glow.until ? glow.uids : null });
+      compat: now.compat, dexHome: now.dex?.home ?? null, dexRegions: now.dex?.regions ?? [], dexMentions: now.dex?.mentions ?? [], ui: shownUi, screen, money: now.money }), { aux: now.aux, picture: pictures?.src, shift: shiftNow(), below: now.below, room: now.room,
+      rested: glow && Date.now() < glow.until ? glow.uids : null, panelSwitches: panelSwitches() });
     const states = [view.open && PANEL_STATES.open, view.locked && PANEL_STATES.locked, view.gathered && PANEL_STATES.gathered].filter(Boolean);
 
     if (view.open && view.sheet !== shown.sheet) {
@@ -289,7 +358,9 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
       if (art !== shown.art) { await artBox.setInnerHTML(sheetArt(art)); shown.art = art; }
     }
 
-    if (view.tabs !== shown.tabs) { await fill(tabsBox, view.tabs, view.hits); shown.tabs = view.tabs; }
+    // with the drag option on, a touch that starts on the tabs is ours: the browser must not turn it into a scroll
+    const tabs = view.tabs + (drag() ? '<style>.x-risu-pkbp-tabs,.x-risu-pkbp-tabs *{touch-action:none;}</style>' : '');
+    if (tabs !== shown.tabs) { await fill(tabsBox, tabs, view.hits); shown.tabs = tabs; }
     await setStates(states);
     listenOutside(tabsOut());
   }
@@ -510,6 +581,10 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
           } catch (error) { say(failureText(WHAT.debugBadges, error, lang), true); }
           return void await refresh({ force: true });
         }
+        case 'panelSet': {
+          try { await setPanelSwitch(effect.key, effect.on); } catch (error) { say(failureText(WHAT.action, error, lang), true); }
+          return void await refresh({ force: true });
+        }
         case 'botTravel': {
           try { await botTravel(effect.change, target); } catch (error) { say(failureText(effect.change.clear ? WHAT.botGuide : WHAT.botSetting, error, lang), true); }
           return void await refresh({ force: true });
@@ -606,6 +681,11 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
 
   await refresh({ force: true });
 
+  const lifts = [];
+  for (const [type, fn] of Object.entries(liftListeners)) {
+    try { lifts.push([type, await doc.addEventListener(type, fn, true)]); } catch (error) { console.warn('[poke-battle] 패널 끌기', error); }
+  }
+
   const keys = await doc.addEventListener('keydown', async event => {
     const key = keyOf(event);
     if (!key || stopped || !ui.open || busy || !now?.show || now.live) return;
@@ -618,7 +698,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
   const unpictures = pictures?.onChange(picturesArrived) ?? (() => {});
   return {
     refresh: () => refresh({ force: true }),
-    stop: async () => { stopped = true; unlisten(); unpictures(); await listenOutside(false); try { await doc.removeEventListener('keydown', keys); await root.remove(); } catch {                    } },
+    stop: async () => { stopped = true; unlisten(); unpictures(); await listenOutside(false); for (const [type, id] of lifts) await doc.removeEventListener(type, id).catch(() => {}); try { await doc.removeEventListener('keydown', keys); await root.remove(); } catch {                    } },
     get ui() { return ui; },
   };
 }

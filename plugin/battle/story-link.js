@@ -36,6 +36,7 @@ import { createFetchBytes } from './fetch-bytes.js';
 import { viewPictureWays } from './picture-route.js';
 import { createReplyWatch } from './reply-watch.js';
 import { showFrame, frameHidden } from './stage.js';
+import { deviceStore } from './device-store.js';
 import { DEFAULT_SETTINGS, DEFAULT_LOOK, settingsUnreadable, LANG_OPEN, hostLang, loadSettings, saveSettings, mountSettings, mountPreparing, botEnabled, botKey, botsSwitched, lookOf, chosenGender, adoptOldLook, commandsOn, auxOn, IMPORT_NAMES_SHOWN } from './settings.js';
 import { mountImportScreen } from './import-screen.js';
 import { makeDraft, importOffer, importOfferAi, importTurn, handBack, commitImport, commitDebugHeal, commitDebugBadges, readImports, cancelImport, inForce, newMonDraft, currentMonDraft, friendshipLockDraft } from '../../story/import.mjs';
@@ -2028,12 +2029,55 @@ async function onPrompt(text) {
 let settingsApp;
 let settingsSaves = Promise.resolve();
 
+// The panel's height. The shared setting (the "panel height" slider) is the default on every device; a panel
+// dragged on this device keeps its own height here, in the device's storage, and that one wins on this device.
+let deviceBox = null, deviceReady = null;
+const device = () => (deviceBox ??= deviceStore(globalThis.risuai, 'pkb:device'));
+const deviceLoaded = () => (deviceReady ??= device().load().then(() => changed(), () => {}));
+// Panel switches kept per device. `sharedSwitches` remembers what the shared settings hold for them, so saving the
+// settings from this device does not push this device's choice onto the user's other devices.
+const DEVICE_SWITCHES = ['panelStay', 'panelFold', 'panelDrag'];
+let sharedSwitches = null;
+async function withDeviceSwitches(loaded) {
+  await deviceLoaded();
+  sharedSwitches = Object.fromEntries(DEVICE_SWITCHES.map(key => [key, loaded[key]]));
+  if (!device().usable) return loaded;
+  const own = Object.fromEntries(DEVICE_SWITCHES.filter(key => typeof device().get(key) === 'boolean').map(key => [key, device().get(key)]));
+  return { ...loaded, ...own };
+}
+const sharedCopy = next => (device().usable && sharedSwitches ? { ...next, ...sharedSwitches } : next);
+
+export function panelShiftNow() {
+  deviceLoaded();
+  const own = device().get('panelShift');
+  return typeof own === 'number' && Number.isFinite(own) ? own : settings.panelShift;
+}
+// one of the panel's switches, pressed in the panel's own Settings sub-tab
+export async function setPanelSwitch(key, on) {
+  if (!DEVICE_SWITCHES.includes(key) || settings[key] === !!on) return;
+  await deviceLoaded();
+  const next = { ...settings, [key]: !!on };
+  changeSettings(next);
+  await saveSettingsInOrder(next);
+}
+export async function setPanelShift(value) {
+  await deviceLoaded();
+  if (device().usable) { await device().set('panelShift', value); changed(); return; }
+  if (settings.panelShift === value) return;
+  const next = { ...settings, panelShift: value };
+  changeSettings(next);
+  await saveSettingsInOrder(next);
+}
+
 export function saveSettingsInOrder(next) {
-  const save = () => saveSettings(risuai.pluginStorage, next);
+  const save = () => saveSettings(risuai.pluginStorage, sharedCopy(next));
   return settingsSaves = settingsSaves.then(save, save);
 }
 
 export function changeSettings(next) {
+  if (device().usable) for (const key of DEVICE_SWITCHES) if (next[key] !== settings[key]) device().set(key, next[key]).catch(() => {});
+  // the shared height was changed in the settings: this device follows it again
+  if (next.panelShift !== settings.panelShift && device().get('panelShift') !== undefined) device().set('panelShift', null).catch(() => {});
   const switched = botsSwitched(settings, next);
   const commands = commandsOn(settings) !== commandsOn(next);
   const tools = (settings.effectItems === true) !== (next.effectItems === true);
@@ -2071,6 +2115,7 @@ export async function openSettings() {
       await showWindow(owner, { full: true });
 
       ({ settings, status: settingsStatus } = await loadSettings(risuai.pluginStorage));
+      settings = await withDeviceSwitches(settings);
       ({ name: persona } = await personaLook());
       if (persona) picture = await loadPicture(risuai.pluginStorage, persona);
       pass = await readPass();
@@ -2336,6 +2381,7 @@ function recheckQuiet(id) {
 
 export async function startStoryLink() {
   ({ settings, status: settingsStatus } = await loadSettings(risuai.pluginStorage));
+  settings = await withDeviceSwitches(settings);
 
   try {
     const name = await personaName(risuai);
