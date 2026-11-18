@@ -7,6 +7,7 @@ import { createLearnSteps, learnMoveOption, loadExpText } from './steps-exp.js';
 import { PLAYER_NAME, EV_TOTAL_MAX, sameNickname } from '../story/rules.mjs';
 import { DEFAULT_LANG } from './lang.js';
 import { DEFAULT_FORMAT } from '../engine/rules.mjs';
+import { usesStatExp } from '../engine/stat-exp.mjs';
 import { enjoymentOf, fullnessOf, gameCandidates } from '../story/amie.mjs';
 import { GAMES, LEVELS } from '../story/amie-games.mjs';
 import { FIND_ORDER, BAG_IDS, BAG_SIZES, EFFECT_BAGS, SOOTHING_BAG, bagOf, traineeOf, hungBagOf, ENERGY_MAX, effortOn } from '../story/training.mjs';
@@ -31,7 +32,7 @@ function readOutside(ctx, mon, read) {
   if (fainted) Object.assign(member, { hp: 1, status: '' });
   const foe = { uid: 'outside-foe', set: structuredClone(mon.set) };
   const spec = {
-    seed: OUTSIDE_SEED, formatid: format,
+    seed: OUTSIDE_SEED, formatid: format, ...(ctx.eraGimmicks ? { eraGimmicks: ctx.eraGimmicks } : {}),
     p1: { name: ctx.trainer || PLAYER_NAME, team: [member] }, p2: { name: '-', team: [foe] },
   };
   const options = ctx.exp && ctx.levelUp ? { exp: ctx.exp, levelUp: ctx.levelUp } : {};
@@ -49,7 +50,7 @@ function monViewOf(ctx, { battle, pokemon, fainted }, mon, species) {
   const sp = battle.dex.species.get(species ?? pokemon.baseSpecies.name);
   const name = species ? outsideName(ctx, battle, mon.set, sp.name) : outsideName(ctx, battle, mon.set);
   return {
-    speciesId: sp.id, spriteId: spriteIdOf(sp), name, level: pokemon.level, gender: pokemon.gender || '', shiny: !!pokemon.set.shiny,
+    speciesId: sp.id, spriteId: spriteIdOf(sp), name, level: pokemon.level, gender: pokemon.m?.start?.gender ?? (pokemon.gender || ''), shiny: !!pokemon.set.shiny,
     hp: fainted ? 0 : pokemon.hp, maxhp: pokemon.maxhp, status: fainted ? '' : pokemon.status || '',
   };
 }
@@ -68,6 +69,8 @@ export function outsideSummarySlot(ctx, mon) {
     const summary = summaryView(battle, ctx.names, entry, pokemon, options, langOf(ctx));
     if (fainted) summary.stats = { ...summary.stats, hp: 0 };
     if (effortOn(ctx.sim, format)) summary.evs = Object.fromEntries(STATS.map(s => [s, pokemon.set.evs?.[s] ?? 0]));
+    // Generations 1-2 have no cap on the total
+    if (summary.evs && usesStatExp(battle.gen)) summary.evsUncapped = true;
 
     const bond = friendshipLine(mon, ctx, langOf(ctx));
     if (bond) summary.bond = bond;
@@ -262,7 +265,7 @@ export async function amieOutside({ view, ctx, mon, state = null, party = [], de
 }
 
 export async function trainingOutside({ view, ctx, mon, scene = null }) {
-  const plan = readOutside(ctx, mon, made => ({ shown: monViewOf(ctx, made, mon), base: { ...made.pokemon.species.baseStats } }));
+  const plan = readOutside(ctx, mon, made => ({ shown: monViewOf(ctx, made, mon), base: { ...made.pokemon.species.baseStats }, totalCap: !usesStatExp(made.battle.gen) }));
   const say = sayer(langOf(ctx));
   const stat = Object.fromEntries(STATS.map(s => [s, say(`stat.${s}`)]));
   const bagName = id => { const bag = bagOf(id); return bag.kind === 'stat' ? say('train.bag.stat', { stat: stat[bag.stat], size: bag.size.toUpperCase() }) : say(`train.bag.${id}`); };
@@ -283,7 +286,7 @@ export async function trainingOutside({ view, ctx, mon, scene = null }) {
   const result = { bags: [], hung };
   try {
     const { bags, hung: left } = await view.startTraining({
-      mon: plan.shown, time: scene?.time ?? 'day', base: plan.base, trainee: traineeOf(mon), hung, energyMax: ENERGY_MAX, words,
+      mon: plan.shown, time: scene?.time ?? 'day', base: plan.base, trainee: traineeOf(mon, { totalCap: plan.totalCap }), hung, energyMax: ENERGY_MAX, words,
       onChange: now => Object.assign(result, now),
     });
     Object.assign(result, { bags, hung: left });

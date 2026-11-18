@@ -71,6 +71,18 @@ const OUR_LANG = { ko: 'ko', en: 'en', ja: 'en' };
 
 export const compatLang = chat => OUR_LANG[compatBotLang(chat)] ?? null;
 
+// The bot's starting region, 1 Kanto ... 9 Paldea (its Lua ypRegions order)
+const START_REGIONS = new Map(Array.from({ length: 9 }, (_, i) => [String(i + 1), i + 1]));
+export const compatStartRegion = chat => compatVar(chat, 'yp_StartRegion', START_REGIONS);
+
+// The bot's world as disc standards need it: its starting region, and whether the story is Pokémon Journeys
+// (Kanto start, adventure 4), which the bot sets in the generation-8 era in every region
+export const COMPAT_WORLD_VARS = Object.freeze(['$yp_StartRegion', '$yp_Adventure']);
+export function compatWorld(chat) {
+  const startRegion = compatStartRegion(chat);
+  return { startRegion, journeys: startRegion === 1 && String(chat?.scriptstate?.$yp_Adventure ?? '').trim() === '4' };
+}
+
 export const COMPAT_TRAINER_GENDER_VAR = 'yp_GenericTrainerGender';
 const COMPAT_TRAINER_GENDERS = new Map([['2', 'M'], ['3', 'F']]);
 
@@ -265,6 +277,8 @@ const INDOOR_WORDS = wordTable({ indoors: STATUS_WORDS.indoors });
 
 const REGION_WORDS = wordTable(STATUS_WORDS.regions);
 
+export const regionIn = text => wordIn(REGION_WORDS, text);
+
 const blockPlaces = Object.entries(storyNames.biomes).reduce((groups, [word, biome]) => ({ ...groups, [biome]: [...groups[biome] ?? [], word] }), {});
 const morePlaces = STATUS_WORDS.places;
 const PLACE_WORDS = wordTable(Object.fromEntries([...new Set([...Object.keys(blockPlaces), ...Object.keys(morePlaces)])]
@@ -351,10 +365,14 @@ export function statusMoneyAt(chat, upto = Infinity) {
 
 const SHELTERED = new Set(['cave', 'ice_cave', 'fairy_cave', 'seabed', 'laboratory', 'factory', 'dojo', 'power_plant', 'temple', 'abyss', 'space']);
 
-export function battleScene(battle, status) {
+// The field a generation knows: no weather in generation 1, snow is hail in generations 3-8 and absent before, and
+// terrains start in generation 6
+const eraWeather = (weather, gen) => (gen <= 1 ? null : weather === 'snowscape' && gen < 9 ? (gen >= 3 ? 'hail' : null) : weather);
+
+export function battleScene(battle, status, gen = 9) {
   const place = battle?.place ?? status?.place ?? 'plains';
   const timeOfDay = battle?.time ?? status?.timeOfDay ?? 'day';
   const hour = (battle?.time ? battle.hour : status?.hour) ?? null;
   const field = SHELTERED.has(place) ? 'none' : status?.weather ?? 'none';
-  return { place, time: dayOrNight(timeOfDay), timeOfDay, hour, weather: FIELD_WEATHERS[field], terrain: FIELD_TERRAINS[field] ?? null };
+  return { place, time: dayOrNight(timeOfDay), timeOfDay, hour, weather: eraWeather(FIELD_WEATHERS[field], gen), terrain: gen >= 6 ? FIELD_TERRAINS[field] ?? null : null };
 }

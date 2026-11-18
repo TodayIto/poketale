@@ -102,12 +102,14 @@ function inheritIvs(a, b, rng) {
 	const open = [...STATS];
 	const take = (stat, parent) => { ivs[stat] = ivOf(parent, stat); open.splice(open.indexOf(stat), 1); left--; };
 	const powered = [a, b].filter(p => POWER_ITEMS[toID(p.set.item)]);
+	let sure = null;
 	if (powered.length) {
 		const parent = powered[rng.random(powered.length)];
-		take(POWER_ITEMS[toID(parent.set.item)], parent);
+		sure = POWER_ITEMS[toID(parent.set.item)];
+		take(sure, parent);
 	}
 	while (left > 0) take(open[rng.random(open.length)], rng.random(2) ? a : b);
-	return ivs;
+	return { ivs, sure };
 }
 
 function inheritNature(a, b, rng) {
@@ -148,15 +150,22 @@ function pushMoves(moves, more) {
 	return moves;
 }
 
-export function breedEgg(dex, a, b, rng, { levelUp }) {
+export function breedEgg(dex, a, b, rng, { levelUp, oneSpecial = false }) {
 	const [line, other] = roles(dex, a, b);
 	const held = [a, b].map(p => toID(p.set.item));
 	const { species, gender } = hatchling(dex, eggForm(dex, line, other), held, rng);
 	const nature = inheritNature(a, b, rng);
+	const { ivs, sure } = inheritIvs(a, b, rng);
+	// One Special: when both halves were passed down, the Special Attack one stands for both, unless a Power item made
+	// sure of the Special Defense one
+	if (oneSpecial && ivs.spa !== undefined && ivs.spd !== undefined) {
+		if (sure === 'spd') ivs.spa = ivs.spd;
+		else ivs.spd = ivs.spa;
+	}
 	const set = completeSet(dex, {
-		species: species.name, level: HATCH_LEVEL, ivs: inheritIvs(a, b, rng), ability: inheritAbility(dex, line, species, rng), shiny: rng.random(SHINY_ODDS) === 0,
+		species: species.name, level: HATCH_LEVEL, ivs, ability: inheritAbility(dex, line, species, rng), shiny: rng.random(SHINY_ODDS) === 0,
 		...(gender ? { gender } : {}), ...(nature ? { nature } : {}),
-	}, rng, { levelUp });
+	}, rng, { levelUp, oneSpecial });
 	const learns = levelMoves(levelUp, species), eggMoves = new Set(eggMovesOf(dex, species.name));
 	const knows = p => (p.set.moves ?? []).map(toID);
 	const [mother, father] = line.set.gender === 'F' ? [line, other] : [other, line];
@@ -167,9 +176,9 @@ export function breedEgg(dex, a, b, rng, { levelUp }) {
 	return { set, ball: inheritBall(dex, line, other, rng) };
 }
 
-export function giftEgg(dex, name, rng, { levelUp }) {
+export function giftEgg(dex, name, rng, { levelUp, oneSpecial = false }) {
 	const species = dex.species.get(name);
-	const set = completeSet(dex, { species: species.name, level: HATCH_LEVEL }, rng, { levelUp });
+	const set = completeSet(dex, { species: species.name, level: HATCH_LEVEL }, rng, { levelUp, oneSpecial });
 	const eggMoves = eggMovesOf(dex, species.name).filter(m => !set.moves.includes(m));
 	if (eggMoves.length) set.moves = pushMoves([...set.moves], [eggMoves[rng.random(eggMoves.length)]]);
 	return set;

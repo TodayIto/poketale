@@ -16,6 +16,7 @@ import { ITEM_EFFECTS_READY } from '../../story/item-effects.mjs';
 import { learnableTms } from '../../story/item-info.mjs';
 import { STATS, MAX_LEVEL, MAX_MOVES, MAX_IV, PARTY_MAX, STATUS_IDS, displayName, toID, spriteIdOf } from '../../engine/mon.mjs';
 import { EV_STAT_MAX, EV_TOTAL_MAX } from '../../engine/rules.mjs';
+import { usesStatExp } from '../../engine/stat-exp.mjs';
 import { FRIENDSHIP_MAX } from '../../engine/friendship.mjs';
 import storyNames from '../../data/story-names.json' with { type: 'json' };
 import itemTable from '../../data/names/items.json' with { type: 'json' };
@@ -721,7 +722,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     };
     const notes = {
       hpPercent: el('span', { className: 'note', textContent: t('import.hpNote') }),
-      evs: el('span', { className: `note${evTotal > range.evTotal ? ' bad' : ''}`, textContent: t('import.evTotal', { n: evTotal, max: EV_TOTAL_MAX }) }),
+      evs: el('span', { className: `note${evTotal > range.evTotal ? ' bad' : ''}`, textContent: t(usesStatExp(draft.gen) ? 'import.evTotalFree' : 'import.evTotal', { n: evTotal, max: EV_TOTAL_MAX }) }),
       moves: el('span', { className: 'note', textContent: t('import.movesNote', { max: MAX_MOVES }) }),
       name: el('span', { className: 'note', textContent: t('import.nameNote') }),
     };
@@ -735,13 +736,14 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     toggle.setAttribute('aria-expanded', String(details));
     toggle.onclick = () => { details = !details; draw(); };
 
-    const breaks = mainlineBreaks(s, sim);
+    const breaks = mainlineBreaks(s, sim, draft.gen);
     const caps = { iv: MAX_IV, ev: EV_STAT_MAX, total: EV_TOTAL_MAX };
+    const evKey = key => (usesStatExp(draft.gen) && (key === 'evs' || key === 'both') ? `${key}Free` : key);
     const kinds = ['ivs', 'evs', 'moves', 'ability'].filter(kind => breaks[kind]);
     cap.hidden = !kinds.length;
     const warning = breaks.moves || breaks.ability
-      ? [`${t('import.notMainline.head')} `, ...kinds.flatMap((kind, i) => [i ? ' · ' : null, el('span', { className: 'part', textContent: t(`import.notMainline.${kind}`, caps) })])]
-      : [t(`import.pastMainline.${breaks.ivs && breaks.evs ? 'both' : breaks.ivs ? 'ivs' : 'evs'}`, caps)];
+      ? [`${t('import.notMainline.head')} `, ...kinds.flatMap((kind, i) => [i ? ' · ' : null, el('span', { className: 'part', textContent: t(`import.notMainline.${evKey(kind)}`, caps) })])]
+      : [t(`import.pastMainline.${evKey(breaks.ivs && breaks.evs ? 'both' : breaks.ivs ? 'ivs' : 'evs')}`, caps)];
     fillWith(cap, cap.hidden ? [] : [el('b', { textContent: '!' }), el('span', {}, ...warning)]);
     fillWith(body,
       el('div', { className: 'ed-top' }, picture(m), el('span', { className: 'who' }, el('b', { textContent: title(m) }), el('span', { className: 'sub', textContent: monSub(m, sim, lang) })), refill),

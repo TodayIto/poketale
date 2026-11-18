@@ -5,6 +5,7 @@ import { formatRules, EV_STAT_MAX, EV_TOTAL_MAX } from './rules.mjs';
 import { MAX_LEVEL, STATS, NON_HP_STATS, toID } from './mon.mjs';
 import { genderAllows, everstoneStops, levelEvolution, battleEvolution, ABSENT_TRADE_EVOLUTION } from './evolution.mjs';
 import { winnerSide } from './winner.mjs';
+import { usesStatExp, statExpOf, statExpYield, gainStatExp } from './stat-exp.mjs';
 
 const states = new WeakMap();
 
@@ -61,8 +62,9 @@ export const storyExpRate = rate => Math.round(expRateValue(rate) * STORY_EXP_PA
 
 const mod4096 = (value, numerator) => Math.floor((value * numerator + 2047) / 4096);
 
-export function calcExpGain({ baseExp, level, victorLevel, shared = false, luckyEgg = false, canEvolve = false, friendly = false, multipliers = [], rate = DEFAULT_EXP_RATE }) {
-	const s = shared ? 2 : 1;
+// divisor: the share of the foe's experience this gain is (2 = half); shared is the generation 6-9 half
+export function calcExpGain({ baseExp, level, victorLevel, shared = false, divisor = null, luckyEgg = false, canEvolve = false, friendly = false, multipliers = [], rate = DEFAULT_EXP_RATE }) {
+	const s = divisor ?? (shared ? 2 : 1);
 	const base = Math.floor(baseExp * level / (5 * s));
 	let exp = Math.floor(base * ((2 * level + 10) / (level + victorLevel + 10)) ** 2.5) + 1;
 	for (const m of [...multipliers, luckyEgg ? 6144 : 4096, canEvolve ? 4915 : 4096, friendly ? 4915 : 4096, Math.round(rate * 4096)]) exp = mod4096(exp, m);
@@ -73,8 +75,9 @@ export function attachExperience(sim, battle, spec, { exp: table, levelUp }) {
 	if (!table?.species) throw new Error('경험치 표(options.exp)가 없습니다');
 	if (!levelUp) throw new Error('경험치를 쓰려면 레벨업 기술 표(options.levelUp)도 필요합니다');
 
-	const effort = formatRules(sim, battle.format).effort && Array.isArray(table.effort);
-	const state = { sim, table, levelUp, effort, share: spec.expShare !== false, rate: spec.expRate ?? DEFAULT_EXP_RATE, faced: new Map(), awarded: new Set(), learnQueue: [],
+	const statExp = usesStatExp(battle.gen);
+	const effort = formatRules(sim, battle.format).effort && (statExp || Array.isArray(table.effort));
+	const state = { sim, table, levelUp, effort, statExp, share: spec.expShare !== false, era: spec.expShareEra ?? null, rate: spec.expRate ?? DEFAULT_EXP_RATE, faced: new Map(), awarded: new Set(), learnQueue: [],
 		world: { timeOfDay: spec.timeOfDay ?? 'day', ...(Number.isInteger(spec.clockHour) ? { clockHour: spec.clockHour } : {}), weather: spec.weather ?? null, region: spec.region ?? null, money: spec.money ?? null, badges: spec.badges ?? 0,
 			trade: spec.tradeEvolution ?? ABSENT_TRADE_EVOLUTION, partner: !!spec.partner } };
 	states.set(battle, state);
@@ -84,6 +87,7 @@ export function attachExperience(sim, battle, spec, { exp: table, levelUp }) {
 		if (pokemon.m.partner) continue;
 		const growth = growthOf(state.table, speciesOf(battle, pokemon));
 		pokemon.m.startLevel = pokemon.level;
+		if (statExp) pokemon.m.statExp = statExpOf(members.get(pokemon.m.uid)?.statExp, pokemon.set.evs);
 		if (!growth) continue;
 
 		const level = Math.min(pokemon.level, MAX_LEVEL);
@@ -140,25 +144,75 @@ function awardExperience(battle, state, foe) {
 	const row = state.table.species[speciesOf(battle, foe).num];
 	if (!row) return;
 	const faced = state.faced.get(foe) || new Set();
+	const alive = battle.sides[0].pokemon.filter(p => p.hp > 0 && !p.fainted && p.m.exp !== undefined);
+	const pieces = sharePieces(battle, state, faced, alive);
 	// EVs first, then experience (gainEffort below - on level-up the new stats include this battle's EVs)
-	if (state.effort) {
+	if (state.effort && state.statExp) {
+		// Stat experience is shared out like the experience: each share is the foe's base stat over its divisor
+		const base = statExpYield(speciesOf(battle, foe).baseStats);
+		for (const p of alive) {
+			if (!pieces.has(p) || !p.m.statExp) continue;
+			const gain = Object.fromEntries(STATS.map(s => [s, pieces.get(p).reduce((sum, divisor) => sum + Math.floor(base[s] / divisor), 0)]));
+			const out = gainStatExp(p.m.statExp, p.set.evs, gain);
+			p.m.statExp = out.statExp;
+			Object.assign(p.set.evs, out.evs);
+		}
+	} else if (state.effort) {
 		const yieldOf = effortYield(state.table, speciesOf(battle, foe));
-		for (const p of battle.sides[0].pokemon) if (p.hp > 0 && !p.fainted && p.m.exp !== undefined && (state.share || faced.has(p))) gainEffort(p, yieldOf);
+		for (const p of alive) if (pieces.has(p)) gainEffort(p, yieldOf);
 	}
 
-	const recipients = battle.sides[0].pokemon
-		.filter(p => p.hp > 0 && !p.fainted && p.m.exp !== undefined && p.level < MAX_LEVEL)
+	const recipients = alive.filter(p => p.level < MAX_LEVEL && pieces.has(p))
 		.map(p => ({ pokemon: p, participant: faced.has(p) }))
-		.filter(r => state.share || r.participant)
 		.sort((a, b) => b.participant - a.participant);
 	for (const r of recipients) {
-		r.gain = calcExpGain({
-			baseExp: row[0], level: foe.level, victorLevel: r.pokemon.level, shared: !r.participant,
+		r.gain = pieces.get(r.pokemon).reduce((sum, divisor) => sum + calcExpGain({
+			baseExp: row[0], level: foe.level, victorLevel: r.pokemon.level, divisor,
 			luckyEgg: r.pokemon.item === 'luckyegg', canEvolve: pastEvolutionLevel(battle, r.pokemon), friendly: friendlyExp(r.pokemon.m.friendship ?? 0), rate: state.rate,
-		});
+		}), 0);
 	}
 	for (const { pokemon, gain, participant } of recipients) gainExperience(battle, state, pokemon, gain, participant);
 }
+
+// Who gets a defeated foe's experience, as a list of shares per Pokémon (each the divisor of the foe's experience:
+// 2 = half). The settings' Exp. Share: the participants each get it all, and with sharing on the rest each get half
+// (generations 6-9). With the generation's own rule (spec.expShareEra; Bulbapedia "Exp. Share", "Experience"):
+// - generation 1, Exp. All in the bag: half split among the participants, and each party member, fainted ones
+//   counted, a share of what one participant got (the shares of fainted members are lost, as in the games)
+// - generations 2-5, Exp. Share held: half split among the participants, half among the holders; without one,
+//   the participants split it all (generation 1 likewise without Exp. All)
+// - generations 6-7: the participants each get it all, the rest half while an Exp. Share is in the bag
+// - generations 8-9: the participants each get it all, the rest half
+function sharePieces(battle, state, faced, alive) {
+	const participants = alive.filter(p => faced.has(p));
+	const out = new Map();
+	const give = (p, d) => out.set(p, [...out.get(p) ?? [], d]);
+	const era = state.era;
+	if (!era || battle.gen >= 6) {
+		const share = era ? battle.gen >= 8 || era.bag : state.share;
+		for (const p of alive) if (faced.has(p)) give(p, 1); else if (share) give(p, 2);
+		return out;
+	}
+	const P = participants.length;
+	if (battle.gen === 1) {
+		if (!era.bag) { for (const p of participants) give(p, P); return out; }
+		const N = battle.sides[0].pokemon.filter(p => p.m.exp !== undefined).length;
+		// The game divides by the participants only when there are two or more (pret/pokered
+		// DivideExpDataByNumMonsGainingExp), so with none left standing (Explosion) the rest share half
+		for (const p of participants) give(p, 2 * P);
+		for (const p of alive) give(p, 2 * Math.max(P, 1) * N);
+		return out;
+	}
+	const holders = alive.filter(p => p.item === EXP_SHARE);
+	const H = holders.length;
+	if (!H) { for (const p of participants) give(p, P); return out; }
+	if (!P) { for (const p of holders) give(p, H); return out; }
+	for (const p of participants) give(p, 2 * P);
+	for (const p of holders) give(p, 2 * H);
+	return out;
+}
+
+const EXP_SHARE = 'expshare';
 
 function gainExperience(battle, state, pokemon, gain, participant) {
 	const growth = growthOf(state.table, speciesOf(battle, pokemon));
@@ -266,9 +320,26 @@ export function replaceMove(battle, uid, slotIndex, moveId) {
 	refreshRequest(battle, side, pokemon);
 }
 
+// The turn's request was made before the new move came in: its disables are worked out again as Battle.endTurn does
+function redoDisables(battle, pokemon) {
+	pokemon.maybeDisabled = false;
+	pokemon.maybeLocked = false;
+	for (const slot of pokemon.moveSlots) {
+		slot.disabled = false;
+		slot.disabledSource = '';
+	}
+	battle.runEvent('DisableMove', pokemon);
+	for (const slot of pokemon.moveSlots) {
+		const move = battle.dex.getActiveMove(slot.id);
+		battle.singleEvent('DisableMove', move, null, pokemon);
+		if (move.flags['cantusetwice'] && pokemon.lastMove?.id === slot.id) pokemon.disableMove(pokemon.lastMove.id);
+	}
+}
+
 function refreshRequest(battle, side, pokemon) {
 	const request = side.activeRequest;
 	if (!request || request.wait || battle.ended) return;
+	if (pokemon.isActive) redoDisables(battle, pokemon);
 	if (request.active && pokemon.isActive) request.active = side.active.map(p => p?.getMoveRequestData());
 	request.side = side.getRequestData();
 	side.emitRequest(request);
@@ -278,10 +349,13 @@ export function getLearnQueue(battle) {
 	return (states.get(battle)?.learnQueue || []).map(q => ({ uid: q.pokemon.m.uid, move: q.move, level: q.level }));
 }
 
+// Evolution looks at the Pokémon as saved: an older generation's battle may have switched off its gender, item or nature
+const savedGender = pokemon => pokemon.m.start?.gender ?? pokemon.gender;
+
 function pastEvolutionLevel(battle, pokemon) {
 	return speciesOf(battle, pokemon).evos.some(id => {
 		const t = battle.dex.species.get(id);
-		return !t.evoType && t.evoLevel && t.evoLevel <= pokemon.level && genderAllows(pokemon.gender, t);
+		return !t.evoType && t.evoLevel && t.evoLevel <= pokemon.level && genderAllows(savedGender(pokemon), t);
 	});
 }
 
@@ -290,8 +364,8 @@ function conditionText(t) {
 }
 
 function evolvingMon(battle, pokemon) {
-	return { species: pokemon.m.cloak ?? speciesOf(battle, pokemon).name, gender: pokemon.gender, item: toID(pokemon.set.item), uid: pokemon.m.uid,
-		moves: pokemon.baseMoveSlots.map(s => s.id), nature: pokemon.m.natureOrig ?? pokemon.set.nature, ability: pokemon.m.start.ability,
+	return { species: pokemon.m.cloak ?? speciesOf(battle, pokemon).name, gender: savedGender(pokemon), item: toID(pokemon.m.start?.item ?? pokemon.set.item), uid: pokemon.m.uid,
+		moves: pokemon.baseMoveSlots.map(s => s.id), nature: pokemon.m.natureOrig ?? pokemon.m.start?.nature ?? pokemon.set.nature, ability: pokemon.m.start.ability,
 		stats: { atk: pokemon.storedStats.atk, def: pokemon.storedStats.def }, counts: pokemon.m.counts };
 }
 
@@ -311,7 +385,7 @@ export function getEvolutions(battle) {
 		const to = byLevel ?? battleEvolution(battle.dex, mon, { ...now, won });
 		if (to) list.push(entry(to, byLevel ? { level: pokemon.level } : {}));
 		else if (leveled && !everstoneStops(battle.dex, mon)) {
-			for (const t of species.evos.map(id => battle.dex.species.get(id)).filter(t => genderAllows(pokemon.gender, t))) {
+			for (const t of species.evos.map(id => battle.dex.species.get(id)).filter(t => genderAllows(savedGender(pokemon), t))) {
 				if ((t.evoType || t.evoCondition || t.evoRegion || !t.evoLevel) && !(t.evoLevel > pokemon.level)) list.push(entry(t.name, { unsupported: conditionText(t) }));
 			}
 		}

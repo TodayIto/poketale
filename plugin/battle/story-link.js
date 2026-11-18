@@ -1,6 +1,6 @@
 import * as sim from '../../engine/browser-engine.mjs';
 import { findBlocks, findTags, findMarks, markText, parseBattle, parseAct, actBlock, actsIn, hashKey, messageId, battlesIn, battlesInText, blockAnchorIn, stripForPrompt, blockCuts, hasBlocks } from '../../story/blocks.mjs';
-import { readTable, writeTable, tableStatus, createFolds, applyBattles, toEngineSpec, pruneTable, stateVars, computeState, nextStageSpec, battlesBefore, stageOf, backToBack, battleRecord, hatchedParty, toolsIn } from '../../story/state.mjs';
+import { readTable, writeTable, tableStatus, createFolds, applyBattles, toEngineSpec, pruneTable, stateVars, computeState, nextStageSpec, battlesBefore, stageOf, backToBack, battleRecord, hatchedParty, toolsIn, stateFormat, stateGen } from '../../story/state.mjs';
 import { unreadableLine, isUnreadable } from '../../story/stored.mjs';
 import { withItemTags } from '../../story/custom-items.mjs';
 import { WHAT, failed, refused, failureNote, failureText, ruleText } from '../../story/failure.mjs';
@@ -41,6 +41,7 @@ import { mountImportScreen } from './import-screen.js';
 import { makeDraft, importOffer, importOfferAi, importTurn, handBack, commitImport, commitDebugHeal, commitDebugBadges, readImports, cancelImport, inForce, newMonDraft, currentMonDraft, friendshipLockDraft } from '../../story/import.mjs';
 import { importAiMessages, readAiParty, aiFailedFound } from '../../story/import-ai.mjs';
 import { readSettingChanges, recordSettingChange, settingsBehind, rulesAt } from '../../story/setting-changes.mjs';
+import { generationUnrecorded, recordGenerationStart, recordGenerationChange, readGeneration } from '../../story/generation.mjs';
 import { readBattlesOff, battlesOff, setBattlesOff } from '../../story/battles-off.mjs';
 import { loadPicture, savePicture, adoptOldPicture, entryMe } from './my-picture.js';
 import { storyCss, sheetCss, SHEET_CLASS } from '../../story/style.mjs';
@@ -58,8 +59,11 @@ const TRAINER = id => `https://play.pokemonshowdown.com/sprites/trainers/${id}.p
 
 let ctxPromise;
 
-export const battleFormat = () => ruleFormat(settings.rule);
-const storyCtx = () => ctxPromise ??= loadLevelUp().then(levelUp => (ctxNow = { sim, levelUp, exp: EXP_TABLE, folds: createFolds(), get friendshipRate() { return settings.friendshipRate; }, get hatchRate() { return settings.hatchRate; }, get tradeEvolution() { return settings.tradeEvolution; }, get rule() { return settings.rule; } }))
+export const battleFormat = async () => {
+  const party = await pendingParty().catch(() => null);
+  return party ? stateFormat(party.state) : ruleFormat(settings.rule);
+};
+const storyCtx = () => ctxPromise ??= loadLevelUp().then(levelUp => (ctxNow = { sim, levelUp, exp: EXP_TABLE, folds: createFolds(), get friendshipRate() { return settings.friendshipRate; }, get hatchRate() { return settings.hatchRate; }, get tradeEvolution() { return settings.tradeEvolution; }, get rule() { return settings.rule; }, get eraGimmicks() { return settings.eraGimmicks; } }))
   .catch(error => { ctxPromise = undefined; throw error; });
 let ctxNow = null;
 
@@ -97,7 +101,8 @@ const idOf = target => `${target.chaId}:${target.chatId ?? `#${target.charIndex}
 
 const textKey = chat => JSON.stringify((chat?.message ?? []).map(m => [m?.chatId ?? null, String(m?.data ?? '')]));
 
-const unreadableChat = chat => [tableStatus(chat), saveStatus(chat), acts.queueStatus(chat), readImports(chat).status, readSettingChanges(chat).status, readBattlesOff(chat).status].some(isUnreadable);
+const unreadableChat = chat => [tableStatus(chat), saveStatus(chat), acts.queueStatus(chat), readImports(chat).status, readSettingChanges(chat).status, readBattlesOff(chat).status,
+  readGeneration(chat).status].some(isUnreadable);
 
 function makePass(charIndex, chatIndex, chat, character, seq) {
   const target = targetOf(charIndex, chatIndex, chat, character);
@@ -190,7 +195,7 @@ export async function storyNow({ fresh = false } = {}) {
   const on = isOn(pass);
   return { id: pass.id, target: pass.target, on, chat: pass.chat, key: pass.key, lang: currentLang(pass.chat), unreadable: on && pass.unreadable, compat: on && compatBots.has(pass.target?.chaId),
     state: on ? await pass.state() : null, ctx: on ? { ...await storyCtx(), status: latestStatus(pass.chat) } : null, battle: on ? (({ key, phase }) => ({ key, phase }))(battleIn(pass)) : null,
-    debug: on && settings.debug, aux: on ? auxSwitch(pass) : null, offer: on ? await offerOf(pass) : null };
+    debug: on && settings.debug, aux: on ? auxSwitch(pass) : null, offer: on ? await offerOf(pass) : null, generation: on ? (await pass.computed()).generation ?? null : null };
 }
 
 let auxFor = null;
@@ -1140,7 +1145,7 @@ async function prepareBattle(press, mode, retryOf, owner) {
     const playerName = persona.name;
 
     spec = start ? restartSpec(start, freshSeed()) : toEngineSpec(state, battle, { ...ctx, playerName, lang: currentLang(pass.chat) },
-      { seed: freshSeed(), formatid: battleFormat(), expShare: settings.expShare, expRate: settings.expRate, effectItems: settings.effectItems, foeGimmicks: settings.foeGimmicks, picture: pictureOptions(key, pass.chat), player: playerOptions(persona.look),
+      { seed: freshSeed(), formatid: stateFormat(state), expShare: settings.expShare, expRate: settings.expRate, effectItems: settings.effectItems, foeGimmicks: settings.foeGimmicks, eraGimmicks: settings.eraGimmicks, picture: pictureOptions(key, pass.chat), player: playerOptions(persona.look),
         status: statusIn(pass.chat.message[at]) });
     startBalls = { mine: fighters.map(ballOf), ...blockBalls(battle) };
   }
@@ -1538,7 +1543,7 @@ async function pendingFixes(pass) {
   const differ = varsAt !== key && writeStoryVars({ scriptstate: { ...pass.chat.scriptstate }, localLore: pass.chat.localLore }, state, pass);
   if (!differ) varsAt = key;
   const ends = storyEndFixes(pass.chat, pass.table, pass.survey, { canPlay });
-  return { lore, vars: differ || fills, follow: followMoves(pass), behind: settingsBehind(pass.chat, settings),
+  return { lore, vars: differ || fills, follow: followMoves(pass), behind: settingsBehind(pass.chat, settings), generation: generationUnrecorded(pass.chat),
     settle: acts.settleQueue({ message: pass.chat.message, scriptstate: { ...pass.chat.scriptstate } }),
     lost: lostResult(pass.chat, pass.last, pass.table) >= 0, ends: ends.drop.length + ends.add.length > 0,
 
@@ -1583,6 +1588,7 @@ function writeFixes(pass, fixes, { messages = true, attach = null } = {}) {
       if (fixes.lore) setLore(chat, true, { other: notCompatBot(pass), battles: !battlesOff(chat) });
 
       if (fixes.behind) recordSettingChange(chat, settings);
+      if (fixes.generation) recordGenerationStart(chat);
       if (messages) {
         if (fixes.rekey) moveRecords(chat);
         if (fixes.lost || fixes.rekey) restoreResult(chat);
@@ -1940,6 +1946,15 @@ export async function queueAction(action, target = null) {
   return queued === HELD ? null : queued || null;
 }
 
+// The journey screen's generation setting, from the end of the chat on
+export async function writeGeneration(value, target) {
+  const wrote = await writeChat(target, (chat, found) => {
+    if (battleIn({ id: idOf(found.target), chat }).key) throw failed('inBattle');
+    return recordGenerationChange(chat, value);
+  }, { vars: true, missing: true });
+  if (wrote === HELD) throw failed('writeBlocked');
+}
+
 export async function writeBotTravel(change, target) {
   const values = Object.entries(compatTravelVars(change)).map(([name, value]) => [`$${name}`, value]);
   const wrote = await writeChat(target, (chat, found) => {
@@ -2162,7 +2177,7 @@ async function debugScreen(target, screen) {
 }
 
 export const debugAdd = (where, target) => debugScreen(target, ({ ctx, state }) => (where === 'bag' ? { mode: 'bag', state }
-  : { mode: 'create', draft: newMonDraft(ctx, { place: where, seed: freshSeed() }) }));
+  : { mode: 'create', draft: newMonDraft(ctx, { place: where, seed: freshSeed(), gen: stateGen(state) }) }));
 
 export const debugEdit = (uid, target) => debugScreen(target, ({ ctx, state }) => ({ mode: 'edit', draft: currentMonDraft(ctx, state, uid) }));
 

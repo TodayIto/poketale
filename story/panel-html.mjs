@@ -389,6 +389,17 @@ const CSS = [
   `${C}-sech + ${C}-row{border-top:0;}`,
   `${C}-rowk{flex:0 0 ${z(96)};color:#5d7486;}`,
   `${C}-rowv{flex:1;min-width:0;color:#14304a;word-break:keep-all;overflow-wrap:anywhere;}`,
+  `${C}-gnow{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px;font-size:${z(13)};color:#14304a;}`,
+  `${C}-gnow b{font-weight:400;color:#2f9a6e;}`,
+  `${C}-gnow span{font-size:${z(12)};color:#5d7486;word-break:keep-all;}`,
+  `${C}-gens{display:grid;grid-template-columns:auto repeat(9,minmax(0,1fr));gap:4px;margin-top:7px;}`,
+  `${C}-gen{display:flex;align-items:center;justify-content:center;min-width:0;min-height:${z(26)};padding:0 4px;border:1.5px solid #a9c2d4;border-radius:7px;`
+    + `background:#fff;color:#14304a;font-size:${z(12.5)};line-height:1;box-shadow:0 1.5px 0 #c3d4e1;cursor:pointer;}`,
+  `${C}-genauto{padding:0 8px;}`,
+  `${C}-gen:active{transform:translateY(1px);box-shadow:none;}`,
+  `${C}-gen${C}-on{border-color:#1f6e4e;background:#2f9a6e;color:#fff;box-shadow:0 1.5px 0 #1f6e4e;cursor:default;transform:none;}`,
+  `${C}-gen${C}-off{opacity:.45;box-shadow:none;cursor:default;transform:none;}`,
+  `${C}-ghint{margin-top:6px;font-size:${z(11.5)};color:#8193a1;word-break:keep-all;overflow-wrap:anywhere;}`,
 
   `@media (pointer:coarse){${C}{${foldFit(FD.minTouch, TB.w)}}}`,
 
@@ -637,10 +648,13 @@ function amieHtml(model, hit, picture) {
 }
 
 function travelHtml(model, hit) {
-  const { travel, lang, locked } = model;
+  const { travel, lang, locked, generation } = model;
   const t = key => esc(say(lang, key));
   const cls = (...list) => list.filter(Boolean).join(' ');
   const sec = (head, body) => `<div class="x-risu-pkbp-sec"><div class="x-risu-pkbp-sech">${t(head)}</div>${body}</div>`;
+  const gens = generation ? sec('panel.travel.generation', generationHtml(generation, lang, locked, hit)) : '';
+  const lockedHint = locked ? `<div class="x-risu-pkbp-hint">${t('panel.travel.locked')}</div>` : '';
+  if (!travel) return lockedHint + gens;
 
   const clearOf = `x-risu-pkbp-gclr x-risu-pkbp-emo`, clearName = `title="${t('panel.travel.clear')}" aria-label="${t('panel.travel.clear')}"`;
   const clear = () => (locked ? `<span class="${clearOf} x-risu-pkbp-off" aria-disabled="true" ${clearName}>❌</span>`
@@ -659,9 +673,22 @@ function travelHtml(model, hit) {
 
   const start = travel.start.map(({ key, value }) => `<div class="x-risu-pkbp-row"><span class="x-risu-pkbp-rowk">${t(`panel.travel.row.${key}`)}</span><span class="x-risu-pkbp-rowv">${esc(textGenderSigns(value))}</span></div>`).join('');
   return sec('panel.travel.guide', guide + goal)
-    + (locked ? `<div class="x-risu-pkbp-hint">${t('panel.travel.locked')}</div>` : '')
+    + lockedHint
     + sec('panel.travel.settings', switches)
+    + gens
     + (start ? sec('panel.travel.start', start) : '');
+}
+
+function generationHtml(generation, lang, locked, hit) {
+  const t = key => esc(say(lang, key));
+  const label = t('panel.travel.generation');
+  const choices = generation.choices.map(({ value, label: text, on }) => {
+    const look = ['x-risu-pkbp-gen', value === 'auto' && 'x-risu-pkbp-genauto', on && 'x-risu-pkbp-on', locked && !on && 'x-risu-pkbp-off'].filter(Boolean).join(' ');
+    return on || locked ? `<span class="${look}" role="radio" aria-checked="${on}"${on ? '' : ' aria-disabled="true"'}>${esc(text)}</span>`
+      : `<button type="button" class="${look} ${hit({ t: 'genSet', value })}" role="radio" aria-checked="false">${esc(text)}</button>`;
+  }).join('');
+  return `<div class="x-risu-pkbp-gnow"><b>${esc(generation.now)}</b><span>${esc(generation.why)}</span></div>`
+    + `<div class="x-risu-pkbp-gens" role="radiogroup" aria-label="${label}">${choices}</div><div class="x-risu-pkbp-ghint">${t('panel.gen.hint')}</div>`;
 }
 
 function boxHtml(model, hit, picture) {

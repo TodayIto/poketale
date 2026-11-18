@@ -4,8 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { BAG_ITEMS, FIELD_ITEMS } from '../engine/bag.mjs';
-import { OUTSIDE_ITEMS, tmId } from '../story/items.mjs';
-import { csv, englishID, gen9Tms, speciesWithCosmeticFormes, toID } from './sources.mjs';
+import { OUTSIDE_ITEMS } from '../story/items.mjs';
+import { MACHINE_STANDARDS, DEFAULT_STANDARD, machineId } from '../story/machine-standards.mjs';
+import { csv, englishID, machineTables, speciesWithCosmeticFormes, toID } from './sources.mjs';
 import { aiFormNames } from './ai-forms.mjs';
 import { formRegions } from './form-regions.mjs';
 
@@ -153,8 +154,8 @@ for (const file of readdirSync(resolve(root, 'vendor/pokerogue/assets/battle-ani
 }
 
 const missing = {}, noAnims = [], unavailable = {};
-const sizes = [];
 const tables = {};
+const sizes = [];
 
 const dexEntries = Object.fromEntries(kinds.map(kind => [kind,
   [...new Set(Dex[kind].all().map(e => e.id))].sort().map(id => Dex[kind].get(id)),
@@ -191,13 +192,29 @@ for (const kind of kinds) {
     if (!name.ko) missing[kind].push({ id, name: item.name, isNonstandard: null });
   }
 
+  // Disc names carry the move and the standard's region (기술머신11 거품광선 (관동) / TM11 Bubble Beam (Kanto)):
+  // the same printed number means different moves in different regions
   if (kind === 'items') {
-    const prefix = /^(\D+)01$/.exec(api.items.byEnglish.get('tm01') ?? '')?.[1];
-    if (!prefix) throw new Error('PokeAPI 에 기술머신 한국어 이름(tm01)이 없습니다');
-    for (const { number, move } of gen9Tms()) {
-      const id = tmId(number), digits = String(number).padStart(3, '0');
-      if (table[id]) throw new Error(`기술머신 id 가 Showdown 도구와 겹칩니다: ${id}`);
-      table[id] = { ko: `${prefix}${digits}`, en: `TM${digits}`, src: 'pokeapi', sim: false, bag: true, move };
+    const machines = Object.entries(machineTables());
+    // The word for each kind (기술머신 / 비전머신 / 기술레코드): PokeAPI shares one item per number across games, so its
+    // names have two digits even for Scarlet/Violet's three-digit discs, and a few discs have no Korean name at all
+    const words = { ko: {}, en: {} };
+    for (const [, list] of machines) for (const { kind: machine, item } of list) {
+      const disc = api.items.byNumber.get(item) ?? {};
+      for (const lang of ['ko', 'en']) if (disc[lang]) words[lang][machine] ??= disc[lang].replace(/\s*\d+$/, '');
+    }
+    for (const [std, list] of machines) {
+      const [regionKo, regionEn] = MACHINE_STANDARDS[std].region;
+      for (const { kind: machine, number, move } of list) {
+        const id = machineId(machine, number, std);
+        if (table[id]) throw new Error(`기술머신 id 가 Showdown 도구와 겹칩니다: ${id}`);
+        if (!words.ko[machine] || !words.en[machine]) throw new Error(`PokeAPI 에 ${machine} 이름이 없습니다`);
+        const digits = String(number).padStart(std === DEFAULT_STANDARD ? 3 : 2, '0');
+        const moveName = tables.moves[move];
+        if (!moveName) throw new Error(`기술머신 ${std} ${machine}${number}: 기술 이름표에 없는 기술 ${move}`);
+        table[id] = { ko: `${words.ko[machine]}${digits} ${moveName.ko ?? moveName.en} (${regionKo})`, en: `${words.en[machine]}${digits} ${moveName.en} (${regionEn})`,
+          src: 'pokeapi', sim: false, bag: true, move };
+      }
     }
   }
   tables[kind] = table;

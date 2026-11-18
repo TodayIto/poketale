@@ -184,7 +184,7 @@ export class TrainingScreen {
     poly(shape(stat => axis(stat).base + axis(stat).effort), 0xffb84a, 0.85, 0xfff2c0);
     poly(shape(stat => axis(stat).base), 0x9ad8ff, 0.9, null);
 
-    for (const [stat, label] of this.meterLabels) label.setColor(statRoom(evs, stat) ? '#f8f8f8' : '#ffd84a');
+    for (const [stat, label] of this.meterLabels) label.setColor(statRoom(evs, stat, this.core.totalCap) ? '#f8f8f8' : '#ffd84a');
     this.drawEnergy();
     this.drawEffect();
   }
@@ -278,7 +278,7 @@ export class TrainingScreen {
     const w = this.words, hung = this.core.bag, effect = this.core.trainee.effect;
     const about = (label, id) => (w.effect[id] ? { label, name: w.bag[id], text: w.effect[id], color: css(colorOf(id)), mark: bagOf(id).kind === 'soothing' ? 'heart' : 'star' } : null);
     this.hud.state({
-      blocked: id => !!hangBlock(this.core.evs, id),
+      blocked: id => !!hangBlock(this.core.evs, id, this.core.totalCap),
       replaced: hung && !BAG_IDS.includes(hung.id) ? w.replace({ bag: w.bag[hung.id] }) : null,
       about: [hung && about(w.hung, hung.id), effect && about(w.next, effect)].filter(Boolean),
     });
@@ -286,7 +286,7 @@ export class TrainingScreen {
   }
 
   pick(id) {
-    if (hangBlock(this.core.evs, id)) { playError(this.scene); return; }
+    if (hangBlock(this.core.evs, id, this.core.totalCap)) { playError(this.scene); return; }
     this.play(this.core.hang(id));
     this.guide();
   }

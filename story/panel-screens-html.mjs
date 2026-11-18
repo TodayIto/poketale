@@ -238,7 +238,7 @@ function listHtml(list, lang, hit) {
   const rows = list.rows.map((r, at) => {
     const look = ['x-risu-pkbp-mv', r.fresh && 'x-risu-pkbp-mvnew', at === list.selected && 'x-risu-pkbp-mvsel', r.pick && 'x-risu-pkbp-mvpick', list.still && 'x-risu-pkbp-mvstill'].filter(Boolean).join(' ');
     const mark = r.pick ? `<span class="x-risu-pkbp-radio${at === list.selected ? ' x-risu-pkbp-radioon' : ''}"></span>` : r.mark ? `<span class="x-risu-pkbp-chip x-risu-pkbp-chipred">${esc(r.mark)}</span>` : '';
-    const chip = r.chip ? `<span class="x-risu-pkbp-chip${r.chip.evo ? ' x-risu-pkbp-chipevo' : ''}">${esc(r.chip.text)}</span>` : '';
+    const chip = r.chip ? `<span class="x-risu-pkbp-chip${r.chip.evo ? ' x-risu-pkbp-chipevo' : r.chip.red ? ' x-risu-pkbp-chipred' : ''}">${esc(r.chip.text)}</span>` : '';
     const pp = list.newPp || r.fresh && !list.still ? `PP ${r.maxpp}` : `PP ${r.pp}/${r.maxpp}`;
     const inner = `${mark}${chip}${typeBadge(r.type, lang)}<span class="x-risu-pkbp-mvn">${esc(r.name)}</span><span class="x-risu-pkbp-mvpp">${pp}</span>`;
     return list.still ? `<div class="${look}">${inner}</div>` : `<button type="button" class="${look} ${hit({ t: 'scMove', i: r.i })}">${inner}</button>`;

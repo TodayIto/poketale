@@ -29,7 +29,7 @@ Upstream revisions used for the build:
 - Copyright (c) 2011-2026 Guangcong Luo and other contributors http://pokemonshowdown.com/
 - License: MIT (text in [Appendix A](#a1-pokémon-showdown)); upstream file `LICENSE`.
 - What is included: the battle simulator (`dist/sim/`, `dist/lib/`) and its data tables
-  (`dist/data/`, including the `champions` mod chain), adapted for the browser at build time by
+  (`dist/data/`, including the `champions` and `gen1`-`gen8` mod chains), adapted for the browser at build time by
   `build/showdown.mjs` (file-system access replaced by static imports, server-only formats,
   random-team generation and text files left out, some fields unused by battles dropped from the
   data tables). The list of trainer sprite names in `server/chat-commands/avatars.tsx` is read
@@ -121,9 +121,9 @@ Move animation data, by upstream `battle-anims/REUSE.toml`:
   (https://github.com/PokeAPI/pokeapi#contributing). Pokémon and Pokémon character names are
   trademarks of Nintendo.
 - License: BSD-3-Clause ([Appendix A](#a7-pokéapi); also `data/sources/pokeapi/LICENSE.md`).
-- What is included: Korean names, capture rates, effort values, TM numbers and Korean item
-  descriptions, as converted into `data/names/*.json`, `data/catch-rates.json`, `data/exp.json`
-  and `data/items-outside.json`.
+- What is included: Korean names, capture rates, effort values, the TM/HM/TR numbers of each region's
+  game (with the version group table that names those games) and Korean item descriptions, as converted
+  into `data/names/*.json`, `data/catch-rates.json`, `data/exp.json` and `data/items-outside.json`.
 
 ### 1.8 Fonts (embedded as base64)
 

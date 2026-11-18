@@ -35,6 +35,8 @@ const SIDE = {
   firepledge: 'fireGrassPledge', waterpledge: 'waterFirePledge', grasspledge: 'grassWaterPledge',
 };
 
+const SIDE_VOLATILE = new Set(['reflect', 'lightscreen', 'mist']), FIELD_VOLATILE = new Set(['mudsport', 'watersport']);
+
 const TRAP = { bind: 'bind', wrap: 'wrap', firespin: 'fireSpin', whirlpool: 'whirlpool', clamp: 'clamp', sandtomb: 'sandTomb',
   magmastorm: 'magmaStorm', snaptrap: 'snapTrap', thundercage: 'thunderCage', infestation: 'infestation' };
 const TRAP_ANIM = { firespin: 'fire-spin', sandtomb: 'sand-tomb', magmastorm: 'magma-storm', snaptrap: 'snap-trap', thundercage: 'thunder-cage' };
@@ -366,6 +368,9 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     if (effect.id === 'futuresight') { await say('move-trigger.foresawAnAttack', v); return true; }
     if (effect.id === 'doomdesire') { await say('move-trigger.choseDoomDesireAsDestiny', v); return true; }
     if (effect.id === 'smackdown') { await say('move-trigger.fallDown', { targetPokemonName: v.pokemonName }); return true; }
+    // Generations 1-5 keep these on the Pokémon instead of its side or the field
+    if (SIDE_VOLATILE.has(effect.id)) { await say(`arena-tag.${SIDE[effect.id]}OnAdd${sideKey(side)}`); return true; }
+    if (FIELD_VOLATILE.has(effect.id)) { await say(`arena-tag.${FIELD[effect.id]}OnAdd`, v); return true; }
     if (VOLATILE[effect.id]?.[0]) { await say(`battler-tags.${VOLATILE[effect.id][0]}`, { ...v, sourcePokemonName: label(other(side)) }); return true; }
     if (QUIET_VOLATILE.has(effect.id)) return true;
     warn(`-start:${effect.id}`);
@@ -406,7 +411,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       return true;
     }
     if (VOLATILE[effect.id]?.[1]) { await say(`battler-tags.${VOLATILE[effect.id][1]}`, v); return true; }
-    if (VOLATILE[effect.id] || QUIET_VOLATILE.has(effect.id)) return true;
+    if (VOLATILE[effect.id] || QUIET_VOLATILE.has(effect.id) || SIDE_VOLATILE.has(effect.id) || FIELD_VOLATILE.has(effect.id)) return true;
     warn(`-end:${effect.id}`);
     return true;
   }
@@ -459,6 +464,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     case 'ficklebeam': await say('move-trigger.goingAllOutForAttack', v); return true;
     case 'stickyweb': await say('arena-tag.stickyWebActivateTrap', v); return true;
     case 'mist': await say('arena-tag.mistApply', v); return true;
+    case 'haze': await say('move-trigger.statEliminated'); return true;
     case 'safeguard': await say('move-trigger.safeguard', { targetName: v.pokemonName }); return true;
     case 'mistyterrain': await say('terrain.mistyBlockMessage', v); return true;
     case 'psychicterrain': case 'electricterrain': case 'grassyterrain':
@@ -483,7 +489,14 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
   }
 
   async function onItem(a, kw) {
-    const from = kw.from ? effectOf(kw.from) : null, itemName = names.item(id(a[1])), v = nv(a[0]);
+    const from = kw.from ? effectOf(kw.from) : null, itemName = names.item(id(a[1]));
+    // Generations 4-5 Frisk names the item but not the foe holding it
+    if (!isIdent(a[0])) {
+      if (from?.id === 'frisk' && isIdent(kw.of)) await say('own.friskFound', { ...nv(kw.of), itemName });
+      else warn(`-item:${from?.id ?? ''}`);
+      return true;
+    }
+    const v = nv(a[0]);
     if (from?.prefix === 'ability') {
       if (from.id === 'frisk' && typeof kw.of === 'string') await say('ability-trigger.frisk', { ...nv(kw.of), opponentName: v.pokemonName, opponentAbilityName: itemName });
       else if (from.id === 'harvest') await say('ability-trigger.postTurnLootCreateEatenBerry', { ...v, berryName: itemName });
@@ -689,6 +702,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       case 'attract': await say('battler-tags.infatuatedLapseImmobilize', v); return true;
       case 'nopp': await say('battle.moveNoPp'); return true;
       case 'focuspunch': await say('move-trigger.lostFocus', v); return true;
+      case 'partiallytrapped': await say('own.trappedCantMove', v); return true;
       default: return cantDefault(a);
       }
     }

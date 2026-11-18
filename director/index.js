@@ -63,6 +63,8 @@ const DENIED = {
   bloodmoon: 'battle.moveDisabledConsecutive', gigatonhammer: 'battle.moveDisabledConsecutive',
   choiceband: 'battle.canOnlyUseMove', choicescarf: 'battle.canOnlyUseMove', choicespecs: 'battle.canOnlyUseMove',
   gorillatactics: 'battle.canOnlyUseMove',
+  // engine/era-gimmicks.mjs: a mechanic the battle's generation has not introduced yet
+  eragimmick: 'own.eraGimmickDisabled',
 };
 export function moveDeniedText(battle, names, option, lang = DEFAULT_LANG, pokemon = battle.sides[0].active[0]) {
   const name = pokemon ? pokemonName(names, pokemon) : '';
