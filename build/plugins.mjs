@@ -195,12 +195,21 @@ export const embeddedAnimsJson = {
 	},
 };
 
+// Each species' newest list next to its older ones ({ species: { id: [newest, past?] } }): gzip only looks 32 KB back,
+// so the two files one after the other would not share their move names.
+function levelUpBlob() {
+	const read = name => JSON.parse(readFileSync(new URL(`../data/${name}`, import.meta.url), 'utf8'));
+	const latest = read('levelup.json'), past = read('levelup-past.json');
+	const species = Object.fromEntries(Object.entries(latest).map(([id, list]) => [id, past[id] ? [list, past[id]] : [list]]));
+	return Buffer.from(JSON.stringify({ species }));
+}
+
 export const embeddedLevelUp = {
 	name: 'embedded-levelup',
 	setup(b) {
 		b.onResolve({ filter: /^embedded:levelup$/ }, () => ({ path: 'levelup', namespace: 'embedded-levelup' }));
 		b.onLoad({ filter: /.*/, namespace: 'embedded-levelup' }, () => ({
-			contents: `export const LEVELUP_GZ_B64 = ${JSON.stringify(gzipSync(readFileSync(new URL('../data/levelup.json', import.meta.url)), { level: 9 }).toString('base64'))};`,
+			contents: `export const LEVELUP_GZ_B64 = ${JSON.stringify(gzipSync(levelUpBlob(), { level: 9 }).toString('base64'))};`,
 			loader: 'js',
 		}));
 	},

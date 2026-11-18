@@ -38,17 +38,20 @@ export function bagOf(id) {
 const evOf = (evs, stat) => Math.max(0, Math.trunc(evs?.[stat] ?? 0));
 export const evTotal = evs => STATS.reduce((sum, stat) => sum + evOf(evs, stat), 0);
 
-export const statRoom = (evs, stat) => Math.max(0, Math.min(EV_STAT_MAX - evOf(evs, stat), EV_TOTAL_MAX - evTotal(evs)));
+// totalCap false: generations 1-2, where stat experience has no cap on the total
+export const statRoom = (evs, stat, totalCap = true) => Math.max(0, Math.min(EV_STAT_MAX - evOf(evs, stat), totalCap ? EV_TOTAL_MAX - evTotal(evs) : Infinity));
 
-export const evGain = (evs, stat, amount) => (amount < 0 ? Math.max(amount, -evOf(evs, stat)) : Math.min(amount, statRoom(evs, stat)));
+export const evGain = (evs, stat, amount, totalCap = true) => (amount < 0 ? Math.max(amount, -evOf(evs, stat)) : Math.min(amount, statRoom(evs, stat, totalCap)));
+
+const evsFull = (evs, totalCap) => (totalCap ? evTotal(evs) >= EV_TOTAL_MAX : STATS.every(stat => evOf(evs, stat) >= EV_STAT_MAX));
 
 export const FIND_ORDER = Object.freeze([...STATS.flatMap(stat => BAG_SIZES.map(size => `${stat}_${size}`)), ...EFFECT_BAGS, null, RESET_BAG, SOOTHING_BAG]);
 
 export const FIND_CHANCE = 5;
 export const FIND_FULL = 10;
 
-export function findBag(evs, rng) {
-  if (rng() * 100 >= (evTotal(evs) >= EV_TOTAL_MAX ? FIND_FULL : FIND_CHANCE)) return null;
+export function findBag(evs, rng, totalCap = true) {
+  if (rng() * 100 >= (evsFull(evs, totalCap) ? FIND_FULL : FIND_CHANCE)) return null;
   return FIND_ORDER[Math.floor(rng() * FIND_ORDER.length)];
 }
 
@@ -79,8 +82,9 @@ export function refillEnergy(state) {
 
 export const SOOTHING_ENJOY = SOOTHING_FRIENDSHIP / FRIENDSHIP_PER_STEP * ENJOY_STEP;
 
-export const traineeOf = mon => ({
+export const traineeOf = (mon, { totalCap = true } = {}) => ({
   evs: Object.fromEntries(STATS.map(stat => [stat, evOf(mon.set?.evs, stat)])), energy: energyOf(mon), enjoy: enjoymentOf(mon), effect: mon.trainEffect ?? null,
+  ...(totalCap ? {} : { totalCap: false }),
 });
 
 export function setTrainee(mon, { evs, energy, enjoy, effect }) {
@@ -102,11 +106,11 @@ export function setHungBag(mon, hung) {
   else delete mon.trainBag;
 }
 
-export function hangBlock(evs, id) {
+export function hangBlock(evs, id, totalCap = true) {
   const bag = bagOf(id);
   if (!bag) return 'unknown';
   if (bag.kind === 'reset') return evTotal(evs) > 0 ? null : 'empty';
-  if (bag.kind === 'stat') return statRoom(evs, bag.stat) > 0 ? null : 'capped';
+  if (bag.kind === 'stat') return statRoom(evs, bag.stat, totalCap) > 0 ? null : 'capped';
   return null;
 }
 
@@ -128,7 +132,7 @@ export function clearBag(trainee, id) {
     next.enjoy -= spent;
     return { trainee: next, event: { type: 'soothing', id, spent, friendship: friendshipFor(spent) } };
   }
-  const room = evGain(next.evs, bag.stat, bag.ev);
+  const room = evGain(next.evs, bag.stat, bag.ev, trainee.totalCap !== false);
   const added = Math.min(room, Math.floor(next.energy));
   next.evs[bag.stat] += added;
   next.energy -= added;
@@ -174,8 +178,9 @@ export function createCore({ trainee, hung = null, rng = Math.random }) {
     bag = { id, hits: 0, needed: bagOf(id).hits };
     return { type: 'hang', id, needed: bag.needed, hits: 0, ...extra };
   };
+  const capped = trainee.totalCap !== false;
   const hangNow = (id, extra) => {
-    const why = hangBlock(now.evs, id);
+    const why = hangBlock(now.evs, id, capped);
     return why ? { type: 'refuse', id, why } : put(id, extra);
   };
   const burst = () => {
@@ -185,7 +190,7 @@ export function createCore({ trainee, hung = null, rng = Math.random }) {
     bag = null;
     const events = [{ ...out.event, evs: { ...now.evs }, energy: now.energy }];
     wind = rng() < SECOND_WIND_AFTER_BAG;
-    if (bagOf(id).kind === 'stat' && !hangBlock(now.evs, id)) events.push(hangNow(id, { again: true }));
+    if (bagOf(id).kind === 'stat' && !hangBlock(now.evs, id, capped)) events.push(hangNow(id, { again: true }));
     if (wind) events.push({ type: 'wind' });
     toRest ??= roll(REST_BAGS);
     if (--toRest <= 0) {
@@ -198,7 +203,7 @@ export function createCore({ trainee, hung = null, rng = Math.random }) {
 
   const blank = strength => {
     const events = [{ type: 'punch', blank: true, strength }];
-    const id = findBag(now.evs, rng);
+    const id = findBag(now.evs, rng, capped);
     if (!id) return events;
     events.push({ type: 'found', id }, put(id, { found: true }));
     if (isRareBag(id)) { wind = true; events.push({ type: 'wind' }); }
@@ -208,6 +213,7 @@ export function createCore({ trainee, hung = null, rng = Math.random }) {
     get bag() { return bag && { ...bag }; },
     get trainee() { return { ...now, evs: { ...now.evs } }; },
     get evs() { return { ...now.evs }; },
+    get totalCap() { return capped; },
     get energy() { return now.energy; },
     get wind() { return wind; },
     get resting() { return resting; },

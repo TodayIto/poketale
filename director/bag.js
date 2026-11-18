@@ -15,9 +15,9 @@ export const POCKETS = [
 
   { id: 'heal', items: ['potion', 'superpotion', 'hyperpotion', 'maxpotion', 'fullrestore', 'revive', 'maxrevive',
     'freshwater', 'sodapop', 'lemonade', 'moomoomilk', 'sweetheart', 'energypowder', 'energyroot', 'revivalherb', 'ether', 'maxether', 'elixir', 'maxelixir'] },
-  { id: 'status', items: ['antidote', 'burnheal', 'iceheal', 'awakening', 'paralyzeheal', 'fullheal', 'healpowder',
+  { id: 'status', items: ['antidote', 'burnheal', 'iceheal', 'awakening', 'paralyzeheal', 'fullheal', 'healpowder', 'pokeflute', 'blueflute', 'yellowflute', 'redflute',
     'lavacookie', 'oldgateau', 'casteliacone', 'lumiosegalette', 'shaloursable', 'ragecandybar', 'bigmalasada', 'pewtercrunchies'] },
-  { id: 'battle', items: ['xattack', 'xdefense', 'xspatk', 'xspdef', 'xspeed', 'xaccuracy', 'direhit'] },
+  { id: 'battle', items: ['xattack', 'xdefense', 'xspatk', 'xspdef', 'xspeed', 'xaccuracy', 'direhit', 'guardspec'] },
   { id: 'ball', items: Object.keys(BALLS) },
   { id: 'food', items: [] },
 ];
@@ -61,10 +61,15 @@ export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG 
     if (isBall(id)) return 'enemy';
     const item = bagItem(battle, id);
     if (item.tool) return item.tool === 'cheer' ? 'party' : 'enemy';
-    return item.boost || item.crit ? 'active' : 'party';
+    return item.boost || item.crit || item.guard || item.flute === 'field' ? 'active' : 'party';
   };
 
-  const left = (id, taken) => (isTool(id) ? Math.min(counts.get(id), 1) : counts.get(id)) - (taken?.get(id) ?? 0);
+  const left = (id, taken) => {
+    if (!counts.has(id)) return 0;
+    const have = isTool(id) ? Math.min(counts.get(id), 1) : counts.get(id);
+    // A flute stays in the bag, so one serves every action of the turn
+    return bagItem(battle, id)?.keep ? have : have - (taken?.get(id) ?? 0);
+  };
   function itemView(id, party, position, taken) {
     const base = { id, name: itemName(id), count: isTool(id) ? counts.get(id) : left(id, taken), target: targetKind(id),
       ...(Object.hasOwn(story, id) ? { emoji: story[id].emoji } : {}) };
@@ -84,6 +89,8 @@ export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG 
   }
   return {
     counts,
+    // What is left of an item once this turn's other actions took theirs
+    remaining: left,
 
     menu(party, position = 0, taken = null) {
 

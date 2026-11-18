@@ -1,6 +1,6 @@
 import { createFetchBytes } from './fetch-bytes.js';
 import { mark } from './marks.js';
-import { startStoryLink, openSettings, currentSettings, openLang, queueAction, storyNow, onStoryChange, showWindow, hideWindow, resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, writeBotTravel, quickImport, importLater, battleFormat, watchReplies } from './story-link.js';
+import { startStoryLink, openSettings, currentSettings, openLang, queueAction, storyNow, onStoryChange, showWindow, hideWindow, resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, writeBotTravel, writeGeneration, quickImport, importLater, battleFormat, watchReplies } from './story-link.js';
 import { startPanel } from '../panel/panel.js';
 import { createPanelScreens } from '../panel/screens.js';
 import { createPanelPictures } from '../panel/pictures.js';
@@ -44,7 +44,7 @@ guardContextMenu(globalThis.document);
         show: showWindow, hide: hideWindow, replies: watchReplies, trainer: () => personaName(risuai).catch(() => null) });
       const pictures = createPanelPictures({ route: () => currentSettings().panelPicture, probe: probeImage, fetchBytes, still: pokerogueStillUrl,
         clean: (address, viaHost) => defringeAddress(address, viaHost ? fetchBytes : null) });
-      await startPanel({ doc, read: storyNow, queueAction, screens, changes: onStoryChange, resume: resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, botTravel: writeBotTravel, quickImport, importLater, pictures,
+      await startPanel({ doc, read: storyNow, queueAction, screens, changes: onStoryChange, resume: resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, botTravel: writeBotTravel, setGeneration: writeGeneration, quickImport, importLater, pictures,
         place: () => currentSettings().outsideScreens, shift: () => currentSettings().panelShift, trainer: () => personaName(risuai).catch(() => null),
         restSound: createRestSound({ assetBase: DEFAULT_ASSET_BASE, settings: currentSettings, fetchBytes }) });
     }

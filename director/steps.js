@@ -184,7 +184,8 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
       break;
     }
     case '-immune': await say('battle.hitResultImmune', values(a[0])); break;
-    case '-miss': await say('battle.attackMissed', values(a[1] || a[0])); break;
+    // Without a target (generations 1-2), the attacker missed
+    case '-miss': await (a[1] ? say('battle.attackMissed', values(a[1])) : view.message(ownText('own.attackMissed', values(a[0]), lang), {})); break;
     case 'faint':
       if (event.before?.substitute) await view.substitute(positionOf(a[0]), 'clear');
       await view.faint(positionOf(a[0]));

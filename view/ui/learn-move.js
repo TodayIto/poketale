@@ -235,6 +235,9 @@ export function buildMoveEffect(s, x = 106) {
   return { container, power, accuracy, category };
 }
 
+// A move row: the name starts after the type icon, and a tag after it stops short of the PP overlay at 177
+const NAME_X = 35, TAG_GAP = 3, TAG_RIGHT = 150;
+
 export function buildMovesPage(s, page, { moves, newMove = null }) {
   const list = s.add.container(5, -159 + 26);
   page.add(list);
@@ -242,9 +245,17 @@ export function buildMovesPage(s, page, { moves, newMove = null }) {
   const row = (y, move, style) => {
     const r = s.add.container(0, y);
     if (move) r.add(s.add.sprite(0, 0, 'types', move.type.toLowerCase()).setOrigin(0, 1));
-    r.add([styledText(s, 35, 0, move ? move.name : '-', style).setOrigin(0, 1),
+    const name = styledText(s, NAME_X, 0, move ? move.name : '-', style).setOrigin(0, 1);
+    r.add([name,
       s.add.image(177, -5, 'summary_moves_overlay_pp').setOrigin(1, 0.5),
       styledText(s, 178, 1, move ? `${pad2(move.pp)}/${pad2(move.maxpp)}` : '--/--', 'WINDOW').setOrigin(0, 1)]);
+    // A move this generation's battles disable ([비활성화]) follows its name; both shrink together if they would reach the PP
+    if (move?.tag) {
+      const tag = styledText(s, 0, 0, move.tag, 'SUMMARY_RED').setOrigin(0, 1);
+      const fit = Math.min(1, (TAG_RIGHT - NAME_X) / (name.displayWidth + TAG_GAP + tag.displayWidth));
+      if (fit < 1) { name.setScale(name.scaleX * fit); tag.setScale(tag.scaleX * fit); }
+      r.add(tag.setX(NAME_X + name.displayWidth + TAG_GAP));
+    }
     return r;
   };
   const extra = s.add.container(0, 64).setVisible(!!newMove);

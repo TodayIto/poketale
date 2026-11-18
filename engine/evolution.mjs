@@ -149,9 +149,13 @@ function pick(ready, from, now) {
 	return list.length === 1 ? list[0] : null;
 }
 
+// now.gen: the story's generation; an evolution into a species of a later generation is not offered (the older dexes
+// still hold later species, as isNonstandard 'Future'). Evolutions the story writes itself are not checked here.
+export const inGeneration = (species, gen) => !Number.isInteger(gen) || !(species?.gen > gen);
+
 function readyBranches(dex, mon, now, test) {
 	const from = dex.species.get(mon.species);
-	return { from, ready: branchesOf(dex, from).filter(t => allowed(t, from, mon, now) && test(t)) };
+	return { from, ready: branchesOf(dex, from).filter(t => inGeneration(t, now.gen) && allowed(t, from, mon, now) && test(t)) };
 }
 
 export function levelEvolution(dex, mon, now = {}) {
@@ -182,9 +186,9 @@ export function tradeEvolution(dex, mon, now = {}) {
 	return { into: into.name, consumeHeld: !!into.evoItem, ...(partner ? { with: dex.species.get(partner).name } : {}) };
 }
 
-export function tradePair(dex, a, b) {
+export function tradePair(dex, a, b, gen = null) {
 	const branch = (mon, other) => branchesOf(dex, dex.species.get(mon.species))
-		.find(t => wayOf(t) === 'trade' && ruleOf(t)?.with === toID(dex.species.get(other.species).baseSpecies)) ?? null;
+		.find(t => inGeneration(t, gen) && wayOf(t) === 'trade' && ruleOf(t)?.with === toID(dex.species.get(other.species).baseSpecies)) ?? null;
 	const ab = branch(a, b), ba = branch(b, a);
 	if (!ab || !ba) return null;
 	const into = [everstoneStops(dex, a) ? null : ab.name, everstoneStops(dex, b) ? null : ba.name];
@@ -199,7 +203,7 @@ export function battleEvolution(dex, mon, now = {}) {
 
 const SWEETS = new Set(['strawberrysweet', 'berrysweet', 'lovesweet', 'starsweet', 'cloversweet', 'flowersweet', 'ribbonsweet']);
 
-export const canSpin = (dex, mon) => SWEETS.has(toID(mon.item)) && branchesOf(dex, dex.species.get(mon.species)).some(t => wayOf(t) === 'spin');
+export const canSpin = (dex, mon, gen = null) => SWEETS.has(toID(mon.item)) && branchesOf(dex, dex.species.get(mon.species)).some(t => inGeneration(t, gen) && wayOf(t) === 'spin');
 
 function creamOf({ clockwise, seconds }, timeOfDay) {
 	if (!clockwise && seconds > 10 && timeOfDay === 'dusk') return 'Alcremie-Rainbow-Swirl';
@@ -209,7 +213,7 @@ function creamOf({ clockwise, seconds }, timeOfDay) {
 }
 
 export function spinEvolution(dex, mon, spin, now = {}) {
-	return spin && canSpin(dex, mon) ? creamOf(spin, now.timeOfDay ?? 'day') : null;
+	return spin && canSpin(dex, mon, now.gen) ? creamOf(spin, now.timeOfDay ?? 'day') : null;
 }
 
 export function evolutionChoices(dex, from, into) {

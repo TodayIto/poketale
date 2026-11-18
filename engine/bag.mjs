@@ -38,6 +38,15 @@ export const BAG_ITEMS = {
 	xaccuracy: { name: 'X Accuracy', boost: 'accuracy' },
 
 	direhit: { name: 'Dire Hit', crit: true },
+	// Mist for the user's side: generations 1-2 put it on the Pokémon out, later ones on the side for five turns
+	guardspec: { name: 'Guard Spec.', guard: true },
+
+	// Flutes are played, not used up (Bulbapedia "Flute", "Poké Flute"). The Poké Flute wakes every Pokémon out, foes
+	// too, and takes the turn even when nobody sleeps; the others cure one Pokémon
+	pokeflute: { name: 'Poké Flute', flute: 'field', keep: true },
+	blueflute: { name: 'Blue Flute', cure: ['slp'], flute: 'one', keep: true },
+	yellowflute: { name: 'Yellow Flute', confusion: true, flute: 'one', keep: true },
+	redflute: { name: 'Red Flute', attract: true, flute: 'one', keep: true },
 
 	freshwater: { name: 'Fresh Water', heal: 30 },
 	sodapop: { name: 'Soda Pop', heal: 50 },
@@ -141,15 +150,26 @@ export function checkBagItem(battle, choice) {
 
 	const target = side.pokemon.find(p => p.m.uid === choice.target);
 	if (!target) return fail('notarget', choice.target);
+	return targetCheck(battle, target, item, choice.move);
+}
+
+// What the item would do to this Pokémon now: checked when it is chosen, and again when it is used, since another
+// action of the turn may have done it already (both slots of a double battle on the same Pokémon)
+function targetCheck(battle, target, item, move) {
 	if (target.isActive && target.volatiles['embargo']) return fail('embargo');
 	if (item.revive) return target.fainted ? { ok: true } : fail('notfainted');
 	if (item.pp) {
 
-		const slots = ppSlots(target, item, choice.move);
-		if (!slots) return fail('nomove', choice.move);
+		const slots = ppSlots(target, item, move);
+		if (!slots) return fail('nomove', move);
 		return slots.some(s => s.pp < s.maxpp) ? { ok: true } : fail('noeffect');
 	}
 	if (target.fainted) return fail('fainted');
+	if (item.flute === 'field') return { ok: true };
+	if (item.guard) {
+		if (!target.isActive) return fail('notactive');
+		return guarded(battle, target) ? fail('noeffect') : { ok: true };
+	}
 	if (item.boost || item.crit) {
 		if (!target.isActive) return fail('notactive');
 		if (item.crit) return target.volatiles['focusenergy'] || target.volatiles['dragoncheer'] ? fail('noeffect') : { ok: true };
@@ -164,7 +184,21 @@ function itemHasEffect(target, item) {
 	if (item.heal && target.hp < target.maxhp) return true;
 	if (item.cure && target.status && (item.cure === 'all' || item.cure.includes(target.status))) return true;
 	if (item.confusion && target.isActive && target.volatiles['confusion']) return true;
+	if (item.attract && target.isActive && target.volatiles['attract']) return true;
 	return false;
+}
+
+const guarded = (battle, pokemon) => (battle.gen <= 2 ? !!pokemon.volatiles['mist'] : !!pokemon.side.sideConditions['mist']);
+
+// The Poké Flute wakes every sleeping Pokémon out, foes too; Soundproof keeps one asleep from generation 3, when
+// abilities came in
+function playFlute(battle, user) {
+	const woken = battle.getAllActive().filter(p => !p.fainted && p.status === 'slp' && !(battle.gen >= 3 && p.hasAbility('soundproof')));
+	for (const pokemon of woken) {
+		battle.add('-curestatus', pokemon, 'slp', '[msg]');
+		pokemon.clearStatus();
+	}
+	if (!woken.length) battle.add('-story-flute', user, user.m.uid, '[none]');
 }
 
 function ppSlots(target, item, move) {
@@ -301,7 +335,7 @@ export function chooseBagParts(battle, parts) {
 	return { ok: true };
 }
 
-const isEnemyItem = item => !!item && !item.revive && !item.pp && !item.boost && !item.crit && !!(item.heal || item.cure);
+const isEnemyItem = item => !!item && !item.revive && !item.pp && !item.boost && !item.crit && !item.flute && !!(item.heal || item.cure);
 
 export function checkEnemyItem(battle, choice) {
 	if (battle.ended) return fail('ended');
@@ -360,11 +394,17 @@ const healOf = (item, target) => (item.heal === 'full' ? target.maxhp : item.hea
 function useItem(sim, battle, state, choice, side = battle.sides[0]) {
 	const item = bagItem(battle, choice.item);
 	const target = side.pokemon.find(p => p.m.uid === choice.target);
-	if (!target || (target.fainted && !item.revive)) return;
+	if (!target) return;
 	const effect = itemEffect(item, choice.item);
 	const from = `[from] ${effect.fullname}`;
+	const label = Object.hasOwn(BAG_ITEMS, choice.item) ? [] : [item.name];
+	// Nothing left for it to do: it has no effect and stays in the bag
+	if (!targetCheck(battle, target, item, choice.move).ok) {
+		battle.add('-story-item', target, target.m.uid, choice.item, ...label, '[fail]');
+		return;
+	}
 
-	battle.add('-story-item', target, target.m.uid, choice.item, ...(Object.hasOwn(BAG_ITEMS, choice.item) ? [] : [item.name]));
+	battle.add('-story-item', target, target.m.uid, choice.item, ...label);
 
 	if (item.revive) {
 
@@ -388,8 +428,18 @@ function useItem(sim, battle, state, choice, side = battle.sides[0]) {
 	}
 	if (item.boost) battle.boost({ [item.boost]: X_STAGES }, target, target, effect);
 	if (item.crit) target.addVolatile('focusenergy', target, effect);
+	if (item.flute === 'field') playFlute(battle, target);
+	if (item.attract && target.isActive && target.volatiles['attract']) {
+		target.removeVolatile('attract');
+		battle.add('-end', target, 'Attract', from);
+	}
+	if (item.guard) {
+		if (battle.gen <= 2) target.addVolatile('mist', target, effect);
+		else target.side.addSideCondition('mist', target, effect);
+	}
 
-	state?.itemsUsed.push({ turn: battle.turn, item: choice.item, target: choice.target, ...(choice.move && item.oneMove ? { move: choice.move } : {}) });
+	// A flute stays in the bag
+	if (!item.keep) state?.itemsUsed.push({ turn: battle.turn, item: choice.item, target: choice.target, ...(choice.move && item.oneMove ? { move: choice.move } : {}) });
 }
 
 function throwBall(sim, battle, state, choice, user) {

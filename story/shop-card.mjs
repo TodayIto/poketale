@@ -1,4 +1,5 @@
 import { esc, safeKey } from './card.mjs';
+import { hashKey } from './blocks.mjs';
 import { moneyAmount } from './diary.mjs';
 import { say } from './screen-text.mjs';
 import { PR_ITEMS, SD_ITEMS } from './panel-html.mjs';
@@ -89,6 +90,10 @@ function cartRow(view, lang) {
 
 const note = n => (n ? `<div class="x-risu-pkb-note x-risu-pkb-note-${n.kind}">${esc(n.text).replaceAll('\n', '<br>')}</div>` : '');
 
+// What an open card shows that a payment depends on (its prices, the cart's total, the Premier Ball bonus), as a class on
+// its body: plugin/battle/shop-card.js pays only while the card on screen carries the signature of now
+export const shownSelector = (key, shown) => `.x-risu-pkbsb-${safeKey(key)}.x-risu-pkbsg-${hashKey(JSON.stringify(shown))}`;
+
 export function renderShopInside(view, lang) {
   const t = key => esc(say(lang, key));
   const phase = view.phase ?? 'closed';
@@ -108,7 +113,8 @@ export function renderShopInside(view, lang) {
     const list = rows.length ? rows.map(row => itemRow(view, row, lang)).join('') : `<div class="x-risu-pkb-shnone">${t('shop.sellNone')}</div>`;
     const fill = Math.max(1, view.fill ?? rows.length);
     const body = `${modeSwitch(view, lang)}${tabRow(view, lang)}<div class="x-risu-pkb-shlist${view.tab === SPECIAL_TAB ? ' x-risu-pkb-shlistsp' : ''}" style="min-height:${fill * ROW_H - 5}px">${list}</div>${cartRow(view, lang)}${note(view.note)}`;
-    shop = `<div class="x-risu-pkb-shbody${view.grow ? ' x-risu-pkb-shgrow' : ''} x-risu-pkbsb-${safeKey(view.key)}"><div class="x-risu-pkb-shin">${body}</div></div>`;
+    const signed = view.shown ? ` x-risu-pkbsg-${hashKey(JSON.stringify(view.shown))}` : '';
+    shop = `<div class="x-risu-pkb-shbody${view.grow ? ' x-risu-pkb-shgrow' : ''} x-risu-pkbsb-${safeKey(view.key)}${signed}"><div class="x-risu-pkb-shin">${body}</div></div>`;
   }
   return `<div class="x-risu-pkb-box x-risu-pkb-l-${look}">${head}${top}${shop}</div>`;
 }

@@ -295,11 +295,13 @@ export class SummaryScreen {
     p.add([s.add.image(7, 4, 'summary_stats_item_title').setOrigin(0, 0.5), s.add.image(16, 59, 'summary_stats_stats_title').setOrigin(0, 0.5),
       s.add.image(7, 115, 'summary_stats_exp_title').setOrigin(0, 0.5), s.add.image(126, 152, 'summary_stats_expbar_title').setOrigin(0, 0)]);
     const stats = summary.stats ?? {};
-    STAT_ROWS.forEach(([key, name], i) => {
+    // Generation 1: one Special in Special Attack's place, Speed moved up beside it
+    const rows = summary.oneSpecial ? STAT_ROWS.filter(([key]) => key !== 'spd') : STAT_ROWS;
+    rows.forEach(([key, name], i) => {
       const row = i % 3, col = Math.floor(i / 3), x = 116 * col + (col === 1 ? 5 : 0);
 
       const style = summary.nature?.plus === key ? 'SUMMARY_STATS_PINK' : summary.nature?.minus === key ? 'SUMMARY_STATS_BLUE' : 'SUMMARY_STATS';
-      const iv = summary.ivs?.[key], label = s.words(name);
+      const iv = summary.ivs?.[key], label = summary.oneSpecial && key === 'spa' ? summary.oneSpecial.label : s.words(name);
       perm.add([styledText(s, x, 16 * row, label, style).setOrigin(0.5, 0),
         styledText(s, 93 + 93 * col, 16 * row, key === 'hp' ? `${stats.hp ?? mon.hp}/${stats.maxhp ?? mon.maxhp}` : String(stats[key] ?? ''), 'WINDOW_ALT').setOrigin(1, 0)]);
       ivs.add([styledText(s, x, 16 * row, label, iv >= 31 ? 'SUMMARY_STATS_GOLD' : 'SUMMARY_STATS').setOrigin(0.5, 0),

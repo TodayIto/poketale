@@ -36,7 +36,9 @@ const ITEM_FRAMES = {
   fullheal: 'full_heal', revive: 'revive', maxrevive: 'max_revive',
   ether: 'ether', maxether: 'max_ether', elixir: 'elixir', maxelixir: 'max_elixir',
   xattack: 'x_attack', xdefense: 'x_defense', xspatk: 'x_sp_atk', xspdef: 'x_sp_def', xspeed: 'x_speed', xaccuracy: 'x_accuracy',
-  direhit: 'dire_hit',
+  direhit: 'dire_hit', guardspec: 'guard_spec',
+  // The atlas has no Poké Flute or glass flutes: its two flutes stand in, by colour
+  pokeflute: 'moon_flute', blueflute: 'moon_flute', yellowflute: 'sun_flute', redflute: 'sun_flute',
 
   freshwater: 'berry_juice_good', sodapop: 'berry_juice_good', lemonade: 'berry_juice_good', moomoomilk: 'berry_juice_good',
   sweetheart: 'love_sweet', energypowder: 'silver_powder', energyroot: 'big_root', healpowder: 'silver_powder', revivalherb: 'white_herb',

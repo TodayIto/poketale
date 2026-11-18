@@ -62,7 +62,7 @@ export class BattleLevel {
     await this.scene.hpChange(side, hp, maxhp);
   }
 
-  showLevelUpStats({ prev, next }) { this.scene.requireReady(); return this.stats.show({ prev, next }); }
+  showLevelUpStats({ prev, next, special = null }) { this.scene.requireReady(); return this.stats.show({ prev, next, special }); }
 
   confirm() { this.scene.requireReady(); return this.confirmMenu.choose(); }
 

@@ -10,6 +10,10 @@ const REGION_GIMMICKS = Object.freeze({ paldea: 'tera', kanto: 'mega', hoenn: 'm
 
 export const regionGimmick = region => REGION_GIMMICKS[region] ?? 'none';
 
+// The generation a gimmick starts in; a foe is given only what the story's generation has
+const GIMMICK_GENS = Object.freeze({ mega: 6, tera: 9 });
+const eraGimmick = (gimmick, gen) => (gen >= (GIMMICK_GENS[gimmick] ?? 0) ? gimmick : 'none');
+
 export const MEGA_LEVEL = 40;
 
 export const SIGNATURE_MEGAS = Object.freeze({
@@ -59,9 +63,9 @@ export function megaGift(dex, team, { named = null, seed } = {}) {
   return { uid: pick.uid, item: stones[seeded(seed, pick.uid, stones.length)].id };
 }
 
-export function foeGimmicks(dex, mode, { battle, region, seed, p2, partner = null, foePartner = null }) {
+export function foeGimmicks(dex, mode, { battle, region, seed, p2, partner = null, foePartner = null, gen = 9 }) {
   if (mode !== 'region') return {};
-  const gimmick = battle.wild ? 'none' : regionGimmick(region);
+  const gimmick = battle.wild ? 'none' : eraGimmick(regionGimmick(region), gen);
   const p2Named = namedTrainer(battle), secondNamed = battle.foePartner ? namedTrainer({ name: battle.foePartner.name }) : null;
 
   const strong = !battle.wild && (!!battle.boss || !!p2Named || !!secondNamed);

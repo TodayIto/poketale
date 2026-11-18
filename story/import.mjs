@@ -6,7 +6,10 @@ import { dropOocs } from './chat.mjs';
 import { COMPAT_LINES, COMPAT_LINE_RE, COMPAT_FIELD_SEP, compatHead, compatFold, dropTaken } from './compat.mjs';
 import { readStored, isRecord, isUnreadable } from './stored.mjs';
 import { ruleNote, ruleError, refusal, failed } from './failure.mjs';
-import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty, friendshipOf, isEgg, tidyBreeding, stateFormat } from './state.mjs';
+import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty, friendshipOf, isEgg, tidyBreeding, stateFormat, stateGen, keepOrigins } from './state.mjs';
+import { learnGen } from './learning.mjs';
+import { usesStatExp } from '../engine/stat-exp.mjs';
+import { hasOneSpecial } from '../engine/mon.mjs';
 import { FRIENDSHIP_MAX, friendshipLocked } from '../engine/friendship.mjs';
 import { STATS, STATUS_IDS } from '../engine/mon.mjs';
 import { evTotal } from './training.mjs';
@@ -192,14 +195,17 @@ const statsOk = (values, max) => isRecord(values) && STATS.every(s => Number.isI
 
 const HOLD_RANGE = Object.freeze({ iv: DEBUG_STAT_MAX, ev: DEBUG_STAT_MAX, evTotal: Infinity });
 const MAINLINE_RANGE = Object.freeze({ iv: MAX_IV, ev: EV_STAT_MAX, evTotal: EV_TOTAL_MAX });
+// Generations 1-2 store stat experience, with no total cap
+const STAT_EXP_RANGE = Object.freeze({ iv: MAX_IV, ev: EV_STAT_MAX, evTotal: Infinity });
+const rangeFor = gen => (usesStatExp(gen) ? STAT_EXP_RANGE : MAINLINE_RANGE);
 
-const spreadRange = (kind, mon, field) => (kind === DEBUG_KIND || mon.from[field] === 'current' ? HOLD_RANGE : MAINLINE_RANGE);
+const spreadRange = (kind, mon, field, gen) => (kind === DEBUG_KIND || mon.from[field] === 'current' ? HOLD_RANGE : rangeFor(gen));
 
-export const typedRange = draft => (draft.kind === DEBUG_KIND ? HOLD_RANGE : MAINLINE_RANGE);
+export const typedRange = draft => (draft.kind === DEBUG_KIND ? HOLD_RANGE : rangeFor(draft.gen));
 
-export const pastMainline = set => ({
+export const pastMainline = (set, gen) => ({
   ivs: STATS.some(s => (set?.ivs?.[s] ?? 0) > MAX_IV),
-  evs: STATS.some(s => (set?.evs?.[s] ?? 0) > EV_STAT_MAX) || evTotal(set?.evs) > EV_TOTAL_MAX,
+  evs: STATS.some(s => (set?.evs?.[s] ?? 0) > EV_STAT_MAX) || evTotal(set?.evs) > rangeFor(gen).evTotal,
 });
 const learnable = learnableReader(learnableTable);
 
@@ -214,7 +220,7 @@ export function foreignAbility(set, sim) {
   return species.exists && !!set.ability && !Object.values(species.abilities).some(ability => toID(ability) === toID(set.ability));
 }
 
-export const mainlineBreaks = (set, sim) => ({ ...pastMainline(set), moves: unlearnableMoves(set, sim).length > 0, ability: foreignAbility(set, sim) });
+export const mainlineBreaks = (set, sim, gen) => ({ ...pastMainline(set, gen), moves: unlearnableMoves(set, sim).length > 0, ability: foreignAbility(set, sim) });
 
 function usable(sim, species, field, value, range = HOLD_RANGE) {
   switch (field) {
@@ -233,7 +239,10 @@ function usable(sim, species, field, value, range = HOLD_RANGE) {
   return false;
 }
 
-function fillAuto(mon, ctx, fields) {
+// A draft made at a place (state.learning) fills its new Pokémon's moves from that place's level-up table
+const learningCtx = (ctx, learning) => (learning && !ctx?.learning ? { ...ctx, learning } : ctx);
+
+function fillAuto(mon, ctx, fields, gen) {
   const { sim } = ctx;
   const refill = new Set(fields.filter(f => mon.from[f] === 'auto' && f !== 'species' && f !== 'level'));
   if (!refill.size) return;
@@ -244,7 +253,9 @@ function fillAuto(mon, ctx, fields) {
 
   const free = () => {
     const rng = rngFor(sim, `import:${mon.seed}`), natures = sim.Dex.natures.all();
-    return { nature: natures[rng.random(natures.length)].name, ivs: Object.fromEntries(STATS.map(s => [s, rng.random(MAX_IV + 1)])) };
+    const ivs = Object.fromEntries(STATS.map(s => [s, rng.random(MAX_IV + 1)]));
+    if (hasOneSpecial(gen)) ivs.spd = ivs.spa;
+    return { nature: natures[rng.random(natures.length)].name, ivs };
   };
   const leaveBlank = () => {
     const drawn = refill.has('nature') || refill.has('ivs') ? free() : {};
@@ -259,7 +270,8 @@ function fillAuto(mon, ctx, fields) {
   }
   let full;
   try {
-    full = fillSet(ctx, given, rngFor(sim, `import:${mon.seed}`));
+    // A Pokémon already in the story (an update of its match) learns from its own origin under the "origin" setting
+    full = fillSet(ctx, given, rngFor(sim, `import:${mon.seed}`), gen, learnGen(ctx.learning, mon.action === 'update' ? mon.match : null));
   } catch (e) {
 
     mon.fillError = e.notes?.[0] ?? note('noMovesAtLevel', { species: species.name, level: mon.set.level, id: species.id });
@@ -268,7 +280,7 @@ function fillAuto(mon, ctx, fields) {
   for (const f of refill) mon.set[f] = full[f];
 }
 
-function monProblems(mon, ctx, kind) {
+function monProblems(mon, ctx, kind, gen) {
   const { sim } = ctx;
   const out = [];
   const { set } = mon;
@@ -279,7 +291,7 @@ function monProblems(mon, ctx, kind) {
   if (mon.fillError) out.push(mon.fillError);
   if (species.exists && validLevel(set.level) && !mon.fillError) {
     for (const f of ['gender', 'shiny', 'nature', 'ability', 'item', 'moves', 'ivs', 'evs', 'teraType']) {
-      if (usable(sim, species, f, set[f], spreadRange(kind, mon, f))) continue;
+      if (usable(sim, species, f, set[f], spreadRange(kind, mon, f, gen))) continue;
       const field = note(`field.${f}`);
       out.push(set[f] === null || set[f] === undefined ? note('badFieldEmpty', { field })
         : note('badField', { field, value: Array.isArray(set[f]) ? set[f].join(', ') : typeof set[f] === 'object' ? JSON.stringify(set[f]) : set[f] }));
@@ -294,7 +306,7 @@ function monProblems(mon, ctx, kind) {
   return out;
 }
 
-function draftMon(found, place, key, ctx, seed) {
+function draftMon(found, place, key, ctx, seed, gen) {
   const mon = blankMon(key, place, seed);
   const from = found.from === 'ai' ? 'ai' : 'record';
   const record = (field, value) => { if (field in mon.set) mon.set[field] = value; else mon[field] = value; mon.from[field] = from; };
@@ -310,8 +322,8 @@ function draftMon(found, place, key, ctx, seed) {
     if (found.status !== undefined) record('status', found.status);
   }
   const species = ctx.sim.Dex.species.get(found.species ?? '');
-  for (const [field, value] of Object.entries(found.extra ?? {})) if (species.exists && usable(ctx.sim, species, field, value, MAINLINE_RANGE)) record(field, clone(value));
-  fillAuto(mon, ctx, SET_FIELDS);
+  for (const [field, value] of Object.entries(found.extra ?? {})) if (species.exists && usable(ctx.sim, species, field, value, rangeFor(gen))) record(field, clone(value));
+  fillAuto(mon, ctx, SET_FIELDS, gen);
   return mon;
 }
 
@@ -324,7 +336,7 @@ function valuesOf(ctx, state, mon) {
 const FOLLOWING = MON_FIELDS.filter(f => f !== 'place');
 const putField = (mon, field, value) => { if (field in mon.set) mon.set[field] = value; else mon[field] = value; };
 
-function followPair(mon, hit, ctx) {
+function followPair(mon, hit, ctx, gen) {
   const free = FOLLOWING.filter(f => mon.from[f] === 'auto' || mon.from[f] === 'current');
   if (hit) {
     for (const f of free) { putField(mon, f, clone(f in hit.now.set ? hit.now.set[f] : hit.now[f])); mon.from[f] = 'current'; }
@@ -332,7 +344,7 @@ function followPair(mon, hit, ctx) {
   }
   const back = free.filter(f => mon.from[f] === 'current');
   for (const f of back) { putField(mon, f, f in blankOf ? clone(blankOf[f]) : f === 'hpPercent' ? 100 : ''); mon.from[f] = 'auto'; }
-  fillAuto(mon, ctx, back);
+  fillAuto(mon, ctx, back, gen);
 }
 
 function rematch(draft, ctx) {
@@ -367,30 +379,32 @@ function rematch(draft, ctx) {
   }
   for (const mon of draft.mons) {
     const hit = pairs.get(mon.key);
-    const match = hit ? { uid: hit.uid, place: hit.place, label: labelOf(hit) } : null;
+    const match = hit ? { uid: hit.uid, place: hit.place, label: labelOf(hit), ...(Number.isInteger(hit.metGen) ? { metGen: hit.metGen } : {}) } : null;
     if ((mon.match?.uid ?? null) === (match?.uid ?? null)) { mon.match = match; continue; }
     mon.match = match;
     if (mon.egg) mon.action = match ? 'update' : 'skip';
     else if (mon.action !== 'skip') mon.action = match ? 'update' : 'add';
-    followPair(mon, hit, ctx);
+    followPair(mon, hit, ctx, draft.gen);
   }
 }
 
 export function makeDraft(chat, state, ctx, { seed = 0, format, found: given = null } = {}) {
   const found = given ?? readCompat(chat, ctx, format ? { format } : {});
   const pool = [...(state?.party ?? []).map(m => [m, 'party']), ...(state?.box ?? []).map(m => [m, 'box'])]
-    .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level, now: valuesOf(ctx, state, m), ...(isEgg(m) ? { egg: true } : {}) }));
+    .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level, now: valuesOf(ctx, state, m), ...(isEgg(m) ? { egg: true } : {}),
+      ...(Number.isInteger(m.metGen) ? { metGen: m.metGen } : {}) }));
   const bag = Object.fromEntries(Object.entries(state?.bag ?? {}).filter(([, n]) => n > 0).map(([id, n]) => [id, { count: n, from: 'current' }]));
 
   const customItems = Object.fromEntries(Object.keys(bag).filter(isCustomItem).map(id => [id, customInfo(state, id)]).filter(([, info]) => info));
+  const gen = stateGen(state), learning = state?.learning ?? null, here = learningCtx(ctx, learning);
   const draft = {
-    v: 1,
-    mons: [...found.party.map((f, i) => draftMon(f, 'party', `p${i + 1}`, ctx, seed)), ...found.box.map((f, i) => draftMon(f, 'box', `b${i + 1}`, ctx, seed))],
+    v: 1, gen, ...(learning ? { learning } : {}),
+    mons: [...found.party.map((f, i) => draftMon(f, 'party', `p${i + 1}`, here, seed, gen)), ...found.box.map((f, i) => draftMon(f, 'box', `b${i + 1}`, here, seed, gen))],
     bag, warnings: found.warnings, pool, base: { bag: Object.fromEntries(Object.entries(bag).map(([id, e]) => [id, e.count])) }, customItems,
     ...(given?.source ? { source: given.source } : {}),
   };
-  rematch(draft, ctx);
-  for (const mon of draft.mons) mon.problems = monProblems(mon, ctx, draft.kind);
+  rematch(draft, here);
+  for (const mon of draft.mons) mon.problems = monProblems(mon, ctx, draft.kind, gen);
   return draft;
 }
 
@@ -463,12 +477,12 @@ export function handBack(chat, state, ctx, { lang = 'ko', now = Date.now() } = {
 
 export const DEBUG_KIND = 'debug';
 
-export function newMonDraft(ctx, { place = 'party', seed = 0 } = {}) {
+export function newMonDraft(ctx, { place = 'party', seed = 0, gen = null, learning = null } = {}) {
   const mon = blankMon('n1', place, seed);
   for (const f of ['species', 'name', 'level', 'place']) mon.from[f] = 'user';
-  fillAuto(mon, ctx, SET_FIELDS);
-  mon.problems = monProblems(mon, ctx, DEBUG_KIND);
-  return { v: 1, kind: DEBUG_KIND, mons: [mon], bag: {}, warnings: [], pool: [], base: { bag: {} } };
+  fillAuto(mon, learningCtx(ctx, learning), SET_FIELDS, gen);
+  mon.problems = monProblems(mon, ctx, DEBUG_KIND, gen);
+  return { v: 1, kind: DEBUG_KIND, gen, ...(learning ? { learning } : {}), mons: [mon], bag: {}, warnings: [], pool: [], base: { bag: {} } };
 }
 
 export function currentMonDraft(ctx, state, uid) {
@@ -477,9 +491,10 @@ export function currentMonDraft(ctx, state, uid) {
   const { set, hpPercent, status } = valuesOf(ctx, state, found);
   const debug = isEgg(found) ? { eggCycles: Math.ceil(found.egg.cycles) } : { friendship: friendshipOf(ctx, found), friendshipLocked: friendshipLocked(found) };
   const mon = { key: 'e1', place, set, hpPercent, status, ...debug, from: Object.fromEntries([...MON_FIELDS, ...Object.keys(debug)].map(f => [f, 'current'])),
-    match: { uid, place, label: labelOf(set) }, action: 'update', problems: [], seed: `0:e1` };
-  mon.problems = monProblems(mon, ctx, DEBUG_KIND);
-  return { v: 1, kind: DEBUG_KIND, mons: [mon], bag: {}, warnings: [], pool: [], base: { bag: {} } };
+    match: { uid, place, label: labelOf(set), ...(Number.isInteger(found.metGen) ? { metGen: found.metGen } : {}) }, action: 'update', problems: [], seed: `0:e1` };
+  const gen = stateGen(state), learning = state?.learning ?? null;
+  mon.problems = monProblems(mon, ctx, DEBUG_KIND, gen);
+  return { v: 1, kind: DEBUG_KIND, gen, ...(learning ? { learning } : {}), mons: [mon], bag: {}, warnings: [], pool: [], base: { bag: {} } };
 }
 
 export const friendshipLockDraft = (ctx, state, uid, locked) => editMon(currentMonDraft(ctx, state, uid), 'e1', 'friendshipLocked', !!locked, ctx);
@@ -537,9 +552,9 @@ export function editMon(draft, key, field, value, ctx) {
   mon.from[field] = 'user';
 
   const blanks = SET_FIELDS.filter(f => mon.set[f] === null || (f === 'moves' && !mon.set.moves?.length));
-  fillAuto(mon, ctx, [...(field === 'species' ? BY_SPECIES : field === 'level' ? BY_LEVEL : []), ...blanks]);
-  if (['species', 'name', 'level'].includes(field)) rematch(next, ctx);
-  mon.problems = monProblems(mon, ctx, next.kind);
+  fillAuto(mon, learningCtx(ctx, next.learning), [...(field === 'species' ? BY_SPECIES : field === 'level' ? BY_LEVEL : []), ...blanks], next.gen);
+  if (['species', 'name', 'level'].includes(field)) rematch(next, learningCtx(ctx, next.learning));
+  mon.problems = monProblems(mon, ctx, next.kind, next.gen);
   return next;
 }
 
@@ -565,8 +580,8 @@ export function refillMon(draft, key, ctx, { seed = 0 } = {}) {
   const next = clone(draft);
   const mon = monAt(next, key);
   mon.seed = `${seed}:${key}`;
-  fillAuto(mon, ctx, SET_FIELDS);
-  mon.problems = monProblems(mon, ctx, next.kind);
+  fillAuto(mon, learningCtx(ctx, next.learning), SET_FIELDS, next.gen);
+  mon.problems = monProblems(mon, ctx, next.kind, next.gen);
   return next;
 }
 
@@ -578,7 +593,7 @@ export function draftProblems(draft, ctx) {
   for (const mon of draft.mons) {
     if (mon.action === 'skip') continue;
     const label = note(mon.place === 'box' ? 'monInBox' : 'monInParty', { mon: labelOf(mon.set) || note('newMon') });
-    for (const problem of monProblems(mon, ctx, draft.kind)) out.push(note('monProblem', { mon: label, problem }));
+    for (const problem of monProblems(mon, ctx, draft.kind, draft.gen)) out.push(note('monProblem', { mon: label, problem }));
     if (mon.action === 'update') {
       if (!mon.match) out.push(note('noMatch', { mon: label }));
       else if (targets.has(mon.match.uid)) out.push(note('sameMatch', { mon: label, other: targets.get(mon.match.uid) }));
@@ -698,7 +713,8 @@ function updatedMon(ctx, old, set) {
 }
 
 export function applyImport(state, imp, ctx) {
-  if (imp.kind === HANDBACK_KIND) return clone(imp.state);
+  // A hand-back saved before Pokémon carried their origin keeps the ones the fold gave them
+  if (imp.kind === HANDBACK_KIND) return keepOrigins(state, clone(imp.state), ctx.learning);
   const { sim } = ctx;
   const next = clone(state);
   const partyOrder = [];

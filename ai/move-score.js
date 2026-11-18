@@ -3,6 +3,7 @@
 
 import table from './pokerogue-moves.json' with { type: 'json' };
 import { hpRatio, typeEffectiveness } from './matchup.js';
+import { moveCategory } from '../engine/later-moves.mjs';
 
 export const MOVE_TABLE = table.moves;
 const STATUS_EFFECT_CHANCE_EXCEPT = new Set(['orderup', 'electroshot']);
@@ -54,7 +55,7 @@ function canSetStatus(ctx, pokemon, status) {
   return !!battle.runEvent('SetStatus', pokemon, user, activeMove, battle.dex.conditions.get(status));
 }
 
-const anyPhysical = user => user.moveSlots.some(s => s.id !== 'struggle' && user.battle.dex.moves.get(s.id).category === 'Physical');
+const anyPhysical = user => user.moveSlots.some(s => s.id !== 'struggle' && moveCategory(user.battle, s.id) === 'Physical');
 const hasAliveBench = side => side.pokemon.some(p => !p.isActive && !p.fainted && p.hp > 0);
 const sineEaseOut = v => Math.sin(v * Math.PI / 2);
 
@@ -199,7 +200,7 @@ function targetBenefitScore(ctx, target) {
 
   const effectiveness = moveTypeEffectiveness(ctx, target, false);
   let attackScore = (effectiveness - 1) ** 2 * (effectiveness < 1 ? -2 : 2);
-  const [thisStat, offStat] = move.category === 'Physical' ? ['atk', 'spa'] : ['spa', 'atk'];
+  const [thisStat, offStat] = moveCategory(ctx.battle, move) === 'Physical' ? ['atk', 'spa'] : ['spa', 'atk'];
 
   const holder = move.overrideOffensivePokemon === 'target' ? target : user;
   const statValue = holder.getStat(move.overrideOffensiveStat || thisStat, false, true);

@@ -2,7 +2,8 @@ import LISTS from '../data/dex-lists.json' with { type: 'json' };
 import { dexEntries, dexEntry } from '../names/dex.js';
 import { BADGES, isChampion, readLeague, knownUnovaEra, PRE_STORY } from './badges.mjs';
 import { latestStatus } from './compat.mjs';
-import { isEgg } from './state.mjs';
+import { isEgg, stateFormat } from './state.mjs';
+import { formatGen } from '../engine/rules.mjs';
 import { displayName, spriteIdOf } from '../engine/mon.mjs';
 import { say } from './screen-text.mjs';
 
@@ -90,6 +91,15 @@ export function dexFill(state, sim, regions = [], mentions = []) {
   return { seen, caught };
 }
 
+// The types the state's battles use: those of its battle format's generation (none and Champions: today's). Showdown's
+// older generations know later species too, with the types of the time (Cleffa is Normal in a generation 1 battle).
+function eraTypes(sim, state, species) {
+  const gen = formatGen(stateFormat(state));
+  if (!Number.isInteger(gen) || gen >= 9) return species.types;
+  const then = sim.Dex.forGen(gen).species.get(species.id);
+  return then.exists && then.types?.length ? then.types : species.types;
+}
+
 export function dexLooks(state, sim, num) {
   const ids = new Set([...state?.dex?.seen ?? [], ...state?.dex?.caught ?? [], ...owned(state ?? {}).map(mon => sim.Dex.species.get(mon.set.species).id)]
     .map(id => sim.Dex.species.get(id)).filter(s => s?.exists && s.num === num).map(s => s.id));
@@ -138,7 +148,8 @@ export function dexView({ state, sim, lang, names, ui, home = null, regions = []
 
       name: entry ? rows0[0]?.name ?? entry.name : displayName(sim.Dex, names, species.id),
       form: entry ? entry.form || (entry.name !== (rows0[0]?.name ?? entry.name) ? entry.name : '') : species.forme.replace(/-/g, ' '),
-      types: [...species.types], category: entry ? entry.category ?? rows0[0]?.category ?? '' : '',
+      // The types of the chat's battle generation (generation 1 Clefairy is Normal), later species' too (eraTypes)
+      types: [...eraTypes(sim, state, species)], category: entry ? entry.category ?? rows0[0]?.category ?? '' : '',
       height: entry ? measure(entry.height, 'm') : measure(species.heightm, 'm'), weight: entry ? measure(entry.weight, 'kg') : measure(species.weightkg, 'kg'),
       text: entry?.text ?? '', spriteId: spriteIdOf(species) || species.id, shiny: look.shiny,
       looks: looks.length, look: looks.indexOf(look),

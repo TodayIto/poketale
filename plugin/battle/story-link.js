@@ -1,6 +1,6 @@
 import * as sim from '../../engine/browser-engine.mjs';
 import { findBlocks, findTags, findMarks, markText, parseBattle, parseAct, actBlock, actsIn, hashKey, messageId, battlesIn, battlesInText, blockAnchorIn, stripForPrompt, blockCuts, hasBlocks } from '../../story/blocks.mjs';
-import { readTable, writeTable, tableStatus, createFolds, applyBattles, toEngineSpec, pruneTable, stateVars, computeState, nextStageSpec, battlesBefore, stageOf, backToBack, battleRecord, hatchedParty, toolsIn } from '../../story/state.mjs';
+import { readTable, writeTable, tableStatus, createFolds, applyBattles, toEngineSpec, pruneTable, stateVars, computeState, nextStageSpec, battlesBefore, stageOf, backToBack, battleRecord, hatchedParty, toolsIn, stateFormat, stateGen } from '../../story/state.mjs';
 import { unreadableLine, isUnreadable } from '../../story/stored.mjs';
 import { withItemTags } from '../../story/custom-items.mjs';
 import { WHAT, failed, refused, failureNote, failureText, ruleText } from '../../story/failure.mjs';
@@ -40,7 +40,8 @@ import { DEFAULT_SETTINGS, DEFAULT_LOOK, settingsUnreadable, LANG_OPEN, hostLang
 import { mountImportScreen } from './import-screen.js';
 import { makeDraft, importOffer, importOfferAi, importTurn, handBack, commitImport, commitDebugHeal, commitDebugBadges, readImports, cancelImport, inForce, newMonDraft, currentMonDraft, friendshipLockDraft } from '../../story/import.mjs';
 import { importAiMessages, readAiParty, aiFailedFound } from '../../story/import-ai.mjs';
-import { readSettingChanges, recordSettingChange, settingsBehind, rulesAt } from '../../story/setting-changes.mjs';
+import { readSettingChanges, recordSettingChange, settingsBehind, rulesAt, foldValues } from '../../story/setting-changes.mjs';
+import { generationUnrecorded, recordGenerationStart, recordGenerationChange, readGeneration } from '../../story/generation.mjs';
 import { readBattlesOff, battlesOff, setBattlesOff } from '../../story/battles-off.mjs';
 import { loadPicture, savePicture, adoptOldPicture, entryMe } from './my-picture.js';
 import { storyCss, sheetCss, SHEET_CLASS } from '../../story/style.mjs';
@@ -58,8 +59,11 @@ const TRAINER = id => `https://play.pokemonshowdown.com/sprites/trainers/${id}.p
 
 let ctxPromise;
 
-export const battleFormat = () => ruleFormat(settings.rule);
-const storyCtx = () => ctxPromise ??= loadLevelUp().then(levelUp => (ctxNow = { sim, levelUp, exp: EXP_TABLE, folds: createFolds(), get friendshipRate() { return settings.friendshipRate; }, get hatchRate() { return settings.hatchRate; }, get tradeEvolution() { return settings.tradeEvolution; }, get rule() { return settings.rule; } }))
+export const battleFormat = async () => {
+  const party = await pendingParty().catch(() => null);
+  return party ? stateFormat(party.state) : ruleFormat(settings.rule);
+};
+const storyCtx = () => ctxPromise ??= loadLevelUp().then(levelUp => (ctxNow = { sim, levelUp, exp: EXP_TABLE, folds: createFolds(), get friendshipRate() { return settings.friendshipRate; }, get hatchRate() { return settings.hatchRate; }, get tradeEvolution() { return settings.tradeEvolution; }, get learnMoves() { return settings.learnMoves; }, get rule() { return settings.rule; }, get eraGimmicks() { return settings.eraGimmicks; } }))
   .catch(error => { ctxPromise = undefined; throw error; });
 let ctxNow = null;
 
@@ -97,7 +101,8 @@ const idOf = target => `${target.chaId}:${target.chatId ?? `#${target.charIndex}
 
 const textKey = chat => JSON.stringify((chat?.message ?? []).map(m => [m?.chatId ?? null, String(m?.data ?? '')]));
 
-const unreadableChat = chat => [tableStatus(chat), saveStatus(chat), acts.queueStatus(chat), readImports(chat).status, readSettingChanges(chat).status, readBattlesOff(chat).status].some(isUnreadable);
+const unreadableChat = chat => [tableStatus(chat), saveStatus(chat), acts.queueStatus(chat), readImports(chat).status, readSettingChanges(chat).status, readBattlesOff(chat).status,
+  readGeneration(chat).status].some(isUnreadable);
 
 function makePass(charIndex, chatIndex, chat, character, seq) {
   const target = targetOf(charIndex, chatIndex, chat, character);
@@ -128,7 +133,7 @@ function makePass(charIndex, chatIndex, chat, character, seq) {
     grows(text) { const bottom = String(chat.message?.at(-1)?.data ?? ''); return text.startsWith(bottom) && (bottom !== '' || quietIn(this.id) > 0); },
 
     get key() {
-      return memo('key', () => JSON.stringify([this.id, this.text,
+      return memo('key', () => JSON.stringify([this.id, this.text, foldValues(settings),
         Object.entries(chat.scriptstate ?? {}).filter(([k]) => k.startsWith('$pkb_') || stateVars().includes(k)).sort(([a], [b]) => (a < b ? -1 : 1))]));
     },
 
@@ -190,7 +195,7 @@ export async function storyNow({ fresh = false } = {}) {
   const on = isOn(pass);
   return { id: pass.id, target: pass.target, on, chat: pass.chat, key: pass.key, lang: currentLang(pass.chat), unreadable: on && pass.unreadable, compat: on && compatBots.has(pass.target?.chaId),
     state: on ? await pass.state() : null, ctx: on ? { ...await storyCtx(), status: latestStatus(pass.chat) } : null, battle: on ? (({ key, phase }) => ({ key, phase }))(battleIn(pass)) : null,
-    debug: on && settings.debug, aux: on ? auxSwitch(pass) : null, offer: on ? await offerOf(pass) : null };
+    debug: on && settings.debug, aux: on ? auxSwitch(pass) : null, offer: on ? await offerOf(pass) : null, generation: on ? (await pass.computed()).generation ?? null : null };
 }
 
 let auxFor = null;
@@ -477,7 +482,8 @@ async function diaryHtml(text, pass, at) {
   try {
     const own = acts.actsIn(text, pass?.table);
     const lang = currentLang(pass?.chat);
-    const changes = hasBlocks(text) ? acts.changesIn(text, pass?.chat, await storyCtx(), lang) : null;
+    const growing = !!pass && !pass.has(text) && pass.grows(text);
+    const changes = hasBlocks(text) ? acts.changesIn(text, pass?.chat, await storyCtx(), lang, { growing }) : null;
     const counts = t => { const meta = pass?.table?.meta?.[t.key]; return !meta?.blockKey || pass.survey.battles.get(meta.blockKey)?.committed !== 'discarded'; };
     const results = findTags(text).filter(counts).flatMap(t => resultEvents(pass?.table?.meta?.[t.key], pass?.table?.snaps?.[t.key]));
 
@@ -821,7 +827,7 @@ async function drawNotice(press, pass) {
   else if (view) await setTail(press, view);
 }
 
-const shops = createShopCards({ sim, doc: () => doc, lang: chat => currentLang(chat), compat: pass => compatBots.has(pass.target?.chaId), actionPass,
+const shops = createShopCards({ sim, doc: () => doc, lang: chat => currentLang(chat), compat: pass => compatBots.has(pass.target?.chaId), actionPass, eraGimmicks: () => settings.eraGimmicks,
   queue: (action, target) => queueAction(action, target), bindButtons });
 
 const forgeName = (id, key) => `${id}:${key}`;
@@ -1140,7 +1146,7 @@ async function prepareBattle(press, mode, retryOf, owner) {
     const playerName = persona.name;
 
     spec = start ? restartSpec(start, freshSeed()) : toEngineSpec(state, battle, { ...ctx, playerName, lang: currentLang(pass.chat) },
-      { seed: freshSeed(), formatid: battleFormat(), expShare: settings.expShare, expRate: settings.expRate, effectItems: settings.effectItems, foeGimmicks: settings.foeGimmicks, picture: pictureOptions(key, pass.chat), player: playerOptions(persona.look),
+      { seed: freshSeed(), formatid: stateFormat(state), expShare: settings.expShare, expRate: settings.expRate, effectItems: settings.effectItems, foeGimmicks: settings.foeGimmicks, eraGimmicks: settings.eraGimmicks, picture: pictureOptions(key, pass.chat), player: playerOptions(persona.look),
         status: statusIn(pass.chat.message[at]) });
     startBalls = { mine: fighters.map(ballOf), ...blockBalls(battle) };
   }
@@ -1327,7 +1333,11 @@ async function writeResult(origin, { outcome, result, apply }) {
 
     const battles = [...battlesBefore(origin.stage), ...(apply ? [battleRecord(origin.stage, apply, outcome)] : [])];
 
-    const after = applyBattles(before, battles, { ...ctx, status: latestStatus(chat, blockAt) }, { battle: origin.battle });
+    // A Pokémon caught here comes from where the battle was: its message's region and world, under the generation setting
+    // the battle ran with (that of now, which cannot change while a battle is open), not from where the chat stands now
+    const status = latestStatus(chat, blockAt);
+    const learning = acts.learningIn(chat, ctx, chat.message.length, status?.region, { worldAt: blockAt });
+    const after = applyBattles(before, battles, { ...ctx, status, learning }, { battle: origin.battle });
     const tag = hashKey(`${origin.key}:${Date.now()}`);
 
     const caughtMon = result.captured ? [...after.party, ...after.box].find(m => ![...before.party, ...before.box].some(b => b.uid === m.uid)) : null;
@@ -1428,7 +1438,7 @@ const rematchEntries = (state, where) => (battlesOff(where.chat) ? [] : trainerL
 const writeStoryVars = (into, state, where) => [writeVars(into, varsOf(state, where)), writeTrainerLore(into, rematchEntries(state, where))].some(Boolean);
 
 const varsKey = where => JSON.stringify([where.id, where.text ?? textKey(where.chat), stateVars().map(name => where.chat?.scriptstate?.[name] ?? null),
-  battleForVars(where), currentLang(where.chat), settings.effectItems === true, battlesOff(where.chat)]);
+  battleForVars(where), currentLang(where.chat), settings.effectItems === true, battlesOff(where.chat), foldValues(settings)]);
 
 async function setVars(where) {
   const { state, table, changed } = acts.pendingState(where.chat, await storyCtx());
@@ -1538,7 +1548,7 @@ async function pendingFixes(pass) {
   const differ = varsAt !== key && writeStoryVars({ scriptstate: { ...pass.chat.scriptstate }, localLore: pass.chat.localLore }, state, pass);
   if (!differ) varsAt = key;
   const ends = storyEndFixes(pass.chat, pass.table, pass.survey, { canPlay });
-  return { lore, vars: differ || fills, follow: followMoves(pass), behind: settingsBehind(pass.chat, settings),
+  return { lore, vars: differ || fills, follow: followMoves(pass), behind: settingsBehind(pass.chat, settings), generation: generationUnrecorded(pass.chat),
     settle: acts.settleQueue({ message: pass.chat.message, scriptstate: { ...pass.chat.scriptstate } }),
     lost: lostResult(pass.chat, pass.last, pass.table) >= 0, ends: ends.drop.length + ends.add.length > 0,
 
@@ -1583,6 +1593,7 @@ function writeFixes(pass, fixes, { messages = true, attach = null } = {}) {
       if (fixes.lore) setLore(chat, true, { other: notCompatBot(pass), battles: !battlesOff(chat) });
 
       if (fixes.behind) recordSettingChange(chat, settings);
+      if (fixes.generation) recordGenerationStart(chat);
       if (messages) {
         if (fixes.rekey) moveRecords(chat);
         if (fixes.lost || fixes.rekey) restoreResult(chat);
@@ -1940,6 +1951,16 @@ export async function queueAction(action, target = null) {
   return queued === HELD ? null : queued || null;
 }
 
+// The journey screen's generation setting, from the end of the chat on
+export async function writeGeneration(value, target) {
+  const wrote = await writeChat(target, (chat, found) => {
+    if (battleIn({ id: idOf(found.target), chat }).key) throw failed('inBattle');
+    return recordGenerationChange(chat, value);
+  }, { vars: true, missing: true });
+  if (wrote === HELD) throw failed('writeBlocked');
+  if (wrote) watchSoon();
+}
+
 export async function writeBotTravel(change, target) {
   const values = Object.entries(compatTravelVars(change)).map(([name, value]) => [`$${name}`, value]);
   const wrote = await writeChat(target, (chat, found) => {
@@ -2037,9 +2058,14 @@ export function changeSettings(next) {
   const switched = botsSwitched(settings, next);
   const commands = commandsOn(settings) !== commandsOn(next);
   const tools = (settings.effectItems === true) !== (next.effectItems === true);
+  const era = settings.eraGimmicks !== next.eraGimmicks;
+  // The story folds with these (the battle rule, Level-Up Moves and the rest): its state and variables follow them
+  const fold = JSON.stringify(foldValues(settings)) !== JSON.stringify(foldValues(next));
   settings = next;
+  // The chat is read again under the new values (the pass keeps what it folded)
+  if (fold) lastPass = null;
   changed();
-  if (switched.length || commands || tools) watchSoon();
+  if (switched.length || commands || tools || era || fold) watchSoon();
   return Promise.all(switched.map(s => reconcileBot(s.name, s.on)));
 }
 
@@ -2162,7 +2188,7 @@ async function debugScreen(target, screen) {
 }
 
 export const debugAdd = (where, target) => debugScreen(target, ({ ctx, state }) => (where === 'bag' ? { mode: 'bag', state }
-  : { mode: 'create', draft: newMonDraft(ctx, { place: where, seed: freshSeed() }) }));
+  : { mode: 'create', draft: newMonDraft(ctx, { place: where, seed: freshSeed(), gen: stateGen(state), learning: state.learning }) }));
 
 export const debugEdit = (uid, target) => debugScreen(target, ({ ctx, state }) => ({ mode: 'edit', draft: currentMonDraft(ctx, state, uid) }));
 

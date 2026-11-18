@@ -5,6 +5,7 @@ import { isExpRate } from '../engine/exp.mjs';
 import { TRADE_EVOLUTIONS, ABSENT_TRADE_EVOLUTION } from '../engine/evolution.mjs';
 import { RULE_IDS, DEFAULT_RULE } from '../engine/rules.mjs';
 import { ITEM_EFFECTS_READY } from './item-effects.mjs';
+import { LEARN_MODES, DEFAULT_LEARN } from './learning.mjs';
 
 export const SETTING_CHANGES_VAR = '$pkb_setting_changes';
 
@@ -15,13 +16,17 @@ const FOLDED = Object.freeze({
   tradeEvolution: { valid: value => TRADE_EVOLUTIONS.includes(value), none: ABSENT_TRADE_EVOLUTION },
 
   rule: { valid: value => RULE_IDS.includes(value), none: DEFAULT_RULE },
+
+  learnMoves: { valid: value => LEARN_MODES.includes(value), none: DEFAULT_LEARN },
 });
 const FOLD_SETTINGS = Object.freeze(Object.keys(FOLDED));
 
 const FROM_NOW = Object.freeze({ old: false, now: true });
 
+// regionMachines: disc numbers in story text follow the region's standard (story/machine-standards.mjs); before it
+// every number meant Scarlet/Violet's disc
 export const RULES = Object.freeze({ startFull: FROM_NOW, officialKo: FROM_NOW, aiFormNames: FROM_NOW, ...(ITEM_EFFECTS_READY ? { itemTags: FROM_NOW } : {}),
-  boxHeal: FROM_NOW, foeLooks: FROM_NOW, trainerColors: FROM_NOW, mobStyles: FROM_NOW, duskLycanroc: FROM_NOW, blockEdges: FROM_NOW });
+  boxHeal: FROM_NOW, foeLooks: FROM_NOW, trainerColors: FROM_NOW, mobStyles: FROM_NOW, duskLycanroc: FROM_NOW, blockEdges: FROM_NOW, regionMachines: FROM_NOW });
 const RULE_NAMES = Object.freeze(Object.keys(RULES));
 
 export const ruleValues = ctx => Object.fromEntries(RULE_NAMES.map(name => [name, ctx?.[name] ?? RULES[name].now]));
@@ -47,11 +52,24 @@ const placeRules = (marks, value) => {
 const valuesShape = values => isRecord(values) && Object.entries(values).every(([name, value]) => FOLDED[name]?.valid(value));
 const changeShape = change => isRecord(change) && typeof change.time === 'number' && isRecord(change.at) && valuesShape(change.before);
 
+// Settings that older plugin versions do not know are kept apart in `more`: those versions refuse a whole record whose
+// values or changes name a setting they do not know, but read the rest of it and drop `more` when they write it (the
+// value then reads as its `none` again and is recorded anew once the settings are seen to be ahead)
+const LATE = new Set(['learnMoves']);
+const split = values => [Object.fromEntries(Object.entries(values).filter(([name]) => !LATE.has(name))), Object.fromEntries(Object.entries(values).filter(([name]) => LATE.has(name)))];
+// A `more` part that does not read is left out on its own
+const moreOf = value => {
+  const more = isRecord(value?.more) ? value.more : {};
+  return { changes: Array.isArray(more.changes) && more.changes.every(changeShape) ? more.changes : [], values: valuesShape(more.values) ? more.values : {} };
+};
+
 export function readSettingChanges(chat) {
   const { status, value } = readRecord(chat);
   if (isUnreadable(status)) return { status, changes: [], values: null, rules: null };
   const kept = value?.values ?? (value?.rule === undefined ? {} : { rule: value.rule });
-  return { status, changes: status === 'ok' ? value.changes : [], values: foldSettings(kept), rules: { ...value?.rulesMore, ...value?.rules } };
+  const more = moreOf(value);
+  const changes = status === 'ok' ? [...value.changes, ...more.changes].sort((a, b) => a.time - b.time) : [];
+  return { status, changes, values: foldSettings({ ...kept, ...more.values }), rules: { ...value?.rulesMore, ...value?.rules } };
 }
 
 const readRecord = chat => readStored(chat?.scriptstate?.[SETTING_CHANGES_VAR], {
@@ -69,7 +87,7 @@ const behindOf = (values, settings) => {
 };
 
 export function recordSettingChange(chat, settings, { now = Date.now() } = {}) {
-  const { status, changes, values, rules } = readSettingChanges(chat);
+  const { status, values, rules } = readSettingChanges(chat);
   if (isUnreadable(status)) throw failed('unreadable');
   const before = behindOf(values, settings), missing = RULE_NAMES.filter(name => !Object.hasOwn(rules, name));
   if (!Object.keys(before).length && !missing.length) return false;
@@ -77,11 +95,16 @@ export function recordSettingChange(chat, settings, { now = Date.now() } = {}) {
   const { value } = readRecord(chat);
   const next = foldSettings(settings);
   const stored = Object.fromEntries(FOLD_SETTINGS.filter(name => next[name] !== FOLDED[name].none).map(name => [name, next[name]]));
+  const [beforeOld, beforeLate] = split(before), [storedOld, storedLate] = split(stored);
+  const more = moreOf(value);
+  const added = changed => (messages.length && Object.keys(changed).length ? [changeAtEnd(messages, changed, now)] : []);
+  const lateChanges = [...more.changes, ...added(beforeLate)];
 
   const marks = { ...rules, ...Object.fromEntries(missing.map(name => [name, { time: now, at: messages.length ? anchorAtEnd(messages) : null }])) };
   chat.scriptstate ??= {};
-  chat.scriptstate[SETTING_CHANGES_VAR] = JSON.stringify({ v: 1, changes: [...changes, ...(messages.length && Object.keys(before).length ? [changeAtEnd(messages, before, now)] : [])],
-    ...(Object.keys(stored).length ? { values: stored } : {}), ...placeRules(marks, value) });
+  chat.scriptstate[SETTING_CHANGES_VAR] = JSON.stringify({ v: 1, changes: [...(status === 'ok' ? value.changes : []), ...added(beforeOld)],
+    ...(Object.keys(storedOld).length ? { values: storedOld } : {}), ...placeRules(marks, value),
+    ...(lateChanges.length || Object.keys(storedLate).length ? { more: { ...(lateChanges.length ? { changes: lateChanges } : {}), ...(Object.keys(storedLate).length ? { values: storedLate } : {}) } } : {}) });
   return true;
 }
 

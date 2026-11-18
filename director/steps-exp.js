@@ -7,7 +7,10 @@ import { MAX_LEVEL, NON_HP_STATS, spriteIdOf } from '../engine/mon.mjs';
 import { createLedger } from './ledger.js';
 import { identName, teamOf } from './read.js';
 import { ownTemplate } from './own-text.js';
+import { eraBlocked } from '../engine/era-gimmicks.mjs';
+import { moveCategory } from '../engine/later-moves.mjs';
 import { evolutionChoices, evolutionFlips } from '../engine/evolution.mjs';
+import { levelUpAt, evolutionLevelMoves } from '../engine/levelup.mjs';
 import { say as screenSay } from '../story/screen-text.mjs';
 
 export const EXP_KINDS = ['-story-exp', '-story-levelup', '-story-learnmove', '-story-movequeue', '-story-replacemove', '-story-skipmove'];
@@ -41,7 +44,9 @@ export function learnMoveOption(battle, names, id, pp, maxpp, lang = DEFAULT_LAN
   const phrases = requireExpText(lang);
   const move = battle.dex.moves.get(id);
   return {
-    id: move.id, name: names.move(move.id), type: move.type, category: move.category, pp, maxpp,
+    id: move.id, name: names.move(move.id), type: move.type, category: moveCategory(battle, move), pp, maxpp,
+    // Disabled in this generation's battles (engine/era-gimmicks.mjs): the summary marks it so it can be replaced
+    ...(eraBlocked(battle.dex, battle.gen, move.id, battle.storyEraGimmicks) ? { tag: interpolate(ownTemplate('own.eraGimmickTag', lang), {}, lang) } : {}),
 
     power: move.category !== 'Status' && move.basePower > 0 ? move.basePower : null,
     accuracy: move.accuracy === true ? null : move.accuracy,
@@ -156,7 +161,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
     if (onField(uid)) {
       await Promise.all([message, view.updateLevel(onField(uid), { level, hp: stats.hp, maxhp: stats.maxhp })]);
     } else await message;
-    await view.showLevelUpStats({ prev, next });
+    await view.showLevelUpStats({ prev, next, ...(battle.gen === 1 ? { special: screenSay(lang, 'stat.special') } : {}) });
   }
 
   function summaryMon(p) {
@@ -269,8 +274,9 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
     await sayTimed('menu.evolutionDone', { pokemonName: preName, evolvedPokemonName: mon(to).name }, { promptDelay: 4000 });
     const outcome = { species: to.name, baseSpecies: to.baseSpecies, name: nicknamed ? member.name : to.name, moves: member.moves.map(m => ({ ...m })) };
 
-    for (const [level, id] of levelUp?.[to.id] ?? []) {
-      if (level !== 0 || outcome.moves.some(m => m.id === id)) continue;
+    const learnGen = byUid(member.uid)?.m?.learnGen;
+    for (const id of [...new Set(evolutionLevelMoves(levelUpAt(levelUp, learnGen)?.[to.id], member.level, learnGen))]) {
+      if (outcome.moves.some(m => m.id === id)) continue;
       const move = battle.dex.moves.get(id);
       if (!move.exists) continue;
       const pp = newMovePP(battle, move), slot = { id: move.id, pp, maxpp: pp };
