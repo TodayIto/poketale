@@ -1,6 +1,6 @@
 import { createFetchBytes } from './fetch-bytes.js';
 import { mark } from './marks.js';
-import { startStoryLink, openSettings, currentSettings, openLang, queueAction, storyNow, onStoryChange, showWindow, hideWindow, resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, writeBotTravel, quickImport, importLater, battleFormat, watchReplies } from './story-link.js';
+import { startStoryLink, openSettings, currentSettings, openLang, queueAction, storyNow, onStoryChange, showWindow, hideWindow, resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, writeBotTravel, setPanelShift, setPanelSwitch, panelShiftNow, quickImport, importLater, battleFormat, watchReplies } from './story-link.js';
 import { startPanel } from '../panel/panel.js';
 import { createPanelScreens } from '../panel/screens.js';
 import { createPanelPictures } from '../panel/pictures.js';
@@ -45,7 +45,8 @@ guardContextMenu(globalThis.document);
       const pictures = createPanelPictures({ route: () => currentSettings().panelPicture, probe: probeImage, fetchBytes, still: pokerogueStillUrl,
         clean: (address, viaHost) => defringeAddress(address, viaHost ? fetchBytes : null) });
       await startPanel({ doc, read: storyNow, queueAction, screens, changes: onStoryChange, resume: resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, botTravel: writeBotTravel, quickImport, importLater, pictures,
-        place: () => currentSettings().outsideScreens, shift: () => currentSettings().panelShift, trainer: () => personaName(risuai).catch(() => null),
+        place: () => currentSettings().outsideScreens, shift: panelShiftNow, moveShift: setPanelShift, fold: () => currentSettings().panelFold, drag: () => currentSettings().panelDrag, stay: () => currentSettings().panelStay,
+        panelSwitches: () => ['panelStay', 'panelFold', 'panelDrag'].map(key => ({ key, on: !!currentSettings()[key] })), setPanelSwitch, trainer: () => personaName(risuai).catch(() => null),
         restSound: createRestSound({ assetBase: DEFAULT_ASSET_BASE, settings: currentSettings, fetchBytes }) });
     }
   } catch (error) { console.warn('[poke-battle] 오른쪽 패널을 끼우지 못함', error); }

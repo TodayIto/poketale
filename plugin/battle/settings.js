@@ -38,7 +38,7 @@ export const langOf = tag => (/^ko\b/i.test(String(tag ?? '')) ? 'ko' : 'en');
 export const hostLang = () => langOf(globalThis.navigator?.language);
 export const DEFAULT_SETTINGS = Object.freeze({ iron: false, sound: false, sendFormat: 'key', theme: DEFAULT_THEME, orientation: 'portrait', lang: null, autoSend: false, commands: false, aux: false, auxRecent: 8, oocTrial: false, difficulty: 'normal',
   rule: DEFAULT_RULE, expShare: 'always', expRate: DEFAULT_EXP_RATE, friendshipRate: DEFAULT_EXP_RATE, hatchRate: DEFAULT_EXP_RATE, tradeEvolution: DEFAULT_TRADE_EVOLUTION_SETTING, speed: DEFAULT_SPEED, typeHints: false, effectItems: false, foeGimmicks: DEFAULT_FOE_GIMMICKS, moveAnims: true, quality: 'high', panelPicture: DEFAULT_PICTURE_ROUTE, outsideScreens: DEFAULT_SCREEN_PLACE, panelShift: PANEL_SIZE.shift.default, aboveOthers: true, importRecent: IMPORT_AI_RECENT,
-  silhouette: true, looks: Object.freeze({}), oldLook: null, debug: false,
+  panelFold: true, panelDrag: false, panelStay: false, silhouette: true, looks: Object.freeze({}), oldLook: null, debug: false,
   bots: Object.freeze([]), botsOff: Object.freeze([]) });
 
 export const DEFAULT_LOOK = Object.freeze({ gender: 'm', myBack: 'silhouette', myPicture: 'silhouette' });
@@ -130,6 +130,7 @@ export const SETTING_TABS = perLang((t, lang) => {
       row('gender', GENDERS(lang), { look: true }), row('myBack', LOOKS(lang), { look: true }), row('myPicture', PICTURE_LOOKS(lang), { look: true }),
       row('theme', THEMES(lang)), row('quality', QUALITIES(lang)), row('panelPicture', PANEL_PICTURES(lang)), row('outsideScreens', OUTSIDE_SCREENS(lang)),
       row('panelShift', null, { control: 'slider', slider: PANEL_SHIFT_SLIDER(lang) }), row('aboveOthers', onOff),
+      row('panelStay', onOff), row('panelFold', onOff), row('panelDrag', onOff),
     ] },
     { id: 'story', rows: [row('sendFormat', SEND_FORMATS(lang), { help: SEND_FORMAT_NOTES(lang) }), row('autoSend', onOff, { permission: 'sendChat' }),
       row('commands', onOff), row('oocTrial', onOff), row('debug', onOff),
@@ -192,6 +193,9 @@ export function normalizeSettings(raw) {
     outsideScreens: pick(s.outsideScreens, SCREEN_PLACES, DEFAULT_SETTINGS.outsideScreens),
     panelShift: panelShift(s.panelShift),
     aboveOthers: s.aboveOthers !== false,
+    panelFold: s.panelFold !== false,
+    panelDrag: s.panelDrag === true,
+    panelStay: s.panelStay === true,
     importRecent: importAiRecent(s.importRecent),
     silhouette: s.silhouette !== false,
     debug: s.debug === true,
