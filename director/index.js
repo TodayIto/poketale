@@ -2,7 +2,7 @@ import { createStoryBattle, extractResult } from '../engine/core.mjs';
 import { createProtocolReader } from './parse.js';
 import { createSteps } from './steps.js';
 import { arrange } from './order.js';
-import { text, nameWithAffix } from './text.js';
+import { text, nameWithAffix, recordingView } from './text.js';
 import { checkLang, DEFAULT_LANG } from './lang.js';
 import { simpleAI, isReviving, lockedTurn } from './simple-ai.js';
 import { monView } from './mon.js';
@@ -171,8 +171,7 @@ export async function snapshotLines(sim, snapshot, { lang = DEFAULT_LANG, names,
   try {
     replaySnapshot(battle, snapshot, fingerprint(battle), entry => applyInput({ battle, bag, run }, entry));
     const lines = [], marks = {};
-    const view = new Proxy({}, { get: (_, key) => (key === 'then' ? undefined
-      : key === 'message' ? async message => { if (typeof message === 'string') lines.push(message.replace(/\n/g, ' ')); } : async () => undefined) });
+    const view = recordingView(line => lines.push(line));
     const step = createSteps({ battle, view, names, warn: () => {}, bag, options, run, mode: { silent: true }, wild, lang, onInput: () => {} });
     for (const item of arrange(createProtocolReader().read(battle.log, battle.storyLogMeta))) {
       await step(item);

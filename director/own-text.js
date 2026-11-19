@@ -94,6 +94,9 @@ const KO = {
   'own.friendshipCure.brn': '{{pokemonNameWithAffix}}[[는]] 걱정시키지 않으려고\n화상을 견뎌 냈다!',
   'own.friendshipCure.frz': '{{pokemonNameWithAffix}}[[는]] 걱정시키지 않으려고\n얼음을 녹였다!',
   'own.friendshipCure.par': '{{pokemonNameWithAffix}}[[는]] 걱정시키지 않으려고\n마비를 풀었다!',
+
+  // Over the extracted line: its fixed "상대" doubles now that the foe's name carries "상대"
+  'ability-trigger.trace': '{{pokemonName}}[[는]] {{targetName}}의\n{{abilityName}}[[를]] 트레이스했다!',
 };
 
 const EN = {

@@ -3,6 +3,7 @@ import { runBattle, isWild } from '../../director/index.js';
 import { createEnemyAI, gimmickRules } from '../../ai/index.js';
 import { battleNames, battleNamesIn } from './names.js';
 import { DEFAULT_LANG } from '../../director/lang.js';
+import { screenLine, recordingView } from '../../director/text.js';
 import { mark } from './marks.js';
 import { spriteIdOf } from '../../engine/mon.mjs';
 
@@ -148,12 +149,11 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
           .map(key => [key, async (...args) => {
             await reveal();
             if (key === 'chooseAction' && !menuShown) { menuShown = true; mark('pb:menu'); }
-            if (key === 'message') record(args[0]);
+            record(screenLine(key, args));
             return wait(() => view[key](...args));
           }]));
 
-        const replayView = new Proxy({}, { get: (_, key) => (key === 'then' ? undefined
-          : key === 'message' ? async text => { record(text); } : async () => undefined) });
+        const replayView = recordingView(record);
 
         const result = await runBattle({ sim, spec: battleSpec, options, view: guarded, names, lang, development,
 

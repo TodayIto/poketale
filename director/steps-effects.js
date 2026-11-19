@@ -1,6 +1,6 @@
 import ko from './text-effects-ko.json' with { type: 'json' };
 import en from './text-effects-en.json' with { type: 'json' };
-import { phrase, text, nameWithAffix, statusNames, commonNames } from './text.js';
+import { phrase, text, nameWithAffix, statusNames, commonNames, hpLog } from './text.js';
 import { DEFAULT_LANG } from './lang.js';
 import { megaFormName } from './steps-mega.js';
 import { positionOf, isIdent, uidOf, teamOf, fieldPositions } from './read.js';
@@ -127,10 +127,13 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
   const common = async (name, side, targetSide = side) => { if (side && ledger.atField(side)) await view.playCommon(name, side, targetSide); };
   const showStages = side => ledger.atField(side) ? view.setStatStages(side, { ...ledger.atField(side).boosts }) : undefined;
 
+  // The event on screen now: its `before` is where this Pokémon's HP bar stood
+  let presenting = null;
   async function hp(ident, cause = 'other', effectiveness = 'normal') {
     if (!ledger.onField(ident)) return;
     const { hp: value, maxhp } = ledger.get(ident);
-    await view.hpChange(positionOf(ident), value, maxhp, { cause, effectiveness });
+    const before = presenting?.args?.[0] === ident ? presenting.before : null;
+    await view.hpChange(positionOf(ident), value, maxhp, { cause, effectiveness, log: hpLog(nameOf(ident), before, value, maxhp) });
   }
   const sourceLabel = source => {
     const match = /^(ability|item|move):\s*(.*)$/.exec(source);
@@ -673,6 +676,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
 
   async function present(event) {
     const { kind, args: a, kwArgs: kw } = event;
+    presenting = event;
     switch (kind) {
     case 'cant': {
       const reason = effectOf(a[1]), v = nv(a[0]);
@@ -709,7 +713,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
 
       if (effect.id === 'helpinghand') await say('battler-tags.helpingHandOnAdd', { pokemonNameWithAffix: nameOf(kw.of ?? a[0]), pokemonName: nameOf(a[0]) });
       else if (GUARD.has(effect.id)) await say(`arena-tag.conditionalProtectOnAdd${sideKey(positionOf(a[0]))}`, { moveName: names.move(effect.id) });
-      else if (SINGLE_TURN[effect.id]) await say(SINGLE_TURN[effect.id], { ...nv(a[0]), pokemonName: label(other(positionOf(a[0]))) ?? '' });
+      else if (SINGLE_TURN[effect.id]) await say(SINGLE_TURN[effect.id], nv(a[0]));
       else if (!QUIET_VOLATILE.has(effect.id) && effect.id !== 'snatch') warn(`-singleturn:${effect.id}`);
       return true;
     }

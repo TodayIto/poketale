@@ -846,7 +846,7 @@ export default Object.freeze({
   'settings.sendFormatNote.result': 'Sends only who won and the party after the battle. The story skips the battle and goes on from right after it.',
   'settings.sendFormatNote.summary': 'Sends only who came out, who fainted and who won. The AI writes the scene freely.',
   'settings.sendFormatNote.key': 'Sends who used which move each turn and how much it hit. The story follows the actual battle.',
-  'settings.sendFormatNote.log': 'Sends every line shown on the battle screen. The most detailed, and the longest.',
+  'settings.sendFormatNote.log': 'Sends every line shown on the battle screen, with each HP change. The most detailed, and the longest.',
   'settings.theme.plugin': 'Default',
   'settings.theme.legacy': 'Legacy',
   'settings.theme.default': 'PokeRogue',

@@ -1,5 +1,5 @@
 import { BAG_ITEMS } from '../engine/bag.mjs';
-import { statusNames, nameWithAffix } from './text.js';
+import { statusNames, nameWithAffix, hpLog } from './text.js';
 import { DEFAULT_LANG } from './lang.js';
 import { bagText } from './bag.js';
 import { sideOf, positionOf } from './read.js';
@@ -83,27 +83,29 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
     }
     case '-heal': {
       const { hp, maxhp } = ledger.get(a[0]), item = sourceItem(kw.from), name = ledger.get(a[0]).name;
+      const log = hpLog(affix(name, positionOf(a[0])), event.before, hp, maxhp);
       if (sideOf(a[0]) === 'enemy') {
 
         if (!ledger.onField(a[0])) return;
         await view.playCommon('health-up', positionOf(a[0]));
-        await view.hpChange(positionOf(a[0]), hp, maxhp, { cause: 'other', effectiveness: 'normal' });
+        await view.hpChange(positionOf(a[0]), hp, maxhp, { cause: 'other', effectiveness: 'normal', log });
         return;
       }
 
       if (!ledger.onField(a[0])) { await say(BAG_ITEMS[item]?.revive ? 'own.revived' : 'battle.regainHealth', { pokemonName: name }); return; }
 
       await view.playCommon('health-up', positionOf(a[0]));
-      await view.hpChange(positionOf(a[0]), hp, maxhp, { cause: 'other', effectiveness: 'normal' });
+      await view.hpChange(positionOf(a[0]), hp, maxhp, { cause: 'other', effectiveness: 'normal', log });
       await say('battle.regainHealth', { pokemonName: name });
       return;
     }
     case '-curestatus': {
       const status = statusNames[a[1]], name = ledger.get(a[0]).name;
 
-      if (!ledger.onField(a[0])) { if (status) await say(`status-effect.${status}.heal`, { pokemonNameWithAffix: affix(name, 'player') }); return; }
+      if (!ledger.onField(a[0])) { if (status) await say(`status-effect.${status}.heal`, { pokemonNameWithAffix: affix(name, sideOf(a[0])) }); return; }
       await view.setStatus(positionOf(a[0]), '');
-      await say(`own.cureFromItem.${a[1] === 'tox' ? 'psn' : a[1]}`, { pokemonNameWithAffix: affix(name, 'player'), pokemonName: affix(name, 'player'), itemName: itemName(sourceItem(kw.from)) });
+      const named = affix(name, positionOf(a[0]));
+      await say(`own.cureFromItem.${a[1] === 'tox' ? 'psn' : a[1]}`, { pokemonNameWithAffix: named, pokemonName: named, itemName: itemName(sourceItem(kw.from)) });
       return;
     }
     }

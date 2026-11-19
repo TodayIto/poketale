@@ -846,7 +846,7 @@ export default Object.freeze({
   'settings.sendFormatNote.result': '승패와 끝난 뒤 파티 상태만 보냅니다. 배틀 장면은 쓰지 않고 승부가 난 직후부터 이어 씁니다.',
   'settings.sendFormatNote.summary': '누가 나왔고, 누가 쓰러졌고, 누가 이겼는지만 보냅니다. 장면은 AI 가 자유롭게 지어 씁니다.',
   'settings.sendFormatNote.key': '턴마다 누가 어떤 기술을 써서 얼마나 맞혔는지 보냅니다. 실제 배틀 흐름대로 쓰게 됩니다.',
-  'settings.sendFormatNote.log': '배틀 화면에 나온 문장을 전부 보냅니다. 가장 자세하고, 그만큼 깁니다.',
+  'settings.sendFormatNote.log': '배틀 화면에 나온 문장을 HP 변화와 함께 전부 보냅니다. 가장 자세하고, 그만큼 깁니다.',
   'settings.theme.plugin': '기본',
   'settings.theme.legacy': '레거시',
   'settings.theme.default': 'PokeRogue',

@@ -4,7 +4,7 @@ import en from './text-en.json' with { type: 'json' };
 import { checkLang, DEFAULT_LANG, LANGS } from './lang.js';
 import { ownTemplate } from './own-text.js';
 
-const RULES = { ko: { particles: true, affix: false }, en: { particles: false, affix: true } };
+const RULES = { ko: { particles: true, affix: true }, en: { particles: false, affix: true } };
 const BASE = { ko, en };
 
 const pairs = [['은', '는'], ['이', '가'], ['을', '를'], ['으로', '로'], ['과', '와'], ['이랑', '랑']];
@@ -76,6 +76,27 @@ export function nameWithAffix(lang = DEFAULT_LANG, wild = false) {
   if (!RULES[checkLang(lang)].affix) return name => name;
   return (name, position) => (teamOf(position) === 'enemy' && name !== undefined ? text(wild ? 'battle.wildPokemonWithAffix' : 'battle.foePokemonWithAffix', { pokemonName: name }, lang) : name);
 }
+
+const percent = (hp, maxhp) => Math.round(hp / maxhp * 100);
+
+// Not shown on screen: the screen log keeps it so the "log" send format says what each HP bar did
+export function hpLog(name, before, hp, maxhp) {
+  if (!name || !(maxhp > 0) || !Number.isFinite(hp)) return null;
+  const known = before?.maxhp > 0 && Number.isFinite(before.hp);
+  if (known && before.hp === hp && before.maxhp === maxhp) return null;
+  return `${name} HP ${known ? `${percent(before.hp, before.maxhp)}% → ` : ''}${percent(hp, maxhp)}%`;
+}
+
+// The lines a screen log keeps from view calls: the message box, and where an HP bar went
+export function screenLine(key, args) {
+  if (key === 'message') return typeof args[0] === 'string' ? args[0].replace(/\n/g, ' ') : null;
+  if (key === 'hpChange') return typeof args[3]?.log === 'string' ? args[3].log : null;
+  return null;
+}
+
+// A view that draws nothing and only keeps the screen log
+export const recordingView = push => new Proxy({}, { get: (_, key) => (key === 'then' ? undefined
+  : async (...args) => { const line = screenLine(key, args); if (line !== null) push(line); }) });
 
 export const statusNames = { par: 'paralysis', brn: 'burn', psn: 'poison', tox: 'toxic', slp: 'sleep', frz: 'freeze' };
 export const commonNames = { ...statusNames, tox: 'poison', frz: 'frozen' };

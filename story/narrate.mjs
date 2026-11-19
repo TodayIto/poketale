@@ -24,6 +24,11 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
   const teraOf = new Map();
   let hint = -1, stellar = false, shell = null;
   let hits = [];
+  // Stat lines: an ability's own line comes right after its -ability line and has no [from], so it is not the last move's doing.
+  // `stats` is the run of stat lines just read, so one move's Sp. Atk and Sp. Def drops read as one change
+  let abilityAt = -1, stats = null;
+  // After Showdown's blank line that opens end-of-turn effects (Octolock's drops), nothing belongs to the last move
+  let residual = false;
   const lines = log ?? [];
   const end = Math.min(to, lines.length);
   const illusion = new Set(lines.filter(l => l.startsWith('|replace|')).map(l => SIDE[/^(p\d)/.exec(l.split('|')[2] ?? '')?.[1]]).filter(Boolean));
@@ -38,7 +43,13 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
     const [player, letter, name] = identOf(ident);
     return (letter && at.get(player + letter)) || named(player, name) || meet(player, name);
   };
-  const ref = mon => ({ species: mon.species, nick: nickOf(mon), side: mon.side, seat: mon.seat });
+  // Every name shown so far, also before `from`, so each part of a long battle tells the same Pokémon apart the same way
+  const shown = new Map();
+  const ref = mon => {
+    const r = { species: mon.species, nick: nickOf(mon), side: mon.side, seat: mon.seat, player: mon.player };
+    shown.set(`${r.side} ${r.seat} ${r.species} ${r.nick}`, r);
+    return r;
+  };
   const setHp = (mon, text) => {
     const [hp, maxhp] = String(text).split(' ')[0].split('/').map(Number);
     const before = mon.maxhp ? mon.hp / mon.maxhp : null;
@@ -83,6 +94,10 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
     const [, cmd, ...args] = line.split('|');
     if (cmd === 'split') { split = 2; continue; }
     const live = i >= from;
+    if (cmd === '') residual = true;
+    else if (cmd === 'turn' || cmd === 'move') residual = false;
+    // A blocked target's line between an ability and its stat lines (Clear Body against Cotton Down) keeps the run the ability's
+    if (abilityAt === i - 1 && (cmd === '-fail' || cmd === '-immune' || cmd === '-activate')) abilityAt = i;
 
     const push = (event, mark = true) => {
       if (live) turns[turns.length - 1].events.push(event);
@@ -102,6 +117,26 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       return true;
     };
     const absorbed = (mon, ability) => onMove(mon, { kind: 'tag', tag: 'absorbed', mon: null, byMon: ref(mon), by: { kind: 'abilities', name: ability } });
+
+    const statChange = (mon, change) => {
+      const from = fromOf(args);
+      const before = stats?.at === i - 1 ? stats : null;
+      // Joined only within one sent part: a line before `from` was never sent
+      const run = before?.live === live ? before : null;
+      if (run && change.kind === 'boost' && run.change.kind === 'boost' && run.mon === mon && run.change.up === change.up && run.change.by === change.by
+        && run.fromName === (from?.name ?? '')) {
+        run.change.stats.push(...change.stats);
+        run.at = i;
+        return;
+      }
+      const ownMove = !from || (from.kind === 'moves' && recent?.type === 'move' && toID(from.name) === toID(recent.move));
+      const prev = ownMove && !residual && abilityAt !== i - 1 && !(before && !before.onMove) ? moveOf() : null;
+      const effect = { ...change, mon: mon ? ref(mon) : null, from: prev ? null : from };
+      if (prev) prev.effects.push(effect);
+      else push({ type: 'stat', ...effect }, false);
+      // The pushed event shares effect.stats, so a later line of the same run lands in both
+      stats = { at: i, live, mon, change: effect, onMove: !!prev, fromName: from?.name ?? '' };
+    };
 
     const gimmick = event => {
       push(event, false);
@@ -182,6 +217,10 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
     case '-start': case '-end': {
 
       if (cmd === '-start' && args[1] === 'ability: Flash Fire') { absorbed(who(args[0]), 'Flash Fire'); break; }
+      if (args[1] === 'confusion') {
+        if (!silent) push({ type: 'confusion', mon: ref(who(args[0])), ended: cmd === '-end' }, false);
+        break;
+      }
       if (args[1] !== 'Dynamax') break;
       const mon = who(args[0]);
       resized = { mon, at: i };
@@ -232,7 +271,9 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       if (ability && of && recent?.type === 'move' && recent.move === args[2] && seen(of) === recentUser) {
         const blocker = who(args[0]);
         onMove(blocker, { kind: 'tag', tag: 'blocked', mon: null, byMon: ref(blocker), by: { kind: 'abilities', name: ability } });
+        break;
       }
+      push({ type: 'cant', mon: ref(who(args[0])), reason: args[1] ?? '', move: args[2] && !args[2].startsWith('[') ? args[2] : null });
       break;
     }
 
@@ -268,14 +309,44 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       const mon = seen(args[0]);
       if (recent?.type === 'tool' && recent.tag === 'cheer' && mon && mon.seat === recent.mon.seat) {
         recent.boosts.push({ stat: args[1], amount: Number(args[2]) * (cmd === '-boost' ? 1 : -1) });
+        break;
       }
+      if (silent || !mon) break;
+      // 0: the stat could not go any further
+      statChange(mon, { kind: 'boost', stats: [args[1]], up: cmd === '-boost', by: Math.abs(Number(args[2]) || 0) });
       break;
     }
+    case '-setboost': {
+      const mon = seen(args[0]);
+      if (!silent && mon) statChange(mon, { kind: 'setboost', stats: [args[1]], to: Number(args[2]) || 0 });
+      break;
+    }
+    case '-clearallboost': if (!silent) statChange(null, { kind: 'clear', which: 'all' }); break;
+    case '-clearboost': case '-clearnegativeboost': case '-clearpositiveboost': case '-invertboost': {
+      const mon = seen(args[0]);
+      if (silent || !mon) break;
+      if (cmd === '-invertboost') { statChange(mon, { kind: 'invert' }); break; }
+      // Spectral Thief: -clearpositiveboost|TARGET|SOURCE|move: Spectral Thief
+      const taker = cmd === '-clearpositiveboost' && /^p\d/.test(args[1] ?? '') ? seen(args[1]) : null;
+      statChange(mon, { kind: 'clear', which: { '-clearboost': 'one', '-clearnegativeboost': 'negative', '-clearpositiveboost': 'positive' }[cmd],
+        ...(taker ? { other: ref(taker) } : {}) });
+      break;
+    }
+    // -copyboost|SOURCE|TARGET (Psych Up), -swapboost|SOURCE|TARGET|STATS (Heart Swap, Power Swap, Guard Swap)
+    case '-copyboost': case '-swapboost': {
+      const mon = seen(args[0]), other = /^p\d/.test(args[1] ?? '') ? seen(args[1]) : null;
+      if (silent || !mon || !other) break;
+      const listed = cmd === '-swapboost' && args[2] && !args[2].startsWith('[') ? args[2].split(',').map(s => s.trim()).filter(Boolean) : [];
+      statChange(mon, { kind: cmd === '-copyboost' ? 'copy' : 'swap', other: ref(other), ...(listed.length ? { stats: listed } : {}) });
+      break;
+    }
+    case '-curestatus': if (!silent) push({ type: 'cure', mon: ref(who(args[0])), status: args[1], from: fromOf(args) }, false); break;
     case '-story-run': if (live && args[2] === 'escaped') summary.ran = true; push({ type: 'run', result: args[2] }); break;
     case '-story-levelup': push({ type: 'levelup', mon: ref(who(args[0])), level: Number(args[2]) }); break;
     case 'win': if (live) summary.winner = args[0]; break;
 
     case '-ability':
+      abilityAt = i;
       if (silent) break;
 
       if (args[2] === 'boost' && ABSORB.has(toID(args[1])) && absorbed(who(args[0]), args[1])) break;
@@ -322,7 +393,7 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       later.set(to, mover ?? null);
     } else if (cmd === 'replace') for (const guard of later.get(player + letter)?.guards ?? []) guard.state = 'disguised';
   }
-  return { turns: turns.filter(t => t.events.length), summary, players, illusion: [...illusion] };
+  return { turns: turns.filter(t => t.events.length), summary, players, illusion: [...illusion], mons: [...shown.values()] };
 }
 
 function causeOf(cmd, args, types) {
@@ -593,15 +664,36 @@ function fromText(from, namer) {
 
 const hpText = (name, x) => `${name} HP ${x.before === null || x.before === undefined ? '' : `${x.before}% → `}${x.hp}%`;
 
-function sidesOf(read, sides = {}) {
-  return { mine: USER, theirs: sides.theirs || read.players?.theirs || 'Opponent', wild: !!sides.wild,
+function sidesOf(read, sides = {}, namer = null) {
+  const who = { mine: USER, theirs: sides.theirs || read.players?.theirs || 'Opponent', wild: !!sides.wild,
     partner: sides.partner ?? null, second: sides.second ?? null };
+  return { ...who, clash: namer ? clashesOf(read, namer, who) : new Set() };
+}
+
+// Compared by the name the narrator reads, without touching the namer's first-mention record
+const nameKey = (m, namer) => plain(m.nick ?? (namer.plainSpecies ? namer.plainSpecies(m.species) : m.species));
+
+// Names that stand for Pokémon of two or more owners (both sides sent out Alakazam): those need saying whose
+// A foe partner sharing the foe's side is told by seat (p2b), and Ally Switch moves seats, so it does not count as an owner of its own here
+function ownerKey(m, sides) {
+  const owner = ownerOf(m, sides);
+  return owner === 'second' && !String(m.seat ?? m.player ?? '').startsWith('p4') ? 'theirs' : owner;
+}
+
+function clashesOf(read, namer, sides) {
+  const owners = new Map();
+  for (const m of read?.mons ?? []) {
+    const key = nameKey(m, namer);
+    owners.set(key, (owners.get(key) ?? new Set()).add(ownerKey(m, sides)));
+  }
+  return new Set([...owners].filter(([, set]) => set.size > 1).map(([key]) => key));
 }
 
 const OWNERS = ['mine', 'partner', 'theirs', 'second'];
 
 function ownerOf(mon, sides) {
-  const player = String(mon?.seat ?? '').slice(0, 2);
+  // A benched Pokémon (Heal Bell's "p3: Chansey") has no seat yet, only its player
+  const player = String(mon?.seat ?? mon?.player ?? '').slice(0, 2);
   if (mon?.side === 'mine') return player === 'p3' && sides.partner ? 'partner' : 'mine';
   if (!sides.second) return 'theirs';
   if (player === 'p4') return 'second';
@@ -615,9 +707,19 @@ function sentOutText(owner, mons, sides) {
   return `${ownerName(owner, sides)} sent out ${mons}`;
 }
 
+const ownedText = (m, name, sides) => {
+  const owner = ownerOf(m, sides);
+  return owner === 'theirs' && sides.wild ? `Wild ${name}` : `${ownerName(owner, sides)}'s ${name}`;
+};
+
+function monName(m, namer, sides) {
+  const name = monText(m, namer);
+  return m && sides.clash?.has(nameKey(m, namer)) ? ownedText(m, name, sides) : name;
+}
+
 function userText(m, namer, sides) {
   const owner = ownerOf(m, sides);
-  return owner === 'partner' || owner === 'second' ? `${ownerName(owner, sides)}'s ${monText(m, namer)}` : monText(m, namer);
+  return owner === 'partner' || owner === 'second' ? ownedText(m, monText(m, namer), sides) : monName(m, namer, sides);
 }
 
 const zMoveName = (move, namer) => (/^Z-./.test(move) ? namer.zStatus(move.slice(2)) : namer.moves(move));
@@ -682,9 +784,10 @@ function reasonCtx(read, battle, own = null) {
 }
 
 function eventText(e, namer, sides, ctx = reasonCtx(null, null)) {
-  const mon = m => monText(m, namer);
+  const mon = m => monName(m, namer, sides);
   switch (e.type) {
-  case 'switch': return sentOutText(ownerOf(e.mon, sides), mon(e.mon), sides);
+  // These sentences already say whose Pokémon it is
+  case 'switch': return sentOutText(ownerOf(e.mon, sides), monText(e.mon, namer), sides);
   case 'move': {
 
     if (e.reveal?.length) {
@@ -700,14 +803,19 @@ function eventText(e, namer, sides, ctx = reasonCtx(null, null)) {
     const parts = [
       ...e.effects.filter(x => x.kind === 'hp').map(x => hpText(mon(x.mon), x)),
       ...e.effects.filter(x => x.kind === 'tag').map(x => tagText(x, mon, namer, ctx)),
+      ...e.effects.filter(x => STAT_KINDS.has(x.kind)).map(x => statText(x, mon, namer)),
     ];
     return parts.length ? `${head} → ${parts.join(', ')}` : head;
   }
   case 'damage': case 'heal': return `${hpText(mon(e.mon), e)}${fromText(e.from, namer)}`;
   case 'status': return `${mon(e.mon)} ${STATUS_EN[e.status] ?? `got ${e.status}`}`;
+  case 'cure': return `${mon(e.mon)} ${CURE_EN[e.status] ?? 'was cured'}${fromText(e.from, namer)}`;
+  case 'cant': return cantText(e, mon, namer);
+  case 'confusion': return `${mon(e.mon)} ${e.ended ? 'snapped out of its confusion' : 'became confused'}`;
+  case 'stat': return statText(e, mon, namer, true);
   case 'faint': return `${mon(e.mon)} fainted`;
   case 'ball': return `${namer.items(e.ball)} thrown at ${mon(e.mon)} → ${e.result === 'caught' ? 'caught' : e.result === 'blocked' ? 'blocked' : 'broke free'}`;
-  case 'item': return `${ownerName(ownerOf(e.mon, sides), sides)} used ${e.label ?? namer.items(e.item)} on ${mon(e.mon)}`;
+  case 'item': return `${ownerName(ownerOf(e.mon, sides), sides)} used ${e.label ?? namer.items(e.item)} on ${monText(e.mon, namer)}`;
   case 'tool': return toolText(e, mon, sides);
   case 'run': return e.result === 'escaped' ? 'Got away safely' : 'Could not get away';
   case 'levelup': return `${mon(e.mon)} grew to Lv${e.level}`;
@@ -732,6 +840,43 @@ function eventText(e, namer, sides, ctx = reasonCtx(null, null)) {
 
 const STAT_EN = { atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed', accuracy: 'accuracy', evasion: 'evasiveness' };
 const listEn = items => (items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : items[0] ?? '');
+
+const STAT_KINDS = new Set(['boost', 'setboost', 'clear', 'invert', 'copy', 'swap']);
+// By how many stages: 0 = it could not go further
+const RISE_EN = ["won't go any higher", 'rose', 'rose sharply', 'rose drastically'];
+const FALL_EN = ["won't go any lower", 'fell', 'harshly fell', 'severely fell'];
+
+function statText(x, mon, namer, start = false) {
+  const from = fromText(x.from, namer);
+  if (x.kind === 'clear') {
+    if (x.which === 'all') return `${start ? 'All' : 'all'} stat changes were eliminated${from}`;
+    if (x.which === 'positive') return `${mon(x.mon)}'s raised stats were ${x.other ? `taken by ${mon(x.other)}` : 'removed'}${from}`;
+    return `${mon(x.mon)}'s ${x.which === 'negative' ? 'lowered stats returned to normal' : 'stat changes were removed'}${from}`;
+  }
+  if (x.kind === 'invert') return `${mon(x.mon)}'s stat changes were inverted${from}`;
+  if (x.kind === 'copy') return `${mon(x.mon)} copied ${mon(x.other)}'s stat changes${from}`;
+  if (x.kind === 'swap') return `${mon(x.mon)} and ${mon(x.other)} swapped ${x.stats?.length ? `${listEn(x.stats.map(s => STAT_EN[s] ?? s))} changes` : 'stat changes'}${from}`;
+  const stats = listEn(x.stats.map(s => STAT_EN[s] ?? s));
+  if (x.kind === 'setboost') return `${mon(x.mon)}'s ${stats} ${x.to >= 6 ? 'rose to the maximum' : `became ${x.to > 0 ? '+' : ''}${x.to}`}${from}`;
+  return `${mon(x.mon)}'s ${stats} ${(x.up ? RISE_EN : FALL_EN)[Math.min(x.by, 3)]}${from}`;
+}
+
+const CURE_EN = { slp: 'woke up', frz: 'thawed out', par: 'was cured of paralysis', brn: 'was cured of its burn', psn: 'was cured of poison', tox: 'was cured of poison' };
+const CANT_EN = { par: "was paralyzed and couldn't move", slp: 'was fast asleep', frz: 'was frozen solid', flinch: "flinched and couldn't move",
+  recharge: 'had to recharge', attract: 'was immobilized by love', partiallytrapped: "was trapped and couldn't move", nopp: 'had no PP left',
+  focuspunch: "lost its focus and couldn't move", shelltrap: "couldn't set off its Shell Trap" };
+const REASON_KINDS = { ability: 'abilities', item: 'items', move: 'moves' };
+
+function cantText(e, mon, namer) {
+  const fixed = CANT_EN[toID(e.reason)];
+  if (fixed) return `${mon(e.mon)} ${fixed}`;
+  const what = e.move ? `use ${namer.moves(e.move)}` : 'move';
+  const m = /^(ability|item|move):\s*(.+)$/i.exec(e.reason);
+  // A move that failed on its own ("Shell Trap" for Shell Trap) is not its own reason
+  const own = e.move && toID(m ? m[2] : e.reason) === toID(e.move);
+  const why = own ? '' : m ? namer[REASON_KINDS[m[1].toLowerCase()]](m[2]) : e.reason ? namer.moves(e.reason) : '';
+  return `${mon(e.mon)} couldn't ${what}${why ? ` because of ${why}` : ''}`;
+}
 function toolText(e, mon, sides) {
   const target = e.trainer ?? mon(e.mon);
   const used = `${sides.mine} used ${e.label} on ${target}`;
@@ -747,7 +892,7 @@ function toolText(e, mon, sides) {
 }
 
 export function keyLines(read, namer, sides = {}, { battle = null, own = null } = {}) {
-  const who = sidesOf(read, sides);
+  const who = sidesOf(read, sides, namer);
   const ctx = reasonCtx(read, battle, own);
   const byTurn = new Map();
   for (const t of read.turns) {
@@ -767,7 +912,7 @@ export function turnSpan(read) {
 
 export function summaryLine(read, namer, { evolutions = [], sides = {} } = {}) {
   const s = read.summary;
-  const who = sidesOf(read, sides);
+  const who = sidesOf(read, sides, namer);
   const list = mons => mons.map(m => monText(m, namer)).join(', ') || '-';
   const parts = [];
   for (const owner of OWNERS) {
@@ -775,15 +920,17 @@ export function summaryLine(read, namer, { evolutions = [], sides = {} } = {}) {
     if (sent.length) parts.push(`${sentOutText(owner, list(sent), who)}.`);
   }
   for (const e of s.gimmicks ?? []) parts.push(`${gimmickText(e, namer, who)}.`);
-  const facts = endFacts(read, namer, { evolutions });
+  const facts = endFacts(read, namer, { evolutions, sides });
   return [...parts, ...(facts ? [facts] : [])].join(' ');
 }
 
-export function endFacts(read, namer, { evolutions = [] } = {}) {
+export function endFacts(read, namer, { evolutions = [], sides = {} } = {}) {
   const s = read.summary;
+  const who = sidesOf(read, sides, namer);
+  const mon = m => monName(m, namer, who);
   const parts = [];
-  if (s.fainted.length) parts.push(`Fainted: ${s.fainted.map(m => monText(m, namer)).join(', ')}.`);
-  if (s.caught) parts.push(`Caught: ${monText(s.caught.mon, namer)} with ${namer.items(s.caught.ball)}.`);
+  if (s.fainted.length) parts.push(`Fainted: ${s.fainted.map(mon).join(', ')}.`);
+  if (s.caught) parts.push(`Caught: ${mon(s.caught.mon)} with ${namer.items(s.caught.ball)}.`);
   else if (s.ran) parts.push('Ran away.');
   const evolved = evolutions.filter(e => e?.evolved === true);
   if (evolved.length) parts.push(`Evolved: ${evolved.map(e => `${namer.species(e.from)} → ${namer.species(e.to)}`).join(', ')}.`);

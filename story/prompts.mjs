@@ -50,15 +50,15 @@ export function storyOoc(format, { battle, own = null, result = null, ended = fa
   const namer = createNamer({ lang, en });
   const opponent = battle?.wild ? `the wild ${wildMons(battle).map(mon => namer.species(mon.species)).join(' and ')}` : trainersText(battle, ' and ');
   format = sentFormat(format, ended);
+  const sides = { theirs: stageTrainer(battle, stage), wild: !!battle?.wild, partner: battle?.partner ? partnerName(battle) : null,
+    second: battle?.foePartner && stage === 1 ? secondName(battle) : null };
   if (format === 'result') {
-    const facts = endFacts(whole ?? read, namer, { evolutions: result?.evolutions ?? [] });
+    const facts = endFacts(whole ?? read, namer, { evolutions: result?.evolutions ?? [], sides });
     return `(OOC: ${[resultHead(opponent, outcomeOf(result)), ...(facts ? [facts] : [])].join('\n')})`;
   }
   const summary = format === 'summary';
   const span = turnSpan(read);
   const outcome = ended ? ` Result: ${outcomeText(outcomeOf(result))}.` : '';
-  const sides = { theirs: stageTrainer(battle, stage), wild: !!battle?.wild, partner: battle?.partner ? partnerName(battle) : null,
-    second: battle?.foePartner && stage === 1 ? secondName(battle) : null };
   const below = summary ? '' : ' below';
   const facts = (summary ? '. Fill in the details yourself, keeping to these facts' : ', keeping to the facts')
     + (ended ? '.' : ", and stop there. The battle isn't over yet.");

@@ -10,6 +10,7 @@ import { loadExpText } from './steps-exp.js';
 import { gimmickOptions } from './steps-mega.js';
 import { commitChoice } from '../ai/commit.js';
 import { positionAt } from './read.js';
+import { recordingView } from './text.js';
 import { sameName, sideParts } from '../story/blocks.mjs';
 
 const PLAN_MAX_TURNS = 6;
@@ -241,8 +242,7 @@ export async function planTurns(sim, snapshot, turns, { options = {}, enemyAI, n
     const reseeds = snapshot.reseeds ?? [];
 
     const lines = [], marks = {};
-    const view = new Proxy({}, { get: (_, key) => (key === 'then' ? undefined
-      : key === 'message' ? async message => { if (typeof message === 'string') lines.push(message.replace(/\n/g, ' ')); } : async () => undefined) });
+    const view = recordingView(line => lines.push(line));
     const step = createSteps({ battle, view, names, warn: () => {}, bag, options, run, mode: { silent: true }, wild, lang, onInput: () => {} });
     const reader = createProtocolReader();
     const readOn = async () => {

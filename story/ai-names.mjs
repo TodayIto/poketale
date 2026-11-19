@@ -32,7 +32,12 @@ export function createNamer({ lang = 'ko', en = null, ko = tableKo } = {}) {
     const local = ko('moves', move);
     return write('moves', `Z-${englishOf('moves', move)}`, `Z-${englishOf('moves', move)}`, local ? `Z${local}` : null);
   };
-  return { species, moves: name('moves'), items: name('items'), abilities: name('abilities'), zStatus, seen };
+  // The English species name without counting a mention, for comparing names
+  const plainSpecies = value => {
+    const form = formNames(value);
+    return form?.en ?? englishOf('species', form ? form.id : value);
+  };
+  return { species, moves: name('moves'), items: name('items'), abilities: name('abilities'), zStatus, seen, plainSpecies };
 }
 
 function formNames(value) {
