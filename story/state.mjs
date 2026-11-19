@@ -21,7 +21,8 @@ import { opponentPicture, foePartnerPicture } from './trainer-look.mjs';
 import { readStored, isRecord } from './stored.mjs';
 import { ruleError } from './failure.mjs';
 import { surveyBattles, dropOocs } from './chat.mjs';
-import { statusIn, battleScene, COMPAT_LINE_RE, FIELD_WEATHERS } from './compat.mjs';
+import { statusIn, battleScene, COMPAT_LINE_RE, FIELD_WEATHERS, compatWorld, COMPAT_WORLD_VARS } from './compat.mjs';
+import { withMachineStandard } from './machine-standards.mjs';
 import { badgeCount, earnedBadges, readLeague, leaguePlaces, leagueAt, leagueDate, keepRecords, LEAGUE_VAR, UNOVA_ERA_VAR } from './badges.mjs';
 import { changeFriendship, moveFriendship, friendshipStep, baseFriendship, friendshipLocked, FRIEND_BALL_FRIENDSHIP, FRIENDSHIP_STEPS, FOND_FRIENDSHIP } from '../engine/friendship.mjs';
 import { entry as nameEntry, koSpellings } from '../names/index.js';
@@ -121,7 +122,7 @@ export function heldChanges(chat, table = readTable(chat)) {
   return surveyBattles(chat, table).held;
 }
 
-export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR, SETTING_CHANGES_VAR, `$${LEAGUE_VAR}`, `$${UNOVA_ERA_VAR}`];
+export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR, SETTING_CHANGES_VAR, `$${LEAGUE_VAR}`, `$${UNOVA_ERA_VAR}`, ...COMPAT_WORLD_VARS];
 
 const BOOK_FIELDS = ['badges', 'league', 'gyms'];
 
@@ -188,6 +189,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const importsAt = i => imports.get(i) ?? [];
 
   const ctxAt = foldCtxAt(chat, ctx);
+  const world = compatWorld(chat);
   const settingsOf = i => foldValues(ctxAt(i));
 
   const applyImportsAt = (i, start, at, reflected, seen) => importsAt(i).reduce((cur, imp) => {
@@ -233,7 +235,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
     return { index: i, date: status?.date ?? null, party: hatchedParty(now).map(mon => ({ species: mon.set.species, ...(mon.set.name ? { name: mon.set.name } : {}) })),
       opponents: [spec.name, spec.foePartner?.name].filter(Boolean) };
   };
-  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}`;
+  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}\u0001${world.startRegion}\u0001${world.journeys}`;
   let from = 0;
   while (from <= last && from < folds.length && folds[from].key === keyOf(from)) from++;
   if (from <= last) folds.length = from;
@@ -291,7 +293,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
         continue;
       }
       if (held.has(changeAt(i, event.n))) continue;
-      const { ops } = parseChange(event.body, here);
+      const { ops } = parseChange(event.body, withMachineStandard(here, status?.region, world));
       const before = Object.keys(table.fills).length;
       state = applyOps(state, ops, at, `${name}:${event.key}`, table).state;
       if (Object.keys(table.fills).length !== before) changed = true;

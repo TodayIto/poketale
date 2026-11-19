@@ -11,8 +11,9 @@ import { itemId, customInfo, withItemTags } from './custom-items.mjs';
 import { say } from './screen-text.mjs';
 import { commandsIn } from './commands.mjs';
 import { answeredLine } from './act-prompts.mjs';
-import { dropTaken, statusIn, statusMoneyAt } from './compat.mjs';
+import { dropTaken, statusIn, statusMoneyAt, latestStatus, compatWorld } from './compat.mjs';
 import { shopEvent, limitedKey } from './shop.mjs';
+import { withMachineStandard } from './machine-standards.mjs';
 
 export const QUEUE_VAR = '$pkb_queue';
 
@@ -368,12 +369,18 @@ export function changesIn(text, chat, ctx, lang) {
   const at = ctx && { ...(index >= 0 ? foldCtxAt(chat, ctx)(index) : ctx), status: statusIn(messages[index]) ?? status };
 
   const reading = index >= 0 ? readAt(index) : undefined;
+  // A reply not saved yet reads its discs like the message it will become, in the region its own or the latest Status Window names
+  const machineReading = reading ?? readAt(messages.length);
+  // Text that is no saved message as it is, is the reply being written, as the display path takes it (pass.at); a saved
+  // user message's Status Window is not the bot's
+  const ownStatus = statusIn({ role: same >= 0 ? messages[same]?.role : 'char', data: text });
+  const machineRegion = (ownStatus ?? (index >= 0 ? at?.status ?? latestStatus(chat, index) : latestStatus(chat)))?.region;
   const chatId = index >= 0 ? messageId(messages[index], index) : null;
   const held = index >= 0 ? heldChanges(chat, table ?? readTable(chat)) : new Set();
   const events = [], errors = [];
   for (const [n, block] of blocks.entries()) {
     if (held.has(changeAt(index, n))) { errors.push(heldLine(lang)); continue; }
-    const { ops, errors: unread } = parseChange(block.body, reading);
+    const { ops, errors: unread } = parseChange(block.body, withMachineStandard(machineReading, machineRegion, compatWorld(chat)));
     errors.push(...unread.map(note => ruleText(note, lang)));
     if (!state) { events.push(...ops.map(op => eventOf({ op, before: null, after: null }, null))); continue; }
     const result = applyOps(state, ops, at, `${chatId}:${block.key}`, table, { trace: true });

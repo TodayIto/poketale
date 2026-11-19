@@ -1,18 +1,37 @@
 import data from '../data/items-outside.json' with { type: 'json' };
-import { tmNumber } from './items.mjs';
+import { DEFAULT_STANDARD, MACHINE_STANDARDS, STANDARD_IDS, machineId, parseMachineId } from './machine-standards.mjs';
 
 export const itemText = id => (Object.hasOwn(data.text, id) ? data.text[id] : null);
 
-export function tmMove(id) {
-  const n = tmNumber(id);
-  return n ? data.tms[n - 1] ?? null : null;
+const slotsOf = std => data.machines[std]?.slots ?? [];
+
+const slotIndex = new Map();
+function indexOf(std) {
+  let index = slotIndex.get(std);
+  if (!index) slotIndex.set(std, index = new Map(slotsOf(std).map(([kind, number], i) => [`${kind}${number}`, i])));
+  return index;
 }
 
+function slotOf(id) {
+  const m = parseMachineId(id);
+  const i = m && indexOf(m.std).get(`${m.kind}${m.number}`);
+  return i === undefined || i === null ? null : { std: m.std, i };
+}
+
+// Move id taught by a TM, HM or TR (tm024 -> 'firespin', hm003rb -> 'surf'), null if not one
+export function tmMove(id) {
+  const slot = slotOf(id);
+  return slot ? slotsOf(slot.std)[slot.i][2] : null;
+}
+
+const speciesIndex = new Map(data.learnSpecies.map((id, i) => [id, i]));
 const bitsCache = new Map();
-function bitsOf(key) {
+function bitsOf(std, i) {
+  const key = `${std}:${i}`;
   let bits = bitsCache.get(key);
   if (!bits) {
-    const raw = atob(data.learn[key].padEnd(Math.ceil(data.learn[key].length / 4) * 4, '='));
+    const code = data.machines[std].learn[i];
+    const raw = atob(code.padEnd(Math.ceil(code.length / 4) * 4, '='));
     bits = Uint8Array.from(raw, c => c.charCodeAt(0));
     bitsCache.set(key, bits);
   }
@@ -22,13 +41,15 @@ function bitsOf(key) {
 const MAX_FORME_HOPS = 4;
 
 export function canLearnTm(sim, species, id) {
-  const n = tmNumber(id);
-  if (!n || n > data.tms.length) return false;
+  const slot = slotOf(id);
+  if (!slot) return false;
+  const learn = data.machines[slot.std].learn;
   let s = sim.Dex.species.get(species);
   for (let hop = 0; s?.exists && hop < MAX_FORME_HOPS; hop++) {
-    if (Object.hasOwn(data.learn, s.id)) {
-      const bits = bitsOf(s.id);
-      return !!((bits[(n - 1) >> 3] >> ((n - 1) & 7)) & 1);
+    const at = speciesIndex.get(s.id);
+    if (at !== undefined && learn[at]) {
+      const bits = bitsOf(slot.std, at);
+      return !!((bits[slot.i >> 3] >> (slot.i & 7)) & 1);
     }
     const parent = sim.Dex.species.get(s.changesFrom || s.baseSpecies);
     if (!parent.exists || parent.id === s.id) break;
@@ -37,7 +58,26 @@ export function canLearnTm(sim, species, id) {
   return false;
 }
 
-export function learnableTms(sim, species) {
-  return data.tms.map((move, i) => ({ n: i + 1, item: `tm${String(i + 1).padStart(3, '0')}`, move }))
-    .filter(tm => tm.move && canLearnTm(sim, species, tm.item));
+export function learnableTms(sim, species, std = DEFAULT_STANDARD) {
+  return slotsOf(std).map(([kind, number, move]) => ({ n: number, item: machineId(kind, number, std), move }))
+    .filter(tm => canLearnTm(sim, species, tm.item));
+}
+
+// A standard's disc for a move, of the written kind when that standard has one (TM Surf in Kanto is HM03);
+// exact: that kind only
+export function machineByMove(std, move, kind = null, { exact = false } = {}) {
+  const slots = slotsOf(std);
+  const hit = (kind && slots.find(([k, , m]) => k === kind && m === move)) || (!exact && slots.find(([, , m]) => m === move));
+  return hit ? machineId(hit[0], hit[1], std) : null;
+}
+
+export const machineByNumber = (std, kind, number) => (indexOf(std).has(`${kind}${number}`) ? machineId(kind, number, std) : null);
+
+export const hasMachineKind = (std, kind) => slotsOf(std).some(([k]) => k === kind);
+
+// The standard itself, then the others nearest to it in generation (later first on a tie)
+export function nearestStandards(std) {
+  const gen = MACHINE_STANDARDS[std]?.gen ?? MACHINE_STANDARDS[DEFAULT_STANDARD].gen;
+  const distance = s => Math.abs(MACHINE_STANDARDS[s].gen - gen);
+  return [...STANDARD_IDS].sort((a, b) => distance(a) - distance(b) || MACHINE_STANDARDS[b].gen - MACHINE_STANDARDS[a].gen);
 }

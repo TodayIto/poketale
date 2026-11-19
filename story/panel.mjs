@@ -12,6 +12,7 @@ import { ruleFormat, DEFAULT_FORMAT } from '../engine/rules.mjs';
 import { MAX_PP_UPS } from '../engine/pp.mjs';
 import { OUTSIDE_ITEMS, VITAMIN_EVS, HYPER_TRAIN_LEVEL, isTm } from './items.mjs';
 import { itemText, tmMove, canLearnTm } from './item-info.mjs';
+import { parseMachineId, machineUsedUp, machineOrder } from './machine-standards.mjs';
 import { withParticle, statName, natureName, listOf, boxLabel } from './diary.mjs';
 import { say } from './screen-text.mjs';
 import { battleNamesIn } from '../plugin/battle/names.js';
@@ -51,10 +52,8 @@ export function namesFor(lang, sim) {
 
 export const itemName = (id, names) => names.item(toID(id));
 
-export function bagItemName(id, names) {
-  const key = toID(id), move = tmMove(key);
-  return move ? `${itemName(key, names)} ${names.move(move)}` : itemName(key, names);
-}
+// Disc names already carry their move (기술머신11 거품광선 (관동))
+export const bagItemName = (id, names) => itemName(toID(id), names);
 
 export function itemLabel(state, id, names, { bag = false } = {}) {
   if (isCustomItem(id)) return customInfo(state, id)?.name ?? id.slice(CUSTOM_PREFIX.length);
@@ -144,7 +143,11 @@ export function itemDescription(id, sim, lang) {
   }
   const text = lang === 'ko' ? itemText(key) : null;
   if (text) return text;
-  if (kind === 'tm') return t('item.tm', { move: withParticle(lang, namesFor(lang, sim).move(tmMove(key)), '을/를') });
+  if (kind === 'tm') {
+    const disc = parseMachineId(key)?.kind;
+    const line = disc === 'hm' ? 'item.hm' : disc === 'tr' ? 'item.tr' : machineUsedUp(key) ? 'item.tm' : 'item.tmKeep';
+    return t(line, { move: withParticle(lang, namesFor(lang, sim).move(tmMove(key)), '을/를') });
+  }
   if (kind === 'medicine') {
     bag = medicineOf(key);
     if (bag.all) return t('item.reviveAll');
@@ -411,7 +414,8 @@ export function spinInto(ctx, mon, spin) {
 
 export function teachAction(mon, item, move, result) {
   if (!result?.learned) return null;
-  return { type: 'use', item: toID(item), ops: [learnOp(mon, move, result), { op: 'item', item: toID(item), delta: -1, fromBag: true }] };
+  const usedUp = machineUsedUp(toID(item)) ? [{ op: 'item', item: toID(item), delta: -1, fromBag: true }] : [];
+  return { type: 'use', item: toID(item), ops: [learnOp(mon, move, result), ...usedUp] };
 }
 
 const canRemember = (ctx, mon) => rememberableMoves(ctx, mon).length > 0;
@@ -522,7 +526,7 @@ export function bagView(state, sim, lang, trade) {
     const tag = ITEM_EFFECTS_READY ? [info?.effect && say(lang, `panel.tag.${info.effect}`), owner].filter(Boolean).join(' · ') : '';
     return { id, count, name: itemLabel(state, id, names, { bag: true }), kind, icon: kind === 'custom' ? { emoji: info?.emoji ?? '' } : itemIcon(id, sim),
       group: bagGroup(id, sim, trade), ...(tag ? { tag } : {}) };
-  }).sort((a, b) => (a.group === 'other' && b.group === 'other' ? (OTHER_RANK[a.kind] ?? 9) - (OTHER_RANK[b.kind] ?? 9) : 0) || rank(a.id) - rank(b.id) || (a.kind === 'tm' && b.kind === 'tm' ? a.id.localeCompare(b.id) : a.name.localeCompare(b.name, lang)));
+  }).sort((a, b) => (a.group === 'other' && b.group === 'other' ? (OTHER_RANK[a.kind] ?? 9) - (OTHER_RANK[b.kind] ?? 9) : 0) || rank(a.id) - rank(b.id) || (a.kind === 'tm' && b.kind === 'tm' ? machineOrder(a.id, b.id) : a.name.localeCompare(b.name, lang)));
   return BAG_GROUPS.map(group => ({ group, label: say(lang, `panel.group.${group}`), items: rows.filter(r => r.group === group) })).filter(g => g.items.length);
 }
 

@@ -1,3 +1,5 @@
+import { machineId, isMachineId } from './machine-standards.mjs';
+
 export const VITAMIN_EVS = 10;
 
 export const HYPER_TRAIN_LEVEL = 50;
@@ -83,6 +85,6 @@ export const EXP_SHARE_MODES = ['always', 'item'];
 
 export const expShareOn = (mode, bag) => mode !== 'item' || (bag?.expshare ?? 0) > 0;
 
-export const tmId = number => `tm${String(number).padStart(3, '0')}`;
-export const isTm = id => /^tm\d{3}$/.test(String(id ?? ''));
-export const tmNumber = id => (isTm(id) ? Number(String(id).slice(2)) : null);
+// TMs, HMs and TRs of every region's standard (story/machine-standards.mjs); tmId is a Scarlet/Violet TM
+export const tmId = number => machineId('tm', number);
+export const isTm = isMachineId;

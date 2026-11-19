@@ -121,9 +121,9 @@ Move animation data, by upstream `battle-anims/REUSE.toml`:
   (https://github.com/PokeAPI/pokeapi#contributing). Pokémon and Pokémon character names are
   trademarks of Nintendo.
 - License: BSD-3-Clause ([Appendix A](#a7-pokéapi); also `data/sources/pokeapi/LICENSE.md`).
-- What is included: Korean names, capture rates, effort values, TM numbers and Korean item
-  descriptions, as converted into `data/names/*.json`, `data/catch-rates.json`, `data/exp.json`
-  and `data/items-outside.json`.
+- What is included: Korean names, capture rates, effort values, the TM/HM/TR numbers of each region's
+  game (with the version group table that names those games) and Korean item descriptions, as converted
+  into `data/names/*.json`, `data/catch-rates.json`, `data/exp.json` and `data/items-outside.json`.
 
 ### 1.8 Fonts (embedded as base64)
 
