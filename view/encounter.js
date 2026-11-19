@@ -1,5 +1,5 @@
 // from pokerogue src/phases/encounter-phase.ts (doEncounter, doEncounterCommon) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 // from pokerogue src/phases/battle-phase.ts (hideEnemyTrainer) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/summon-phase.ts (preSummon's player ball throw) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/field/trainer.ts (sprites, tint/untint, playAnim) @ 7d7da4a8 (AGPL-3.0-only)

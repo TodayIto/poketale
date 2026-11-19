@@ -127,8 +127,8 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
   const common = async (name, side, targetSide = side) => { if (side && ledger.atField(side)) await view.playCommon(name, side, targetSide); };
   const showStages = side => ledger.atField(side) ? view.setStatStages(side, { ...ledger.atField(side).boosts }) : undefined;
 
-  // The event on screen now: its `before` is where this Pokémon's HP bar stood
   let presenting = null;
+
   async function hp(ident, cause = 'other', effectiveness = 'normal') {
     if (!ledger.onField(ident)) return;
     const { hp: value, maxhp } = ledger.get(ident);

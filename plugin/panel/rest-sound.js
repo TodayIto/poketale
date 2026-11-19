@@ -1,5 +1,6 @@
 import { createImageRoute, audioType } from '../../view/image-route.js';
 import { viewPictureWays } from '../battle/picture-route.js';
+import { soundLevels } from '../battle/settings.js';
 
 const SOUND = 'audio/battle_anims/PRSFX- Health Up.wav';
 const VOLUME = 0.6;
@@ -29,13 +30,15 @@ export function createRestSound({ assetBase, settings, fetchBytes }) {
   const url = assetBase + SOUND;
   let made = null;
   return () => {
-    const { sound, panelPicture } = settings();
-    if (!sound) return;
+    const { panelPicture } = settings();
+    if (!soundLevels(settings()).sfx) return;
     if (!made || made.route !== panelPicture) made = { route: panelPicture, ready: loadSound(url, panelPicture, fetchBytes) };
     const asked = Date.now();
     made.ready.then(audio => {
       if (!audio || Date.now() - asked > LATE_MS) return;
-      audio.currentTime = 0;
+      const level = soundLevels(settings()).sfx;
+      if (!level) return;
+      audio.currentTime = 0; audio.volume = VOLUME * level;
       audio.play().catch(() => {});
     });
   };

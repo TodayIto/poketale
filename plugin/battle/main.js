@@ -1,9 +1,9 @@
 import { createFetchBytes } from './fetch-bytes.js';
 import { mark } from './marks.js';
-import { startStoryLink, openSettings, currentSettings, openLang, queueAction, storyNow, onStoryChange, showWindow, hideWindow, resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, writeBotTravel, setPanelShift, setPanelSwitch, panelShiftNow, quickImport, importLater, battleFormat, watchReplies } from './story-link.js';
+import { startStoryLink, openSettings, currentSettings, soundFeed, openLang, queueAction, storyNow, onStoryChange, showWindow, hideWindow, resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, fishCast, writeBotTravel, quickImport, importLater, battleFormat, watchReplies,
+  panelShiftNow, setPanelShift, taleValues, setTale, voicePacks } from './story-link.js';
 import { startPanel } from '../panel/panel.js';
 import { createPanelScreens } from '../panel/screens.js';
-import { cryPackSource } from './cry-pack-store.js';
 import { createPanelPictures } from '../panel/pictures.js';
 import { createRestSound } from '../panel/rest-sound.js';
 import { DEFAULT_ASSET_BASE } from '../../view/assets.js';
@@ -41,13 +41,16 @@ guardContextMenu(globalThis.document);
     const doc = await risuai.getRootDocument();
     if (doc) {
       useMainDocument(doc, () => currentSettings().aboveOthers, () => currentSettings().debug);
-      const screens = createPanelScreens({ fetchBytes, settings: currentSettings, lang: openLang, battleFormat, cries: cryPackSource(risuai.pluginStorage),
+      const screens = createPanelScreens({ fetchBytes, settings: currentSettings, volume: soundFeed, voicePacks: voicePacks.source, lang: openLang, battleFormat,
         show: showWindow, hide: hideWindow, replies: watchReplies, trainer: () => personaName(risuai).catch(() => null) });
       const pictures = createPanelPictures({ route: () => currentSettings().panelPicture, probe: probeImage, fetchBytes, still: pokerogueStillUrl,
         clean: (address, viaHost) => defringeAddress(address, viaHost ? fetchBytes : null) });
-      await startPanel({ doc, read: storyNow, queueAction, screens, changes: onStoryChange, resume: resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, botTravel: writeBotTravel, quickImport, importLater, pictures,
-        place: () => currentSettings().outsideScreens, shift: panelShiftNow, moveShift: setPanelShift, fold: () => currentSettings().panelFold, drag: () => currentSettings().panelDrag, stay: () => currentSettings().panelStay,
-        panelSwitches: () => ['panelStay', 'panelFold', 'panelDrag'].map(key => ({ key, on: !!currentSettings()[key] })), setPanelSwitch, trainer: () => personaName(risuai).catch(() => null),
+      await startPanel({ doc, read: storyNow, queueAction, screens, changes: onStoryChange, resume: resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, fish: fishCast, botTravel: writeBotTravel, quickImport, importLater, pictures,
+        place: () => currentSettings().outsideScreens, shift: panelShiftNow, open: () => currentSettings().panelOpen, trainer: () => personaName(risuai).catch(() => null),
+
+        stay: () => currentSettings().panelStay, drag: () => currentSettings().panelDrag, moveShift: setPanelShift,
+
+        tale: taleValues, setTale, openSettings,
         restSound: createRestSound({ assetBase: DEFAULT_ASSET_BASE, settings: currentSettings, fetchBytes }) });
     }
   } catch (error) { console.warn('[poke-battle] 오른쪽 패널을 끼우지 못함', error); }

@@ -1,5 +1,5 @@
 // from pokerogue locales/{ko,en}/*.json @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { withKoTerms } from './ko-terms.mjs';
@@ -36,7 +36,11 @@ const ITEM_FRAMES = {
   fullheal: 'full_heal', revive: 'revive', maxrevive: 'max_revive',
   ether: 'ether', maxether: 'max_ether', elixir: 'elixir', maxelixir: 'max_elixir',
   xattack: 'x_attack', xdefense: 'x_defense', xspatk: 'x_sp_atk', xspdef: 'x_sp_def', xspeed: 'x_speed', xaccuracy: 'x_accuracy',
-  direhit: 'dire_hit',
+  direhit: 'dire_hit', guardspec: 'guard_spec',
+
+  pokedoll: 'clefairy_doll',
+
+  pokeball: 'pb', greatball: 'gb', ultraball: 'ub', masterball: 'mb', berryjuice: 'berry_juice_good',
 
   freshwater: 'berry_juice_good', sodapop: 'berry_juice_good', lemonade: 'berry_juice_good', moomoomilk: 'berry_juice_good',
   sweetheart: 'love_sweet', energypowder: 'silver_powder', energyroot: 'big_root', healpowder: 'silver_powder', revivalherb: 'white_herb',
@@ -50,6 +54,11 @@ const ITEM_FRAMES = {
   bigmushroom: 'big_mushroom',
   teraorb: 'tera_orb', expshare: 'exp_share',
 
+  ...Object.fromEntries(['normal', 'fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug', 'rock', 'ghost',
+    'dragon', 'dark', 'steel', 'fairy', 'stellar'].map(type => [`${type}terashard`, `${type}_tera_shard`])),
+  gracidea: 'gracidea', revealglass: 'reveal_glass', prisonbottle: 'prison_bottle',
+  dnasplicers: 'dna_splicers', nsolarizer: 'n_solarizer', nlunarizer: 'n_lunarizer', reinsofunity: 'icy_reins_of_unity',
+
   lonelymint: 'mint_atk', adamantmint: 'mint_atk', naughtymint: 'mint_atk', bravemint: 'mint_atk',
   boldmint: 'mint_def', impishmint: 'mint_def', laxmint: 'mint_def', relaxedmint: 'mint_def',
   modestmint: 'mint_spatk', mildmint: 'mint_spatk', rashmint: 'mint_spatk', quietmint: 'mint_spatk',
@@ -61,8 +70,13 @@ const ITEM_FRAMES = {
 };
 const items = await load('assets/images/items.json');
 const byName = new Map(items.textures[0].frames.map(f => [f.filename, f]));
+
+const toID = text => text.toLowerCase().replace(/[^a-z0-9]/g, '');
+const byId = new Map(items.textures[0].frames.map(f => [toID(f.filename), f.filename]));
+const named = Object.keys(JSON.parse(await readFile(new URL('../data/names/items.json', import.meta.url), 'utf8')))
+  .filter(id => !/^t[mr]\d/.test(id) && !Object.hasOwn(ITEM_FRAMES, id) && byId.has(id)).map(id => [id, byId.get(id)]);
 const frames = {};
-for (const [id, name] of Object.entries(ITEM_FRAMES)) {
+for (const [id, name] of [...Object.entries(ITEM_FRAMES), ...named]) {
   const f = byName.get(name);
   if (!f) throw new Error(`items.json 에 프레임이 없습니다: ${name}`);
   frames[id] = { ...f, filename: id };
@@ -75,4 +89,4 @@ const out = {
   pb_particles: particles,
 };
 await writeFile(new URL('../data/bag-icons.json', import.meta.url), JSON.stringify(out) + '\n');
-console.log(`가방 문구 ${counts.join(', ')}, 도구 아이콘 ${Object.keys(frames).length}개 -> data/bag-icons.json`);
+console.log(`가방 문구 ${counts.join(', ')}, 도구 아이콘 ${Object.keys(frames).length}개 (이름이 같은 프레임 ${named.length}개) -> data/bag-icons.json`);

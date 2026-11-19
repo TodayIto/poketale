@@ -1,35 +1,60 @@
 import { BAG_ITEMS } from '../engine/bag.mjs';
 import { BALLS } from '../engine/capture.mjs';
 import { expForLevel, growthOf } from '../engine/exp.mjs';
-import { STATS, displayName, heldItemForm, spriteIdOf } from '../engine/mon.mjs';
-import { itemEvolution, tradeEvolution, tradePair, evolutionItems, spinEvolution, evolveLocked, evolveTraits, ABSENT_TRADE_EVOLUTION } from '../engine/evolution.mjs';
-import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty, rememberableMoves, friendshipOf, evolutionCheck, isEgg, hatched, hatchedParty, breedingOf, stateFormat,
+import { STATS, displayName, heldItemForm, spriteIdOf, fixedTeraType } from '../engine/mon.mjs';
+import { itemEvolution, tradeEvolution, tradePair, evolutionItems, spinEvolution, evolutionHeld, willingMon, ABSENT_TRADE_EVOLUTION, lockMark } from '../engine/evolution.mjs';
+import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty, rememberableMoves, levelUpMoves, friendshipOf, evolutionCheck, isEgg, hatched, hatchedParty, breedingOf, stateFormat,
   restsLeft, restHelps, SHORT_RESTS } from './state.mjs';
 import { EGG_SPRITE, compatHearts } from '../engine/breeding.mjs';
-import { FRIENDSHIP_MAX, FRIENDSHIP_STEPS } from '../engine/friendship.mjs';
+import { FRIENDSHIP_MAX, FRIENDSHIP_STEPS, friendshipStep } from '../engine/friendship.mjs';
+import { ruleValues } from './setting-changes.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, BOX_SIZE, MAX_MOVES } from './rules.mjs';
-import { ruleFormat, DEFAULT_FORMAT } from '../engine/rules.mjs';
+import { ruleFormat, formatRules, DEFAULT_FORMAT } from '../engine/rules.mjs';
 import { MAX_PP_UPS } from '../engine/pp.mjs';
-import { OUTSIDE_ITEMS, VITAMIN_EVS, HYPER_TRAIN_LEVEL, isTm } from './items.mjs';
+import { OUTSIDE_ITEMS, VITAMIN_EVS, HYPER_TRAIN_LEVEL, isTm, isTr, isRod, MACHINE_IDS } from './items.mjs';
 import { itemText, tmMove, canLearnTm } from './item-info.mjs';
-import { withParticle, statName, natureName, listOf, boxLabel } from './diary.mjs';
+import { withParticle, statName, natureName, typeName, listOf, boxLabel } from './diary.mjs';
 import { say } from './screen-text.mjs';
 import { battleNamesIn } from '../plugin/battle/names.js';
 import bagIcons from '../data/bag-icons.json' with { type: 'json' };
 import { CUSTOM_PREFIX, isCustomItem, customInfo, itemId, isDexItem, ownerName } from './custom-items.mjs';
 import { ITEM_EFFECTS_READY } from './item-effects.mjs';
-import { hungBagOf, effortOn } from './training.mjs';
+import { hungBagOf, effortOn, trainBlock } from './training.mjs';
 import { badgeCaseModel, badgePress } from './badge-case.mjs';
+import { pokeapiItemUrl as pokeapiItemFile } from '../view/sprites/sources.js';
 import { dexView, dexPress } from './dex.mjs';
 import { beatsRecord, validRecord, recordScore } from './amie-games.mjs';
+import { LAB_TIME, labOf, labFossils, bagFossils, isHalf, halvesFor, labName as labPlaceName } from './fossil.mjs';
+import { fossilsLine } from './diary.mjs';
 import { canPet, enjoymentOf, parsePuff, puffId, puffCount, puffFriendship, foodFriendship, feedHeals, FREE_GRADE, PUFF_FLAVORS, PUFF_GRADES } from './amie.mjs';
 
 export { PARTY_MAX, BOX_SIZE };
 
 export const SCREEN_PLACES = Object.freeze(['panel', 'window']);
 export const DEFAULT_SCREEN_PLACE = 'panel';
+
+export const PANEL_OPENS = Object.freeze(['hover', 'click', 'always']);
+export const DEFAULT_PANEL_OPEN = 'hover';
+
+export const panelOpenOf = stored => (PANEL_OPENS.includes(stored?.panelOpen) ? stored.panelOpen : undefined);
+
+export function openWays(mode, mouse) {
+  const m = PANEL_OPENS.includes(mode) ? mode : DEFAULT_PANEL_OPEN;
+  return { always: m === 'always', hover: m === 'hover' && !!mouse };
+}
 export const BOX_COUNT = 32;
-export const TABS = Object.freeze(['party', 'box', 'bag', 'amie', 'travel']);
+
+export const TABS = Object.freeze(['party', 'box', 'bag', 'travel', 'settings']);
+
+export const PICKS = Object.freeze(['amie', 'train']);
+
+export const SETTINGS_SUBS = Object.freeze(['bot', 'tale']);
+
+export const TALE_ROWS = Object.freeze({ story: Object.freeze(['sendFormat', 'debug']), battle: Object.freeze(['battles', 'typeHints']),
+  panel: Object.freeze(['panelStay', 'panelOpen', 'panelDrag']) });
+
+const settingsSubs = ({ bot }) => SETTINGS_SUBS.filter(sub => sub !== 'bot' || bot);
+const settingsSub = (ui, subs) => (subs.includes(ui.setsub) ? ui.setsub : subs[0]);
 
 export const MAP_READY = false;
 
@@ -78,14 +103,18 @@ export function itemKind(id, sim, trade = ABSENT_TRADE_EVOLUTION) {
   const key = toID(id);
   if (Object.hasOwn(BALLS, key)) return 'ball';
   const bag = BAG_ITEMS[key];
-  if (bag) return bag.heal || bag.cure || bag.revive || bag.pp ? 'medicine' : 'battle';
-  if (isTm(key)) return 'tm';
+
+  if (bag) return bag.key ? 'key' : !bag.reusable && (bag.heal || bag.cure || bag.revive || bag.pp) ? 'medicine' : 'battle';
+  if (isTm(key) || isTr(key)) return 'tm';
   if (Object.hasOwn(OUTSIDE_ITEMS, key)) return OUTSIDE_ITEMS[key].kind;
   if (key === 'rarecandy') return 'candy';
   if (stoneItems(sim, trade).has(key)) return 'stone';
   return 'held';
 }
 const USABLE = new Set(['medicine', 'candy', 'stone', 'train', 'tm', 'evolve']);
+
+export const fishLine = (result, lang, names) => (result?.item
+  ? say(lang, 'panel.fish.item', { item: withParticle(lang, itemName(result.item, names), '을/를') }) : say(lang, 'panel.fish.bite'));
 
 const BAG_ONLY = new Set(['ball', 'battle', 'field', 'key']);
 
@@ -100,7 +129,7 @@ export function stoneEvolution(ctx, mon, id, party = []) {
   return itemEvolution(ctx.sim.Dex, evolving, id, now);
 }
 
-const pairMon = mon => ({ species: mon.set.species, item: mon.set.item, ...evolveTraits(mon) });
+const pairMon = mon => ({ species: mon.set.species, item: mon.set.item, ...lockMark(mon.evolveLocked) });
 
 export function cordEvolutions(ctx, mon, party = []) {
   const { mon: evolving, now } = evolutionCheck(ctx, mon, party);
@@ -129,6 +158,214 @@ export function abilityChange(sim, mon, id) {
   return to && toID(to) !== now ? to : null;
 }
 
+function formStep(ctx, mon, item) {
+  const now = ctx.sim.Dex.species.get(mon.set.species).name;
+  const [, to, when = {}] = item.form.find(([from]) => from === now) ?? [];
+  if (!to || (when.day && (mon.status === 'frz' || ctx.status?.timeOfDay === 'night'))) return null;
+  const moves = (when.moves ?? []).filter(([old]) => mon.set.moves.includes(old));
+  return { to, ...(moves.length ? { moves } : {}) };
+}
+
+let machinesOf = null;
+const machinesFor = move => {
+  if (!machinesOf) {
+    machinesOf = new Map();
+    for (const id of MACHINE_IDS) { const taught = tmMove(id); if (taught) machinesOf.set(taught, [...(machinesOf.get(taught) ?? []), id]); }
+  }
+  return machinesOf.get(move) ?? [];
+};
+
+const baseLearns = (ctx, species, move) => levelUpMoves(ctx, species).some(([, m]) => m === move) || machinesFor(move).some(id => canLearnTm(ctx.sim, species, id));
+
+function formLabel(dex, names, lang, form) {
+  const species = dex.species.get(form);
+  if (lang !== 'ko') return species.forme ? `${species.forme} ${species.baseSpecies}` : species.baseSpecies;
+  const full = names.speciesFull(form);
+  return /\((.+)\)$/.exec(full)?.[1] ?? full;
+}
+
+const otherAbility = (mon, item) => item.cube.abilities.find(a => toID(a) !== toID(mon.set.ability));
+
+export const ITEM_CHANGES = Object.freeze({
+
+  vitamin: {
+    check: (mon, item, c) => {
+      const evs = mon.set.evs ?? {};
+      const total = STATS.reduce((sum, s) => sum + (evs[s] ?? 0), 0);
+      return (evs[item.vitamin] ?? 0) < EV_STAT_MAX && total < EV_TOTAL_MAX ? { ok: true } : c.no;
+    },
+    ops: (mon, item, c) => [{ op: 'evs', ref: c.ref, stat: item.vitamin, amount: item.evs ?? VITAMIN_EVS }, ...evItemFriendship(mon, item, c.ctx)],
+    after: (mon, item, w) => w.t('panel.usedVitamin', { mon: w.mon(mon), stat: statName(item.vitamin, w.lang) }),
+    text: (item, t, lang) => t('item.vitamin', { stat: statName(item.vitamin, lang) }),
+  },
+
+  evReset: {
+    check: (mon, item, c) => (STATS.some(s => (mon.set.evs?.[s] ?? 0) > 0) ? { ok: true } : c.no),
+    ops: (mon, item, c) => STATS.filter(s => (mon.set.evs?.[s] ?? 0) > 0).map(s => ({ op: 'evs', ref: c.ref, stat: s, amount: -mon.set.evs[s] })),
+    after: (mon, item, w) => w.t('panel.usedEvReset', { mon: w.mon(mon) }),
+    text: (item, t) => t('item.evReset'),
+  },
+
+  evBerry: {
+    check: (mon, item, c) => ((mon.set.evs?.[item.evBerry] ?? 0) > 0 || friendshipOf(c.ctx, mon) < FRIENDSHIP_MAX ? { ok: true } : c.no),
+    ops: (mon, item, c) => [...((mon.set.evs?.[item.evBerry] ?? 0) > 0 ? [{ op: 'evs', ref: c.ref, stat: item.evBerry, amount: -VITAMIN_EVS }] : []),
+      { op: 'friendship', ref: c.ref, source: 'berry' }],
+    after: (mon, item, w) => ((mon.set.evs?.[item.evBerry] ?? 0) > 0 ? w.t('panel.usedEvBerry', { mon: w.mon(mon), stat: statName(item.evBerry, w.lang) }) : null),
+    text: (item, t, lang) => t('item.evBerry', { stat: statName(item.evBerry, lang) }),
+  },
+
+  exp: {
+    check: (mon, item, c) => (mon.set.level < MAX_LEVEL && growthOf(c.ctx.exp, c.ctx.sim.Dex.species.get(mon.set.species)) ? { ok: true } : c.no),
+    ops: (mon, item, c) => [{ op: 'exp', ref: c.ref, amount: item.exp }],
+    after: (mon, item, w) => w.t('panel.usedExp', { mon: w.p(w.mon(mon), '은/는'), n: item.exp.toLocaleString(w.lang) }),
+    text: (item, t, lang) => t('item.expCandy', { n: item.exp.toLocaleString(lang) }),
+  },
+
+  ability: {
+    check: (mon, item, c) => {
+      const to = abilityChange(c.ctx.sim, mon, c.id);
+      return to ? { ok: true, confirm: say(c.lang, 'panel.abilityAsk', { mon: monName(mon, c.ctx.sim, c.names), ability: c.p(c.names.ability(to), '으로/로') }) } : c.no;
+    },
+    ops: (mon, item, c) => [{ op: 'ability', ref: c.ref, ability: abilityChange(c.ctx.sim, mon, c.id) }],
+    after: (mon, item, w, o) => w.t('panel.usedAbility', { mon: w.mon(mon), ability: w.p(w.names.ability(abilityChange(o.ctx.sim, mon, o.id)), '으로/로') }),
+    text: (item, t) => t(item.ability === 'capsule' ? 'item.abilityCapsule' : 'item.abilityPatch'),
+  },
+
+  mint: {
+    check: (mon, item, c) => (item.mint !== mon.set.nature ? { ok: true } : c.no),
+    ops: (mon, item, c) => [{ op: 'nature', ref: c.ref, nature: item.mint }],
+    after: (mon, item, w) => w.t('panel.usedMint', { mon: w.mon(mon), nature: natureName(item.mint, w.lang) }),
+    text: (item, t, lang) => t('item.mint', { nature: natureName(item.mint, lang) }),
+  },
+
+  hyper: {
+    check: (mon, item, c) => {
+      if (mon.set.level < HYPER_TRAIN_LEVEL) return c.no;
+      const stats = STATS.map(s => ({ id: s, iv: mon.set.ivs?.[s] ?? MAX_IV }));
+      if (!stats.some(s => s.iv < MAX_IV)) return c.no;
+      return item.hyper === 'one' ? { ok: true, stats } : { ok: true };
+    },
+    ops: (mon, item, c, { stat }) => [{ op: 'hypertrain', ref: c.ref, stats: item.hyper === 'all' ? 'all' : [stat] }],
+    after: (mon, item, w, o) => w.t('panel.usedHyper', { mon: w.p(w.mon(mon), '은/는'), stats: item.hyper === 'all' ? w.t('diary.allStats') : statName(o.stat, w.lang) }),
+    text: (item, t) => t(item.hyper === 'all' ? 'item.goldBottleCap' : 'item.bottleCap', { n: HYPER_TRAIN_LEVEL }),
+  },
+
+  ppUp: {
+    check: (mon, item, c) => {
+      const moves = mon.set.moves.map(m => {
+        const { pp, maxpp, ppUps } = movePp(c.ctx.sim, mon, m, c.format);
+        return { id: m, pp, maxpp, ppUps, disabled: ppUps >= MAX_PP_UPS || !!c.ctx.sim.Dex.moves.get(m).noPPBoosts };
+      });
+      return moves.some(m => !m.disabled) ? { ok: true, moves, prompt: selectMove(c.lang) } : c.no;
+    },
+    ops: (mon, item, c, { move }) => [{ op: 'ppup', ref: c.ref, move, amount: item.ppUp }, { op: 'friendship', ref: c.ref, source: 'vitamin' }],
+    after: (mon, item, w, o) => w.t('panel.usedPpUp', { move: w.names.move(o.move) }),
+    text: (item, t) => t(item.ppUp > 1 ? 'item.ppMax' : 'item.ppUp'),
+  },
+
+  teraShard: {
+    check: (mon, item, c) => (formatRules(c.ctx.sim, ruleFormat(c.ctx.rule)).champions
+      || fixedTeraType(c.ctx.sim.Dex, mon.set.species) || mon.set.teraType === item.teraShard ? c.no
+      : { ok: true, confirm: say(c.lang, 'panel.teraAsk', { mon: monName(mon, c.ctx.sim, c.names), type: typeName(item.teraShard, c.lang) }) }),
+    ops: (mon, item, c) => [{ op: 'tera', ref: c.ref, type: item.teraShard }],
+    after: (mon, item, w) => w.t('panel.usedTera', { mon: w.mon(mon), type: typeName(item.teraShard, w.lang) }),
+    text: (item, t, lang) => t('item.teraShard', { n: item.cost, type: typeName(item.teraShard, lang) }),
+  },
+
+  form: {
+    check: (mon, item, c) => (formStep(c.ctx, mon, item) ? { ok: true } : c.no),
+    ops: (mon, item, c) => { const { to, moves } = formStep(c.ctx, mon, item); return [{ op: 'form', ref: c.ref, species: to, ...(moves ? { moves } : {}) }]; },
+    after: (mon, item, w) => w.t('panel.usedForm', { mon: w.mon(mon) }),
+    text: (item, t) => t('item.form'),
+  },
+
+  fuse: {
+    check: (mon, item, c) => {
+      const { base, partners } = item.fuse, dex = c.ctx.sim.Dex;
+      const species = dex.species.get(mon.set.species);
+      if (species.baseSpecies !== base) return c.no;
+      if (species.name !== base) {
+        if (!mon.fused) return c.no;
+        if (c.party.length >= PARTY_MAX) return { ok: false, reason: say(c.lang, 'panel.fuse.full') };
+        return { ok: true, confirm: say(c.lang, 'panel.fuse.splitAsk', { a: c.p(monName(mon, c.ctx.sim, c.names), '과/와'), b: c.p(monName(mon.fused, c.ctx.sim, c.names), '을/를') }) };
+      }
+      const fusedBy = m => !!m.fused && Object.values(partners).some(p => p.into === dex.species.get(m.set.species).name);
+      if ([...c.party, ...c.box].some(fusedBy)) return { ok: false, reason: say(c.lang, 'panel.fuse.busy', { item: c.p(c.names.item(c.id), '은/는') }) };
+      const list = hatched(c.party).filter(m => m.uid !== mon.uid && Object.hasOwn(partners, dex.species.get(m.set.species).name)).map(m => m.uid);
+      return list.length ? { ok: true, partners: list, prompt: say(c.lang, 'panel.fuse.pick', { mon: c.p(monName(mon, c.ctx.sim, c.names), '과/와') }) } : c.no;
+    },
+    ops: (mon, item, c, { partner }) => {
+      const { base, partners } = item.fuse, dex = c.ctx.sim.Dex;
+      const known = pairs => pairs.filter(([old]) => mon.set.moves.includes(old));
+      if (mon.fused) {
+        const { moves = [], steed, fallback } = partners[dex.species.get(mon.fused.set.species).name] ?? {};
+        const back = known(moves.map(([old, now]) => [now, old]));
+
+        const forget = steed ? mon.set.moves.filter(move => !baseLearns(c.ctx, base, move)) : [];
+        const learn = fallback && forget.length >= mon.set.moves.length ? fallback : null;
+        return [{ op: 'unfuse', ref: c.ref, species: base, ...(back.length ? { moves: back } : {}), ...(forget.length ? { forget } : {}), ...(learn ? { learn } : {}) }];
+      }
+      const { into, moves = [], learn } = partners[dex.species.get(partner.set.species).name];
+      const pairs = known(moves);
+      return [{ op: 'fuse', ref: c.ref, with: refOf(partner), species: into, ...(pairs.length ? { moves: pairs } : learn ? { learn } : {}) }];
+    },
+    after: (mon, item, w, o) => (mon.fused
+      ? w.t('panel.fuse.splitDone', { a: w.p(w.mon(mon), '과/와'), b: w.p(w.mon(mon.fused), '이/가') })
+      : w.t('panel.fuse.done', { a: w.p(w.mon(mon), '과/와'), b: w.p(w.mon(o.partner), '이/가') })),
+    text: (item, t) => t('item.fuse'),
+  },
+
+  pick: {
+    check: (mon, item, c) => {
+      const species = c.ctx.sim.Dex.species.get(mon.set.species);
+      if (species.baseSpecies !== item.pick.base) return c.no;
+      const choices = Object.keys(item.pick.forms).map(form => ({ id: form, label: formLabel(c.ctx.sim.Dex, c.names, c.lang, form), disabled: form === species.name }));
+      return { ok: true, choices, prompt: say(c.lang, 'panel.formPick') };
+    },
+    ops: (mon, item, c, { choice }) => {
+      const { forms, fallback } = item.pick;
+      const known = Object.values(forms).filter(move => move && mon.set.moves.includes(move));
+      const move = forms[choice];
+      if (move) return [{ op: 'form', ref: c.ref, species: choice, ...(known.length ? { moves: [[known[0], move]] } : { learn: move }) }];
+      const none = known.length >= mon.set.moves.length;
+      return [{ op: 'form', ref: c.ref, species: choice, ...(known.length ? { forget: known } : {}), ...(none ? { learn: fallback } : {}) }];
+    },
+    after: (mon, item, w) => w.t('panel.usedForm', { mon: w.mon(mon) }),
+    text: (item, t) => t('item.form'),
+  },
+
+  cube: {
+    check: (mon, item, c) => {
+      const species = c.ctx.sim.Dex.species.get(mon.set.species);
+      if (species.baseSpecies !== 'Zygarde' || !item.cube.forms.includes(species.name)) return c.no;
+      const construct = toID(mon.set.ability) === toID(item.cube.abilities[1]);
+      return { ok: true, prompt: say(c.lang, 'panel.cube.ask'), choices: [
+        { id: 'form', label: say(c.lang, 'panel.cube.form'), disabled: !construct }, { id: 'ability', label: say(c.lang, 'panel.cube.ability'), disabled: false },
+        { id: 'moves', label: say(c.lang, 'panel.cube.moves'), disabled: false }] };
+    },
+    choose: (mon, item, c, choice) => {
+      if (choice === 'moves') {
+        return { prompt: say(c.lang, 'panel.cube.movePick'),
+          choices: item.cube.moves.map(move => ({ id: `teach:${move}`, label: c.names.move(move), disabled: mon.set.moves.includes(move) })) };
+      }
+      return choice?.startsWith('teach:') ? { teach: choice.slice('teach:'.length) } : null;
+    },
+    ops: (mon, item, c, { choice }) => {
+      const { forms } = item.cube;
+      if (choice === 'form') return [{ op: 'form', ref: c.ref, species: forms.find(f => f !== c.ctx.sim.Dex.species.get(mon.set.species).name) }];
+      return [{ op: 'ability', ref: c.ref, ability: otherAbility(mon, item) }];
+    },
+    after: (mon, item, w, o) => (o.choice === 'form' ? w.t('panel.usedForm', { mon: w.mon(mon) })
+      : w.t('panel.usedAbility', { mon: w.mon(mon), ability: w.p(w.names.ability(otherAbility(mon, item)), '으로/로') })),
+    text: (item, t) => t('item.form'),
+  },
+});
+
+export function itemChange(id) {
+  const item = OUTSIDE_ITEMS[toID(id)];
+  return (item && Object.keys(ITEM_CHANGES).find(field => item[field] !== undefined)) ?? null;
+}
+
 const STATUSES = new Set(['par', 'brn', 'slp', 'frz', 'psn', 'tox']);
 
 export const statusName = (status, lang) => (STATUSES.has(status) ? say(lang, `status.${status}`) : '');
@@ -142,11 +379,12 @@ export function itemDescription(id, sim, lang) {
   if (kind === 'ball') return t('item.ball');
   if (kind === 'battle') {
     if (bag?.boost) return t('item.boost', { stat: statName(bag.boost, lang) });
-    return t('item.crit');
+    if (bag?.crit) return t('item.crit');
   }
-  const text = lang === 'ko' ? itemText(key) : null;
+
+  const text = itemText(key, lang);
   if (text) return text;
-  if (kind === 'tm') return t('item.tm', { move: withParticle(lang, namesFor(lang, sim).move(tmMove(key)), '을/를') });
+  if (kind === 'tm') return t(isTr(key) ? 'item.tr' : 'item.tm', { move: withParticle(lang, namesFor(lang, sim).move(tmMove(key)), '을/를') });
   if (kind === 'medicine') {
     bag = medicineOf(key);
     if (bag.all) return t('item.reviveAll');
@@ -159,14 +397,8 @@ export function itemDescription(id, sim, lang) {
   }
   if (kind === 'candy') return t('item.candy');
   if (kind === 'stone' || kind === 'evolve') return t('item.stone');
-  const outside = OUTSIDE_ITEMS[key] ?? {};
-  if (outside.vitamin) return t('item.vitamin', { stat: statName(outside.vitamin, lang) });
-  if (outside.evBerry) return t('item.evBerry', { stat: statName(outside.evBerry, lang) });
-  if (outside.exp) return t('item.expCandy', { n: outside.exp.toLocaleString(lang) });
-  if (outside.ability) return t(outside.ability === 'capsule' ? 'item.abilityCapsule' : 'item.abilityPatch');
-  if (outside.mint) return t('item.mint', { nature: natureName(outside.mint, lang) });
-  if (outside.hyper) return t(outside.hyper === 'all' ? 'item.goldBottleCap' : 'item.bottleCap', { n: HYPER_TRAIN_LEVEL });
-  if (outside.ppUp) return t(outside.ppUp > 1 ? 'item.ppMax' : 'item.ppUp');
+  const change = itemChange(key);
+  if (change) return ITEM_CHANGES[change].text(OUTSIDE_ITEMS[key], t, lang);
   if (kind === 'treasure' || kind === 'field' || kind === 'key') return t(`item.${kind}`);
   return t('item.held');
 }
@@ -175,8 +407,8 @@ const noEffect = lang => say(lang, 'panel.noEffect');
 
 const selectMove = lang => say(lang, 'panel.selectMove');
 
-export function useCheck(mon, itemId, ctx, lang, party = [], format = DEFAULT_FORMAT) {
-  const { sim, exp } = ctx;
+export function useCheck(mon, itemId, ctx, lang, party = [], format = DEFAULT_FORMAT, bag = null, box = []) {
+  const { sim } = ctx;
   const id = toID(itemId), kind = itemKind(id, sim, ctx.tradeEvolution);
   const fainted = mon.hp === 0;
   const no = { ok: false, reason: noEffect(lang) };
@@ -198,19 +430,17 @@ export function useCheck(mon, itemId, ctx, lang, party = [], format = DEFAULT_FO
     return useful ? { ok: true } : no;
   }
   if (kind === 'candy') return mon.set.level < MAX_LEVEL ? { ok: true } : no;
-  // A Pokémon that will not evolve says so when the item would otherwise evolve it
-  const refused = (kind === 'stone' || kind === 'evolve') && evolveLocked(sim.Dex, { species: mon.set.species, ...evolveTraits(mon) })
-    && { ok: false, reason: say(lang, 'panel.refusesEvolution', { mon: p(monName(mon, sim, names), '은/는') }) };
-  const freed = refused && { ...mon, evolveLocked: false, set: { ...mon.set, gigantamax: false } };
+
+  const refused = { ok: false, reason: say(lang, 'panel.refusesEvolution', { mon: p(monName(mon, sim, names), '은/는') }) };
+  const evolving = (evolutions, retry) => (evolutions ? { ok: true, evolutions } : retry(willingMon(mon)) ? refused : no);
   if (kind === 'stone') {
-    const into = stoneEvolution(ctx, mon, id, party);
-    return into ? { ok: true, evolutions: [{ uid: mon.uid, into }] } : refused && stoneEvolution(ctx, freed, id, party) ? refused : no;
+    const into = m => stoneEvolution(ctx, m, id, party);
+    return evolving(into(mon) && [{ uid: mon.uid, into: into(mon) }], into);
   }
   if (kind === 'evolve') {
 
-    const cords = (ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION) !== 'level';
-    const evolutions = cords ? cordEvolutions(ctx, mon, party) : null;
-    return evolutions ? { ok: true, evolutions } : refused && cords && cordEvolutions(ctx, freed, party) ? refused : no;
+    if ((ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION) === 'level') return no;
+    return evolving(cordEvolutions(ctx, mon, party), m => cordEvolutions(ctx, m, party));
   }
   if (kind === 'tm') {
     const move = tmMove(id);
@@ -220,41 +450,19 @@ export function useCheck(mon, itemId, ctx, lang, party = [], format = DEFAULT_FO
     if (!canLearnTm(sim, mon.set.species, id)) return { ok: false, reason: say(lang, 'panel.cannotLearn', values) };
     return { ok: true, teach: move };
   }
-  if (kind !== 'train') return no;
-  const item = OUTSIDE_ITEMS[id];
-  if (item.vitamin) {
-    const evs = mon.set.evs ?? {};
-    const total = STATS.reduce((sum, s) => sum + (evs[s] ?? 0), 0);
-    return (evs[item.vitamin] ?? 0) < EV_STAT_MAX && total < EV_TOTAL_MAX ? { ok: true } : no;
-  }
 
-  if (item.evBerry) return (mon.set.evs?.[item.evBerry] ?? 0) > 0 || friendshipOf(ctx, mon) < FRIENDSHIP_MAX ? { ok: true } : no;
-
-  if (item.ppUp) {
-    const moves = mon.set.moves.map(m => {
-      const { pp, maxpp, ppUps } = movePp(sim, mon, m, format);
-      return { id: m, pp, maxpp, ppUps, disabled: ppUps >= MAX_PP_UPS || !!sim.Dex.moves.get(m).noPPBoosts };
-    });
-    return moves.some(m => !m.disabled) ? { ok: true, moves, prompt: selectMove(lang) } : no;
-  }
-  if (item.exp) return mon.set.level < MAX_LEVEL && growthOf(exp, sim.Dex.species.get(mon.set.species)) ? { ok: true } : no;
-  if (item.ability) {
-    const to = abilityChange(sim, mon, id);
-    return to ? { ok: true, confirm: say(lang, 'panel.abilityAsk', { mon: monName(mon, sim, names), ability: p(names.ability(to), '으로/로') }) } : no;
-  }
-  if (item.mint) return item.mint !== mon.set.nature ? { ok: true } : no;
-  if (item.hyper) {
-    if (mon.set.level < HYPER_TRAIN_LEVEL) return no;
-    const stats = STATS.map(s => ({ id: s, iv: mon.set.ivs?.[s] ?? MAX_IV }));
-    if (!stats.some(s => s.iv < MAX_IV)) return no;
-    return item.hyper === 'one' ? { ok: true, stats } : { ok: true };
-  }
-  return no;
+  const change = (kind === 'train' || kind === 'key') && itemChange(id);
+  if (!change) return no;
+  const item = OUTSIDE_ITEMS[id], cost = item.cost ?? 1;
+  const result = ITEM_CHANGES[change].check(mon, item, { id, ctx, lang, names, p, no, format, party, box });
+  if (result.ok && bag && (bag[id] ?? 0) < cost) return { ok: false, reason: say(lang, 'panel.needMore', { item: p(names.item(id), '이/가'), n: cost }) };
+  return result;
 }
 
 export const partyWide = id => !!OUTSIDE_ITEMS[toID(id)]?.all;
 
-export function useOps(mon, itemId, { sim }, { move, stat } = {}) {
+export function useOps(mon, itemId, ctx, { move, stat, partner, choice } = {}) {
+  const { sim } = ctx;
   const id = toID(itemId), kind = itemKind(id, sim), ref = mon ? refOf(mon) : null;
   const ops = [];
   const outside = OUTSIDE_ITEMS[id];
@@ -269,19 +477,20 @@ export function useOps(mon, itemId, { sim }, { move, stat } = {}) {
     }
     if (ref && Object.hasOwn(FRIENDSHIP_STEPS, id)) ops.push({ op: 'friendship', ref, source: id });
   } else if (kind === 'candy') ops.push({ op: 'level', ref, delta: 1, candy: true });
-  else if (kind === 'train' && outside.vitamin) ops.push({ op: 'evs', ref, stat: outside.vitamin, amount: VITAMIN_EVS }, { op: 'friendship', ref, source: 'vitamin' });
-  else if (kind === 'train' && outside.evBerry) {
-    if ((mon.set.evs?.[outside.evBerry] ?? 0) > 0) ops.push({ op: 'evs', ref, stat: outside.evBerry, amount: -VITAMIN_EVS });
-    ops.push({ op: 'friendship', ref, source: 'berry' });
-  }
-  else if (kind === 'train' && outside.exp) ops.push({ op: 'exp', ref, amount: outside.exp });
-  else if (kind === 'train' && outside.ability) ops.push({ op: 'ability', ref, ability: abilityChange(sim, mon, id) });
-  else if (kind === 'train' && outside.mint) ops.push({ op: 'nature', ref, nature: outside.mint });
-  else if (kind === 'train' && outside.hyper) ops.push({ op: 'hypertrain', ref, stats: outside.hyper === 'all' ? 'all' : [stat] });
-  else if (kind === 'train' && outside.ppUp) ops.push({ op: 'ppup', ref, move, amount: outside.ppUp }, { op: 'friendship', ref, source: 'vitamin' });
+  else if ((kind === 'train' || kind === 'key') && itemChange(id)) ops.push(...ITEM_CHANGES[itemChange(id)].ops(mon, outside, { id, ctx, ref }, { move, stat, partner, choice }));
   else throw new Error(`Not an item used outside battle: ${id}`);
-  ops.push({ op: 'item', item: id, delta: -1, fromBag: true });
+
+  const cost = outside?.cost ?? 1;
+  ops.push({ op: 'item', item: id, delta: -cost, fromBag: true });
+  if (kind === 'key') ops.push({ op: 'item', item: id, delta: cost });
   return ops;
+}
+
+function evItemFriendship(mon, item, ctx) {
+  const source = item.friendship ?? 'vitamin', ref = refOf(mon);
+  if (source === 'vitamin') return [{ op: 'friendship', ref, source }];
+  const amount = friendshipStep(friendshipOf(ctx, mon), source, ruleValues(ctx).friendshipSv);
+  return amount ? [{ op: 'friendship', ref, source, amount }] : [];
 }
 
 export const canHold = (id, sim, holder = null) => !NOT_HOLDABLE.has(itemKind(id, sim)) && !isDexItem(holder, id);
@@ -301,6 +510,7 @@ export const actions = {
   swapIn: (boxMon, partyMon) => ({ type: 'box', ops: [{ op: 'swap', a: refOf(boxMon), b: refOf(partyMon) }] }),
   release: mon => ({ type: 'release', ops: [{ op: 'release', ref: refOf(mon) }] }),
   nickname: (mon, name) => ({ type: 'nickname', ops: [{ op: 'nickname', ref: refOf(mon), name: String(name ?? '').trim() }] }),
+
   evolveLock: (mon, locked) => ({ type: 'evolvelock', ops: [{ op: 'evolvelock', ref: refOf(mon), locked: locked === true }] }),
   give: (mon, item) => ({ type: 'hold', ops: [{ op: 'hold', ref: refOf(mon), item: itemId(item), fromBag: true }] }),
   take: mon => ({ type: 'hold', ops: [{ op: 'hold', ref: refOf(mon), item: '', fromBag: true }] }),
@@ -313,7 +523,25 @@ export const actions = {
   unbreed: () => ({ type: 'breed', ops: [{ op: 'breed', stop: true }] }),
 
   rest: () => ({ type: 'rest', ops: [{ op: 'rest' }] }),
+
+  lab: (items, place = null) => ({ type: 'lab', ops: [{ op: 'lab', items: items.map(itemId), ...(place ? { place } : {}) }] }),
 };
+
+const labWhere = here => (here && typeof here === 'object' ? { open: !!here.open, lab: here.lab ?? null } : { open: !!here, lab: null });
+
+export function labView(state, sim, lang, { here = false, locked = false, open = false } = {}) {
+  const at = labWhere(here);
+  const names = namesFor(lang, sim);
+  const mon = labOf(state)[0] ?? null;
+  const research = mon ? { items: mon.lab.items, name: fossilsLine(mon.lab.items, lang, id => itemName(id, names)), icon: itemIcon(mon.lab.items[0], sim),
+    done: Math.max(0, LAB_TIME - mon.lab.left), total: LAB_TIME } : null;
+  const pill = at.open || !!research;
+  const can = new Set(at.open && !locked && !research ? labFossils(state.bag) : []);
+  const fossils = at.open ? bagFossils(state.bag).map(id => ({ id, name: itemName(id, names), icon: itemIcon(id, sim), count: state.bag[id], ok: can.has(id) })) : [];
+  return { pill, open: pill && !!open, here: at.open, send: can.size > 0, research, fossils, place: labPlaceName(mon ? mon.lab.place : at.lab?.id, lang) };
+}
+
+const freshIn = (mon, ui) => !!mon?.revived && !(ui.seen ?? []).includes(mon.uid);
 
 export function restView(state, sim, locked) {
   const left = restsLeft(state);
@@ -422,8 +650,12 @@ export function spinInto(ctx, mon, spin) {
 
 export function teachAction(mon, item, move, result) {
   if (!result?.learned) return null;
-  return { type: 'use', item: toID(item), ops: [learnOp(mon, move, result), { op: 'item', item: toID(item), delta: -1, fromBag: true }] };
+  const id = toID(item), keep = OUTSIDE_ITEMS[id]?.kind === 'key';
+  return { type: 'use', item: id, ops: [learnOp(mon, move, result), { op: 'item', item: id, delta: -1, fromBag: true }, ...(keep ? [{ op: 'item', item: id, delta: 1 }] : [])] };
 }
+
+const chooseMenu = (ui, mon, item, { prompt, choices }, t) => ({ ...ui, menu: { where: 'choose', uid: mon.uid, use: item, text: prompt,
+  options: [...choices.map(o => opt('choose', o.label, o.disabled, { item: o.id })), opt('cancel', t('panel.menu.cancel'))] } });
 
 const canRemember = (ctx, mon) => rememberableMoves(ctx, mon).length > 0;
 
@@ -454,13 +686,17 @@ export function boxMenu(mon, { locked = false, debug = false }, lang) {
   const r = row(lang);
 
   if (isEgg(mon)) return [r('withdraw', 'withdraw', locked), ...debugRows(debug, locked, lang), r('cancel', 'cancel')];
-  return [r('withdraw', 'withdraw', locked), r('summary', 'summary'), r('release', 'release', locked), ...debugRows(debug, locked, lang), r('cancel', 'cancel')];
+  return [r('withdraw', 'withdraw', locked), r('summary', 'summary'), r('release', 'release', locked || !!mon.fused), ...debugRows(debug, locked, lang), r('cancel', 'cancel')];
 }
 
 export function bagMenu(id, { locked = false, sim, state, trade }, lang) {
   const kind = itemKind(id, sim, trade);
-  if (NOT_TOSSABLE.has(kind)) return null;
   const r = row(lang);
+
+  if (isRod(toID(id))) return [r('use', 'use', locked || !hatchedParty(state).length), r('cancel', 'cancel')];
+
+  if (kind === 'key' && itemChange(id)) return [r('use', 'use', locked || !state.party.length), r('cancel', 'cancel')];
+  if (NOT_TOSSABLE.has(kind)) return null;
   if (isDexItem(state, id)) return [r('use', 'use'), r('cancel', 'cancel')];
   const list = [];
   if (USABLE.has(kind)) list.push(r('use', 'use', locked || !state.party.length));
@@ -505,14 +741,16 @@ export function slotView(mon, ctx, state, lang) {
   };
 }
 
+export const pokeapiItemUrl = id => pokeapiItemFile(toID(id));
+
 const BAG_FRAMES = new Map(bagIcons.items.textures[0].frames.map(f => [f.filename, f]));
 export function itemIcon(id, sim) {
   const key = toID(id);
   const move = tmMove(key);
   const frame = BAG_FRAMES.get(move ? `tm_${toID(sim.Dex.moves.get(move).type)}` : key);
   if (frame) return { sheet: 'pokerogue', x: frame.frame.x, y: frame.frame.y, w: frame.frame.w, h: frame.frame.h, ox: frame.spriteSourceSize.x, oy: frame.spriteSourceSize.y };
-  const item = sim.Dex.items.get(key);
-  return item?.exists && Number.isInteger(item.spritenum) ? { sheet: 'showdown', num: item.spritenum } : null;
+  const url = pokeapiItemUrl(key);
+  return url ? { url } : null;
 }
 
 export const BAG_GROUPS = Object.freeze(['medicine', 'ball', 'battle', 'tm', 'other', 'treasure', 'key']);
@@ -555,24 +793,28 @@ export function foodList(state, sim, lang) {
 }
 
 export function panelModel({ state, ctx, lang, locked = false, resume = false, debug = false, offer = null, travel = null, compat = !!travel, dexHome = null,
-  dexRegions = [], dexMentions = [], ui, screen = null, money = state.money === null ? null : state.money ?? 0 }) {
+  dexRegions = [], dexMentions = [], ui, screen = null, money = state.money === null ? null : state.money ?? 0, labHere = false }) {
   const { sim } = ctx;
   const party = Array.from({ length: PARTY_MAX }, (_, i) => (state.party[i] ? slotView(state.party[i], ctx, state, lang) : null));
   const count = boxCount(state);
   const index = Math.max(0, Math.min(count - 1, ui.box ?? 0));
   const cells = Array.from({ length: BOX_SIZE }, (_, i) => {
     const mon = state.box[index * BOX_SIZE + i];
-    return mon ? slotView(mon, ctx, state, lang) : null;
+    return mon ? { ...slotView(mon, ctx, state, lang), fresh: freshIn(mon, ui) } : null;
   });
   const tabs = TABS;
   const tab = tabs.includes(ui.tab) ? ui.tab : 'party';
   const subs = travelSubs({ trip: !!(compat && travel), badges: !!(compat || debug) }), sub = travelSub(ui, subs);
-  const alerts = { party: state.party.some(m => pendingCount(m) > 0), box: false, bag: false };
+  const setSubs = settingsSubs({ bot: !!(compat && travel) }), setSub = settingsSub(ui, setSubs);
+
+  const alerts = { party: state.party.some(m => pendingCount(m) > 0), box: state.box.some(m => freshIn(m, ui)), bag: false };
   return {
-    lang, open: !!ui.open, tab, tabs, travel: compat ? travel : null, compat: !!compat, subs, sub, locked, resume: !!resume, screen,
+    lang, open: !!ui.open, tab, tabs, travel: compat ? travel : null, compat: !!compat, subs, sub, setSubs, setSub, locked, resume: !!resume, screen,
+    pick: tab === 'party' && PICKS.includes(ui.pick) ? pickView(ui.pick, state, ctx, lang, locked) : null,
     dex: tab === 'travel' && sub === 'dex' && !screen ? dexView({ state, sim, lang, names: namesFor(lang, sim), ui, home: dexHome, regions: dexRegions, mentions: dexMentions }) : null,
     alerts,
     party, box: { index, count, name: boxName(state, index, lang), cells },
+    lab: labView(state, sim, lang, { here: labHere, locked, open: ui.lab }),
     bag: { money, groups: bagView(state, sim, lang, ctx.tradeEvolution) },
     add: debug ? addable(state, locked) : null, debug: !!debug,
     heal: debug ? !locked : null,
@@ -580,7 +822,8 @@ export function panelModel({ state, ctx, lang, locked = false, resume = false, d
     offer: offer && !locked ? { note: !!offer.note, button: !!offer.button } : null,
     breeding: breedingView(state, ctx, lang),
 
-    breedPick: ui.select?.mode === 'breed', breedable: !locked && hatchedParty(state).length >= 2,
+    breedPick: ui.select?.mode === 'breed', fusePick: ui.select?.mode === 'fuse' ? ui.select.list : null,
+    breedable: !locked && hatchedParty(state).length >= 2,
 
     breedPill: (!locked && hatchedParty(state).length >= 2) || !!state.breeding,
     pairShown: !ui.pairHidden || ui.select?.mode === 'breed',
@@ -590,6 +833,16 @@ export function panelModel({ state, ctx, lang, locked = false, resume = false, d
     window: (screen && !ui.message ? screen.window : null) ?? windowOf(ui, lang, sim),
     bar: { on: !!ui.gathered && !ui.open, alert: !!resume || Object.values(alerts).some(Boolean) },
   };
+}
+
+function pickView(kind, state, ctx, lang, locked) {
+  const mons = state.party.filter(mon => !isEgg(mon));
+  const why = kind === 'train' ? mon => trainBlock(mon, ctx, locked) : mon => (locked ? 'battle' : canPet(mon) ? null : 'fainted');
+  const blocks = mons.map(why);
+
+  const all = locked ? 'battle' : kind === 'train' && !effortOn(ctx.sim, ruleFormat(ctx.rule)) ? 'noEffort' : null;
+  const hint = kind === 'train' ? (all ? `panel.trainWhy.${all}` : 'panel.trainHint') : (all === 'battle' ? 'panel.amieLocked' : 'panel.amieHint');
+  return { kind, hint, slots: mons.map((mon, i) => ({ ...slotView(mon, ctx, state, lang), off: !!blocks[i] })) };
 }
 
 const addable = (state, locked) => ({ party: !locked && state.party.length < PARTY_MAX, box: !locked, bag: !locked });
@@ -628,15 +881,20 @@ function windowOf(ui, lang, sim) {
   return null;
 }
 
-export const initialUi = () => ({ open: false, gathered: true, tab: 'party', box: 0, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null, gym: null, screen: null, pairHidden: false,
-  sub: null, dex: null, dexOpen: null });
+export const initialUi = () => ({ open: false, gathered: true, tab: 'party', box: 0, lab: false, seen: [], menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null, gym: null, screen: null, pairHidden: false,
+  sub: null, dex: null, dexOpen: null, pick: null, setsub: null });
 
 const calm = ui => ({ ...ui, menu: null, select: null, ask: null, moves: null, stats: null, count: null, message: null, gym: null, dexOpen: null });
 const findIn = (list, uid) => list.find(m => m.uid === uid) ?? null;
 
 const fold = ui => ({ ui: { ...ui, open: false }, effect: null });
 
-const outside = ui => (ui.open ? fold(ui) : { ui: { ...ui, gathered: true }, effect: null });
+const outside = (ui, always, stay = false) => (ui.open ? (stay ? { ui, effect: null } : fold(ui)) : always ? { ui, effect: null } : { ui: { ...ui, gathered: true }, effect: null });
+
+export function openUi(ui, mode, was = mode) {
+  if (openWays(mode).always) return ui.gathered ? { ...ui, gathered: false } : ui;
+  return openWays(was).always && !ui.open && !ui.gathered ? { ...ui, gathered: true } : ui;
+}
 
 export function backStep(ui) {
   if (!ui.open) return null;
@@ -646,6 +904,7 @@ export function backStep(ui) {
   if (ui.gym) return { t: 'gymClose' };
   if (ui.dexOpen) return { t: 'dexClose' };
   if (ui.screen) return { t: 'scBack' };
+  if (ui.pick && ui.tab === 'party') return { t: 'pickBack' };
   return { t: 'fold' };
 }
 
@@ -663,12 +922,12 @@ export function menuCloses(ui, hit) {
 
 const breedPick = (uid, w) => ({ mode: 'breed', uid, text: w.t('panel.breed.pick', { n: uid ? 1 : 0 }) });
 
-export function reduce(ui, hit, { state, ctx, lang, locked = false, debug = false, place = DEFAULT_SCREEN_PLACE }) {
+export function reduce(ui, hit, { state, ctx, lang, locked = false, debug = false, place = DEFAULT_SCREEN_PLACE, open = DEFAULT_PANEL_OPEN, stay = false, labHere = false }) {
   if (hit?.t === 'back') {
     const step = backStep(ui);
-    return step ? reduce(ui, step, { state, ctx, lang, locked, debug, place }) : { ui, effect: null };
+    return step ? reduce(ui, step, { state, ctx, lang, locked, debug, place, open, stay, labHere }) : { ui, effect: null };
   }
-  const env = { state, ctx, locked, debug, panel: place === 'panel', w: wordsOf(lang, ctx.sim, state) };
+  const env = { state, ctx, locked, debug, always: openWays(open).always, stay: !!stay, labHere, panel: place === 'panel', w: wordsOf(lang, ctx.sim, state) };
   const out = hit?.t?.startsWith('gym') ? badgePress(ui, hit, { state, lang, debug, locked })
     : hit?.t?.startsWith('dex') ? dexPress(ui, hit, { state, sim: ctx.sim, lang })
     : hit?.t?.startsWith('sc') ? screenPress(ui, hit, env) : reduceRaw(ui, hit, env);
@@ -677,7 +936,7 @@ export function reduce(ui, hit, { state, ctx, lang, locked = false, debug = fals
   return out;
 }
 
-const LOCK_FREE_EFFECTS = new Set(['summary', 'rename', 'renameBox', 'resume', 'panelSet']);
+const LOCK_FREE_EFFECTS = new Set(['summary', 'rename', 'renameBox', 'resume', 'tale', 'settings']);
 
 function wordsOf(lang, sim, state) {
   const names = namesFor(lang, sim);
@@ -688,7 +947,7 @@ function wordsOf(lang, sim, state) {
 }
 
 function reduceRaw(ui, hit, env) {
-  const { state, ctx, locked, debug, panel, w } = env;
+  const { state, ctx, locked, debug, panel, w, always, stay, labHere } = env;
   const { sim } = ctx;
   const same = { ui, effect: null };
   const party = state.party, box = state.box;
@@ -696,14 +955,17 @@ function reduceRaw(ui, hit, env) {
   switch (hit?.t) {
     case 'tab':
 
-      if (ui.open && ui.tab === hit.tab) return ui.screen ? { ui: { ...calm(ui), screen: null }, effect: null } : fold(ui);
+      if (ui.open && ui.tab === hit.tab) return ui.screen ? { ui: { ...calm(ui), screen: null }, effect: null } : ui.pick ? { ui: { ...calm(ui), pick: null }, effect: null } : fold(ui);
 
       if (ui.tab === hit.tab) return { ui: { ...ui, open: true }, effect: null };
-      return { ui: { ...calm(ui), open: true, tab: hit.tab, screen: null }, effect: null };
+      return { ui: { ...calm(ui), open: true, tab: hit.tab, screen: null, pick: null }, effect: null };
     case 'fold': return fold(ui);
     case 'bar': return { ui: { ...ui, gathered: false }, effect: null };
-    case 'outside': return outside(ui);
-    case 'sub': return { ui: { ...calm(ui), sub: hit.sub }, effect: null };
+    case 'outside': return outside(ui, always, stay);
+    case 'sub': return { ui: { ...calm(ui), ...(SETTINGS_SUBS.includes(hit.sub) ? { setsub: hit.sub } : { sub: hit.sub }) }, effect: null };
+
+    case 'pick': return PICKS.includes(hit.pick) ? { ui: { ...calm(ui), tab: 'party', screen: null, pick: hit.pick }, effect: null } : same;
+    case 'pickBack': return { ui: { ...calm(ui), pick: null }, effect: null };
     case 'lvnext': {
       const mon = findIn(party, hit.uid);
       return mon && !locked ? levelUpNext(ui, mon) : same;
@@ -711,6 +973,17 @@ function reduceRaw(ui, hit, env) {
     case 'resume': return { ui: { ...calm(ui), open: false }, effect: { kind: 'resume' } };
     case 'msg': return { ui: { ...ui, message: null }, effect: null };
     case 'no': return { ui: { ...ui, ask: null }, effect: null };
+
+    case 'lab': return labView(state, sim, w.lang, { here: labHere }).pill || ui.lab ? { ui: { ...calm(ui), lab: !ui.lab }, effect: null } : same;
+
+    case 'labFossil': return labView(state, sim, w.lang, { here: labHere, locked }).fossils.some(f => f.id === hit.item && f.ok) ? labPick(calm(ui), hit.item, null, env) : same;
+
+    case 'seen': return freshIn(findIn(box, hit.uid), ui) ? { ui: { ...ui, seen: [...ui.seen ?? [], hit.uid] }, effect: null } : same;
+    case 'labSend': {
+      if (!labView(state, sim, w.lang, { here: labHere, locked }).send) return same;
+      const options = [...labFossils(state.bag).map(id => opt('fossil', `${w.label(id)} ×${state.bag[id]}`, false, { item: id })), opt('cancel', w.t('panel.menu.cancel'))];
+      return { ui: { ...calm(ui), menu: { where: 'lab', text: w.t('panel.lab.pick'), options } }, effect: null };
+    }
     case 'boxnav': {
       const count = boxCount(state);
       return { ui: { ...calm(ui), box: ((ui.box ?? 0) + hit.d + count) % count }, effect: null };
@@ -725,6 +998,10 @@ function reduceRaw(ui, hit, env) {
     case 'yes': {
       const ask = ui.ask;
       if (!ask) return same;
+      if (ask.kind === 'lab') {
+        if (locked || !ask.items.every(id => state.bag?.[id] > 0)) return { ui: calm(ui), effect: null };
+        return { ui: calm(ui), effect: { kind: 'queue', action: actions.lab(ask.items, labWhere(labHere).lab?.id), after: w.t('panel.lab.sent', { item: w.p(labName(ask.items, w), '을/를') }) } };
+      }
       const mon = findIn(box, ask.uid) ?? findIn(party, ask.uid);
       if (!mon) return { ui: { ...ui, ask: null }, effect: null };
 
@@ -758,6 +1035,11 @@ function reduceRaw(ui, hit, env) {
       if (locked || !mon || !canPet(mon)) return same;
       return { ui: calm(ui), effect: { kind: 'pet', uid: mon.uid } };
     }
+    case 'train': {
+      const mon = findIn(party, hit.uid);
+      if (!mon || trainBlock(mon, ctx, locked)) return same;
+      return { ui: calm(ui), effect: { kind: 'train', uid: mon.uid } };
+    }
 
     case 'breed': {
 
@@ -769,8 +1051,10 @@ function reduceRaw(ui, hit, env) {
     case 'rebreed': return locked || !state.breeding || hatchedParty(state).length < 2 ? same : { ui: { ...calm(ui), pairHidden: false, select: breedPick(null, w) }, effect: null };
     case 'unbreed': return locked || !state.breeding ? same : { ui: { ...calm(ui), pairHidden: false }, effect: { kind: 'queue', action: actions.unbreed() } };
     case 'later': return locked ? same : { ui: calm(ui), effect: { kind: 'importLater' } };
-    case 'panelSet': return { ui: calm(ui), effect: { kind: 'panelSet', key: hit.key, on: !!hit.on } };
     case 'botSet': return locked ? same : { ui: calm(ui), effect: { kind: 'botTravel', change: { key: hit.key, on: !!hit.on } } };
+
+    case 'tale': return Object.values(TALE_ROWS).flat().includes(hit.key) && !(locked && hit.key === 'battles') ? { ui: calm(ui), effect: { kind: 'tale', key: hit.key, value: hit.value } } : same;
+    case 'allSettings': return { ui: calm(ui), effect: { kind: 'settings' } };
     case 'guideClear': return locked ? same : { ui: calm(ui), effect: { kind: 'botTravel', change: { clear: 'guide' } } };
 
     case 'rest': {
@@ -815,19 +1099,12 @@ function useEffect(mon, item, ctx, w, options = {}) {
   return { kind: 'queue', action: actions.use(mon, id, ctx, options), after: useAfter(mon, id, ctx, w, options), followLevelUp: levels ? mon.uid : undefined };
 }
 
-function useAfter(mon, id, { sim }, w, { stat, move } = {}) {
-  const { t, p, lang } = w;
-  const outside = OUTSIDE_ITEMS[id] ?? {}, who = mon ? w.mon(mon) : '';
+function useAfter(mon, id, ctx, w, { stat, move, partner, choice } = {}) {
+  const { t, p } = w;
+  const outside = OUTSIDE_ITEMS[id] ?? {}, change = itemChange(id);
   if (outside.all) return t('panel.usedAll');
-  if (outside.vitamin) return t('panel.usedVitamin', { mon: who, stat: statName(outside.vitamin, lang) });
-  if (outside.evBerry && (mon.set.evs?.[outside.evBerry] ?? 0) > 0) return t('panel.usedEvBerry', { mon: who, stat: statName(outside.evBerry, lang) });
-  if (outside.exp) return t('panel.usedExp', { mon: p(who, '은/는'), n: outside.exp.toLocaleString(lang) });
-  if (outside.ability) return t('panel.usedAbility', { mon: who, ability: p(w.names.ability(abilityChange(sim, mon, id)), '으로/로') });
-  if (outside.mint) return t('panel.usedMint', { mon: who, nature: natureName(outside.mint, lang) });
-  if (outside.hyper) return t('panel.usedHyper', { mon: p(who, '은/는'), stats: outside.hyper === 'all' ? t('diary.allStats') : statName(stat, lang) });
-    // Same text for PP Max
-  if (outside.ppUp) return t('panel.usedPpUp', { move: w.names.move(move) });
-  return t('panel.used', { mon: who, item: p(itemName(id, w.names), '을/를') });
+  return (mon && change && ITEM_CHANGES[change].after(mon, outside, w, { id, ctx, stat, move, partner, choice }))
+    || t('panel.used', { mon: mon ? w.mon(mon) : '', item: p(itemName(id, w.names), '을/를') });
 }
 
 const EGG_LOOKS = [[40, 'long'], [10, 'far'], [5, 'near'], [0, 'soon']];
@@ -844,7 +1121,9 @@ function slotPress(ui, hit, { state, ctx, locked, debug, panel, w }) {
     const mon = findIn(state.box, hit.uid);
     if (!mon) return { ui, effect: null };
     const text = isEgg(mon) ? eggText(mon, w, debug) : t('panel.boxAsk', { mon: p(w.mon(mon), '을/를') });
-    return { ui: { ...calm(ui), menu: { where: 'box', uid: mon.uid, text, options: boxMenu(mon, { locked, debug }, w.lang) } }, effect: null };
+
+    const seen = freshIn(mon, ui) ? { seen: [...ui.seen ?? [], mon.uid] } : {};
+    return { ui: { ...calm(ui), ...seen, menu: { where: 'box', uid: mon.uid, text, options: boxMenu(mon, { locked, debug }, w.lang) } }, effect: null };
   }
   const mon = findIn(state.party, hit.uid);
   if (!mon) return { ui, effect: null };
@@ -852,7 +1131,7 @@ function slotPress(ui, hit, { state, ctx, locked, debug, panel, w }) {
   if (select) {
     if (locked) return { ui: calm(ui), effect: null };
 
-    if (isEgg(mon) && ['give', 'use'].includes(select.mode)) return { ui: { ...ui, message: { text: t('panel.eggNo') } }, effect: null };
+    if (isEgg(mon) && ['give', 'use', 'fuse'].includes(select.mode)) return { ui: { ...ui, message: { text: t('panel.eggNo') } }, effect: null };
     switch (select.mode) {
       case 'breed': {
 
@@ -881,7 +1160,7 @@ function slotPress(ui, hit, { state, ctx, locked, debug, panel, w }) {
       }
       case 'use': {
         if (!(state.bag?.[select.item] > 0)) return { ui: calm(ui), effect: null };
-        const check = useCheck(mon, select.item, ctx, w.lang, state.party, stateFormat(state));
+        const check = useCheck(mon, select.item, ctx, w.lang, state.party, stateFormat(state), state.bag, state.box);
 
         if (!check.ok) return { ui: { ...ui, message: { text: check.reason } }, effect: null };
         if (check.evolutions) return { ui: calm(ui), effect: { kind: 'evolve', item: select.item, evolutions: check.evolutions } };
@@ -889,14 +1168,38 @@ function slotPress(ui, hit, { state, ctx, locked, debug, panel, w }) {
           : { ui: calm(ui), effect: { kind: 'teachTm', uid: mon.uid, item: select.item, move: check.teach } };
         if (check.moves) return { ui: { ...calm(ui), moves: { uid: mon.uid, item: select.item, list: check.moves, prompt: check.prompt } }, effect: null };
         if (check.stats) return { ui: { ...calm(ui), stats: { uid: mon.uid, item: select.item, list: check.stats } }, effect: null };
+
+        if (check.partners) return { ui: { ...calm(ui), select: { mode: 'fuse', uid: mon.uid, item: select.item, list: check.partners, text: check.prompt } }, effect: null };
+
+        if (check.choices) return { ui: chooseMenu(calm(ui), mon, select.item, check, t), effect: null };
         if (check.confirm) return { ui: { ...calm(ui), ask: { kind: 'use', uid: mon.uid, item: select.item, text: check.confirm } }, effect: null };
         return { ui: calm(ui), effect: useEffect(mon, select.item, ctx, w) };
+      }
+
+      case 'fuse': {
+        const first = findIn(state.party, select.uid);
+        if (!first || first.uid === mon.uid || !(state.bag?.[select.item] > 0)) return { ui: calm(ui), effect: null };
+        if (!select.list.includes(mon.uid)) return { ui: { ...ui, message: { text: noEffect(w.lang) } }, effect: null };
+        return { ui: calm(ui), effect: useEffect(first, select.item, ctx, w, { partner: mon }) };
       }
       default: return { ui: calm(ui), effect: null };
     }
   }
   const text = isEgg(mon) ? eggText(mon, w, debug) : t('panel.partyAsk');
   return { ui: { ...calm(ui), menu: { where: 'party', uid: mon.uid, text, options: partyMenu(mon, { state, ctx, locked, debug }, w.lang) } }, effect: null };
+}
+
+const labName = (items, w) => fossilsLine(items, w.lang, id => w.label(id));
+
+function labPick(ui, id, first, { state, w }) {
+  const { t, p } = w;
+  if (!first && isHalf(id)) {
+    const options = [...halvesFor(id).filter(other => state.bag?.[other] > 0).map(other => opt('fossil', `${w.label(other)} ×${state.bag[other]}`, false, { item: other })),
+      opt('cancel', t('panel.menu.cancel'))];
+    return { ui: { ...ui, menu: { where: 'labPair', item: id, text: t('panel.lab.pair', { item: p(w.label(id), '을/를') }), options } }, effect: null };
+  }
+  const items = first ? [first, id] : [id];
+  return { ui: { ...ui, ask: { kind: 'lab', items, text: t('panel.lab.ask', { item: p(labName(items, w), '을/를') }) } }, effect: null };
 }
 
 function optionPress(ui, hit, { state, ctx, panel, w }) {
@@ -929,6 +1232,11 @@ function optionPress(ui, hit, { state, ctx, panel, w }) {
       default: return { ui: calm(ui), effect: null };
     }
   }
+  if (menu.where === 'lab' || menu.where === 'labPair') {
+    const id = hit.item;
+    if (hit.id !== 'fossil' || !(state.bag?.[id] > 0)) return { ui: calm(ui), effect: null };
+    return labPick(calm(ui), id, menu.where === 'labPair' ? menu.item : null, { state, w });
+  }
   if (menu.where === 'give') {
     const mon = findIn(state.party, menu.uid);
     if (!mon || hit.id !== 'pick') return { ui: calm(ui), effect: null };
@@ -947,10 +1255,22 @@ function optionPress(ui, hit, { state, ctx, panel, w }) {
       default: return { ui: calm(ui), effect: null };
     }
   }
+
+  if (menu.where === 'choose') {
+    const mon = findIn(state.party, menu.uid);
+    if (!mon || hit.id !== 'choose' || !(state.bag?.[menu.use] > 0)) return { ui: calm(ui), effect: null };
+    const next = ITEM_CHANGES[itemChange(menu.use)]?.choose?.(mon, OUTSIDE_ITEMS[menu.use], { id: menu.use, ctx, lang: w.lang, names: w.names }, hit.item);
+    if (next?.choices) return { ui: chooseMenu(calm(ui), mon, menu.use, next, t), effect: null };
+    if (next?.teach) return panel ? learnOpen(calm(ui), mon, next.teach, { kind: 'tm', item: menu.use })
+      : { ui: calm(ui), effect: { kind: 'teachTm', uid: mon.uid, item: menu.use, move: next.teach } };
+    return { ui: calm(ui), effect: useEffect(mon, menu.use, ctx, w, { choice: hit.item }) };
+  }
   if (menu.where === 'bag') {
     const item = menu.item;
 
     if (hit.id === 'use' && isDexItem(state, item)) return { ui: { ...calm(ui), tab: 'travel', sub: 'dex', screen: null }, effect: null };
+
+    if (hit.id === 'use' && isRod(toID(item))) return hatchedParty(state).length ? { ui: calm(ui), effect: { kind: 'fish', rod: toID(item) } } : { ui: calm(ui), effect: null };
     if (hit.id === 'use' && partyWide(item)) {
 
       if (!state.party.some(m => m.hp === 0)) return { ui: { ...calm(ui), message: { text: noEffect(w.lang) } }, effect: null };
@@ -1040,7 +1360,7 @@ function screenPress(ui, hit, { state, ctx }) {
     if (hit.t === 'scPage' && SUMMARY_PAGES.includes(hit.page)) return set({ page: hit.page });
     if (hit.t === 'scStat' && statModes(ctx).includes(hit.mode)) return set({ stat: hit.mode });
     if (hit.t === 'scMove' && mon.set.moves[hit.i]) return set({ move: hit.i });
-    if (hit.t === 'scLock' && !isEgg(mon) && !evolveLocked(ctx.sim.Dex, { species: mon.set.species, gigantamax: mon.set.gigantamax === true })) return { ui, effect: { kind: 'queue', action: actions.evolveLock(mon, mon.evolveLocked !== true) } };
+    if (hit.t === 'scLock' && !isEgg(mon) && !evolutionHeld(ctx.sim.Dex, pairMon(mon))) return { ui, effect: { kind: 'queue', action: actions.evolveLock(mon, mon.evolveLocked !== true) } };
     if (hit.t === 'scNav') {
       const list = hatchedParty(state), at = list.findIndex(m => m.uid === mon.uid);
       if (at < 0 || list.length < 2) return same;

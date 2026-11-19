@@ -1,5 +1,5 @@
 // from pokerogue src/data/moves/move.ts, src/field/pokemon.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 
 import table from './pokerogue-moves.json' with { type: 'json' };
 import { hpRatio, typeEffectiveness } from './matchup.js';

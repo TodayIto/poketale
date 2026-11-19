@@ -14,6 +14,7 @@ Upstream revisions used for the build:
 | PokeRogue assets (`pagefaultgames/pokerogue-assets`) | `37789817134f881da0a038af21991ccc93a66372` |
 | PokeRogue locales (`pagefaultgames/pokerogue-locales`) | `485b48ebcd11b962b303875b9776fad9a844b6f7` |
 | PokéAPI (`PokeAPI/pokeapi`, CSV data) | `2bf639e5572812a67d2b94903fdcb9d095f5aeb2` |
+| PKHeX (`kwsch/PKHeX`, location name text only) | `6c9583883c7551ac74a4b74180cead249d4277b8` |
 | Phaser (npm `phaser`) | 3.90.0 |
 | eventemitter3 (npm, dependency of Phaser) | 5.0.4 |
 | ts-chacha20 (npm, dependency of Pokémon Showdown) | 1.2.0 |
@@ -123,7 +124,21 @@ Move animation data, by upstream `battle-anims/REUSE.toml`:
 - License: BSD-3-Clause ([Appendix A](#a7-pokéapi); also `data/sources/pokeapi/LICENSE.md`).
 - What is included: Korean names, capture rates, effort values, TM numbers and Korean item
   descriptions, as converted into `data/names/*.json`, `data/catch-rates.json`, `data/exp.json`
-  and `data/items-outside.json`.
+  and `data/items-outside.json`; the fishing encounter tables (`encounters.csv` rows of the rod
+  and fishing-spot methods, their slots, conditions, locations and English location names —
+  stored, trimmed, in `data/sources/fishing/`), as converted into `data/fishing.json` by
+  `tools/build-fishing.mjs`.
+
+### 1.7.1 PKHeX location names — game text, names only
+
+- Source: https://github.com/kwsch/PKHeX at `6c9583883c7551ac74a4b74180cead249d4277b8`,
+  `PKHeX.Core/Resources/text/locations/` (the English and Korean location text of the main-series
+  games), stored in `data/sources/fishing/pkhex/`.
+- License: the PKHeX repository is GPL-3.0 (https://github.com/kwsch/PKHeX/blob/master/LICENSE).
+  Only these text files are used — the games' own place names (official English and Korean
+  spellings, the same line in both files) — to give the fishing places their Korean names in
+  `data/fishing.json`. No PKHeX code is used. Pokémon place names are trademarks of Nintendo /
+  Creatures Inc. / GAME FREAK inc.
 
 ### 1.8 Fonts (embedded as base64)
 
@@ -174,13 +189,33 @@ Move animation data, by upstream `battle-anims/REUSE.toml`:
   `story/training.mjs` and `view/training.js`. No PlayNav training pictures, sounds or layouts; the
   bags and the meter are drawn in code.
 
-### 1.10 PokéPark 2 voice-line table
+### 1.10 Gen 8 / Gen 9 Move Animation Projects (community pack)
 
-- `data/pokepark2-voices.json`: which PokéPark 2 voice stream belongs to which Pokémon, and at which
-  moments the game plays it (greeting, hurt, attacking or angry, happy), read by hand out of the
-  game's sound-bank cue tables and the scripts that play them. Numbers only: no audio, names or text
-  of the game. PokéPark 2 belongs to Nintendo, Creatures Inc. and GAME FREAK inc. (section 4); the
-  voices themselves are the player's own files (section 2).
+- Source: https://www.pokecommunity.com/threads/the-gen-9-move-animation-project.526189/
+  (Pokémon Essentials format `PkmnAnimations.rxdata`).
+- What is included: the background timelines (picture names, opacity, position, colour, frames —
+  the pack's own values, unchanged) of the moves whose colour was lost in PokeRogue's conversion,
+  in `anims/tints.js` and `anims/bg-names.js` (built by `tools/build-anim-tints.mjs`); see
+  `view/LICENSE-NOTE.md`. No pictures or sounds from the pack are included.
+- Credits, as the first post asks ("Please include these credits when adding these animations to your game"):
+
+> Thanks to the Reborn team for letting people use their resources. You are awesome.
+>
+> Gen 8 Animation Project lead by StCooler, with additional contributions by DarrylBD99, WolfPP, ardicoozer, riddlemeree
+>
+> Thanks to BellBlitzKing for his Pokemon Sound Effects Pack: Gen 1 to Gen 7 - All Attacks SFX.
+>
+> Gen 9 Animation Project led by KRLW890 and Nut0066, with additional contributions by Toxillian, QuahogTheCreator, Lcorp, and Shashu-Greninja
+
+### 1.11 PokéPark 2 voice-line table
+
+- `data/pokepark2-voices.json` (public PR #12): which PokéPark 2 voice stream belongs to which
+  Pokémon, and at which moments the game plays it (greeting, hurt, attacking or angry, happy),
+  read by hand out of the game's sound-bank cue tables and the scripts that play them. It was made
+  outside this repository and cannot be made again with this repository's tools; it is kept as the
+  pull request gave it. Numbers only: no audio, names or text of the game. PokéPark 2 belongs to
+  Nintendo, Creatures Inc. and GAME FREAK inc. (section 4); the voices themselves are the player's
+  own files (section 2).
 
 ---
 
@@ -197,20 +232,26 @@ into `dist/poke-battle.js`, and this project does not relicense them.
   GAME FREAK inc.), and some files are LicenseRef-POKEMON-REBORN, CC0-1.0 or AGPL-3.0-only. The
   original `pokemon-emerald-pro.ttf` is downloaded only when the embedded subset cannot be loaded.
 - **Pokémon Showdown sprites** — `https://play.pokemonshowdown.com/sprites/` (`ani`, `gen5ani`,
-  `gen5`, `trainers`, `itemicons-sheet.png`). These images are not covered by Pokémon Showdown's
+  `gen5`, `trainers`). These images are not covered by Pokémon Showdown's
   MIT code license; they belong to their respective owners (Nintendo, Creatures Inc.,
   GAME FREAK inc., and the sprite artists credited by Pokémon Showdown).
 - **PokéAPI sprites** — `https://raw.githubusercontent.com/PokeAPI/sprites/1dd55c0436d2a5b6e324c0b780e1b1b416fbfb64/sprites/pokemon/`:
   Pokémon battle images, used when the animated Pokémon Showdown images are not available; and
-  `…/sprites/badges/` at the same revision: the gym badge pictures of the right panel's badge tab.
+  `…/sprites/badges/` at the same revision: the gym badge pictures of the right panel's badge tab; and
+  `…/sprites/items/` at the same revision: the item pictures of the bags, the shop card and the petting screen's foods for the
+  items the PokeRogue item images do not draw (the Alola trial pictures are the Z-Crystals' bag pictures from there). They are
+  fetched when shown and not stored in this repository.
   These images are not covered by the PokéAPI data license (section 1.7); they belong to their
-  respective owners (Nintendo, Creatures Inc., GAME FREAK inc.). The Alola trial pictures are the Z-Crystal item icons of the Pokémon Showdown item sheet above.
+  respective owners (Nintendo, Creatures Inc., GAME FREAK inc.).
 
-Not downloaded by PokéTale either: the **voice packs chosen by the player** in the settings (voice
-rips such as the PokéPark 2 voices on The Sounds Resource). They are read from the player's own
-files and kept in RisuAI's plugin storage. Their audio belongs to the respective rights holders
-(Nintendo, Creatures Inc., GAME FREAK inc.); this project does not distribute, link to or relicense
-any of it.
+Neither downloaded nor included: the **voice packs the player loads** in the settings (Sound > Cry
+Pack - voice rips such as the PokéPark 2 voices the player downloaded themselves; the row's "Copy link" button
+copies the address of that game's page on The Sounds Resource,
+`https://sounds.spriters-resource.com/wii/pokepark2wondersbeyond`, and nothing is fetched from it). They are
+read from the player's own files and kept only in that device's browser storage (never in the
+plugin's synced storage or in a chat). Their audio belongs to the respective rights holders
+(Nintendo, Creatures Inc., GAME FREAK inc.); this project ships only the table of section 1.11 and
+does not distribute, host or relicense any of the audio.
 
 ---
 

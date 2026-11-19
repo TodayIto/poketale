@@ -38,13 +38,22 @@ export function sendRange({ sent = { upto: -1 }, log = [], to = log.length, ende
 export const ownStarts = spec => (Array.isArray(spec?.p1?.team) ? spec.p1.team : [])
   .map(member => ({ species: String(member?.set?.species ?? ''), ability: String(member?.set?.ability ?? '') }));
 
+export function screenSlice(lines = [], hp = [], from = 0, to = lines.length, ended = false) {
+  const end = to ?? lines.length;
+  const out = [];
+  const between = at => (hp ?? []).filter(line => line?.at === at && typeof line.text === 'string').map(line => line.text);
+  for (let i = from; i < end && i < lines.length; i++) out.push(...between(i), lines[i]);
+  if (ended && end >= lines.length) out.push(...(hp ?? []).filter(line => line?.at >= Math.max(lines.length, from) && typeof line.text === 'string').map(line => line.text));
+  return out;
+}
+
 export function buildOoc(format, source, range, { screenFrom = 0, screenTo, lang = 'ko', en = null, guide = false } = {}) {
   const ended = !!source.result;
   const form = sentFormat(format, ended);
 
   const whole = form === 'result' && Array.isArray(source.log) ? readLog(source.log) : null;
   const text = storyOoc(form, { battle: source.battle, own: source.own ?? null, result: source.result, ended, first: range.first, read: range.read, whole,
-    screen: (source.screen ?? []).slice(screenFrom, screenTo), stage: source.stage, lang, en });
+    screen: screenSlice(source.screen ?? [], source.screenHp ?? [], screenFrom, screenTo, ended), stage: source.stage, lang, en });
   const span = turnSpan(range.read);
   return { text, info: { battle: source.key ?? '', turns: span ? [span.fromTurn, span.toTurn] : null, result: ended ? outcomeOf(source.result) : '', ...(guide ? { form } : {}) } };
 }

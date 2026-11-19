@@ -1,5 +1,5 @@
 // from pokerogue src/system/game-speed.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 // from pokerogue src/utils/common.ts (FixedInt, fixedInt) @ 7d7da4a8 (AGPL-3.0-only)
 
 export const GAME_SPEEDS = Object.freeze([1, 1.5, 2, 3]);

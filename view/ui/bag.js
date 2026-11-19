@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/ball-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/command-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 
 import { addWindow } from './window.js';
@@ -11,6 +11,8 @@ import { uiRect } from './tap-back.js';
 import { fixed } from '../game-speed.js';
 import { LoadError } from '../retry.js';
 import { foodTexture } from '../amie-art.js';
+import { pokeapiItemUrl } from '../sprites/sources.js';
+import { loadItemPicture, itemPictureKey } from '../item-picture.js';
 
 const CANCEL_TEXT = 'command-ui-handler.ballCancel';
 const ROWS = 6;
@@ -48,7 +50,20 @@ export function openBag(menu) {
   });
 }
 
+const ATLAS_FRAMES = new Set(BAG_ICONS.items.textures[0].frames.map(f => f.filename));
 export const loadItemIcons = scene => scene.assets.image('bag_items', 'images/items.png', BAG_ICONS.items);
+
+const DOT = 'bag-item-dot';
+export function itemDot(scene) {
+  if (!scene.textures.exists(DOT)) {
+    const canvas = scene.textures.createCanvas(DOT, 32, 32);
+    const ctx = canvas.getContext();
+    ctx.fillStyle = '#a5741c'; ctx.beginPath(); ctx.arc(16, 16, 9.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e9b24c'; ctx.beginPath(); ctx.arc(16, 16, 6.8, 0, Math.PI * 2); ctx.fill();
+    canvas.refresh();
+  }
+  return DOT;
+}
 
 export class BagMenu {
   constructor(scene) { this.scene = scene; }
@@ -62,7 +77,7 @@ export class BagMenu {
     if (this.finish) throw new Error('Bag menu already open');
     this.bag = bag; this.party = party; this.partner = partner; this.prompt = prompt;
     this.measuredWidths = new Map();
-    this.pocket = Math.max(0, bag.pockets.findIndex(p => p.items.length)); this.cursor = 0; this.scroll = 0; this.sub = false;
+    Object.assign(this, this.startAt(bag)); this.sub = false;
     const menu = openMenu(scene, { input: action => this.input(action), close: () => this.clear(),
       paused: () => this.sub,
       tapWindows: () => (this.sub ? null : this.windows()) });
@@ -73,6 +88,20 @@ export class BagMenu {
     return menu.promise;
   }
   get items() { return this.bag.pockets[this.pocket].items; }
+
+  startAt(bag) {
+    const last = this.lastUsed;
+    if (!last || bag.pockets[last.pocket]?.id !== last.pocketId) return { pocket: Math.max(0, bag.pockets.findIndex(p => p.items.length)), cursor: 0, scroll: 0 };
+    const items = bag.pockets[last.pocket].items, found = items.findIndex(item => item.id === last.item);
+    const cursor = found >= 0 ? found : Math.max(0, Math.min(last.cursor, items.length - 1));
+
+    const scroll = Math.max(0, Math.min(last.scroll, cursor, items.length + 1 - ROWS), cursor - ROWS + 1);
+    return { pocket: last.pocket, cursor, scroll };
+  }
+
+  remember(item) {
+    this.lastUsed = { pocket: this.pocket, pocketId: this.bag.pockets[this.pocket].id, item: item.id, cursor: this.cursor, scroll: this.scroll };
+  }
 
   windows() { return this.rect ? [this.rect] : []; }
 
@@ -146,10 +175,14 @@ export class BagMenu {
       }
 
       const iconY = top + 15 + 16 * (r + 1);
+      const url = !item.emoji && item.target !== 'enemy' && !ATLAS_FRAMES.has(item.id) ? pokeapiItemUrl(item.id) : null;
+      const picture = url && s.textures.exists(itemPictureKey(url)) ? itemPictureKey(url) : null;
 
       const icon = item.emoji ? emojiIcon(s, 24, iconY, item.emoji)
         : item.target === 'enemy' ? s.add.image(24, iconY, 'pb', ballFrame(item.id))
-          : s.add.image(24, iconY, 'bag_items', item.id).setScale(0.5);
+          : ATLAS_FRAMES.has(item.id) ? s.add.image(24, iconY, 'bag_items', item.id).setScale(0.5)
+            : s.add.image(24, iconY, picture ?? itemDot(s)).setScale(0.5);
+      if (url && !picture) loadItemPicture(s, url).then(key => { if (key && icon.scene) icon.setTexture(key); });
       const name = windowText(s, 36, y, item.name);
       const count = windowText(s, 36 + namesWidth + 4 + countsWidth, y, `×${item.count}`).setOrigin(1, 0);
       if (item.blocked) for (const t of [name, count]) t.setColor(GREY[0]).setShadow(3, 3, GREY[1]);
@@ -243,7 +276,7 @@ export class BagMenu {
       if (item?.blocked) { playError(this.scene); return this.promptText.setText(item.blocked); }
       playSelect(this.scene);
       if (!item) return this.finish(null);
-      if (item.target !== 'party') return this.finish({ kind: 'item', item: item.id });
+      if (item.target !== 'party') { this.remember(item); return this.finish({ kind: 'item', item: item.id }); }
       return this.chooseTarget(item);
     }
     }
@@ -256,7 +289,7 @@ export class BagMenu {
     const onOpen = () => { this.container?.setVisible(false); this.wiggle(null); };
     this.scene.party.choose({ party, partner: this.partner, forced: false, use: { item: item.id }, onOpen }).then(target => {
       if (!this.finish) return;
-      if (target) return this.finish({ kind: 'item', item: item.id, slot: target.slot, ...(target.move !== undefined ? { move: target.move } : {}) });
+      if (target) { this.remember(item); return this.finish({ kind: 'item', item: item.id, slot: target.slot, ...(target.move !== undefined ? { move: target.move } : {}) }); }
       this.sub = false; this.container.setVisible(true); this.setCursor(this.cursor, true);
     }, error => { if (this.finish) this.fail(error); });
   }

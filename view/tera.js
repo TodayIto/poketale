@@ -1,5 +1,5 @@
 // from pokerogue src/pipelines/glsl/sprite-frag-shader.frag @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 // from pokerogue src/pipelines/sprite.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/tera-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/battle-info/battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)

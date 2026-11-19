@@ -3,6 +3,7 @@ import { outcomeOf } from './outcome.mjs';
 import { STATS } from '../engine/mon.mjs';
 import { keyLines, summaryLine, endFacts, turnSpan } from './narrate.mjs';
 import { customText } from './custom-items.mjs';
+import { OUTSIDE_ITEMS } from './items.mjs';
 
 export const OUTCOME_EN = { win: 'Win', lose: 'Loss', forfeit: 'Forfeit (loss)', run: 'Ran away', capture: 'Caught', stop: 'Stopped' };
 
@@ -28,14 +29,26 @@ export const BACK_TO_BACK = {
   oocLine: battle => `{{user}} won the first battle against ${stageTrainer(battle, 1)} one-on-one. What follows is the second battle, against ${stageTrainer(battle, 2)}.`,
 };
 
-export function resultLine({ outcome, battle, kind, caught = null, evolutions = [], stages = null, lang = 'ko', en = null }) {
+export function resultLine({ outcome, battle, kind, caught = null, evolutions = [], stages = null, prize = null, lang = 'ko', en = null }) {
   const namer = createNamer({ lang, en });
   const parts = [`Opponent: ${opponentText(battle, namer)}`, ...partnerField(battle, kind), ...(stages ? [BACK_TO_BACK.resultField(battle, stages)] : []),
     `Outcome: ${outcomeText(outcome)}`];
+
+  if (prize && outcome === 'win' && !battle?.wild) parts.push(`Prize Money: doubled by ${namer.items(prize)}`);
   if (caught?.species) parts.push(`Caught: ${namer.species(caught.species)} → ${caught.storage ? 'Storage' : 'Party'}`);
   const evolved = (evolutions ?? []).filter(e => e?.evolved === true);
   if (evolved.length) parts.push(`Evolved: ${evolved.map(e => `${namer.species(e.from)} → ${namer.species(e.to)}`).join(', ')}`);
   return `[Battle Result | ${parts.join(' | ')}]`;
+}
+
+export const PRIZE_ITEMS = ['amuletcoin', 'luckincense'];
+
+export function prizeItem(results) {
+  for (const result of results ?? []) {
+    const held = (result?.sides?.[0]?.team ?? []).find(mon => mon?.appeared === true && PRIZE_ITEMS.includes(mon.originalItem));
+    if (held) return held.originalItem;
+  }
+  return null;
 }
 
 export const RESULT_LINE_RE = /\[Battle (?:Result \||result:)[^\]\n]*\]/;
@@ -87,6 +100,7 @@ const STAT_EN = { hp: 'HP', atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe:
 
 const STAT_FULL = { hp: 'HP', atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed' };
 const signed = n => `${n > 0 ? '+' : ''}${n}`;
+const EV_RESET = 'its base stats were reset';
 
 const yen = n => `¥${Number(n).toLocaleString('en-US')}`;
 const signedYen = (n, plus = '+') => `${n < 0 ? '-' : plus}${yen(Math.abs(n))}`;
@@ -102,7 +116,41 @@ export const SHOP_LOG = {
   },
 };
 
-export function logLine(event, namer = createNamer({ lang: 'en' }), money = null) {
+const REVIVED_LOG = mon => `${USER} received ${mon}, restored from a fossil at the lab, and took it into the party`;
+
+const andList = names => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`);
+export const FISH_LOG = ({ items }) => `${USER} fished up ${andList(items.map(i => `${i.name}${i.count > 1 ? ` ×${i.count}` : ''}`))}`;
+
+export function fishGroups(events) {
+  let group = null;
+  const out = [];
+  for (const e of events ?? []) {
+    if (!(e?.kind === 'item' && e.fished && e.delta > 0)) { out.push(e); continue; }
+    if (!group) { group = { kind: 'fished', items: [] }; out.push(group); }
+    const line = group.items.find(i => i.item === e.item);
+    if (line) line.count += e.delta; else group.items.push({ item: e.item, count: e.delta });
+  }
+  return out;
+}
+
+export const EVOLVE_LOCK_LOG = ({ mon, locked }) => (locked ? `${USER} chose to keep ${mon} from evolving` : `${USER} chose to let ${mon} evolve again`);
+
+export function lockGroups(events) {
+  const list = events ?? [];
+  const key = e => e.who?.uid ?? JSON.stringify(e.who ?? null);
+  const presses = new Map();
+  for (const e of list) if (e?.kind === 'evolvelock') presses.set(key(e), [...presses.get(key(e)) ?? [], e]);
+  return list.filter(e => {
+    if (e?.kind !== 'evolvelock') return true;
+    const mine = presses.get(key(e));
+    if (e !== mine.at(-1)) return false;
+    const first = mine[0];
+    const was = typeof first.was === 'boolean' ? first.was : first.locked !== true;
+    return (e.locked === true) !== was;
+  });
+}
+
+export function logLine(event, namer = createNamer({ lang: 'en' }), money = null, fishLog = FISH_LOG) {
 
   const monEn = w => (w?.egg ? 'Egg' : w?.name ? w.name : w?.species ? namer.species(w.species) : w?.ref ?? 'Pokémon');
 
@@ -125,24 +173,36 @@ export function logLine(event, namer = createNamer({ lang: 'en' }), money = null
     if (e.kind === 'nature') return `stats now grow as ${e.nature} nature`;
     if (e.kind === 'hypertrain') return `hyper trained ${(e.stats ?? []).length === STATS.length ? 'all stats' : (e.stats ?? []).map(s => STAT_EN[s] ?? s).join('/')}`;
     if (e.kind === 'ppup') return `${namer.moves(e.move)} max PP ${e.from ?? '?'} → ${e.to ?? '?'}`;
+
+    if (e.kind === 'tera') return e.type ? `its Tera Type became ${e.type}` : '';
+    if (e.kind === 'form') return e.species ? `it changed into ${namer.species(e.species)}` : '';
+    if (e.kind === 'fuse') return `it fused with ${monEn(e.other)} into ${namer.species(e.species)}`;
+    if (e.kind === 'unfuse') return `${monEn(e.other)} separated from it and returned to the party`;
     return '';
   };
   switch (event?.kind) {
     case 'use': {
       const item = namer.items(event.item);
       const who = event.who ? ` on ${monEn(event.who)}` : '';
-      const effect = (event.effects ?? []).map(effectEn).filter(Boolean).join(', ');
+
+      const effects = OUTSIDE_ITEMS[event.item]?.evReset && (event.effects ?? []).some(e => e.kind === 'evs' && e.to !== e.from)
+        ? [EV_RESET, ...(event.effects ?? []).filter(e => e.kind !== 'evs').map(effectEn)] : (event.effects ?? []).map(effectEn);
+      const effect = effects.filter(Boolean).join(', ');
       return `${USER} used ${item}${who}${effect ? `: ${effect}` : ''}`;
     }
     case 'swap': {
       const [a, b] = event.at ?? [];
       if (a?.party && b?.party) return `${USER} swapped party #${a.party} and #${b.party}`;
-      return `${USER} swapped ${monEn(event.a)} ${a?.party ? '(party)' : '(box)'} with ${monEn(event.b)} ${b?.party ? '(party)' : '(box)'}`;
+      const swapped = `${USER} swapped ${monEn(event.a)} ${a?.party ? '(party)' : '(box)'} with ${monEn(event.b)} ${b?.party ? '(party)' : '(box)'}`;
+      const revived = [event.a, event.b].find(w => w?.uid && w.uid === event.revived);
+      return revived ? `${swapped}. ${REVIVED_LOG(monEn(revived))}` : swapped;
     }
     case 'hold': return event.item ? `${USER} gave ${itemEn(event.item)} to ${monEn(event.who)}` : `${USER} took ${itemEn(event.prev)} from ${monEn(event.who)}`;
     case 'deposit': return `${USER} moved ${monEn(event.who)} to the box`;
-    case 'withdraw': return `${USER} moved ${monEn(event.who)} to the party`;
+
+    case 'withdraw': return event.revived ? REVIVED_LOG(monEn(event.who)) : `${USER} moved ${monEn(event.who)} to the party`;
     case 'release': return `${USER} released ${monEn(event.who)}`;
+    case 'evolvelock': return EVOLVE_LOCK_LOG({ mon: monEn(event.who), locked: event.locked === true });
     case 'nickname': return `${USER} nicknamed ${event.who?.species ? namer.species(event.who.species) : monEn(event.who)} "${event.name}"`;
     case 'teach': {
       const who = monEn(event.who), move = namer.moves(event.move);
@@ -158,7 +218,7 @@ export function logLine(event, namer = createNamer({ lang: 'en' }), money = null
       const effect = effectEn(event);
       return `${monEn(event.who)} healed${effect ? `: ${effect}` : ''}`;
     }
-    case 'evs': case 'exp': case 'ability': case 'nature': case 'hypertrain': case 'ppup': { const effect = effectEn(event); return effect ? `${monEn(event.who)}: ${effect}` : null; }
+    case 'evs': case 'exp': case 'ability': case 'nature': case 'hypertrain': case 'ppup': case 'tera': case 'form': { const effect = effectEn(event); return effect ? `${monEn(event.who)}: ${effect}` : null; }
 
     case 'feed': return event.item ? `${USER} used ${itemEn(event.item)} on ${monEn(event.who)}` : null;
 
@@ -168,6 +228,8 @@ export function logLine(event, namer = createNamer({ lang: 'en' }), money = null
     }
     case 'hatch': return `${event.slot ? `The Egg in party #${event.slot}` : 'An Egg'} hatched into ${namer.species(event.who?.species)}`;
     case 'item': return `${itemEn(event.item)} ${signed(event.delta)}`;
+
+    case 'fished': return fishLog ? fishLog({ items: event.items.map(i => ({ name: namer.items(i.item), count: i.count })) }) : null;
     case 'shop': return SHOP_LOG.shop(event, id => namer.items(id), money);
     case 'add': return `${USER} got ${namer.species(event.who?.species)} Lv${event.level}${event.box ? ', sent to storage' : ''}`;
 
@@ -176,11 +238,12 @@ export function logLine(event, namer = createNamer({ lang: 'en' }), money = null
   }
 }
 
-export function pkbLog(events, { lang = 'ko', en = null, money = null } = {}) {
+export function pkbLog(events, { lang = 'ko', en = null, money = null, fishLog = FISH_LOG } = {}) {
   const namer = createNamer({ lang, en });
   let balance = Number.isFinite(money) ? money : null;
-  const parts = (events ?? []).map(e => {
-    if (e?.kind !== 'shop' || balance === null) return logLine(e, namer);
+
+  const parts = lockGroups(fishLog ? fishGroups(events) : events ?? []).map(e => {
+    if (e?.kind !== 'shop' || balance === null) return logLine(e, namer, null, fishLog);
     balance += (e.got ?? 0) - (e.spent ?? 0);
     return logLine(e, namer, balance >= 0 ? balance : null);
   }).filter(Boolean);

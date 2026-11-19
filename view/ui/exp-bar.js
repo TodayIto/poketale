@@ -1,5 +1,5 @@
 // from pokerogue src/ui/battle-info/player-battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/battle-info/battle-info.ts (setLevelDisplay) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/containers/party-exp-bar.ts @ 7d7da4a8 (AGPL-3.0-only)
 
@@ -22,7 +22,7 @@ export function startSound(scene, path) {
   let voice, stopped = false;
   const start = () => {
     if (stopped || audio.error || audio.readyState < 2 || scene.life.signal.aborted) return;
-    voice = audio.cloneNode(); voice.volume = 0.6;
+    voice = scene.audio.adopt(audio.cloneNode(), 0.6, path);
     scene.audio.active.add(voice);
     voice.onended = () => scene.audio.active.delete(voice);
     voice.play().catch(() => scene.audio.active.delete(voice));

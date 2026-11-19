@@ -2,11 +2,11 @@ import * as sim from '../../engine/browser-engine.mjs';
 import { findBlocks, findTags, findMarks, markText, parseBattle, parseAct, actBlock, actsIn, hashKey, messageId, battlesIn, battlesInText, blockAnchorIn, stripForPrompt, blockCuts, hasBlocks } from '../../story/blocks.mjs';
 import { readTable, writeTable, tableStatus, createFolds, applyBattles, toEngineSpec, pruneTable, stateVars, computeState, nextStageSpec, battlesBefore, stageOf, backToBack, battleRecord, hatchedParty, toolsIn } from '../../story/state.mjs';
 import { unreadableLine, isUnreadable } from '../../story/stored.mjs';
+import { withLocksOf } from '../../engine/input.mjs';
 import { withItemTags } from '../../story/custom-items.mjs';
-import { WHAT, failed, refused, failureNote, failureText, ruleText } from '../../story/failure.mjs';
+import { WHAT, failed, refused, ruleError, failureNote, failureText, ruleText } from '../../story/failure.mjs';
 import { LOCK_FREE, namesFor } from '../../story/panel.mjs';
 import { spriteIdOf, displayName } from '../../engine/mon.mjs';
-import { withTraitsOf } from '../../engine/input.mjs';
 import { personaName, userName } from './persona.js';
 import { renderBattleCard, renderCardTail, renderCollapsed, renderDiscarded, wrapRecent, renderStoryChip, battleTitle, blockBalls, SEND_MS } from '../../story/card.mjs';
 import { MARK, surveyBattles, battlePhase, cardResult, setMark, setFollow, setOpenedAt, hasFollowMarks, findBlockMessage, removeResult, placeResult, resultPlace,
@@ -18,16 +18,18 @@ import { createNamer, battleKind } from '../../story/ai-names.mjs';
 import * as acts from '../../story/acts.mjs';
 import { renderDiary, resultEvents, renderForge, forgeKindOf, commandLines } from '../../story/diary.mjs';
 import { forgeKey, forgeAt, mayForge, forgeRequest, runForge, appendBattle, FORGE_MODE, withUserName } from '../../story/forge.mjs';
+import { fishCast as castNow, appendCast } from '../../story/fishing.mjs';
+import { drawingJobs } from '../../story/asset-maid.mjs';
 import { showToast } from './toast.js';
 import { turnSpan } from '../../story/narrate.mjs';
-import { resultLine, RESULT_LINE_RE } from '../../story/prompts.mjs';
+import { resultLine, prizeItem, RESULT_LINE_RE } from '../../story/prompts.mjs';
 import { outcomeOf } from '../../story/outcome.mjs';
 import { readSave, saveStatus, freshAttempt, retryAttempt, startSpec, setAuto, leaveAttempt, commitAttempt, addSend, sentPoint, sentAll, holdsAuto, partFor } from '../../story/save.mjs';
 import { sendRange, buildOoc, insertOoc, markOoc, oocAhead, replyTo, sendWait, ownStarts } from '../../story/send.mjs';
 import { withGuide } from '../../story/guide.mjs';
 import { setLore, loreInLine, varTexts, writeVars, trainerLore, writeTrainerLore } from '../../story/lore.mjs';
 import { fixPrompt, mayHold, holds, varsIn, sameVars } from '../../story/prompt-fix.mjs';
-import { applyCompat, compatLang, bagMoney, dropTaken, statusIn, battleScene, latestStatus, compatTravelVars } from '../../story/compat.mjs';
+import { applyCompat, compatLang, bagMoney, dropTaken, statusIn, battleScene, latestStatus, compatTravelVars, earlierRegion } from '../../story/compat.mjs';
 import { victoryChoices } from '../../story/settlement.mjs';
 import { rerollSnapshot, restartSpec, snapshotResult } from '../../director/index.js';
 import { waitingTrainer } from '../../engine/core.mjs';
@@ -37,15 +39,16 @@ import { createFetchBytes } from './fetch-bytes.js';
 import { viewPictureWays } from './picture-route.js';
 import { createReplyWatch } from './reply-watch.js';
 import { showFrame, frameHidden } from './stage.js';
-import { deviceStore } from './device-store.js';
-import { DEFAULT_SETTINGS, DEFAULT_LOOK, settingsUnreadable, LANG_OPEN, hostLang, loadSettings, saveSettings, mountSettings, mountPreparing, botEnabled, botKey, botsSwitched, lookOf, chosenGender, adoptOldLook, commandsOn, auxOn, IMPORT_NAMES_SHOWN } from './settings.js';
+import { deviceStore, DEVICE_SETTINGS, deviceValue, withDevice, sharedPart, deviceSettings, deviceShift } from './device-store.js';
+import { panelLift } from '../../story/panel-html.mjs';
+import { DEFAULT_SETTINGS, DEFAULT_LOOK, settingsUnreadable, LANG_OPEN, hostLang, loadSettings, saveSettings, normalizeSettings, SEND_FORMATS, PANEL_OPEN_CHOICES, mountSettings, mountPreparing, botEnabled, botKey, botsSwitched, lookOf, chosenGender, adoptOldLook, commandsOn, auxOn, IMPORT_NAMES_SHOWN, volumeFeed } from './settings.js';
 import { mountImportScreen } from './import-screen.js';
 import { makeDraft, importOffer, importOfferAi, importTurn, handBack, commitImport, commitDebugHeal, commitDebugBadges, readImports, cancelImport, inForce, newMonDraft, currentMonDraft, friendshipLockDraft } from '../../story/import.mjs';
 import { importAiMessages, readAiParty, aiFailedFound } from '../../story/import-ai.mjs';
 import { readSettingChanges, recordSettingChange, settingsBehind, rulesAt } from '../../story/setting-changes.mjs';
 import { readBattlesOff, battlesOff, setBattlesOff } from '../../story/battles-off.mjs';
 import { loadPicture, savePicture, adoptOldPicture, entryMe } from './my-picture.js';
-import { addCryPacks, cryPackSource, loadCryPacks, removeCryPack } from './cry-pack-store.js';
+import { voicePackStore } from './voice-pack-store.js';
 import { storyCss, sheetCss, SHEET_CLASS } from '../../story/style.mjs';
 import { cardBounds } from '../../story/named.mjs';
 import { opponentPictureWithGender, foePartnerPicture, partnerPicture } from '../../story/trainer-look.mjs';
@@ -70,6 +73,10 @@ let settings = { ...DEFAULT_SETTINGS };
 
 let settingsStatus = 'none';
 export const currentSettings = () => settings;
+
+export const soundFeed = volumeFeed(currentSettings);
+
+export const voicePacks = voicePackStore({ open: () => risuai.getLocalPluginStorage() });
 
 export const currentLang = chat => (LANG_OPEN ? settings.lang ?? compatLang(chat) ?? hostLang() : 'ko');
 
@@ -514,14 +521,14 @@ const HELD = Symbol('held');
 
 const mayWrite = (found, { result = false } = {}) => isOn(found) || result;
 
-function writeChat(target, change, { vars = false, missing = false, result = false, onWait } = {}) {
+function writeChat(target, change, { vars = false, missing = false, result = false, onWait, defer = false } = {}) {
   return whenQuiet(target, found => {
     if (!found) {
       if (missing) throw failed('chatGone');
       return undefined;
     }
     return writeRecords(found, change, { vars, result });
-  }, { onWait });
+  }, { onWait, defer });
 }
 
 async function writeRecords(found, change, { vars, result: commits = false }) {
@@ -550,6 +557,7 @@ async function clearDerived(found, { messages = true } = {}) {
 const handsBack = chat => importTurn(chat).moved && !unreadableChat(chat) && !isUnreadable(settingsStatus);
 
 async function land(found, inLine) {
+  if (found.recheck) await recheck(found);
   await risuai.setChatToIndex(found.charIndex, found.chatIndex, found.chat);
   observe(idOf(found.target), found.chat, { ours: true });
   varsAt = inLine;
@@ -558,10 +566,13 @@ async function land(found, inLine) {
 }
 
 const AGAIN = Symbol('again');
+const DRAWING = Symbol('drawing');
 
 const targetQueues = new Map();
 
-function whenQuiet(target, work, { onWait } = {}) {
+const urgentQueued = new Map();
+
+function whenQuiet(target, work, { onWait, defer = false } = {}) {
   const key = target ? idOf(target) : null;
   let waiting = false;
   const wait = {
@@ -569,25 +580,59 @@ function whenQuiet(target, work, { onWait } = {}) {
     end() { if (waiting) { waiting = false; onWait?.(false); } },
   };
   if (target && quietIn(key)) wait.start();
-  const run = (targetQueues.get(key) ?? Promise.resolve()).then(() => headWrite(target, work, wait)).finally(wait.end);
+  if (!defer) urgentQueued.set(key, (urgentQueued.get(key) ?? 0) + 1);
+  const urgentDone = () => {
+    if (defer) return;
+    const left = urgentQueued.get(key) - 1;
+    if (left > 0) urgentQueued.set(key, left); else urgentQueued.delete(key);
+  };
+  const hold = defer ? { since: Date.now(), key } : null;
+  const run = (targetQueues.get(key) ?? Promise.resolve()).then(() => headWrite(target, work, wait, hold)).finally(() => { urgentDone(); wait.end(); });
   const tail = run.catch(() => {});
   targetQueues.set(key, tail);
   tail.then(() => { if (targetQueues.get(key) === tail) targetQueues.delete(key); });
   return run;
 }
 
-async function headWrite(target, work, wait) {
+async function headWrite(target, work, wait, hold = null) {
   const find = target ? () => locate(target) : () => readPass();
+  let drawing = 0, stale = 0;
   for (;;) {
     if (!target || quietIn(idOf(target))) await untilQuiet(find, wait.start);
     const outcome = await inLine(async () => {
       const found = await find();
       if (found && quietIn(idOf(found.target))) return AGAIN;
+      drawing = hold && found && !urgentQueued.has(hold.key) ? drawHold(idOf(found.target), found.chat, hold.since) : 0;
+      if (drawing) return DRAWING;
+      if (target && found) Object.assign(found, { base: chatPrint(found.chat), recheck: stale < RECHECKS });
       wait.end();
-      return work(found);
+      try {
+        return await work(found);
+      } catch (error) {
+        if (error === STALE) return STALE;
+        throw error;
+      }
     });
+    if (outcome === DRAWING) { await sleep(drawing); continue; }
+    if (outcome === STALE) { stale++; continue; }
     if (outcome !== AGAIN) return outcome;
   }
+}
+
+const RECHECKS = 3;
+const STALE = Symbol('stale');
+
+const chatPrint = chat => ({ messages: (chat?.message ?? []).map(m => [m?.chatId ?? null, String(m?.data ?? '')]),
+  rest: JSON.stringify([chat?.localLore ?? null, chat?.scriptstate ?? null]) });
+const samePrint = (a, b) => a.rest === b.rest && a.messages.length === b.messages.length
+  && a.messages.every(([id, text], i) => id === b.messages[i][0] && text === b.messages[i][1]);
+
+async function recheck(found) {
+  const now = await risuai.getChatFromIndex(found.charIndex, found.chatIndex).catch(() => null);
+  const same = !!now && (now.id ?? null) === found.target.chatId;
+  if (same && samePrint(chatPrint(now), found.base)) return;
+  if (same) observe(idOf(found.target), now);
+  throw STALE;
 }
 
 async function untilQuiet(find, waiting) {
@@ -825,6 +870,7 @@ async function drawNotice(press, pass) {
 }
 
 const shops = createShopCards({ sim, doc: () => doc, lang: chat => currentLang(chat), compat: pass => compatBots.has(pass.target?.chaId), actionPass,
+  foeGimmicks: () => settings.foeGimmicks,
   queue: (action, target) => queueAction(action, target), bindButtons });
 
 const forgeName = (id, key) => `${id}:${key}`;
@@ -1107,7 +1153,8 @@ async function prepareBattle(press, mode, retryOf, owner) {
   }
   const at = findBlockMessage(pass.chat, key);
   if (at < 0) throw failed('blockGone');
-  const block = battlesIn(pass.chat.message[at], at, rulesAt(pass.chat)(at)).find(b => b.key === key);
+  const reading = rulesAt(pass.chat)(at);
+  const block = battlesIn(pass.chat.message[at], at, reading).find(b => b.key === key);
   const { spec: battle, errors } = readBattleAt(pass.chat, at, block.body);
   if (!battle) throw failed('blockBroken');
   const ctx = await storyCtx();
@@ -1131,11 +1178,13 @@ async function prepareBattle(press, mode, retryOf, owner) {
     else start = first;
   }
   const persona = await personaLook();
+
+  let base = null;
+  const retryBase = () => (base ??= encounterBase(structuredClone(pass.chat), key, ctx, pass.table).state);
   let spec, startBalls = mode === 'resume' ? save.attempt.balls ?? undefined : undefined;
-  const retryBase = mode === 'retry' ? encounterBase(structuredClone(pass.chat), key, ctx, pass.table).state : null;
   if (!from) {
 
-    const { state } = mode === 'retry' ? { state: retryBase } : acts.pendingState(pass.chat, ctx);
+    const { state } = mode === 'retry' ? { state: retryBase() } : acts.pendingState(pass.chat, ctx);
 
     const fighters = hatchedParty(state);
     if (!fighters.length) throw failed('emptyParty');
@@ -1143,18 +1192,21 @@ async function prepareBattle(press, mode, retryOf, owner) {
 
     const playerName = persona.name;
 
-    spec = start ? restartSpec(start, freshSeed()) : toEngineSpec(state, battle, { ...ctx, playerName, lang: currentLang(pass.chat) },
+    spec = start ? restartSpec(start, freshSeed()) : toEngineSpec(state, battle, { ...ctx, playerName, lang: currentLang(pass.chat), battleRegion: reading.battleRegion,
+      wildHiddenAbility: reading.wildHiddenAbility },
       { seed: freshSeed(), formatid: battleFormat(), expShare: settings.expShare, expRate: settings.expRate, effectItems: settings.effectItems, foeGimmicks: settings.foeGimmicks, picture: pictureOptions(key, pass.chat), player: playerOptions(persona.look),
-        status: statusIn(pass.chat.message[at]) });
+        status: statusIn(pass.chat.message[at]),
+        earlierRegion: reading.battleRegion ? earlierRegion(pass.chat, at) : null, blockFirst: knownOtherBot(pass) });
     startBalls = { mine: fighters.map(ballOf), ...blockBalls(battle) };
   }
 
   const { difficulty } = settings;
   if (spec) spec = { ...spec, difficulty };
   if (from?.spec) from = { ...from, spec: { ...from.spec, difficulty } };
-  if (retryBase) {
-    if (spec) spec = withTraitsOf(retryBase, spec);
-    if (from?.spec) from = { ...from, spec: withTraitsOf(retryBase, from.spec) };
+
+  if (mode === 'retry') {
+    if (spec) spec = withLocksOf(retryBase(), spec);
+    if (from?.spec) from = { ...from, spec: withLocksOf(retryBase(), from.spec) };
   }
 
   const { myPicture } = persona.look;
@@ -1180,15 +1232,16 @@ async function prepareBattle(press, mode, retryOf, owner) {
     onSpeed: speed => keepSettings({ ...settings, speed }),
     me,
 
-    viewOptions: { theme: settings.theme, sound: settings.sound, speed: settings.speed, typeHints: settings.typeHints, moveAnims: settings.moveAnims, quality: settings.quality,
-      pictureWays: viewPictureWays(settings.panelPicture), cries: cryPackSource(risuai.pluginStorage) },
+    viewOptions: { theme: settings.theme, volume: soundFeed, speed: settings.speed, typeHints: settings.typeHints, moveAnims: settings.moveAnims, quality: settings.quality, spriteStyle: settings.spriteStyle,
+      pictureWays: viewPictureWays(settings.panelPicture),
+      voicePacks: voicePacks.source },
 
     onClose: async () => { await hideWindow(owner); await finish(origin); },
     onCollapse: () => collapse().catch(showError),
 
     onRetry: () => app.close().then(() => startBattle(press, { mode, retryOf })).catch(error => onButtonError(press, error)),
     story: { spec, from, commands,
-      onTurn: snapshot => autosave(origin, snapshot),
+      onTurn: snapshot => autosave(origin, snapshot, { defer: true }),
       onResult: result => saveResult(origin, result),
 
       onSend: options => (origin.phase === 'saved' ? sendCommitted(origin, options) : sendLive(origin, options)),
@@ -1344,7 +1397,9 @@ async function writeResult(origin, { outcome, result, apply }) {
       .filter(e => e?.evolved === true && !e.unsupported).map(e => ({ from: e.from, to: e.to, evolved: true }));
 
     const stages = backToBack(origin.stage) ? [...battlesBefore(origin.stage).map(b => outcomeOf(b.result)), outcome] : null;
-    const line = resultLine({ outcome, battle: origin.battle, kind: battleKind(apply), caught, evolutions, stages, ...naming(battleLang(origin, chat)) });
+
+    const prize = prizeItem([...battlesBefore(origin.stage).map(b => b.result), result]);
+    const line = resultLine({ outcome, battle: origin.battle, kind: battleKind(apply), caught, evolutions, stages, prize, ...naming(battleLang(origin, chat)) });
 
     const anchor = blockAnchorIn(chat, origin.key, rulesAt(chat));
     const place = resultPlace(chat, placeResult(chat, { blockKey: origin.key, line, tag }));
@@ -1358,7 +1413,9 @@ async function writeResult(origin, { outcome, result, apply }) {
 
     writeLast(chat, { blockKey: origin.key, ...anchor, tag, outcome, battle: origin.battle, line, place,
       result: { turn: result.turn ?? 0, outcome: result.outcome ?? null, winner: result.winner ?? null, captured: result.captured ?? null,
-        forfeited: !!result.forfeited, playerName: result.sides?.[0]?.name ?? null, log: result.log ?? [], screen: result.screen ?? [], evolutions,
+        forfeited: !!result.forfeited, playerName: result.sides?.[0]?.name ?? null, log: result.log ?? [], screen: result.screen ?? [],
+        ...(result.screenHp?.length ? { screenHp: result.screenHp } : {}),
+        evolutions,
         own: ownStarts(origin.stage),
         ...(stageOf(origin.stage) > 1 ? { stage: stageOf(origin.stage) } : {}) } });
     commitAttempt(chat, origin.key);
@@ -1376,8 +1433,8 @@ async function saveResult(origin, result) {
 async function saveForfeit(origin, progress) {
   const now = progress?.result;
   const apply = Array.isArray(now?.sides) ? now : null;
-  const screen = active?.origin === origin ? active.app.screen().lines : [];
-  await writeResult(origin, { outcome: 'lose', result: { turn: progress?.turn ?? 0, log: progress?.log ?? [], sides: now?.sides, screen }, apply });
+  const screen = active?.origin === origin ? active.app.screen() : null;
+  await writeResult(origin, { outcome: 'lose', result: { turn: progress?.turn ?? 0, log: progress?.log ?? [], sides: now?.sides, screen: screen?.lines ?? [], screenHp: screen?.hp ?? [] }, apply });
 }
 
 function battleForVars(where) {
@@ -1508,16 +1565,21 @@ function observe(id, chat, { ours = false } = {}) {
   const last = messages.length - 1;
 
   const seen = last < 0 ? undefined : before?.texts.get(messageId(messages[last], last)) ?? before?.texts.get(messageId(null, last));
-  const same = !!before && (last < 0 || seen === messages[last].data);
+  const same = !!before && (last < 0 || seen === messages[last].data) && !aboveChanged(before.order, messages);
   const streaming = !!chat?.isStreaming;
 
   const ended = !streaming && before?.streaming && before.grewAt;
   const changedAt = ours ? before?.changedAt ?? 0 : same && !streaming ? before.changedAt : ended || Date.now();
   observed.delete(id);
-  observed.set(id, { texts: new Map(messages.map((m, i) => [messageId(m, i), m.data])), changedAt, streaming });
+  observed.set(id, { texts: new Map(messages.map((m, i) => [messageId(m, i), m.data])), order: messages.map(m => m?.data), changedAt, streaming });
   if (observed.size > SEEN_CHATS) observed.delete(observed.keys().next().value);
   rememberVars(id, chat);
   if (replyWatch?.id === id) seeReplies(replyWatch, messages, { streaming, ours });
+}
+
+function aboveChanged(order, messages) {
+  for (let i = 0; i < messages.length - 1; i++) if (order[i] !== messages[i]?.data) return true;
+  return false;
 }
 
 function observeGrow(id) {
@@ -1529,6 +1591,35 @@ function quietIn(id) {
   const seen = observed.get(id);
   if (!seen || seen.streaming) return SETTLE_MS;
   return Math.max(0, SETTLE_MS - (Date.now() - seen.changedAt));
+}
+
+const DRAW_CAP_MS = 25_000;
+const DRAW_POLL_MS = 1000;
+
+const drawSeen = new Map();
+
+function drawHold(id, chat, since) {
+  const jobs = drawingJobs(chat);
+  if (!jobs) { drawSeen.delete(id); return 0; }
+  const now = Date.now();
+  let seen = drawSeen.get(id);
+  if (seen?.jobs !== jobs) {
+    seen = { jobs, at: now };
+    drawSeen.delete(id);
+    drawSeen.set(id, seen);
+    if (drawSeen.size > SEEN_CHATS) drawSeen.delete(drawSeen.keys().next().value);
+  }
+  const left = DRAW_CAP_MS - (now - Math.min(seen.at, since));
+  return left > 0 ? Math.min(DRAW_POLL_MS, left) : 0;
+}
+
+let watchHeld = null;
+
+function watchHold(pass) {
+  const since = watchHeld?.id === pass.id ? watchHeld.since : Date.now();
+  const wait = drawHold(pass.id, pass.chat, since);
+  watchHeld = wait ? { id: pass.id, since } : null;
+  return wait;
 }
 
 function followMoves(pass) {
@@ -1581,7 +1672,7 @@ function storyEndFailed(pass, key) {
 const MESSAGE_FIXES = ['follow', 'lost', 'ends', 'handBack', 'rekey'];
 const needsWrite = (fixes, { messages = true } = {}) => Object.entries(fixes).some(([name, on]) => on && (messages || !MESSAGE_FIXES.includes(name)));
 
-function writeFixes(pass, fixes, { messages = true, attach = null } = {}) {
+function writeFixes(pass, fixes, { messages = true, attach = null, defer = false } = {}) {
   return whenQuiet(pass.target, async found => {
     if (!found) return {};
     let attached;
@@ -1605,14 +1696,14 @@ function writeFixes(pass, fixes, { messages = true, attach = null } = {}) {
     }, { vars: !!(fixes.vars || fixes.lore || (messages && (fixes.lost || fixes.ends || fixes.rekey))) });
     if (wrote === HELD) await clearDerived(found, { messages });
     return { attached };
-  });
+  }, { defer });
 }
 
 async function catchUp(pass) {
   const wait = quietIn(pass.id);
   if (wait) return watchLater(wait);
   const fixes = await pendingFixes(pass);
-  if (needsWrite(fixes)) await writeFixes(pass, fixes);
+  if (needsWrite(fixes)) await writeFixes(pass, fixes, { defer: true });
   if (fixes.rekey) watchSoon();
 }
 
@@ -1728,7 +1819,7 @@ function liveWhat(origin) {
   const screen = live.app.screen();
   const shown = Number.isInteger(progress.shown) ? progress.shown : progress.log.length;
   const snapshot = live.app.snapshot();
-  return () => ({ source: { battle: origin.battle, own: ownStarts(origin.stage), result: null, log: progress.log, screen: screen.lines, stage: stageOf(origin.stage) },
+  return () => ({ source: { battle: origin.battle, own: ownStarts(origin.stage), result: null, log: progress.log, screen: screen.lines, screenHp: screen.hp, stage: stageOf(origin.stage) },
     at: { to: shown, ended: false, screenEnd: screen.lines.length, snapshot } });
 }
 
@@ -1749,7 +1840,7 @@ function sendCommitted(target, options) {
     const info = surveyBattles(chat, readTable(chat)).battles.get(target.key);
     if (!last || last.blockKey !== target.key || info?.committed !== 'done' || info.result.tag !== last.tag) throw failed('noRecord');
     const screen = last.result.screen ?? [], log = last.result.log ?? [];
-    return { source: { battle: last.battle, own: last.result.own ?? null, result: last.result, log, screen, stage: last.result.stage },
+    return { source: { battle: last.battle, own: last.result.own ?? null, result: last.result, log, screen, screenHp: last.result.screenHp ?? [], stage: last.result.stage },
       at: { to: log.length, ended: true, endTurn: last.result.turn ?? 0, screenEnd: screen.length, snapshot: null } };
   }, options);
 }
@@ -1785,14 +1876,14 @@ async function cardSend(press, pass) {
   if (sent) await refreshCard(press).catch(() => {});
 }
 
-async function autosave(origin, snapshot) {
+async function autosave(origin, snapshot, { defer = false } = {}) {
   if (origin.phase !== 'running') return undefined;
   origin.autoLatest = snapshot;
   const live = active?.origin === origin ? active : null;
   const balls = live ? progressBalls(live.app.progress(), origin) : undefined;
   if (live && balls) live.progress = balls;
   return writeChat(origin, chat => origin.autoLatest === snapshot && origin.phase === 'running'
-    && setAuto(chat, origin.key, snapshot, balls ?? live?.progress ?? null), { vars: true });
+    && setAuto(chat, origin.key, snapshot, balls ?? live?.progress ?? null), { vars: true, defer });
 }
 
 const planner = () => import('./planner.js');
@@ -1837,7 +1928,7 @@ async function checkPlans(pass) {
         const now = positionIn({ id: where.id, chat });
         if (!samePoint(now?.point, position.point) || !rewindOf(chat, partFor(readSave(chat), position.key, 'attempt'), position.point)) return false;
         return rewindPlans(chat, position.key, back);
-      }, { vars: true });
+      }, { vars: true, defer: true });
 
       if (wrote === true && position.live && active?.key === position.key) await dropActive();
     } else {
@@ -1851,7 +1942,7 @@ async function checkPlans(pass) {
         if (!samePoint(now?.point, position.point)) return false;
         if (nextUnplanned(chat, partFor(readSave(chat), position.key, 'attempt'), position.point)?.block.key !== row.act) return false;
         return addPlan(chat, position.key, row);
-      }, { vars: true });
+      }, { vars: true, defer: true });
     }
     if (wrote !== true) return;
     where = await readPass();
@@ -1894,7 +1985,7 @@ async function plannedWhat(where, extra = null) {
   const what = chat => {
     const again = chainIn({ id: where.id, chat });
     if (!again || again.end?.check !== chain.end?.check || !samePoint(again.position.point, position.point)) return null;
-    return { source: { battle, own: ownStarts(end.spec), result: over, log: read.log, screen: read.lines, stage: stageOf(end.spec) }, notes,
+    return { source: { battle, own: ownStarts(end.spec), result: over, log: read.log, screen: read.lines, screenHp: read.hp, stage: stageOf(end.spec) }, notes,
       at: { to: read.log.length, ended: false, screenEnd: read.lines.length, snapshot: end } };
   };
   return { target: { ...where.target, key: position.key, lang }, what, acts: tell.map(row => row.act) };
@@ -1946,6 +2037,29 @@ export async function queueAction(action, target = null) {
     try { return acts.queueAction(chat, ctx, action, { salt: String(Math.random()) }); } catch (error) { throw refused(error); }
   }, { vars: true, missing: true });
   return queued === HELD ? null : queued || null;
+}
+
+export async function fishCast(rod, target = null) {
+  const pass = await actionPass();
+  if (!pass) return null;
+  const to = target ?? pass.target;
+  if (quietIn(pass.id)) throw failed('replying');
+  const ctx = await storyCtx();
+  let cast = null;
+  const wrote = await writeChat(to, (chat, found) => {
+    if (battleIn({ id: idOf(found.target), chat }).key) throw failed('inBattle');
+    const { state } = acts.pendingState(chat, ctx);
+    cast = castNow(chat, { rod, bag: state.bag, levels: hatchedParty(state).map(mon => mon.set.level), actions: acts.fishCasts(chat),
+      speciesName: id => sim.Dex.species.get(id).name });
+    if (cast.rule) throw refused(ruleError(cast.rule));
+    if (cast.why) throw failed(cast.why);
+    try { acts.queueAction(chat, ctx, cast.action, { salt: String(Math.random()) }); } catch (error) { throw refused(error); }
+    if (cast.block) appendCast(chat, cast);
+    return true;
+  }, { vars: true, missing: true });
+  if (wrote === HELD) return null;
+  if (wrote !== true) throw failed('sceneMoved');
+  return cast.result;
 }
 
 export async function writeBotTravel(change, target) {
@@ -2033,62 +2147,84 @@ async function onPrompt(text) {
     ctx: latest ? await storyCtx() : null });
 }
 
+let deviceBox = null, deviceReady = null;
+
+let sharedSwitches = null;
+const device = () => (deviceBox ??= deviceStore(risuai));
+
+const deviceLoaded = () => (deviceReady ??= device().load().then(() => changed(), error => console.warn('[poke-battle] 이 기기 설정', error)));
+
+async function onThisDevice(loaded) {
+  sharedSwitches = deviceSettings(loaded);
+  await deviceLoaded();
+  return withDevice(loaded, device());
+}
+
+export const panelShiftNow = () => deviceShift(device()) ?? settings.panelShift;
+let deviceWrites = Promise.resolve();
+
+function keepOnDevice(before, next) {
+  const store = device();
+  if (!store.usable) return Promise.resolve();
+  const changes = DEVICE_SETTINGS.filter(key => next[key] !== before[key]).map(key => [key, deviceValue(key, next[key])]).filter(([, value]) => value !== undefined);
+  if (!changes.length) return deviceWrites;
+  const write = () => Promise.all(changes.map(([key, value]) => store.set(key, value)));
+  return deviceWrites = deviceWrites.then(write, write);
+}
+
+export async function setPanelSetting(key, value) {
+  const own = deviceValue(key, value);
+  if (own === undefined || settings[key] === own) return;
+  await deviceLoaded();
+  const next = { ...settings, [key]: own };
+  changeSettings(next).catch(console.error);
+  if (device().usable) return deviceWrites;
+  return isUnreadable(settingsStatus) ? undefined : saveSettingsInOrder(next);
+}
+
+export async function setPanelShift(value) {
+  await deviceLoaded();
+  if (device().usable) {
+    await device().set('panelShift', panelLift(value));
+    changed();
+    return;
+  }
+  const shift = panelLift(value);
+  if (shift === settings.panelShift) return void changed();
+  const next = { ...settings, panelShift: shift };
+  changeSettings(next).catch(console.error);
+  return isUnreadable(settingsStatus) ? undefined : saveSettingsInOrder(next);
+}
+
+export function taleValues(chat, lang) {
+  const battles = chat ? { on: !battlesOff(chat), usable: !isUnreadable(readBattlesOff(chat).status) } : null;
+  return { sendFormat: settings.sendFormat, sendFormats: SEND_FORMATS(lang), debug: settings.debug === true, typeHints: settings.typeHints === true,
+    ...deviceSettings(settings), panelOpens: PANEL_OPEN_CHOICES(lang), battles };
+}
+
+export async function setTale(key, value, target) {
+  if (DEVICE_SETTINGS.includes(key)) return setPanelSetting(key, value);
+  if (key === 'battles') return target ? switchBattlesIn(target, !value) : undefined;
+  if (!['sendFormat', 'debug', 'typeHints'].includes(key) || settings[key] === value) return undefined;
+  if (normalizeSettings({ ...settings, [key]: value })[key] !== value) return undefined;
+  return keepSettings({ ...settings, [key]: value });
+}
+
 let settingsApp;
 let settingsSaves = Promise.resolve();
 
-// The panel's height. The shared setting (the "panel height" slider) is the default on every device; a panel
-// dragged on this device keeps its own height here, in the device's storage, and that one wins on this device.
-let deviceBox = null, deviceReady = null;
-const device = () => (deviceBox ??= deviceStore(globalThis.risuai, 'pkb:device'));
-const deviceLoaded = () => (deviceReady ??= device().load().then(() => changed(), () => {}));
-// Panel switches kept per device. `sharedSwitches` remembers what the shared settings hold for them, so saving the
-// settings from this device does not push this device's choice onto the user's other devices.
-const DEVICE_SWITCHES = ['panelStay', 'panelFold', 'panelDrag'];
-let sharedSwitches = null;
-async function withDeviceSwitches(loaded) {
-  await deviceLoaded();
-  sharedSwitches = Object.fromEntries(DEVICE_SWITCHES.map(key => [key, loaded[key]]));
-  if (!device().usable) return loaded;
-  const own = Object.fromEntries(DEVICE_SWITCHES.filter(key => typeof device().get(key) === 'boolean').map(key => [key, device().get(key)]));
-  return { ...loaded, ...own };
-}
-const sharedCopy = next => (device().usable && sharedSwitches ? { ...next, ...sharedSwitches } : next);
-
-export function panelShiftNow() {
-  deviceLoaded();
-  const own = device().get('panelShift');
-  return typeof own === 'number' && Number.isFinite(own) ? own : settings.panelShift;
-}
-// one of the panel's switches, pressed in the panel's own Settings sub-tab
-export async function setPanelSwitch(key, on) {
-  if (!DEVICE_SWITCHES.includes(key) || settings[key] === !!on) return;
-  await deviceLoaded();
-  const next = { ...settings, [key]: !!on };
-  changeSettings(next);
-  await saveSettingsInOrder(next);
-}
-export async function setPanelShift(value) {
-  await deviceLoaded();
-  if (device().usable) { await device().set('panelShift', value); changed(); return; }
-  if (settings.panelShift === value) return;
-  const next = { ...settings, panelShift: value };
-  changeSettings(next);
-  await saveSettingsInOrder(next);
-}
-
 export function saveSettingsInOrder(next) {
-  const save = () => saveSettings(risuai.pluginStorage, sharedCopy(next));
+  const save = () => saveSettings(risuai.pluginStorage, sharedPart(next, sharedSwitches, device()));
   return settingsSaves = settingsSaves.then(save, save);
 }
 
 export function changeSettings(next) {
-  if (device().usable) for (const key of DEVICE_SWITCHES) if (next[key] !== settings[key]) device().set(key, next[key]).catch(() => {});
-  // the shared height was changed in the settings: this device follows it again
-  if (next.panelShift !== settings.panelShift && device().get('panelShift') !== undefined) device().set('panelShift', null).catch(() => {});
+  keepOnDevice(settings, next).catch(error => console.warn('[poke-battle] 이 기기 설정 저장', error));
   const switched = botsSwitched(settings, next);
   const commands = commandsOn(settings) !== commandsOn(next);
   const tools = (settings.effectItems === true) !== (next.effectItems === true);
   settings = next;
+  soundFeed.changed();
   changed();
   if (switched.length || commands || tools) watchSoon();
   return Promise.all(switched.map(s => reconcileBot(s.name, s.on)));
@@ -2117,15 +2253,16 @@ export async function openSettings() {
   try {
 
     const preparing = mountPreparing({ lang: await openLang() });
-    let pass, bot = null, persona, picture = null, cryPacks = [], imports = null, chatBattles = null;
+    let pass, bot = null, persona, picture = null, imports = null, chatBattles = null, packs = [];
     try {
       await showWindow(owner, { full: true });
 
       ({ settings, status: settingsStatus } = await loadSettings(risuai.pluginStorage));
-      settings = await withDeviceSwitches(settings);
+      settings = await onThisDevice(settings);
+      soundFeed.changed();
       ({ name: persona } = await personaLook());
       if (persona) picture = await loadPicture(risuai.pluginStorage, persona);
-      cryPacks = await loadCryPacks(risuai.pluginStorage);
+      packs = await voicePacks.list();
       pass = await readPass();
       if (pass) bot = { name: (await characterAt(pass.charIndex, pass.chat, { fresh: true }))?.name ?? '', compat: compatStatus.get(pass.target?.chaId) ?? '' };
       if (pass) imports = importsOf(pass.chat);
@@ -2133,11 +2270,10 @@ export async function openSettings() {
     } finally { preparing.remove(); }
     const unreadable = isUnreadable(settingsStatus);
     const lang = currentLang(pass?.chat);
-    app = mountSettings({ settings, bot, persona, notice: unreadable ? settingsUnreadable(lang) : '', picture, cryPacks, imports, battlesOff: chatBattles, lang,
+    app = mountSettings({ settings, bot, persona, notice: unreadable ? settingsUnreadable(lang) : '', picture, imports, battlesOff: chatBattles, voicePacks: packs, lang,
       inUse: { lang },
       onPicture: next => savePicture(risuai.pluginStorage, persona, next),
-      onCryPackAdd: files => addCryPacks(risuai.pluginStorage, files),
-      onCryPackRemove: id => removeCryPack(risuai.pluginStorage, id),
+      onVoicePackAdd: files => voicePacks.add(files), onVoicePackRemove: id => voicePacks.remove(id),
       onPermission: askPermission,
       onChange: next => changeInWindow(pass?.target, next),
       onImport: () => openImport(pass.target, next => app.setImports(next)),
@@ -2367,12 +2503,17 @@ async function watchNow() {
     await fitActive();
     if (!pass) return;
     checkCompat(pass);
-    if (!isOn(pass)) return await catchUp(pass);
+
+    const held = watchHold(pass);
+    if (held) watchLater(held);
+    if (!isOn(pass)) return held ? undefined : await catchUp(pass);
     seeReply(pass);
     await bindButtons();
     await checkActive(pass);
-    await checkPlans(pass);
-    await catchUp(pass);
+    if (!held) {
+      await checkPlans(pass);
+      await catchUp(pass);
+    }
     await refreshDrawn(pass);
     await refreshForge(pass);
     await shops.refresh(pass);
@@ -2391,7 +2532,8 @@ function recheckQuiet(id) {
 
 export async function startStoryLink() {
   ({ settings, status: settingsStatus } = await loadSettings(risuai.pluginStorage));
-  settings = await withDeviceSwitches(settings);
+  settings = await onThisDevice(settings);
+  soundFeed.changed();
 
   try {
     const name = await personaName(risuai);

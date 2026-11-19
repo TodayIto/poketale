@@ -1,6 +1,7 @@
 import { toID } from '../engine/mon.mjs';
 import { nicknamed } from './ai-names.mjs';
 import { TOOL_TURNS } from './tools.mjs';
+import { BAG_ITEMS, onNoPokemon } from '../engine/bag.mjs';
 
 const USER = '{{user}}';
 
@@ -24,10 +25,8 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
   const teraOf = new Map();
   let hint = -1, stellar = false, shell = null;
   let hits = [];
-  // Stat lines: an ability's own line comes right after its -ability line and has no [from], so it is not the last move's doing.
-  // `stats` is the run of stat lines just read, so one move's Sp. Atk and Sp. Def drops read as one change
-  let abilityAt = -1, stats = null;
-  // After Showdown's blank line that opens end-of-turn effects (Octolock's drops), nothing belongs to the last move
+
+  let cause = null, run = null;
   let residual = false;
   const lines = log ?? [];
   const end = Math.min(to, lines.length);
@@ -43,7 +42,7 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
     const [player, letter, name] = identOf(ident);
     return (letter && at.get(player + letter)) || named(player, name) || meet(player, name);
   };
-  // Every name shown so far, also before `from`, so each part of a long battle tells the same Pokémon apart the same way
+
   const shown = new Map();
   const ref = mon => {
     const r = { species: mon.species, nick: nickOf(mon), side: mon.side, seat: mon.seat, player: mon.player };
@@ -96,8 +95,8 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
     const live = i >= from;
     if (cmd === '') residual = true;
     else if (cmd === 'turn' || cmd === 'move') residual = false;
-    // A blocked target's line between an ability and its stat lines (Clear Body against Cotton Down) keeps the run the ability's
-    if (abilityAt === i - 1 && (cmd === '-fail' || cmd === '-immune' || cmd === '-activate')) abilityAt = i;
+
+    if (cause?.at === i - 1 && (cmd === '-fail' || cmd === '-immune' || cmd === '-activate')) cause.at = i;
 
     const push = (event, mark = true) => {
       if (live) turns[turns.length - 1].events.push(event);
@@ -118,24 +117,29 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
     };
     const absorbed = (mon, ability) => onMove(mon, { kind: 'tag', tag: 'absorbed', mon: null, byMon: ref(mon), by: { kind: 'abilities', name: ability } });
 
+    const causes = (kind, name, event) => { cause = { at: i, kind, id: toID(name), name, event, live }; };
+
     const statChange = (mon, change) => {
       const from = fromOf(args);
-      const before = stats?.at === i - 1 ? stats : null;
-      // Joined only within one sent part: a line before `from` was never sent
-      const run = before?.live === live ? before : null;
-      if (run && change.kind === 'boost' && run.change.kind === 'boost' && run.mon === mon && run.change.up === change.up && run.change.by === change.by
-        && run.fromName === (from?.name ?? '')) {
-        run.change.stats.push(...change.stats);
-        run.at = i;
+      const effect = { ...change, mon: mon ? ref(mon) : null };
+      const last = run?.at === i - 1 ? run : null;
+      if (last && last.live === live && change.kind === 'boost' && last.effect.kind === 'boost' && last.mon === mon && last.effect.up === change.up
+        && last.effect.by === change.by && last.from === (from?.name ?? '')) {
+        last.effect.stats.push(...change.stats);
+        last.at = i;
         return;
       }
-      const ownMove = !from || (from.kind === 'moves' && recent?.type === 'move' && toID(from.name) === toID(recent.move));
-      const prev = ownMove && !residual && abilityAt !== i - 1 && !(before && !before.onMove) ? moveOf() : null;
-      const effect = { ...change, mon: mon ? ref(mon) : null, from: prev ? null : from };
-      if (prev) prev.effects.push(effect);
-      else push({ type: 'stat', ...effect }, false);
-      // The pushed event shares effect.stats, so a later line of the same run lands in both
-      stats = { at: i, live, mon, change: effect, onMove: !!prev, fromName: from?.name ?? '' };
+      const near = cause?.at === i - 1 ? cause : null;
+      const host = near && near.live === live && (from ? from.kind !== 'moves' && toID(from.name) === near.id : near.kind !== 'item') ? near : null;
+      let into = null;
+      if (host) {
+        host.at = i;
+        if (host.event) into = host.event.effects ??= [];
+      } else if (!residual && (!from || (from.kind === 'moves' && recent?.type === 'move' && toID(from.name) === toID(recent.move)))) into = moveOf()?.effects ?? null;
+
+      const standalone = { type: 'stat', ...effect, from: from ?? (near?.kind === 'ability' ? { kind: 'abilities', name: near.name } : null) };
+      if (into) into.push(effect); else push(standalone, false);
+      run = { at: i, live, mon, effect: into ? effect : standalone, from: from?.name ?? '' };
     };
 
     const gimmick = event => {
@@ -273,6 +277,7 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
         onMove(blocker, { kind: 'tag', tag: 'blocked', mon: null, byMon: ref(blocker), by: { kind: 'abilities', name: ability } });
         break;
       }
+
       push({ type: 'cant', mon: ref(who(args[0])), reason: args[1] ?? '', move: args[2] && !args[2].startsWith('[') ? args[2] : null });
       break;
     }
@@ -298,22 +303,25 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       break;
     }
 
-    case '-story-item': push({ type: 'item', mon: ref(who(args[0])), item: args[2], ...(args[3] ? { label: args[3] } : {}) }); break;
+    case '-story-item': {
+      const label = args[3] && !/^\[/.test(args[3]) ? args[3] : null;
+      const event = { type: 'item', mon: ref(who(args[0])), item: args[2], ...(label ? { label } : {}), ...(args.includes('[fail]') ? { failed: true } : {}) };
+      push(event);
+      causes('item', BAG_ITEMS[args[2]]?.name ?? args[3] ?? args[2], event);
+      break;
+    }
 
     case '-story-tool': {
       const trainer = tagArg(args, 'trainer') ?? null;
-      push({ type: 'tool', mon: ref(who(args[0])), item: args[2], label: args[3], tag: args[4], trainer, failed: args.includes('[fail]'), boosts: [] });
+      const event = { type: 'tool', mon: ref(who(args[0])), item: args[2], label: args[3], tag: args[4], trainer, failed: args.includes('[fail]') };
+      push(event);
+      causes('tool', args[2], event);
       break;
     }
+
     case '-boost': case '-unboost': {
       const mon = seen(args[0]);
-      if (recent?.type === 'tool' && recent.tag === 'cheer' && mon && mon.seat === recent.mon.seat) {
-        recent.boosts.push({ stat: args[1], amount: Number(args[2]) * (cmd === '-boost' ? 1 : -1) });
-        break;
-      }
-      if (silent || !mon) break;
-      // 0: the stat could not go any further
-      statChange(mon, { kind: 'boost', stats: [args[1]], up: cmd === '-boost', by: Math.abs(Number(args[2]) || 0) });
+      if (!silent && mon) statChange(mon, { kind: 'boost', stats: [args[1]], up: cmd === '-boost', by: Math.abs(Number(args[2]) || 0) });
       break;
     }
     case '-setboost': {
@@ -326,38 +334,48 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       const mon = seen(args[0]);
       if (silent || !mon) break;
       if (cmd === '-invertboost') { statChange(mon, { kind: 'invert' }); break; }
-      // Spectral Thief: -clearpositiveboost|TARGET|SOURCE|move: Spectral Thief
       const taker = cmd === '-clearpositiveboost' && /^p\d/.test(args[1] ?? '') ? seen(args[1]) : null;
       statChange(mon, { kind: 'clear', which: { '-clearboost': 'one', '-clearnegativeboost': 'negative', '-clearpositiveboost': 'positive' }[cmd],
         ...(taker ? { other: ref(taker) } : {}) });
       break;
     }
-    // -copyboost|SOURCE|TARGET (Psych Up), -swapboost|SOURCE|TARGET|STATS (Heart Swap, Power Swap, Guard Swap)
     case '-copyboost': case '-swapboost': {
       const mon = seen(args[0]), other = /^p\d/.test(args[1] ?? '') ? seen(args[1]) : null;
       if (silent || !mon || !other) break;
-      const listed = cmd === '-swapboost' && args[2] && !args[2].startsWith('[') ? args[2].split(',').map(s => s.trim()).filter(Boolean) : [];
+      const listed = cmd === '-swapboost' && args[2] && !args[2].startsWith('[') ? args[2].split(',').map(x => x.trim()).filter(Boolean) : [];
       statChange(mon, { kind: cmd === '-copyboost' ? 'copy' : 'swap', other: ref(other), ...(listed.length ? { stats: listed } : {}) });
       break;
     }
+
     case '-curestatus': if (!silent) push({ type: 'cure', mon: ref(who(args[0])), status: args[1], from: fromOf(args) }, false); break;
     case '-story-run': if (live && args[2] === 'escaped') summary.ran = true; push({ type: 'run', result: args[2] }); break;
     case '-story-levelup': push({ type: 'levelup', mon: ref(who(args[0])), level: Number(args[2]) }); break;
     case 'win': if (live) summary.winner = args[0]; break;
 
-    case '-ability':
-      abilityAt = i;
-      if (silent) break;
+    case '-ability': {
+      if (silent) { causes('ability', args[1], null); break; }
 
-      if (args[2] === 'boost' && ABSORB.has(toID(args[1])) && absorbed(who(args[0]), args[1])) break;
-      push({ type: 'ability', mon: ref(who(args[0])), ability: args[1], from: fromOf(args) }, false);
+      if (args[2] === 'boost' && ABSORB.has(toID(args[1])) && absorbed(who(args[0]), args[1])) { causes('ability', args[1], recent); break; }
+      const event = { type: 'ability', mon: ref(who(args[0])), ability: args[1], from: fromOf(args) };
+      push(event, false);
+      causes('ability', args[1], event);
       break;
-    case '-item': if (!silent) push({ type: 'helditem', mon: ref(who(args[0])), item: args[1], from: fromOf(args) }, false); break;
+    }
+    case '-item': {
+      if (silent) break;
+      const event = { type: 'helditem', mon: ref(who(args[0])), item: args[1], from: fromOf(args) };
+      push(event, false);
+      causes('item', args[1], event);
+      break;
+    }
+
     case '-enditem': {
       if (silent) break;
       const from = fromOf(args);
       const how = args.includes('[eat]') ? 'eat' : !from || from.name === 'gem' ? 'used' : 'lost';
-      push({ type: 'enditem', mon: ref(who(args[0])), item: args[1], how, from: how === 'lost' && from.kind === 'moves' ? from : null }, false);
+      const event = { type: 'enditem', mon: ref(who(args[0])), item: args[1], how, from: how === 'lost' && from.kind === 'moves' ? from : null };
+      push(event, false);
+      causes('item', args[1], event);
       break;
     }
     case '-weather': {
@@ -670,11 +688,8 @@ function sidesOf(read, sides = {}, namer = null) {
   return { ...who, clash: namer ? clashesOf(read, namer, who) : new Set() };
 }
 
-// Compared by the name the narrator reads, without touching the namer's first-mention record
 const nameKey = (m, namer) => plain(m.nick ?? (namer.plainSpecies ? namer.plainSpecies(m.species) : m.species));
 
-// Names that stand for Pokémon of two or more owners (both sides sent out Alakazam): those need saying whose
-// A foe partner sharing the foe's side is told by seat (p2b), and Ally Switch moves seats, so it does not count as an owner of its own here
 function ownerKey(m, sides) {
   const owner = ownerOf(m, sides);
   return owner === 'second' && !String(m.seat ?? m.player ?? '').startsWith('p4') ? 'theirs' : owner;
@@ -692,7 +707,7 @@ function clashesOf(read, namer, sides) {
 const OWNERS = ['mine', 'partner', 'theirs', 'second'];
 
 function ownerOf(mon, sides) {
-  // A benched Pokémon (Heal Bell's "p3: Chansey") has no seat yet, only its player
+
   const player = String(mon?.seat ?? mon?.player ?? '').slice(0, 2);
   if (mon?.side === 'mine') return player === 'p3' && sides.partner ? 'partner' : 'mine';
   if (!sides.second) return 'theirs';
@@ -707,9 +722,10 @@ function sentOutText(owner, mons, sides) {
   return `${ownerName(owner, sides)} sent out ${mons}`;
 }
 
+export const OWNED_EN = { trainer: (owner, name) => `${owner}'s ${name}`, wild: name => `Wild ${name}` };
 const ownedText = (m, name, sides) => {
   const owner = ownerOf(m, sides);
-  return owner === 'theirs' && sides.wild ? `Wild ${name}` : `${ownerName(owner, sides)}'s ${name}`;
+  return owner === 'theirs' && sides.wild ? OWNED_EN.wild(name) : OWNED_EN.trainer(ownerName(owner, sides), name);
 };
 
 function monName(m, namer, sides) {
@@ -783,10 +799,14 @@ function reasonCtx(read, battle, own = null) {
   return { sure, start };
 }
 
+const sideItem = id => onNoPokemon(BAG_ITEMS[id]);
+
 function eventText(e, namer, sides, ctx = reasonCtx(null, null)) {
   const mon = m => monName(m, namer, sides);
+
+  const rode = head => (e.effects?.length ? `${head} → ${e.effects.map(x => statText(x, mon, namer)).join(', ')}` : head);
   switch (e.type) {
-  // These sentences already say whose Pokémon it is
+
   case 'switch': return sentOutText(ownerOf(e.mon, sides), monText(e.mon, namer), sides);
   case 'move': {
 
@@ -809,25 +829,26 @@ function eventText(e, namer, sides, ctx = reasonCtx(null, null)) {
   }
   case 'damage': case 'heal': return `${hpText(mon(e.mon), e)}${fromText(e.from, namer)}`;
   case 'status': return `${mon(e.mon)} ${STATUS_EN[e.status] ?? `got ${e.status}`}`;
-  case 'cure': return `${mon(e.mon)} ${CURE_EN[e.status] ?? 'was cured'}${fromText(e.from, namer)}`;
+  case 'stat': return `${statText(e, mon, namer)}${fromText(e.from, namer)}`;
+  case 'cure': return `${mon(e.mon)} ${EVENT_EN.cure[e.status] ?? EVENT_EN.cured}${fromText(e.from, namer)}`;
   case 'cant': return cantText(e, mon, namer);
-  case 'confusion': return `${mon(e.mon)} ${e.ended ? 'snapped out of its confusion' : 'became confused'}`;
-  case 'stat': return statText(e, mon, namer, true);
+  case 'confusion': return `${mon(e.mon)} ${e.ended ? EVENT_EN.confusionEnd : EVENT_EN.confusionStart}`;
   case 'faint': return `${mon(e.mon)} fainted`;
   case 'ball': return `${namer.items(e.ball)} thrown at ${mon(e.mon)} → ${e.result === 'caught' ? 'caught' : e.result === 'blocked' ? 'blocked' : 'broke free'}`;
-  case 'item': return `${ownerName(ownerOf(e.mon, sides), sides)} used ${e.label ?? namer.items(e.item)} on ${monText(e.mon, namer)}`;
-  case 'tool': return toolText(e, mon, sides);
+
+  case 'item': return rode(`${ownerName(ownerOf(e.mon, sides), sides)} used ${e.label ?? namer.items(e.item)}${sideItem(e.item) ? '' : ` on ${monText(e.mon, namer)}`}${e.failed ? ' → no effect' : ''}`);
+  case 'tool': return toolText(e, mon, sides, namer);
   case 'run': return e.result === 'escaped' ? 'Got away safely' : 'Could not get away';
   case 'levelup': return `${mon(e.mon)} grew to Lv${e.level}`;
 
-  case 'ability': return `${mon(e.mon)}'s ${namer.abilities(e.ability)} activated${fromText(e.from, namer)}`;
-  case 'helditem': return e.from?.kind === 'moves' ? `${mon(e.mon)} obtained ${namer.items(e.item)}${fromText(e.from, namer)}` : `${mon(e.mon)} is holding ${namer.items(e.item)}${fromText(e.from, namer)}`;
+  case 'ability': return rode(`${mon(e.mon)}'s ${namer.abilities(e.ability)} activated${fromText(e.from, namer)}`);
+  case 'helditem': return rode(e.from?.kind === 'moves' ? `${mon(e.mon)} obtained ${namer.items(e.item)}${fromText(e.from, namer)}` : `${mon(e.mon)} is holding ${namer.items(e.item)}${fromText(e.from, namer)}`);
   case 'enditem':
-    if (e.how === 'eat') return `${mon(e.mon)} ate its ${namer.items(e.item)}`;
-    if (e.how === 'lost') return `${mon(e.mon)} lost its ${namer.items(e.item)}${fromText(e.from, namer)}`;
+    if (e.how === 'eat') return rode(`${mon(e.mon)} ate its ${namer.items(e.item)}`);
+    if (e.how === 'lost') return rode(`${mon(e.mon)} lost its ${namer.items(e.item)}${fromText(e.from, namer)}`);
 
     if (toID(e.item) === 'airballoon') return `${mon(e.mon)}'s ${namer.items(e.item)} popped`;
-    return `${mon(e.mon)}'s ${namer.items(e.item)} was used up`;
+    return rode(`${mon(e.mon)}'s ${namer.items(e.item)} was used up`);
   case 'weather':
     if (!e.weather) return WEATHER_EN[e.ended]?.[1] ?? 'The weather cleared';
 
@@ -839,53 +860,63 @@ function eventText(e, namer, sides, ctx = reasonCtx(null, null)) {
 }
 
 const STAT_EN = { atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed', accuracy: 'accuracy', evasion: 'evasiveness' };
-const listEn = items => (items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : items[0] ?? '');
-
+export const STAT_TEXT = {
+  stats: list => list.map(stat => STAT_EN[stat] ?? stat).join('/'),
+  change: (who, stats, up, by) => (by > 0 ? `${who} ${stats} ${(up ? '↑' : '↓').repeat(Math.min(by, 3))}` : `${who} ${stats} won't go any ${up ? 'higher' : 'lower'}`),
+  set: (who, stats, to) => (to >= 6 ? `${who} ${stats} maxed` : `${who} ${stats} set to ${to > 0 ? '+' : ''}${to}`),
+  clearedAll: 'all stat changes cleared',
+  cleared: who => `${who} stat changes cleared`,
+  lowerRestored: who => `${who} lowered stats restored`,
+  raisedTaken: (who, by) => (by ? `${who} raised stats stolen by ${by}` : `${who} raised stats cleared`),
+  inverted: who => `${who} stat changes inverted`,
+  copied: (who, from) => `${who} copied ${from}'s stat changes`,
+  swapped: (who, other, stats) => `${who} and ${other} swapped ${stats ? `${stats} ` : ''}changes`,
+};
 const STAT_KINDS = new Set(['boost', 'setboost', 'clear', 'invert', 'copy', 'swap']);
-// By how many stages: 0 = it could not go further
-const RISE_EN = ["won't go any higher", 'rose', 'rose sharply', 'rose drastically'];
-const FALL_EN = ["won't go any lower", 'fell', 'harshly fell', 'severely fell'];
-
-function statText(x, mon, namer, start = false) {
-  const from = fromText(x.from, namer);
-  if (x.kind === 'clear') {
-    if (x.which === 'all') return `${start ? 'All' : 'all'} stat changes were eliminated${from}`;
-    if (x.which === 'positive') return `${mon(x.mon)}'s raised stats were ${x.other ? `taken by ${mon(x.other)}` : 'removed'}${from}`;
-    return `${mon(x.mon)}'s ${x.which === 'negative' ? 'lowered stats returned to normal' : 'stat changes were removed'}${from}`;
+function statText(x, mon) {
+  const who = x.mon ? mon(x.mon) : '';
+  switch (x.kind) {
+  case 'clear':
+    if (x.which === 'all') return STAT_TEXT.clearedAll;
+    if (x.which === 'negative') return STAT_TEXT.lowerRestored(who);
+    if (x.which === 'positive') return STAT_TEXT.raisedTaken(who, x.other ? mon(x.other) : null);
+    return STAT_TEXT.cleared(who);
+  case 'invert': return STAT_TEXT.inverted(who);
+  case 'copy': return STAT_TEXT.copied(who, mon(x.other));
+  case 'swap': return STAT_TEXT.swapped(who, mon(x.other), x.stats?.length ? STAT_TEXT.stats(x.stats) : null);
+  case 'setboost': return STAT_TEXT.set(who, STAT_TEXT.stats(x.stats), x.to);
+  default: return STAT_TEXT.change(who, STAT_TEXT.stats(x.stats), x.up, x.by);
   }
-  if (x.kind === 'invert') return `${mon(x.mon)}'s stat changes were inverted${from}`;
-  if (x.kind === 'copy') return `${mon(x.mon)} copied ${mon(x.other)}'s stat changes${from}`;
-  if (x.kind === 'swap') return `${mon(x.mon)} and ${mon(x.other)} swapped ${x.stats?.length ? `${listEn(x.stats.map(s => STAT_EN[s] ?? s))} changes` : 'stat changes'}${from}`;
-  const stats = listEn(x.stats.map(s => STAT_EN[s] ?? s));
-  if (x.kind === 'setboost') return `${mon(x.mon)}'s ${stats} ${x.to >= 6 ? 'rose to the maximum' : `became ${x.to > 0 ? '+' : ''}${x.to}`}${from}`;
-  return `${mon(x.mon)}'s ${stats} ${(x.up ? RISE_EN : FALL_EN)[Math.min(x.by, 3)]}${from}`;
 }
 
-const CURE_EN = { slp: 'woke up', frz: 'thawed out', par: 'was cured of paralysis', brn: 'was cured of its burn', psn: 'was cured of poison', tox: 'was cured of poison' };
-const CANT_EN = { par: "was paralyzed and couldn't move", slp: 'was fast asleep', frz: 'was frozen solid', flinch: "flinched and couldn't move",
-  recharge: 'had to recharge', attract: 'was immobilized by love', partiallytrapped: "was trapped and couldn't move", nopp: 'had no PP left',
-  focuspunch: "lost its focus and couldn't move", shelltrap: "couldn't set off its Shell Trap" };
+export const EVENT_EN = {
+  cure: { slp: 'woke up', frz: 'thawed out', par: 'was cured of paralysis', brn: 'was cured of its burn', psn: 'was cured of poison', tox: 'was cured of poison' },
+  cured: 'was cured',
+  cant: { par: "was paralyzed and couldn't move", slp: 'was fast asleep', frz: 'was frozen solid', flinch: "flinched and couldn't move",
+    recharge: 'had to recharge', attract: 'was immobilized by love', partiallytrapped: "was trapped and couldn't move", nopp: 'had no PP left',
+    focuspunch: "lost its focus and couldn't move", shelltrap: "couldn't set off its Shell Trap" },
+  couldNot: (what, why) => `couldn't ${what}${why ? ` because of ${why}` : ''}`,
+  confusionStart: 'became confused',
+  confusionEnd: 'snapped out of its confusion',
+};
 const REASON_KINDS = { ability: 'abilities', item: 'items', move: 'moves' };
-
 function cantText(e, mon, namer) {
-  const fixed = CANT_EN[toID(e.reason)];
+  const fixed = EVENT_EN.cant[toID(e.reason)];
   if (fixed) return `${mon(e.mon)} ${fixed}`;
   const what = e.move ? `use ${namer.moves(e.move)}` : 'move';
   const m = /^(ability|item|move):\s*(.+)$/i.exec(e.reason);
-  // A move that failed on its own ("Shell Trap" for Shell Trap) is not its own reason
+
   const own = e.move && toID(m ? m[2] : e.reason) === toID(e.move);
   const why = own ? '' : m ? namer[REASON_KINDS[m[1].toLowerCase()]](m[2]) : e.reason ? namer.moves(e.reason) : '';
-  return `${mon(e.mon)} couldn't ${what}${why ? ` because of ${why}` : ''}`;
+  return `${mon(e.mon)} ${EVENT_EN.couldNot(what, why)}`;
 }
-function toolText(e, mon, sides) {
+
+function toolText(e, mon, sides, namer) {
   const target = e.trainer ?? mon(e.mon);
   const used = `${sides.mine} used ${e.label} on ${target}`;
   if (e.failed) return `${used} → no effect`;
   const name = e.trainer ?? mon(e.mon);
-  if (e.tag === 'cheer') {
-    const rose = e.boosts.filter(b => b.amount > 0).map(b => STAT_EN[b.stat] ?? b.stat), fell = e.boosts.filter(b => b.amount < 0).map(b => STAT_EN[b.stat] ?? b.stat);
-    return [used, ...(rose.length ? [`${name}'s ${listEn(rose)} rose`] : []), ...(fell.length ? [`${name}'s ${listEn(fell)} fell`] : [])].join('. ');
-  }
+  if (e.tag === 'cheer') return e.effects?.length ? `${used} → ${e.effects.map(x => statText(x, mon, namer)).join(', ')}` : used;
   if (e.tag === 'taunt') return `${used}. ${name} is taunted into attacking for ${TOOL_TURNS} turns`;
   if (e.tag === 'distract') return `${used}. ${name} is distracted for ${TOOL_TURNS} turns`;
   return used;

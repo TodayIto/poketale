@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/message-ui-handler.ts (showTextInternal @c/@d/@s/@f codes) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 
 export const frameMs = frames => Math.floor((1000 / 60) * frames);
 

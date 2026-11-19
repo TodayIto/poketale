@@ -37,7 +37,6 @@ export function dexListHtml(view, hit, lang, icons) {
     if (row.section) return `<div class="x-risu-pkbp-dxsec">${esc(row.label)}</div>`;
     const mark = row.state === 'caught' ? ball(lang) : '<span class="x-risu-pkbp-dxnob"></span>';
     const no = `<span class="x-risu-pkbp-dxno">${no3(row.no)}</span>`;
-    if (row.state === 'seen') return `<div class="x-risu-pkbp-dxrb x-risu-pkbp-dx-${row.num}">${mark}${no}<span class="x-risu-pkbp-dxbi">${icon(row.num)}</span><span class="x-risu-pkbp-dxn">${esc(row.name)}</span></div>`;
     if (row.state === 'unseen') return `<div class="x-risu-pkbp-dxrb x-risu-pkbp-dxun x-risu-pkbp-dx-${row.num}">${mark}${no}<span class="x-risu-pkbp-dxbi"></span><span class="x-risu-pkbp-dxn">-----</span></div>`;
     return `<button type="button" class="x-risu-pkbp-dxrb x-risu-pkbp-dx-${row.num} ${hit({ t: 'dexRow', num: row.num, name: row.name, key: listKey })}">`
       + `${mark}${no}<span class="x-risu-pkbp-dxbi">${icon(row.num)}</span><span class="x-risu-pkbp-dxn">${esc(row.name)}</span></button>`;
@@ -49,7 +48,7 @@ export function dexDetailHtml(open, hit, lang, { img, icon: icons, swipe }) {
   const t = key => esc(say(lang, key));
   const fields = [
     open.category ? ['dex.category', esc(open.category)] : null,
-    ['dex.type', open.types.map(type => typeBadge(type, lang)).join('')],
+    open.caught ? ['dex.type', open.types.map(type => typeBadge(type, lang)).join('')] : null,
     ['dex.height', esc(open.height)], ['dex.weight', esc(open.weight)],
   ].filter(Boolean).map(([key, value]) => `<div class="x-risu-pkbp-dxf"><span>${t(key)}</span><b>${value}</b></div>`).join('');
   const look = d => {
@@ -66,7 +65,7 @@ export function dexDetailHtml(open, hit, lang, { img, icon: icons, swipe }) {
     + `<span class="x-risu-pkbp-dxbig">${img({ spriteId: open.spriteId, shiny: open.shiny })}</span>${looks}</div>`;
   return `<div class="x-risu-pkbp-dxdev x-risu-pkbp-dxdet" role="dialog" aria-label="${esc(open.name)}">`
     + `<div class="x-risu-pkbp-dxtop"><button type="button" class="x-risu-pkbp-dxback ${hit({ t: 'dexClose' })}" aria-label="${t('panel.sc.back')}" title="${t('panel.sc.back')}">${icons.back}</button>${LAMPS}</div>`
-    + `<div class="x-risu-pkbp-dxname">${ball(lang)}<span class="x-risu-pkbp-dxno">No.${no3(open.no)}</span><b>${esc(open.name)}</b>${open.form ? `<small>${esc(open.form)}</small>` : ''}</div>`
+    + `<div class="x-risu-pkbp-dxname">${open.caught ? ball(lang) : ''}<span class="x-risu-pkbp-dxno">No.${no3(open.no)}</span><b>${esc(open.name)}</b>${open.form ? `<small>${esc(open.form)}</small>` : ''}</div>`
     + `<div class="x-risu-pkbp-dxsplit">${pane}<div class="x-risu-pkbp-dxfields">${fields}</div></div>`
     + (open.text ? `<div class="x-risu-pkbp-dxtext">${esc(open.text)}</div>` : '<div class="x-risu-pkbp-dxtext x-risu-pkbp-dxtextno"></div>')
     + `<div class="x-risu-pkbp-dxpager">${step(-1, open.prev)}${step(1, open.next)}</div></div>`;

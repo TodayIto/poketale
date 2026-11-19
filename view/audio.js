@@ -1,5 +1,5 @@
 // from pokerogue src/audio/audio-manager.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 // from pokerogue src/audio/background-music.ts @ 7d7da4a8 (AGPL-3.0-only)
 
 import { battleMusic, bgmKey, loopPoint, victoryMusic } from './bgm.js';
@@ -7,10 +7,21 @@ import { audioType } from './image-route.js';
 
 import CRIES from '../data/pokerogue-cries.json' with { type: 'json' };
 
-const BGM_VOLUME = 0.2;
+const BGM_VOLUME = 0.2, SFX_VOLUME = 0.6;
 const UI_SOUNDS = ['select', 'error'];
 
 const SILENT = Object.freeze({ audio: Object.freeze({ readyState: 0, error: null }), ready: Promise.resolve() });
+
+export const soundKind = path => (path.startsWith('bgm/') ? 'bgm' : path.startsWith('cry/') ? 'cry' : path.startsWith('ui/') ? 'ui' : 'sfx');
+const KINDS = ['bgm', 'sfx', 'cry', 'ui'];
+const FULL = Object.freeze({ bgm: 1, sfx: 1, cry: 1, ui: 1 }), MUTE = Object.freeze({ bgm: 0, sfx: 0, cry: 0, ui: 0 });
+const unit = value => Math.max(0, Math.min(1, Number(value) || 0));
+
+function volumeSource({ volume, sound } = {}) {
+  if (typeof volume?.levels === 'function') return { levels: () => volume.levels() ?? MUTE, listen: fn => volume.listen?.(fn) ?? (() => {}), live: true };
+  const fixed = sound === false ? MUTE : { ...FULL, ...(volume ?? {}) };
+  return { levels: () => fixed, listen: () => () => {}, live: false };
+}
 
 class Clock {
   constructor() { this.stoppedAt = null; this.lost = 0; this.timers = new Set(); }
@@ -36,23 +47,33 @@ class Clock {
 }
 
 class Music {
-  constructor(owner, key, loop) {
+  constructor(owner, key, loop, base = BGM_VOLUME) {
     this.owner = owner; this.key = key; this.loop = loop; this.loopPoint = loop ? loopPoint(key) : 0;
-    this.audio = owner.music(key);
-    this.audio.currentTime = 0; this.audio.volume = BGM_VOLUME;
-    this.audio.loop = loop && !this.loopPoint;
+    this.base = base; this.fade = 1; this.audio = null;
+    this.wanted = false; this.destroyed = false; this.ended = false; this.endCallbacks = []; this.cancelFade = null;
+    if (owner.level('bgm') > 0) this.attach();
+  }
+
+  attach() {
+    if (this.audio || this.destroyed) return;
+    this.audio = this.owner.music(this.key);
+    this.audio.currentTime = 0;
+    this.audio.loop = this.loop && !this.loopPoint;
     this.audio.onended = () => {
       if (this.destroyed) return;
       if (this.loop) { this.audio.currentTime = this.loopPoint < (this.audio.duration || Infinity) ? this.loopPoint : 0; this.play(); }
       else this.triggerEnd();
     };
-    this.wanted = false; this.destroyed = false; this.ended = false; this.endCallbacks = []; this.cancelFade = null;
+    this.applyVolume();
   }
+  applyVolume() { if (this.audio) this.audio.volume = unit(this.base * this.fade * this.owner.level('bgm')); }
 
   play() {
     if (this.destroyed) return;
     this.wanted = true;
-    if (!this.owner.musicEnabled || this.owner.suspended || !this.audio.paused) return;
+    if (!this.owner.musicEnabled || this.owner.suspended || this.owner.level('bgm') === 0) return;
+    this.attach();
+    if (!this.audio.paused) return;
 
     if (!this.audio.src) { this.owner.sourced(this.audio).then(() => { if (this.destroyed || !this.wanted) return; if (this.audio.src) this.play(); else this.destroy(); }); return; }
     this.audio.play().catch(error => {
@@ -61,7 +82,7 @@ class Music {
     });
   }
   resume() { this.play(); }
-  pause() { this.wanted = false; this.audio.pause(); }
+  pause() { this.wanted = false; this.audio?.pause(); }
   onEnd(callback) { if (this.ended) callback(); else this.endCallbacks.push(callback); }
   triggerEnd() {
     if (this.ended) return;
@@ -71,13 +92,15 @@ class Music {
 
   fadeOut(duration, destroy = true) {
     if (this.destroyed || this.cancelFade) return;
-    const clock = this.owner.clock, from = this.audio.volume, started = clock.now();
+    if (!this.audio) { if (destroy) this.destroy(); else this.pause(); return; }
+    const clock = this.owner.clock, from = this.fade, started = clock.now();
     const step = () => {
       const elapsed = clock.now() - started;
-      this.audio.volume = from * (1 - Math.min(1, elapsed / duration));
+      this.fade = from * (1 - Math.min(1, elapsed / duration));
+      this.applyVolume();
       if (elapsed < duration + 100) { this.cancelFade = clock.timeout(25, step); return; }
       this.cancelFade = null;
-      if (destroy) this.destroy(); else { this.pause(); this.audio.volume = from; }
+      if (destroy) this.destroy(); else { this.pause(); this.fade = from; this.applyVolume(); }
     };
     this.cancelFade = clock.timeout(25, step);
   }
@@ -85,7 +108,7 @@ class Music {
     if (this.destroyed) return;
     this.destroyed = true; this.wanted = false;
     this.cancelFade?.(); this.cancelFade = null;
-    this.audio.onended = null; this.audio.pause(); this.audio.volume = BGM_VOLUME;
+    if (this.audio) { this.audio.onended = null; this.audio.pause(); }
     this.owner.release(this);
     this.triggerEnd();
   }
@@ -95,9 +118,10 @@ export class BattleAudio {
 
   constructor(assets, parent, options = {}) {
     this.assets = assets; this.parent = parent; this.sounds = new Map(); this.active = new Set();
+    this.voices = new WeakMap();
     this.diagnostics = [];
-    this.silent = options.sound === false;
-    this.cries = typeof options.cries === 'function' ? options.cries : null; this.pack = null; this.packRead = null;
+    this.volume = volumeSource(options);
+    this.voicePacks = typeof options.voicePacks === 'function' ? options.voicePacks : null; this.pack = null; this.packRead = null;
     this.wild = options.wild ?? true;
     const chosen = battleMusic(options);
     this.battleBgm = chosen.key;
@@ -114,6 +138,31 @@ export class BattleAudio {
     this.speed = () => 1;
     parent.addEventListener('pointerdown', this.unlock);
     parent.addEventListener('keydown', this.unlock);
+    this.stopVolume = this.volume.listen(() => this.volumeChanged());
+  }
+
+  level(kind) { return unit(this.volume.levels()?.[kind]); }
+
+  get silent() { return KINDS.every(kind => this.level(kind) === 0); }
+
+  adopt(voice, base, path, kind = soundKind(path)) {
+    this.voices.set(voice, { base, kind });
+    voice.volume = unit(base * this.level(kind));
+    return voice;
+  }
+
+  volumeChanged() {
+    if (this.destroyed) return;
+    const music = this.level('bgm');
+    for (const track of [...this.tracks]) {
+      track.applyVolume();
+      if (!music) track.audio?.pause();
+      else if (track.wanted) track.play();
+    }
+    for (const voice of this.active) {
+      const kept = this.voices.get(voice);
+      if (kept) voice.volume = unit(kept.base * this.level(kept.kind));
+    }
   }
   note(text) { if (!this.diagnostics.includes(text)) this.diagnostics.push(text); }
 
@@ -122,18 +171,15 @@ export class BattleAudio {
     return entry?.sourced ?? Promise.resolve();
   }
 
-  load(path, loop = false) {
+  load(path, loop = false, kind = soundKind(path)) {
     if (this.destroyed) throw new Error('BattleAudio destroyed');
-    if (this.silent) return SILENT;
     if (this.sounds.has(path)) return this.sounds.get(path);
+    if (this.level(kind) === 0) return SILENT;
     const audio = new Audio();
     audio.crossOrigin = 'anonymous'; audio.preload = 'auto'; audio.loop = loop;
-    audio.volume = loop ? BGM_VOLUME : 0.6;
-    // "cry/<key>.m4a#<n>" is one voice of a pack that holds several for that Pokémon; the game cry stays its fallback.
-    const isCry = path.startsWith('cry/'), base = isCry ? path.replace(/#\d+$/, '') : path;
-    const url = this.assets.url(`audio/${base}`), route = this.assets.route;
-    // A player's cry pack goes first; a missing entry or a codec the browser lacks falls through to the game cry.
-    const ways = [...(this.cries && isCry ? ['pack'] : []), ...(route ? route.order(url) : ['direct'])];
+    const voice = kind === 'cry' && this.voicePacks && path.startsWith('cry/'), file = voice ? path.replace(/#\d+$/, '') : path;
+    const url = this.assets.url(`audio/${file}`), route = this.assets.route;
+    const ways = [...(voice ? ['pack'] : []), ...(route ? route.order(url) : ['direct'])];
     let finished = false, sourcedNow;
     const sourced = new Promise(resolve => { sourcedNow = resolve; });
     const ready = new Promise(resolve => {
@@ -157,7 +203,7 @@ export class BattleAudio {
             if (this.destroyed) return;
             if (!src) { next(); return; }
             audio.src = src; sourcedNow(); audio.load();
-          }, error => { this.note(`Cry pack failed: ${path} (${error?.message ?? error})`); next(); });
+          }, error => { this.note(`Voice pack failed: ${path} (${error?.message ?? error})`); next(); });
           return;
         }
         if (way === 'direct') { triedDirect = true; audio.src = url; sourcedNow(); audio.load(); return; }
@@ -167,8 +213,8 @@ export class BattleAudio {
           audio.src = src; sourcedNow(); audio.load();
         }, error => { this.note(`Audio via host failed: ${path} (${error?.message ?? error})`); if (!this.destroyed) next(); });
       };
-      // The timer ends the wait, not the loading: a source that arrives or fails later still moves on to the next way.
-      const timer = setTimeout(() => { this.diagnostics.push(`Audio load timeout: ${path}`); const fallback = audio.onerror; done(); audio.onerror = fallback; }, 15000);
+
+      const timer = setTimeout(() => { this.diagnostics.push(`Audio load timeout: ${path}`); done(); audio.onerror = next; }, 15000);
       audio.onloadeddata = done;
       audio.onerror = next;
       this.assets.life.signal.addEventListener('abort', done, { once: true });
@@ -180,14 +226,13 @@ export class BattleAudio {
   }
 
   async preload(mons) {
-    if (this.silent) return;
 
     await Promise.all(['se/pb_rel.wav', 'se/hit.wav', 'se/hit_strong.wav', 'se/hit_weak.wav', 'se/faint.wav', ...UI_SOUNDS.map(name => `ui/${name}.wav`),
       ...mons.map(mon => this.cryPath(mon)).filter(Boolean)].map(path => this.load(path).ready));
   }
 
   preloadMusic() {
-    if (!this.silent) this.load(`bgm/${this.battleBgm}.mp3`, true);
+    this.load(`bgm/${this.battleBgm}.mp3`, true);
   }
 
   cryPath(mon) {
@@ -195,32 +240,27 @@ export class BattleAudio {
     return key ? `cry/${key}.m4a` : null;
   }
 
-  // The packs are read once per battle (the next battle reads them again), so a pack that fails to read cannot make
-  // every cry read all of them again.
   readPack() {
-    return (this.packRead ??= Promise.resolve().then(() => this.cries()).then(pack => (this.pack = pack ?? null),
+    return (this.packRead ??= Promise.resolve().then(() => this.voicePacks()).then(pack => (this.pack = pack ?? null),
       error => { this.packRead = null; throw error; }));
   }
 
   async packUrl(path) {
     const pack = await this.readPack();
-    const [, key, variant] = /^cry\/(.+)\.m4a(?:#(\d+))?$/.exec(path) ?? [];
-    return pack && key ? pack.url(key, Number(variant ?? 0)) : null;
+    const [, key, line] = /^cry\/(.+)\.m4a(?:#(\d+))?$/.exec(path) ?? [];
+    return pack && key ? pack.url(key, Number(line ?? 0)) : null;
   }
 
-  // A pack can hold several voices for one Pokémon (every line of a voice rip): each cry picks one at random from the
-  // pack as read so far (preloading reads it), so a slow storage read never holds a cry back. A moment ('appear',
-  // 'faint', 'move', 'happy') narrows the pick to the lines the game itself plays then, when the pack knows any.
-  // Line 0 is the plain path, which preloading has already loaded.
-  cryVoice(path, moment = null) {
-    if (!path || !this.cries || this.silent || this.destroyed) return path;
-    this.readPack().catch(() => {});
+  cryVoice(mon, moment = null) {
+    const path = this.cryPath(mon);
+    if (!path || !this.voicePacks || this.destroyed || this.level('cry') === 0) return path;
+    this.readPack().catch(error => this.note(`Voice pack failed: ${error?.message ?? error}`));
     let count = 0, fitting = [];
     try {
       const key = path.slice('cry/'.length, -'.m4a'.length);
-      count = this.pack?.variants?.(key) ?? 0;
-      if (moment) fitting = this.pack?.lines?.(key, moment) ?? [];
-    } catch (error) { this.note(`Cry pack failed: ${path} (${error?.message ?? error})`); }
+      count = this.pack?.variants(key) ?? 0;
+      if (moment) fitting = this.pack?.lines(key, moment) ?? [];
+    } catch (error) { this.note(`Voice pack failed: ${path} (${error?.message ?? error})`); }
     const line = fitting.length ? fitting[Math.floor(Math.random() * fitting.length)] : count > 1 ? Math.floor(Math.random() * count) : 0;
     return line ? `${path}#${line}` : path;
   }
@@ -236,20 +276,21 @@ export class BattleAudio {
   }
   release(track) { this.tracks.delete(track); if (this.currentBgm === track) this.currentBgm = null; }
 
-  playBgm(name, { loop = true } = {}) {
-    if (this.destroyed || this.silent || this.assets.life.signal.aborted) return null;
+  playBgm(name, { loop = true, volume = BGM_VOLUME } = {}) {
+    if (this.destroyed || this.assets.life.signal.aborted) return null;
+    if (!this.volume.live && this.level('bgm') === 0) return null;
     const key = bgmKey(name);
     if (!key) { this.note(`Unknown PokeRogue BGM "${name}"`); return null; }
     if (this.currentBgm?.key === key) { this.currentBgm.play(); return null; }
     this.currentBgm?.destroy();
-    const track = this.currentBgm = new Music(this, key, loop);
+    const track = this.currentBgm = new Music(this, key, loop, volume);
     this.tracks.add(track);
     track.play();
     return track;
   }
 
   replaceBgmUntilEnd(name) {
-    if (this.destroyed || this.silent || this.assets.life.signal.aborted) return null;
+    if (this.destroyed || this.level('bgm') === 0 || this.assets.life.signal.aborted) return null;
     const key = bgmKey(name);
     if (!key) { this.note(`Unknown PokeRogue BGM "${name}"`); return null; }
 
@@ -277,7 +318,7 @@ export class BattleAudio {
   setMusicEnabled(enabled) {
     this.musicEnabled = !!enabled;
     for (const track of this.tracks) {
-      if (!this.musicEnabled) track.audio.pause();
+      if (!this.musicEnabled) track.audio?.pause();
       else if (track.wanted) track.play();
     }
   }
@@ -287,7 +328,7 @@ export class BattleAudio {
     if (this.destroyed || this.suspended) return;
     this.suspended = true;
     this.clock.stop();
-    for (const track of this.tracks) track.audio.pause();
+    for (const track of this.tracks) track.audio?.pause();
     for (const voice of this.active) voice.pause();
   }
   resume() {
@@ -304,17 +345,17 @@ export class BattleAudio {
     return (this.woken ??= new Promise(resolve => { this.wake = () => { this.wake = this.woken = null; resolve(); }; }));
   }
 
-  async play(path, rate = 1, volume = 0.6, { maxMs = Infinity } = {}) {
-    if (!path || this.destroyed || this.suspended || this.silent) return;
-    const { audio, ready } = this.load(path);
+  async play(path, rate = 1, volume = SFX_VOLUME, { maxMs = Infinity, kind = path && soundKind(path) } = {}) {
+    if (!path || this.destroyed || this.suspended || this.level(kind) === 0) return;
+    const { audio, ready } = this.load(path, false, kind);
     await ready;
     if (this.suspended) await this.awake();
     if (this.destroyed) return;
     this.assets.life.check();
     if (audio.error || audio.readyState < 2) return;
     // Animation sound events can overlap, including repetitions of the same sample.
-    const voice = audio.cloneNode();
-    voice.volume = Math.max(0, Math.min(1, volume)); voice.playbackRate = rate;
+    const voice = this.adopt(audio.cloneNode(), volume, path, kind);
+    voice.playbackRate = rate;
     await new Promise(resolve => {
       let cancel, cancelWait = null;
       const finish = () => {
@@ -337,9 +378,9 @@ export class BattleAudio {
     });
   }
 
-  cry(mon, slow = false, moment = null) { return this.play(this.cryVoice(this.cryPath(mon), moment), slow ? 0.85 : 1); }
+  cry(mon, slow = false, moment = null) { return this.play(this.cryVoice(mon, moment), slow ? 0.85 : 1); }
 
-  faintCry(mon) { return this.play(this.cryVoice(this.cryPath(mon), 'faint'), 0.85, undefined, { maxMs: 3000 }); }
+  faintCry(mon) { return this.play(this.cryVoice(mon, 'faint'), 0.85, undefined, { maxMs: 3000 }); }
 
   playUi(name) {
     if (this.destroyed || !UI_SOUNDS.includes(name)) return;
@@ -348,6 +389,7 @@ export class BattleAudio {
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.stopVolume();
     this.musicEnabled = false;
     this.currentBgm = null;
     for (const track of [...this.tracks]) track.destroy();

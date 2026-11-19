@@ -1,5 +1,5 @@
 // from pokerogue src/phases/enemy-command-phase.ts, src/field/pokemon.ts (getNextMove, getNextTargets), src/field/trainer.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 
 import { snapshot, restore, rolloutMove, tryChoice, applyGimmick, atSlot } from './engine-copy.js';
 import { partyMatchupScores, getMatchupScore, sortScores, nextSummonIndex } from './matchup.js';
@@ -20,7 +20,7 @@ export const DIFFICULTIES = ['easy', 'normal', 'hard', 'max'];
 export function gimmickRules(foeGimmick) {
   if (foeGimmick === 'tera') return { mega: false, tera: 'ace' };
   if (foeGimmick === 'mega') return { mega: true, tera: 'never' };
-  if (foeGimmick === 'none') return { mega: false, tera: 'never' };
+  if (foeGimmick === 'none' || foeGimmick != null) return { mega: false, tera: 'never' };
   return {};
 }
 

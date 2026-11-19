@@ -1,0 +1,86 @@
+{
+  "pokeapi": {
+    "repository": "https://github.com/PokeAPI/pokeapi",
+    "commit": "2bf639e5572812a67d2b94903fdcb9d095f5aeb2",
+    "path": "data/v2/csv",
+    "license": "BSD-3-Clause - data/sources/pokeapi/LICENSE.md"
+  },
+  "pkhex": {
+    "repository": "https://github.com/kwsch/PKHeX",
+    "commit": "6c9583883c7551ac74a4b74180cead249d4277b8",
+    "path": "PKHeX.Core/Resources/text/locations",
+    "note": "게임 장소 이름 글(영어·한국어, 같은 줄 번호)만 받는다 - 이름표로만 쓰고 코드는 가져오지 않는다 (data/badges.json 과 같은 출처)"
+  },
+  "files": [
+    "encounter_slots.csv",
+    "location_areas.csv",
+    "locations.csv",
+    "versions.csv",
+    "regions.csv",
+    "encounter_condition_values.csv",
+    "encounters.fishing.csv",
+    "encounter_condition_value_map.fishing.csv",
+    "location_names.en.csv",
+    "pkhex/text_gsc_00000_en.txt",
+    "pkhex/text_gsc_00000_ko.txt",
+    "pkhex/text_rsefrlg_00000_en.txt",
+    "pkhex/text_rsefrlg_00000_ko.txt",
+    "pkhex/text_hgss_00000_en.txt",
+    "pkhex/text_hgss_00000_ko.txt",
+    "pkhex/text_bw2_00000_en.txt",
+    "pkhex/text_bw2_00000_ko.txt",
+    "pkhex/text_xy_00000_en.txt",
+    "pkhex/text_xy_00000_ko.txt",
+    "pkhex/text_sm_00000_en.txt",
+    "pkhex/text_sm_00000_ko.txt",
+    "pkhex/text_swsh_00000_en.txt",
+    "pkhex/text_swsh_00000_ko.txt",
+    "pkhex/text_sv_00000_en.txt",
+    "pkhex/text_sv_00000_ko.txt"
+  ],
+  "sha256": {
+    "encounter_slots.csv": "597dc58df2b0a2c64cedce6d6a2a08feeecbd1cf860bdf926cd27f119417d87a",
+    "location_areas.csv": "4706b96842166a44ca619da0add34c212088669270a478d9e84bc78e9f581840",
+    "locations.csv": "2af5d6a1151d5ae402f9da1d5513bc1c7437795e69b140787c7aab3f6ed7eaa3",
+    "versions.csv": "70083465865a6a69a9aad2be3fc3915078c6ff740f14a090b1367d8ec9cfc3cd",
+    "regions.csv": "dbd1ecc3f014b67c1a9452611fca5d13542ebc3524f3a4188b5a6cb1ca911d79",
+    "encounter_condition_values.csv": "f55fc7c4b4d821631695ff30d74f34b2122859c412d29b98d4d973cb6d2df902",
+    "encounters.fishing.csv": "3f35a5e552e629d0bb739de75903823c3ab5741913209583131d8102a2019c3a",
+    "encounter_condition_value_map.fishing.csv": "a52302c73dd44914bb4cccc1773735c7bc454f02046f6ade8ffeaf34384cf0f5",
+    "location_names.en.csv": "2acb877d0efdcc1154ebf9d520e5c1d065cbe848114c47354a320fb46895358d",
+    "pkhex/text_gsc_00000_en.txt": "65e34f1753588cb8468d1e95612381992849f177a60889c0d2e0f12a19fc8bdd",
+    "pkhex/text_gsc_00000_ko.txt": "e806ed1867e4e72c417905218f4620d976f72c687a18da552157ef9ace0f8c84",
+    "pkhex/text_rsefrlg_00000_en.txt": "ec67b29593cf8801bfac96f42578c29fc47627aac453e2fabd0f98422c1d2628",
+    "pkhex/text_rsefrlg_00000_ko.txt": "e09fd6a7e0a3a666da39f455594e80a317163898220c83877c1c4b2e925a8237",
+    "pkhex/text_hgss_00000_en.txt": "61d4ccab8fb296cdd41fbb1a19393e7ba535eb740cdecf8824be0beb37f83456",
+    "pkhex/text_hgss_00000_ko.txt": "2b0b05f41ccc05314d48b52e6df9e57f2063da32e55e9cdee8cf8ba568ff264a",
+    "pkhex/text_bw2_00000_en.txt": "6e2206433dff13650a719b4b908fa72ea7341ea0ae66ee2eb7b8d88a8b3ad5a5",
+    "pkhex/text_bw2_00000_ko.txt": "f3dfc9f7a4a9e8e3e036a2ff373e058dcdf4a5259f8b2d3f1b78839f038aaa2f",
+    "pkhex/text_xy_00000_en.txt": "5651a88ddbfc215aebbaaece6d739aba27cba469bc8c37d153f2cdb979b894f3",
+    "pkhex/text_xy_00000_ko.txt": "d7f232b13cbfe3ba53597cc1544c026839e293c903b099f7bc7718d170097dd4",
+    "pkhex/text_sm_00000_en.txt": "eaac1160b80e698fa1df7f8fb2bf1d3930abbeb2e347a06a87d9ea2cf6ee10f7",
+    "pkhex/text_sm_00000_ko.txt": "6b8eecb8dc63d8d6318921ff7fdbae6315cc0cf7da72233632c836d557dd414c",
+    "pkhex/text_swsh_00000_en.txt": "6e48c36791220c59d06c2f0b3022e7df382e26ae4796571c4cafca05a8acf3e9",
+    "pkhex/text_swsh_00000_ko.txt": "07c5c4567da56a908cff525542cfb400d777e0aeda2687e6459bbc920083dff0",
+    "pkhex/text_sv_00000_en.txt": "69177437a0b6e1cdef39745922c0cc88a127ca1b3d5c18e111958f1447fbf21d",
+    "pkhex/text_sv_00000_ko.txt": "e7bfe6578652859148116bf4f12c0e93aed2d3b95e05b6b8374ccffb6958d791"
+  },
+  "derived": {
+    "encounters.fishing.csv": {
+      "from": "encounters.csv",
+      "sha256_of_source": "93ba8853ac871719d230a6406c91f8418754fdc773f2f4b9f476007f743b4955",
+      "rule": "encounter_slot 의 방법이 낚시(old-rod 2, good-rod 3, super-rod 4, super-rod-spots 12, feebas-tile-fishing 31, bubbling-spots 34)인 줄만. 줄 내용은 그대로 (원본 3.2MB 를 저장소에 넣지 않으려고)"
+    },
+    "encounter_condition_value_map.fishing.csv": {
+      "from": "encounter_condition_value_map.csv",
+      "sha256_of_source": "e7e566eb07f53aab34065869a245359cc8c0313ca97872de5fd07d1867a46c7a",
+      "rule": "encounters.fishing.csv 에 있는 encounter_id 의 줄만. 줄 내용은 그대로"
+    },
+    "location_names.en.csv": {
+      "from": "location_names.csv",
+      "sha256_of_source": "4f901da13ab1fcd4cfeee99dd653652c2bd10afe21739f47a99ee906a99a004e",
+      "rule": "local_language_id=9 (영어) 줄만. 줄 내용은 그대로"
+    }
+  },
+  "normalization": "UTF-8, CRLF normalized to LF before hashing"
+}

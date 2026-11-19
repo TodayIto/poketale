@@ -1,5 +1,7 @@
 import { findBlocks, findTags, parseChange, hashKey, stripForPrompt, messageId, hasBlocks, readsBlockEdges } from './blocks.mjs';
-import { readTable, writeTable, computeState, isReflected, heldChanges, changeAt, applyOps, findMon, hpPercentOf, movePp, toID, hatchedParty, storyTick, isEgg, stateFormat, liveActions } from './state.mjs';
+import { readTable, writeTable, computeState, isReflected, heldChanges, changeAt, applyOps, findMon, hpPercentOf, movePp, toID, hatchedParty, storyTick, isEgg, stateFormat, liveActions,
+  labSet, rngFor } from './state.mjs';
+import { revivalOf, labOf } from './fossil.mjs';
 import { readStored } from './stored.mjs';
 import { foldCtxAt, rulesAt } from './setting-changes.mjs';
 import { refusal, ruleError, ruleText } from './failure.mjs';
@@ -52,8 +54,9 @@ export function runAction(state, action, ctx, { normalize = false } = {}) {
   let cur = state;
   const ops = [], steps = [], errors = [], notes = [];
   (action.ops ?? []).forEach((raw, i) => {
-    const op = normalize ? withUids(cur, raw, ctx) : raw;
-    const result = applyOps(cur, [op], ctx, `act:${action.id ?? 'x'}:${i}`, null, { trace: true });
+    const key = `act:${action.id ?? 'x'}:${i}`;
+    const op = normalize ? withUids(cur, raw, ctx, key) : raw;
+    const result = applyOps(cur, [op], ctx, key, null, { trace: true });
     cur = result.state;
     ops.push(op);
     steps.push(...result.steps);
@@ -72,12 +75,19 @@ export function runAction(state, action, ctx, { normalize = false } = {}) {
   if (action.type === 'toss') events = events.map(e => (e.kind === 'item' ? { ...e, toss: true } : e));
 
   if (action.type === 'shop') events = [shopEvent(ops)];
+
+  if (action.type === 'fish' && action.item) events = events.filter(e => !(e.kind === 'item' && e.item === itemId(action.item))).map(e => (e.kind === 'item' ? { ...e, fished: itemId(action.item) } : e));
   return { state: cur, ops, events, errors };
 }
 
 const REF_FIELDS = ['ref', 'a', 'b'];
-function withUids(state, op, ctx) {
+function withUids(state, op, ctx, key) {
   const out = { ...op };
+
+  if (op.op === 'lab' && !op.set) {
+    const revival = revivalOf(op.items);
+    if (revival) try { out.set = labSet(ctx, revival, rngFor(ctx.sim, key)); } catch {                                            }
+  }
   for (const field of REF_FIELDS) {
     const ref = op[field];
     if (!ref || ref === 'all' || typeof ref.uid === 'string') continue;
@@ -149,6 +159,12 @@ export function limitedBought(chat, { survey } = {}) {
   for (const action of readQueue(chat).actions) if (!actions.get(action.id)) actions.set(action.id, action);
   return new Set([...actions.values()].flatMap(a => (a?.ops ?? []).filter(op => op?.op === 'item' && op.limited && op.delta > 0)
     .map(op => limitedKey(op.limited, itemId(op.item)))));
+}
+
+export function fishCasts(chat, { survey } = {}) {
+  const actions = new Map([...liveActions(chat, { survey })].map(([id, live]) => [id, live.action]));
+  for (const action of readQueue(chat).actions) if (!actions.get(action.id)) actions.set(action.id, action);
+  return [...actions.values()].filter(action => action?.type === 'fish');
 }
 
 const shopNet = action => {
@@ -254,12 +270,24 @@ export function eventOf({ op, before, after }, ctx) {
     case 'swap': {
       const at = w => { const i = before?.party.findIndex(m => m.uid === w.uid) ?? -1; return i >= 0 ? { party: i + 1 } : { box: true }; };
       const a = refWho(op.a), b = refWho(op.b);
-      return { kind: 'swap', a, b, at: [at(a), at(b)] };
+
+      const revived = [a, b].find(w => at(w).box && byUid(before, w?.uid)?.revived);
+      return { kind: 'swap', a, b, at: [at(a), at(b)], ...(revived ? { revived: revived.uid } : {}) };
     }
     case 'release': case 'deposit': return { kind: op.op, who: refWho(op.ref) };
-    case 'withdraw': return { kind: 'withdraw', who: refWho(op.ref, { boxFirst: true }) };
+    case 'withdraw': {
+
+      const w = refWho(op.ref, { boxFirst: true });
+      return { kind: 'withdraw', who: w, ...(byUid(before, w?.uid)?.revived ? { revived: true } : {}) };
+    }
+
+    case 'lab': {
+      const added = labOf(after).find(m => !labOf(before).some(b => b.uid === m.uid));
+      return { kind: 'lab', items: (op.items ?? []).map(itemId), species: added?.set.species ?? revivalOf(op.items)?.species ?? '' };
+    }
     case 'nickname': return { kind: 'nickname', who: refWho(op.ref), name: String(op.name ?? '').trim() };
-    case 'evolvelock': return { kind: 'evolvelock', who: refWho(op.ref), locked: op.locked === true };
+
+    case 'evolvelock': { const w = refWho(op.ref); return { kind: 'evolvelock', who: w, locked: op.locked === true, ...(before ? { was: byUid(before, w?.uid)?.evolveLocked === true } : {}) }; }
     case 'hold': {
       const w = refWho(op.ref); const [b] = pair(w);
       const item = op.item ? itemId(op.item) : '', prev = b?.set.item || '';
@@ -313,6 +341,15 @@ export function eventOf({ op, before, after }, ctx) {
       const w = refWho(op.ref); const [b, a] = pair(w);
       const move = toID(op.move), max = (mon, state) => (mon && sim ? movePp(sim, mon, move, stateFormat(state)).maxpp : null);
       return { kind: 'ppup', who: w, move, from: max(b, before), to: max(a, after) };
+    }
+
+    case 'tera': { const w = refWho(op.ref); const [, a] = pair(w); return { kind: 'tera', who: w, type: a?.set.teraType ?? op.type }; }
+    case 'form': { const w = refWho(op.ref); const [, a] = pair(w); return { kind: 'form', who: w, species: a?.set.species ?? op.species }; }
+
+    case 'fuse': case 'unfuse': {
+      const w = refWho(op.ref); const [b, a] = pair(w);
+      const other = op.op === 'fuse' ? refWho(op.with) : who(b?.fused);
+      return { kind: op.op, who: w, other, species: a?.set.species ?? op.species };
     }
 
     case 'amie': return { kind: 'amie', who: refWho(op.ref) };
@@ -381,7 +418,11 @@ export function changesIn(text, chat, ctx, lang) {
     state = result.state;
     for (const step of result.steps) {
       if (step.error) errors.push(step.notes.length ? step.notes.map(note => ruleText(note, lang)).join(' / ') : step.error);
-      else events.push(eventOf(step, at));
+      else {
+        events.push(eventOf(step, at));
+
+        errors.push(...step.notes.map(note => ruleText(note, lang)));
+      }
     }
   }
   return { events, errors };

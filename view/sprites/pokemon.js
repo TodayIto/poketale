@@ -1,5 +1,5 @@
 // from pokerogue src/field/pokemon.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 // Field position (single centre or double left/right), sprite+tint sprite, animation and tint tweens only.
 import { tween } from '../lifetime.js';
 import { placeSprite } from './placement.js';

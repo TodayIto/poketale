@@ -1,4 +1,4 @@
-// Modified for PokeTale on 2026-11-16. See THIRD-PARTY-NOTICES.md.
+// Modified for PokeTale on 2026-11-19. See THIRD-PARTY-NOTICES.md.
 // Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
 // Copyright (c) 2026 poooooby, MIT License. See THIRD-PARTY-NOTICES.md.
 import { createBerryPicker, createHeadIt, headSlotAt, createTilePuzzle, prizesFor, starsOf, recordScore, beatsRecord, BERRY_RULES, HEAD_RULES, TILE_GRIDS } from '../story/amie-games.mjs';

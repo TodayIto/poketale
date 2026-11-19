@@ -1,5 +1,5 @@
 // from pokerogue src/pipelines/field-sprite.ts (onBind uniforms, flush per object) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 
 export const COLOR_MATRIX_PIPELINE = 'SpriteColorMatrix';
 

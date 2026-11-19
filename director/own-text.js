@@ -56,6 +56,12 @@ const KO = {
 
   'own.usedItem': '{{pokemonName}}에게\n{{itemName}}[[를]] 사용했다!',
 
+  'own.usedSideItem': '{{itemName}}[[를]] 사용했다!',
+
+  'own.itemNoEffect': '그러나 효과가 없는 것 같다…',
+
+  'own.pokeFluteTune': '아름다운 음색이 울려 퍼졌다!',
+
   'own.trainerUsedItem': '{{trainerName}}[[는]]\n{{itemName}}[[를]] 사용했다!',
   'own.revived': '{{pokemonName}}[[는]]\n기운을 되찾았다!',
   'own.ppRestoredAll': '{{pokemonNameWithAffix}}[[는]] {{itemName}}[[로]]\n기술의 PP를 회복했다!',
@@ -95,7 +101,6 @@ const KO = {
   'own.friendshipCure.frz': '{{pokemonNameWithAffix}}[[는]] 걱정시키지 않으려고\n얼음을 녹였다!',
   'own.friendshipCure.par': '{{pokemonNameWithAffix}}[[는]] 걱정시키지 않으려고\n마비를 풀었다!',
 
-  // Over the extracted line: its fixed "상대" doubles now that the foe's name carries "상대"
   'ability-trigger.trace': '{{pokemonName}}[[는]] {{targetName}}의\n{{abilityName}}[[를]] 트레이스했다!',
 };
 
@@ -145,6 +150,9 @@ const EN = {
   'own.zBroken': '{{pokemonNameWithAffix}} couldn\'t fully protect\nitself and got hurt!',
   'own.ultraBurst': '{{pokemonNameWithAffix}} regained its true power\nthrough Ultra Burst!',
   'own.usedItem': 'You used {{itemName}}\non {{pokemonName}}!',
+  'own.usedSideItem': 'You used {{itemName}}!',
+  'own.itemNoEffect': "But it seems there's no effect...",
+  'own.pokeFluteTune': "Now, that's a catchy tune!",
   'own.trainerUsedItem': '{{trainerName}} used\n{{itemName}}!',
   'own.revived': '{{pokemonName}} was revived!',
   'own.ppRestoredAll': '{{pokemonNameWithAffix}}\'s PP was restored\nby the {{itemName}}!',
@@ -174,6 +182,8 @@ const EN = {
   'own.friendshipCure.brn': '{{pokemonNameWithAffix}} blew on its burn\nso you wouldn\'t worry!',
   'own.friendshipCure.frz': '{{pokemonNameWithAffix}} melted the ice\nso you wouldn\'t worry!',
   'own.friendshipCure.par': '{{pokemonNameWithAffix}} broke through its paralysis\nso you wouldn\'t worry!',
+
+  'ability-trigger.trace': '{{pokemonName}} copied {{targetName}}’s\n{{abilityName}}!',
 };
 
 export const OWN = Object.freeze({ ko: KO, en: EN });

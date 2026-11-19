@@ -2,7 +2,7 @@ import { toID } from './sources.mjs';
 
 export const EN_FIXES = { necrozmaduskmane: 'Dusk Mane Necrozma', necrozmadawnwings: 'Dawn Wings Necrozma' };
 
-const API_FORM_ALIASES = {
+export const API_FORM_ALIASES = {
   necrozmaduskmane: 'necrozma-dusk', necrozmadawnwings: 'necrozma-dawn', darmanitangalar: 'darmanitan-galar-standard',
   indeedeef: 'indeedee-female', meowsticf: 'meowstic-female', basculegionf: 'basculegion-female', oinkolognef: 'oinkologne-female',
   mausholdfour: 'maushold-family-of-four', squawkabillyblue: 'squawkabilly-blue-plumage', squawkabillyyellow: 'squawkabilly-yellow-plumage',

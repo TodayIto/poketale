@@ -3,7 +3,7 @@ import { runBattle, isWild } from '../../director/index.js';
 import { createEnemyAI, gimmickRules } from '../../ai/index.js';
 import { battleNames, battleNamesIn } from './names.js';
 import { DEFAULT_LANG } from '../../director/lang.js';
-import { screenLine, recordingView } from '../../director/text.js';
+import { screenLog, screenLine, recordingView } from '../../director/text.js';
 import { mark } from './marks.js';
 import { spriteIdOf } from '../../engine/mon.mjs';
 
@@ -47,11 +47,11 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
   let view, started = false, paused = false, control = null;
   let speed = viewOptions.speed;
   const battleSpec = from?.spec ?? spec;
-  const screen = [];
+
+  const screen = screenLog();
   const marks = {};
-  const record = text => { if (typeof text === 'string') screen.push(text.replace(/\n/g, ' ')); };
   const turnStart = snapshot => {
-    if (Number.isInteger(snapshot?.turn)) marks[snapshot.turn] = screen.length;
+    if (Number.isInteger(snapshot?.turn)) marks[snapshot.turn] = screen.lines.length;
     return onTurn?.(snapshot);
   };
 
@@ -97,7 +97,7 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
 
     diagnostics() { return [...aiNotes]; },
 
-    screen() { return { lines: [...screen], marks: { ...marks } }; },
+    screen() { return { lines: [...screen.lines], hp: screen.hp.map(line => ({ ...line })), marks: { ...marks } }; },
 
     warmUp() { return wait(() => view.warmUp()); },
 
@@ -149,18 +149,18 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
           .map(key => [key, async (...args) => {
             await reveal();
             if (key === 'chooseAction' && !menuShown) { menuShown = true; mark('pb:menu'); }
-            record(screenLine(key, args));
+            screen.add(screenLine(key, args));
             return wait(() => view[key](...args));
           }]));
 
-        const replayView = recordingView(record);
+        const replayView = recordingView(screen.add);
 
         const result = await runBattle({ sim, spec: battleSpec, options, view: guarded, names, lang, development,
 
           enemyAI: createEnemyAI(sim, { ...enemyOptions(battleSpec), onDecision }),
           from, onTurn: turnStart, replayView, commands, onBattle: c => { control = c; } });
 
-        return result && { ...result, screen: [...screen] };
+        return result && { ...result, screen: [...screen.lines], screenHp: screen.hp.map(line => ({ ...line })) };
       } catch (error) {
         destroy();
         if (!signal.aborted) throw withNotes(error);

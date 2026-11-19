@@ -46,6 +46,10 @@ const NATURE_KO = Object.fromEntries(Object.entries(storyNames.natures).filter((
 
 export const natureName = (nature, lang) => (checkLang(lang) === 'ko' ? NATURE_KO[nature] ?? nature : nature);
 
+const TYPE_KO = Object.fromEntries(Object.entries(storyNames.types).filter(([k]) => /[가-힣]/.test(k)).map(([ko, en]) => [en, ko]));
+
+export const typeName = (type, lang) => (checkLang(lang) === 'ko' ? TYPE_KO[type] ?? type : type);
+
 export const moneyText = (amount, lang) => say(lang, 'money', { n: amount });
 const count = (n, lang) => Number(n).toLocaleString(lang);
 
@@ -55,6 +59,8 @@ function nameKit(lang, names) {
   const sp = species => names.species(species);
   return {
     sp,
+
+    form: species => (names.speciesFull ?? names.species)(species),
 
     item: (id, event) => customText(event, id) ?? names.item(id),
     move: id => names.move(id),
@@ -84,6 +90,10 @@ function effectLine(event, lang, k) {
   if (event.kind === 'nature') return t('diary.fx.nature', { nature: natureName(event.nature, lang) });
   if (event.kind === 'hypertrain') return t('diary.fx.hyper', { stats: statList(event.stats, lang) });
   if (event.kind === 'ppup') return t('diary.fx.ppUp', { move: k.move(event.move), from: event.from ?? '?', to: event.to ?? '?' });
+  if (event.kind === 'tera') return t('diary.fx.tera', { type: typeName(event.type, lang) });
+  if (event.kind === 'form') return t('diary.fx.form', { species: k.form(event.species) });
+  if (event.kind === 'fuse') return t('diary.fx.fuse', { other: k.p(k.mon(event.other), '과/와'), species: k.form(event.species) });
+  if (event.kind === 'unfuse') return t('diary.fx.unfuse', { other: k.mon(event.other) });
   return '';
 }
 
@@ -96,6 +106,9 @@ export const boxLabel = (n, lang) => say(lang, 'box.default', { n });
 const boxSent = (box, lang) => (box?.n
   ? say(lang, 'diary.toBox', { box: withParticle(lang, box.name ? `"${box.name}"` : boxLabel(box.n, lang), '으로/로') })
   : box ? say(lang, 'diary.toAnyBox') : '');
+
+export const fossilsLine = (items, lang, name) => ((items ?? []).length === 2
+  ? say(lang, 'panel.lab.both', { a: withParticle(lang, name(items[0]), '과/와'), b: name(items[1]) }) : name(items?.[0] ?? ''));
 
 export function diaryLine(event, lang, names) {
   const t = (key, values) => say(lang, key, values);
@@ -117,7 +130,9 @@ export function diaryLine(event, lang, names) {
       if (event.hpFrom != null && event.hpTo != null) return `${who} HP ${event.hpFrom}% → ${event.hpTo}%`;
       return t('diary.healed', { who: p(who, '이/가') });
     }
-    case 'item': return event.delta > 0 ? t('diary.itemGot', { item: item(event.item, event), n: event.delta })
+
+    case 'item': return event.fished && event.delta > 0 ? t('diary.fished', { item: p(item(event.item, event), '을/를') })
+      : event.delta > 0 ? t('diary.itemGot', { item: item(event.item, event), n: event.delta })
       : t(event.toss ? 'diary.itemTossed' : 'diary.itemLost', { item: item(event.item, event), n: -event.delta });
     case 'use': {
       const effect = (event.effects ?? []).map(e => effectLine(e, lang, k)).filter(Boolean).join(', ');
@@ -131,9 +146,9 @@ export function diaryLine(event, lang, names) {
     }
     case 'release': return t('diary.release', { who: p(who, '을/를') });
     case 'deposit': return t('diary.deposit', { who: p(who, '을/를') });
-    case 'withdraw': return t('diary.withdraw', { who: p(who, '을/를') });
-    case 'nickname': return t('diary.nickname', { species: k.sp(event.who?.species) || who, name: quoted(lang, event.name, ['이라는', '라는']) });
+    case 'withdraw': return event.revived ? t('diary.received', { mon: p(who, '을/를') }) : t('diary.withdraw', { who: p(who, '을/를') });
     case 'evolvelock': return t(event.locked ? 'diary.evolveLock' : 'diary.evolveUnlock', { who: p(who, '이/가') });
+    case 'nickname': return t('diary.nickname', { species: k.sp(event.who?.species) || who, name: quoted(lang, event.name, ['이라는', '라는']) });
     case 'hold':
       if (event.item) return t('diary.give', { who, item: p(item(event.item, event), '을/를') });
       return event.prev ? t('diary.take', { who, item: p(item(event.prev, event), '을/를') }) : t('diary.takeAny', { who });
@@ -158,12 +173,15 @@ export function diaryLine(event, lang, names) {
     case 'money': return event.delta > 0 ? t('diary.moneyGot', { money: p(moneyText(event.delta, lang), '을/를') })
       : t('diary.moneySpent', { money: p(moneyText(-event.delta, lang), '을/를') });
 
-    case 'evs': case 'exp': case 'ability': case 'nature': case 'hypertrain': case 'ppup': return `${who}: ${effectLine(event, lang, k)}`;
+    case 'evs': case 'exp': case 'ability': case 'nature': case 'hypertrain': case 'ppup': case 'tera': case 'form': return `${who}: ${effectLine(event, lang, k)}`;
     case 'friendship': return null;
 
     case 'gotEgg': return t('diary.gotEgg', { box: boxSent(event.box, lang) });
     case 'egg': return t('diary.newEgg', { box: boxSent(event.box, lang) });
     case 'hatch': return t('diary.hatch', { mon: p(k.sp(event.who?.species), '이/가') });
+
+    case 'lab': return t('diary.lab', { item: p(fossilsLine(event.items, lang, item), '을/를') });
+    case 'revive': return t('diary.revive', { mon: p(k.sp(event.who?.species), '이/가'), box: boxSent(event.box, lang) });
     case 'breed': return t('diary.breed', { a: p(k.mon(event.a), '과/와'), b: k.mon(event.b) });
     case 'breedStop': return t('diary.breedStop');
     case 'rest': return t('diary.rest');

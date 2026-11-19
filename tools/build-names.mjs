@@ -1,3 +1,4 @@
+// Build-only: PokeRogue locale data @ 485b48eb (AGPL-3.0-only); see data/sources/README.md.
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -6,7 +7,7 @@ import { gzipSync } from 'node:zlib';
 import { BAG_ITEMS, FIELD_ITEMS } from '../engine/bag.mjs';
 import { OUTSIDE_ITEMS, tmId } from '../story/items.mjs';
 import { csv, englishID, gen9Tms, speciesWithCosmeticFormes, toID } from './sources.mjs';
-import { aiFormNames } from './ai-forms.mjs';
+import { aiFormNames, API_FORM_ALIASES } from './ai-forms.mjs';
 import { formRegions } from './form-regions.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -108,6 +109,11 @@ const OFFICIAL_SPECIES_KO = {
   pignite: { ko: '차오꿀', was: '챠오꿀' },
 };
 
+const OFFICIAL_ITEMS_KO = {
+  freshstartmochi: '순백떡',
+  stellarterashard: '테라피스 스텔라',
+};
+
 function baseSpeciesName(s, official) {
   const base = translate('species', s.baseSpecies);
   const fix = OFFICIAL_SPECIES_KO[toID(s.baseSpecies)];
@@ -156,9 +162,13 @@ const missing = {}, noAnims = [], unavailable = {};
 const sizes = [];
 const tables = {};
 
+const NAMES_SINCE = 'formNames009';
+const listed = new Set(Dex.species.all().map(s => s.id));
 const dexEntries = Object.fromEntries(kinds.map(kind => [kind,
-  [...new Set(Dex[kind].all().map(e => e.id))].sort().map(id => Dex[kind].get(id)),
+  [...new Set((kind === 'species' ? speciesWithCosmeticFormes(Dex).filter(e => !['CAP', 'Custom'].includes(e.isNonstandard) || listed.has(e.id))
+    : Dex[kind].all()).map(e => e.id))].sort().map(id => Dex[kind].get(id)),
 ]));
+
 for (const kind of kinds) {
   const table = {};
   missing[kind] = []; unavailable[kind] = [];
@@ -173,6 +183,7 @@ for (const kind of kinds) {
 
       const before = translateSpecies(entry, false).ko;
       if (before && before !== name.ko) table[entry.id].old = [before];
+      if (!listed.has(entry.id)) table[entry.id].since = NAMES_SINCE;
     }
     if (kind === 'moves') {
       table[entry.id].type = entry.type;
@@ -186,7 +197,11 @@ for (const kind of kinds) {
 
   if (kind === 'items') for (const [id, item] of [...Object.entries(BAG_ITEMS), ...Object.entries(FIELD_ITEMS), ...Object.entries(OUTSIDE_ITEMS)]) {
     if (table[id]) continue;
-    const name = translate(kind, item.name);
+    let name = translate(kind, item.name);
+    if (OFFICIAL_ITEMS_KO[id]) {
+      if (name.ko) throw new Error(`OFFICIAL_ITEMS_KO.${id}: PokeAPI 에 한국어 이름 "${name.ko}" 이 생겼다 — 손으로 보고 빼세요`);
+      name = { ko: OFFICIAL_ITEMS_KO[id], src: 'official' };
+    }
     table[id] = { ko: name.ko, en: item.name, src: name.src, sim: false, bag: true };
     if (!name.ko) missing[kind].push({ id, name: item.name, isNonstandard: null });
   }
@@ -261,6 +276,27 @@ writeFileSync(resolve(out, 'MISSING.md'), lines.join('\n'));
   doc.push(`## 테라스탈 폼 ${report.tera.length}개 (테라스탈 전 폼 이름으로)`, '', report.tera.map(id => `\`${id}\` → \`${table[id].as}\``).join(' · '), '');
   writeFileSync(resolve(out, 'AI-FORMS.md'), doc.join('\n'));
   console.log(`AI 폼 이름 ${named.length} + 겉모습 ${report.cosmetic.length}`);
+}
+
+{
+  const speciesOfPokemon = new Map(csv('pokemon.csv').map(r => [r.id, Number(r.species_id)]));
+  const apiRows = csv('pokemon_forms.csv');
+  const byIdentifier = new Map(apiRows.map(r => [toID(r.identifier), r]));
+  const defaultOf = new Map(apiRows.filter(r => r.is_default === '1' && speciesOfPokemon.get(r.pokemon_id) === Number(r.pokemon_id)).map(r => [Number(r.pokemon_id), r]));
+  const dexKo = new Map(json('data/dex-ko.json').entries.filter(e => e.id && e.form).map(e => [e.id, e.form]));
+  const labels = {};
+  for (const [id, record] of Object.entries(tables.species)) {
+    const s = Dex.species.get(id);
+    if (!s.exists || s.isNonstandard === 'CAP' || s.isNonstandard === 'Custom') continue;
+    const row = record.base ? [apiFormAliases[id], API_FORM_ALIASES[id], id].map(k => k && byIdentifier.get(toID(k))).find(r => r && speciesOfPokemon.get(r.pokemon_id) === s.num)
+      : defaultOf.get(s.num);
+    const names = row ? formNames.get(row.id) ?? {} : {};
+    const list = [names.en, names.ko, dexKo.get(id), record.base ? null : s.baseForme?.replace(/-/g, ' ')]
+      .filter(name => name && name !== '?' && !/^[MF]$/.test(name));
+    if (list.length) labels[id] = [...new Set(list)];
+  }
+  writeFileSync(resolve(out, 'form-words.json'), `{\n${Object.entries(labels).map(([id, list]) => `${JSON.stringify(id)}:${JSON.stringify(list)}`).join(',\n')}\n}\n`);
+  console.log(`폼 이름 낱말 ${Object.keys(labels).length}종`);
 }
 
 {

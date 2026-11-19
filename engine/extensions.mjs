@@ -9,7 +9,8 @@ import { installSeats } from './seats.mjs';
 import { installField } from './field.mjs';
 import { installFriendship } from './friendship.mjs';
 import { installCounts } from './counts.mjs';
-import { allowRayquazaMega } from './showdown-compat.mjs';
+import { allowRayquazaMega, crownMoves, keepFormTypes, startedGimmicks } from './showdown-compat.mjs';
+import { formItems, teraForm, toID } from './mon.mjs';
 
 export const EXTENSIONS = [
 
@@ -23,10 +24,21 @@ export const EXTENSIONS = [
 
 	{ name: 'initial-state', at: 'create', install: (sim, battle, { seats, sets }) => installInitialState(sim, battle, seats, sets), keys: [], copy: 'keep' },
 
+	{ name: 'written-forms', at: 'create', install: (sim, battle, { spec }) => {
+		if (!spec?.writtenForms) return;
+		battle.storyWrittenForms = true;
+		atBattleStart(battle, () => { startedGimmicks(battle, teraForm); crownMoves(battle); });
+	}, keys: [], copy: 'keep' },
+
 	{ name: 'field', at: 'create', install: (sim, battle, { spec }) => installField(sim, battle, spec), keys: [], copy: 'keep' },
 
 	{ name: 'seats', at: 'create', install: (sim, battle, { seats }) => {
 		if (seats ? seats.p2.team.some(member => member.trainer) : battle.sides.some(side => side?.pokemon.some(p => p.m.trainer))) installSeats(battle);
+	}, keys: [], copy: 'reapply' },
+
+	{ name: 'forms-without-item', at: 'players', install: (sim, battle, { spec }) => {
+		if (spec?.writtenForms) markFormsWithoutItem(sim, battle, spec.formGen ?? null);
+		keepFormTypes(battle);
 	}, keys: [], copy: 'reapply' },
 
 	{ name: 'start-form', at: 'players', install: (sim, battle, { sets }) => recordStartForms(battle, sets), keys: [], copy: 'keep' },
@@ -47,6 +59,18 @@ export const EXTENSIONS = [
 	{ name: 'run', at: 'caller', install: installRun, keys: ['storyRun', 'events'], copy: 'strip',
 		fields: ['ran', 'outcome', 'winner', 'forfeited'], result: runResult },
 ];
+
+function atBattleStart(battle, fn) {
+	const baseFormat = battle.format;
+	battle.format = Object.create(baseFormat, { onBattleStart: { value() { fn(); baseFormat.onBattleStart?.call(this); } } });
+}
+
+function markFormsWithoutItem(sim, battle, gen) {
+	for (const pokemon of battle.sides[0]?.pokemon ?? []) {
+		const items = formItems(sim.Dex, pokemon.species, gen);
+		if (items.length && !items.some(name => toID(name) === pokemon.item)) pokemon.m.formWithoutItem = true;
+	}
+}
 
 export function installExtensions(sim, battle, at, context) {
 	for (const ext of EXTENSIONS) if (ext.at === at) ext.install(sim, battle, context);

@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (SummaryUiMode.DEFAULT, Page.PROFILE/STATS/MOVES) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/party-ui-handler.ts (processSummaryOption) @ 7d7da4a8 (AGPL-3.0-only)
 
 import { placeSprite } from '../sprites/placement.js';
@@ -34,12 +34,11 @@ const TEXT = Object.freeze({ ...SUMMARY_TEXT, ot: 'pokemon-summary.ot', type: 'p
 const QUILL = ['......oo', '.....owo', '....owwo', '...owwo.', '..owwo..', '..owo...', '.oo.....', 'o.......'];
 const QUILL_COLOR = { o: 0x484848, w: 0xf8f8f8 };
 const QUILL_HIT = 14;
-// Evolution lock, drawn like the quill: shut and gold when the Pokémon will not evolve
-const LOCK_SHUT = ['..oooo..', '.o....o.', '.o....o.', 'oooooooo', 'owwwwwwo', 'owwoowwo', 'owwwwwwo', 'oooooooo'];
-const LOCK_OPEN = ['..oooo..', '.o....o.', '.o......', 'oooooooo', 'owwwwwwo', 'owwoowwo', 'owwwwwwo', 'oooooooo'];
+
+const LOCK_SHUT = ['.ooooo.', 'oo...oo', 'o.....o', 'ooooooo', 'owwwwwo', 'owwowwo', 'owwowwo', 'ooooooo'];
+const LOCK_OPEN = ['.ooooo.', 'oo...oo', 'o......', 'ooooooo', 'owwwwwo', 'owwowwo', 'owwowwo', 'ooooooo'];
 const LOCK_COLOR = { shut: { o: 0x484848, w: 0xf8c020 }, open: { o: 0x484848, w: 0xf8f8f8 } };
-// On the level line left of the gender mark: a long name never pushes it under the page beside
-const LOCK_X = 84, LOCK_Y = -26;
+const LOCK_X = 85, LOCK_Y = -26;
 export const PAGES = ['profile', 'stats', 'moves'];
 
 const MEMO_RIGHT = 7 + 1224 / 6, PAGE_BOTTOM = 159, BOND_HEART_W = 7, BOND_HEART_DY = 5, BOND_SIZES = [96, 80, 66];
@@ -186,10 +185,11 @@ export class SummaryScreen {
     if (shiny) layer.add(shiny);
 
     const quill = this.rename ? this.drawQuill(layer) : null;
-    const evolveLock = this.lock && summary.traits && !summary.traits.held ? this.drawLock(layer, summary.traits.locked) : null;
 
     const gender = GENDER_COLORS[mon.gender] ? addGenderMark(s, 96, -17, mon.gender, `GENDER_${mon.gender}`, { originY: 1 }).setVisible(!nameShowsGender(mon.name)) : null;
-    this.nameRefs = { name, shiny, quill, evolveLock, gender };
+
+    const evolveLock = this.lock && summary.lock && !summary.lock.held ? this.drawLock(layer, summary.lock.locked) : null;
+    this.nameRefs = { name, shiny, quill, gender, evolveLock };
     this.placeQuill();
     layer.add(s.add.sprite(6, -19, 'pb', ballFrame(summary.ball)).setOrigin(0, 1));
 
@@ -279,31 +279,29 @@ export class SummaryScreen {
       if (summary.nature.mint) p.add(styledText(s, 7, 113 + 14.83, summary.nature.mint, 'WINDOW_ALT').setOrigin(0, 0));
     }
 
-    const y = 113 + 14.83 * (summary.nature ? (summary.nature.mint ? 2 : 1) : 0);
-    if (summary.bond || summary.traits?.text) this.bondLine(p, y, summary.bond, summary.traits?.text);
+    const lockText = summary.lock?.text;
+    if (summary.bond || lockText) this.bondLine(p, 113 + 14.83 * (summary.nature ? (summary.nature.mint ? 2 : 1) : 0), summary.bond, lockText);
   }
 
-  // The bond line (after its heart) and the traits line under it, made smaller together until both fit the page
-  bondLine(p, y, bond, traits) {
+  bondLine(p, y, bond, lockText) {
     const s = this.scene, x = 7 + BOND_HEART_W + 3;
     let lines = [];
-    // Both lines under a nature and its mint leave room only for smaller text
-    for (const fontSize of bond && traits ? [...BOND_SIZES, 56, 48] : BOND_SIZES) {
-      for (const text of lines) text.destroy();
+    for (const fontSize of bond && lockText ? [...BOND_SIZES, 56, 48] : BOND_SIZES) {
+      for (const line of lines) line.destroy();
       lines = [];
       let bottom = y;
-      for (const [left, line] of [[x, bond?.text], [7, traits]]) {
-        if (!line) continue;
-        const text = styledText(s, left, bottom, line, 'WINDOW_ALT', { fontSize, wordWrap: { width: (MEMO_RIGHT - left) * 6 } }).setOrigin(0, 0);
-        lines.push(text);
-        bottom += text.displayHeight;
+      for (const [left, text] of [[x, bond?.text], [7, lockText]]) {
+        if (!text) continue;
+        const line = styledText(s, left, bottom, text, 'WINDOW_ALT', { fontSize, wordWrap: { width: (MEMO_RIGHT - left) * 6 } }).setOrigin(0, 0);
+        lines.push(line);
+        bottom += line.displayHeight;
       }
       if (bottom <= PAGE_BOTTOM) break;
     }
     if (bond) {
+
       const heart = s.add.image(7, y, artTexture(s, bond.band === 'lowest' ? 'heartCold' : 'heart')).setOrigin(0, 0);
-      // Shrunk text under it: the heart stays beside its own line, clear of the traits line
-      heart.setY(y + (traits ? Math.min(BOND_HEART_DY, Math.max(0, lines[0].displayHeight - heart.displayHeight)) : BOND_HEART_DY));
+      heart.setY(y + (lockText ? Math.min(BOND_HEART_DY, Math.max(0, lines[0].displayHeight - heart.displayHeight)) : BOND_HEART_DY));
       p.add(heart);
     }
     p.add(lines);
@@ -515,7 +513,6 @@ export class SummaryScreen {
     layer.add([icon, hit]);
     return { icon, hit };
   }
-
   paintLock(icon, shut) {
     if (!icon) return;
     const colors = LOCK_COLOR[shut ? 'shut' : 'open'];
@@ -529,11 +526,11 @@ export class SummaryScreen {
     playSelect(s);
     this.locking = true;
     try {
-      const traits = await this.lock();
+      const view = await this.lock();
       if (!this.container || !this.finish || this.party[this.index] !== mon) return;
-      if (!traits) { await this.notice(s.words('own.evolveLockFailed')); return; }
-      mon.summary.traits = traits;
-      this.paintLock(this.nameRefs?.evolveLock?.icon, traits.locked);
+      if (!view) { await this.notice(s.words('own.evolveLockFailed')); return; }
+      mon.summary.lock = view;
+      this.paintLock(this.nameRefs?.evolveLock?.icon, view.locked);
       if (this.page === PROFILE) this.populate(this.pageC, PROFILE);
     } catch (error) {
       if (s.life.signal.aborted || !this.container) return;

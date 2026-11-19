@@ -3,6 +3,7 @@ import { POKEROGUE_BOXES } from 'embedded:pokerogue-boxes';
 import { pokerogueReference } from './sprites/pokerogue-reference.js';
 import { hasFemaleSprite } from './sprites/showdown.js';
 import { loadMonSprite } from './sprites/sources.js';
+import { DEFAULT_SPRITE_STYLE } from './sprites/styles.js';
 import { pokerogueGeometry } from './sprites/pokerogue.js';
 import { iconFrame, iconAtlas } from './ui/party-icons.js';
 import { biomeImages, biomeKey, DEFAULT_BIOME } from './arena.js';
@@ -72,7 +73,7 @@ function recolored(img, palette) {
 }
 
 export class Assets {
-  constructor(scene, life, { fetchBytes, assetBase = DEFAULT_ASSET_BASE, spriteSource = 'showdown-ani', theme, lang, pictureWays = DIRECT_ONLY }) {
+  constructor(scene, life, { fetchBytes, assetBase = DEFAULT_ASSET_BASE, spriteSource = 'showdown-ani', spriteStyle = DEFAULT_SPRITE_STYLE, theme, lang, pictureWays = DIRECT_ONLY }) {
     if (!['showdown-ani', 'pokerogue'].includes(spriteSource)) throw new Error(`Unknown spriteSource: ${spriteSource}`);
     this.scene = scene; this.life = life;
     this.theme = checkTheme(theme);
@@ -85,6 +86,7 @@ export class Assets {
       `Host fetch timeout ${HOST_ROUTE_TIMEOUT_MS / 1000}s: ${url}`, life.signal), { signal: life.signal });
     this.route = createImageRoute({ ways: pictureWays, fetchBytes: viaHost, signal: life.signal });
     this.base = assetBase.endsWith('/') ? assetBase : assetBase + '/';
+    this.spriteStyle = spriteStyle;
     this.source = spriteSource; this.pending = new Map(); this.mons = new Map(); this.diagnostics = [];
   }
   url(path) { return this.base + path; }
@@ -132,7 +134,7 @@ export class Assets {
     if (!this.mons.has(key)) {
       const promise = (async () => {
 
-        if (this.source === 'showdown-ani') return await loadMonSprite(this, mon, back, key, pokerogueReference(mon, back ? 'player' : 'enemy', POKEROGUE_BOXES));
+        if (this.source === 'showdown-ani') return await loadMonSprite(this, mon, back, key, pokerogueReference(mon, back ? 'player' : 'enemy', POKEROGUE_BOXES), this.spriteStyle);
         const id = PR_SPECIES[mon.speciesId];
         if (!id) throw new Error(`PokeRogue atlas not embedded: ${mon.speciesId} (embedded: pikachu, gyarados)`);
         const path = `images/pokemon/${back ? 'back/' : ''}${mon.shiny ? 'shiny/' : ''}${id}`;

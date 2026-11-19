@@ -13,7 +13,8 @@ get_pinned pokemon-showdown https://github.com/smogon/pokemon-showdown.git c0845
 (cd vendor/pokemon-showdown && npm install --no-audit --no-fund && node build)
 
 get_pinned pokerogue https://github.com/pagefaultgames/pokerogue.git 7d7da4a829258b19e3f1615185fc6dd4d3d815f7
-git -C vendor/pokerogue submodule update --init --depth 1
+git -C vendor/pokerogue submodule update --init --depth 1   # assets 37789817, locales 485b48eb (pinned by the parent commit)
+(cd vendor/pokerogue && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@10.34.5 install --frozen-lockfile)
 
 GALMURI_TGZ_SHA256=7d6b2b8534d157dd5e4eb8e01145f7388c0383bed8a96f5ec719eaacf1f86816
 if [ ! -f vendor/galmuri/Galmuri11.ttf ]; then

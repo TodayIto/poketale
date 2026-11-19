@@ -64,7 +64,7 @@ export function placeSprite(asset, side) {
   const w = right - left, h = bottom - top;
   if (asset.source === 'pokerogue') {
 
-    return { x: slot.x, y: slot.bottom, scale: 1, originX: 0.5, originY: 1, mode: 'pokerogue',
+    return { x: slot.x, y: slot.bottom, scale: 1, originX: 0.5, originY: 1, mode: 'pokerogue', anchor: [0, -height / 2],
       box: { left: slot.x - width / 2 + left, top: slot.bottom - height + top,
         right: slot.x - width / 2 + right, bottom: slot.bottom - height + bottom } };
   }
@@ -78,8 +78,9 @@ export function placeSprite(asset, side) {
 
     const scale = Math.max(1, Math.round(preferred * 12)) / 12;
     const x = (targetBox.left + targetBox.right) / 2, y = targetBox.bottom;
+
     return { x, y, scale, preferred, originX: (left + right) / (2 * width), originY: bottom / height,
-      mode: 'pokerogue-box', targetBox, referenceKey: asset.pokerogue.key,
+      mode: 'pokerogue-box', targetBox, referenceKey: asset.pokerogue.key, anchor: [slot.x - x, slot.bottom - asset.pokerogue.values[1] / 2 - y],
       box: { left: x - w * scale / 2, top: y - h * scale, right: x + w * scale / 2, bottom: y } };
   }
 
@@ -95,7 +96,7 @@ export function placeSprite(asset, side) {
   const x = slot.x, y = legacyBottom - bottomPadding * scale;
   return {
     x, y, scale, preferred, originX: (left + right) / (2 * width), originY: bottom / height,
-    region: slot.region, mode: 't07',
+    region: slot.region, mode: 't07', anchor: [0, -h * scale / 2],
     box: { left: x - w * scale / 2, top: y - h * scale, right: x + w * scale / 2, bottom: y },
   };
 }

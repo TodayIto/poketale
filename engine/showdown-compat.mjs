@@ -55,6 +55,64 @@ export function battleFromJSON(sim, json) {
 	return battle;
 }
 
+export function keepFormTypes(battle) {
+	const original = battle.getCallback;
+	if (original.formTypes) return;
+	const wrapped = function (target, effect, callbackName) {
+		const callback = original.call(this, target, effect, callbackName);
+		if (!callback || callbackName !== 'onType' || effect !== target?.baseSpecies || !target.m?.formWithoutItem) return callback;
+		return function (types, pokemon) {
+			const item = pokemon.getItem();
+			return item.onPlate || item.onMemory ? callback.call(this, types, pokemon) : types;
+		};
+	};
+	wrapped.formTypes = true;
+	battle.getCallback = wrapped;
+	const single = battle.singleEvent;
+	battle.singleEvent = function (eventid, effect, state, target, ...rest) {
+		const out = single.call(this, eventid, effect, state, target, ...rest);
+		const prop = eventid === 'ModifyType' && effect?.effectType === 'Move' && target?.m?.formWithoutItem ? FORM_TYPE_MOVES[effect.id] : null;
+		if (prop && !target.getItem()[prop]) {
+			const species = target.species;
+			const type = (species.requiredItems ?? [species.requiredItem]).map(name => this.dex.items.get(name ?? '')[prop]).find(Boolean);
+			if (type) effect.type = type;
+		}
+		return out;
+	};
+}
+
+const FORM_TYPE_MOVES = Object.freeze({ judgment: 'onPlate', multiattack: 'onMemory', technoblast: 'onDrive' });
+
+export function startedGimmicks(battle, teraForm) {
+	for (const side of battle.sides) {
+		if (!side) continue;
+		if (side.pokemon.some(p => p.species.isMega)) for (const p of side.pokemon) Object.assign(p, { canMegaEvo: false, canMegaEvoX: false, canMegaEvoY: false });
+		if (side.pokemon.some(p => p.species.name === 'Necrozma-Ultra')) for (const p of side.pokemon) p.canUltraBurst = null;
+		const tera = side.pokemon.filter(p => teraForm(p.species));
+		for (const p of tera) Object.assign(p, { terastallized: p.teraType, addedType: '', knownType: true, apparentType: p.teraType });
+		if (tera.length) for (const p of side.pokemon) p.canTerastallize = null;
+	}
+}
+
+export function crownMoves(battle) {
+	for (const side of battle.sides) {
+		for (const pokemon of side?.pokemon ?? []) {
+			const signature = CROWNED_MOVES[pokemon.species.name];
+			const slot = signature ? pokemon.set.moves.findIndex(move => battle.dex.toID(move) === 'ironhead') : -1;
+			if (slot < 0 || ![signature, 'ironhead'].includes(pokemon.baseMoveSlots[slot]?.id)) continue;
+			if (pokemon.baseMoveSlots[slot].id === 'ironhead') {
+				const move = battle.dex.moves.get(signature);
+				const pp = battle.calculatePP(move, pokemon.ppUps[slot]);
+				pokemon.baseMoveSlots[slot] = { move: move.name, id: move.id, pp, maxpp: pp, target: move.target, disabled: false, disabledSource: '', used: false };
+				pokemon.moveSlots = pokemon.baseMoveSlots.slice();
+			}
+			pokemon.m.crowned = { slot, move: signature };
+		}
+	}
+}
+
+const CROWNED_MOVES = Object.freeze({ 'Zacian-Crowned': 'behemothblade', 'Zamazenta-Crowned': 'behemothbash' });
+
 export function allowRayquazaMega(battle) {
 	const { actions } = battle;
 	const original = actions.canMegaEvo;

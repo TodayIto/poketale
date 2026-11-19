@@ -249,7 +249,7 @@ export function slimNameTable(path) {
 	const keepItemEn = /items\.json$/.test(path);
 	return Object.fromEntries(Object.entries(table).map(([id, r]) => [id, Object.fromEntries(Object.entries({
 		ko: r.ko || undefined, en: r.ko && !keepEn && !(keepItemEn && r.sim === false) ? undefined : r.en, type: r.type, anim: r.anim || undefined,
-		move: r.move, old: r.old, base: r.base, num: keepEn ? r.num : undefined,
+		move: r.move, old: r.old, base: r.base, num: keepEn ? r.num : undefined, since: r.since,
 	}).filter(([, v]) => v !== undefined))]));
 }
 

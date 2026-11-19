@@ -1,4 +1,4 @@
-import { applyPpUps } from './pp.mjs';
+import { applyPpUps, ppUpCount } from './pp.mjs';
 import { injectStatus, restoreSpread } from './showdown-compat.mjs';
 
 export function installInitialState(sim, battle, seats, sets) {
@@ -43,7 +43,17 @@ function applyInitialState(sim, side, team, sets) {
 
 		applyPpUps(side.battle, pokemon, member.ppUps);
 
+		const crowned = pokemon.m.crowned;
+		if (crowned) {
+			const ironHead = sim.Dex.moves.get('ironhead');
+			const ups = ppUpCount(ironHead, Object.entries(member.ppUps || {}).find(([id]) => sim.Dex.toID(id) === 'ironhead')?.[1]);
+			const maxpp = side.battle.calculatePP(ironHead, ups);
+			const given = Object.entries(member.pp || {}).find(([id]) => sim.Dex.toID(id) === 'ironhead')?.[1];
+			Object.assign(crowned, { ppUps: ups, maxpp, pp: given === undefined ? maxpp : Math.max(0, Math.min(maxpp, given)) });
+		}
+
 		for (const [moveid, pp] of Object.entries(member.pp || {})) {
+			if (crowned && sim.Dex.toID(moveid) === 'ironhead') continue;
 			const slot = pokemon.moveSlots.find(s => s.id === sim.Dex.toID(moveid));
 			if (!slot) throw new Error(`${member.uid}: 기술 "${moveid}" 이 없습니다`);
 			slot.pp = Math.max(0, Math.min(slot.maxpp, pp));

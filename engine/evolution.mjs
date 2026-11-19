@@ -16,23 +16,25 @@ const EVERSTONE_IGNORED = new Set(['kadabra']);
 
 export const everstoneStops = (dex, mon) => holdsEverstone(mon.item) && !EVERSTONE_IGNORED.has(dex.species.get(mon.species).id);
 
-// Sword/Shield: a Pikachu, Eevee or Meowth with the Gigantamax factor cannot evolve
-const GMAX_KEEPS_FORM = new Set(['pikachu', 'eevee', 'meowth']);
+export const EVOLUTION_WAYS = Object.freeze(['level', 'item', 'trade', 'battle', 'spin']);
 
-// A kind that can Gigantamax, now or once it evolves (a Charmander's factor shows on its Charizard)
-export const gigantamaxLine = (dex, species) => {
-  const kind = dex.species.get(species);
-  return !!kind.canGigantamax || branchesOf(dex, kind).some(next => gigantamaxLine(dex, next.name));
-};
+const EVOLUTION_GATES = Object.freeze([
+	{ id: 'locked', ways: EVOLUTION_WAYS, refuses: true, stops: (dex, mon) => mon.evolveLocked === true },
+	{ id: 'everstone', ways: Object.freeze(['level', 'trade', 'battle']), stops: everstoneStops },
+]);
 
-// A Pokémon that will not evolve at all, unlike one holding an Everstone: marked so (a partner Pikachu refusing its
-// Thunder Stone), or keeping its Gigantamax factor
-export const evolveLocked = (dex, mon) => mon?.evolveLocked === true || (mon?.gigantamax === true && GMAX_KEEPS_FORM.has(dex.species.get(mon.species).id));
+export function evolutionGate(dex, mon, way) {
+	const gate = EVOLUTION_GATES.find(g => g.ways.includes(way) && g.stops(dex, mon));
+	return gate ? { id: gate.id, ...(gate.refuses ? { refuses: true } : {}) } : null;
+}
 
-export const evolutionStops = (dex, mon) => everstoneStops(dex, mon) || evolveLocked(dex, mon);
+export const lockMark = locked => (locked === true ? { evolveLocked: true } : {});
 
-// What a saved Pokémon ({ set, evolveLocked }) brings to the checks above
-export const evolveTraits = mon => ({ ...(mon?.evolveLocked === true ? { evolveLocked: true } : {}), ...(mon?.set?.gigantamax === true ? { gigantamax: true } : {}) });
+export const evolutionStops = (dex, mon, way) => !!evolutionGate(dex, mon, way);
+
+export const willingMon = mon => ({ ...mon, evolveLocked: false });
+
+export const evolutionHeld = (dex, mon) => EVOLUTION_GATES.some(g => !g.refuses && g.ways.length === EVOLUTION_WAYS.length && g.stops(dex, mon));
 
 export const TRADE_EVOLUTIONS = Object.freeze(['cord', 'level']);
 
@@ -173,16 +175,16 @@ function readyBranches(dex, mon, now, test) {
 }
 
 export function levelEvolution(dex, mon, now = {}) {
-	if (evolutionStops(dex, mon)) return null;
+	if (evolutionStops(dex, mon, 'level')) return null;
 	const { from, ready } = readyBranches(dex, mon, now, t => levelReady(dex, t, mon, now));
 	return pick(ready, from, now)?.name ?? null;
 }
 
 export function itemEvolution(dex, mon, item, now = {}) {
-	if (evolveLocked(dex, mon)) return null;
 	const key = toID(item);
-	const tradeItem = t => t.evoType === 'trade' && now.trade === 'level' && !everstoneStops(dex, mon) && !!t.evoItem && toID(t.evoItem) === key;
-	const { from, ready } = readyBranches(dex, mon, now, t => (wayOf(t) === 'item' && itemOf(t) === key && ruleHolds(dex, ruleOf(t), mon, now)) || tradeItem(t));
+	const stone = !evolutionStops(dex, mon, 'item'), traded = !evolutionStops(dex, mon, 'trade');
+	const tradeItem = t => t.evoType === 'trade' && now.trade === 'level' && traded && !!t.evoItem && toID(t.evoItem) === key;
+	const { from, ready } = readyBranches(dex, mon, now, t => (stone && wayOf(t) === 'item' && itemOf(t) === key && ruleHolds(dex, ruleOf(t), mon, now)) || tradeItem(t));
 	return pick(ready, from, now)?.name ?? null;
 }
 
@@ -191,7 +193,7 @@ export function evolutionItems(dex, trade = ABSENT_TRADE_EVOLUTION) {
 }
 
 export function tradeEvolution(dex, mon, now = {}) {
-	if (evolutionStops(dex, mon)) return null;
+	if (evolutionStops(dex, mon, 'trade')) return null;
 	const held = toID(mon.item);
 	const party = new Set((now.party ?? []).map(name => toID(dex.species.get(name).baseSpecies)));
 	const { from, ready } = readyBranches(dex, mon, now, t => wayOf(t) === 'trade' && (!t.evoItem || toID(t.evoItem) === held) && (!ruleOf(t)?.with || party.has(ruleOf(t).with)));
@@ -206,19 +208,19 @@ export function tradePair(dex, a, b) {
 		.find(t => wayOf(t) === 'trade' && ruleOf(t)?.with === toID(dex.species.get(other.species).baseSpecies)) ?? null;
 	const ab = branch(a, b), ba = branch(b, a);
 	if (!ab || !ba) return null;
-	const into = [evolutionStops(dex, a) ? null : ab.name, evolutionStops(dex, b) ? null : ba.name];
+	const into = [evolutionStops(dex, a, 'trade') ? null : ab.name, evolutionStops(dex, b, 'trade') ? null : ba.name];
 	return into.some(Boolean) ? into : null;
 }
 
 export function battleEvolution(dex, mon, now = {}) {
-	if (evolutionStops(dex, mon) || !now.won) return null;
+	if (evolutionStops(dex, mon, 'battle') || !now.won) return null;
 	const { from, ready } = readyBranches(dex, mon, now, t => wayOf(t) === 'battle' && ruleHolds(dex, ruleOf(t), mon, now));
 	return pick(ready, from, now)?.name ?? null;
 }
 
 const SWEETS = new Set(['strawberrysweet', 'berrysweet', 'lovesweet', 'starsweet', 'cloversweet', 'flowersweet', 'ribbonsweet']);
 
-export const canSpin = (dex, mon) => !evolveLocked(dex, mon) && SWEETS.has(toID(mon.item)) && branchesOf(dex, dex.species.get(mon.species)).some(t => wayOf(t) === 'spin');
+export const canSpin = (dex, mon) => !evolutionStops(dex, mon, 'spin') && SWEETS.has(toID(mon.item)) && branchesOf(dex, dex.species.get(mon.species)).some(t => wayOf(t) === 'spin');
 
 function creamOf({ clockwise, seconds }, timeOfDay) {
 	if (!clockwise && seconds > 10 && timeOfDay === 'dusk') return 'Alcremie-Rainbow-Swirl';

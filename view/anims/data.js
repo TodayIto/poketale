@@ -1,5 +1,7 @@
 import { ANIMS_GZ_B64, ANIM_FILES, ANIM_ENDS } from 'embedded:anims';
 import { decodeAnim } from './codec.js';
+import { normalizeAnim } from './background.js';
+import { withBgNames } from './bg-names.js';
 import { entry } from '../../names/index.js';
 
 const INDEX = new Map();
@@ -39,7 +41,7 @@ function inflated(chunk) {
   return bytes;
 }
 
-const decode = (bytes, start, end) => decodeAnim(JSON.parse(decoder.decode(bytes.subarray(start, end))));
+const decode = (file, bytes, start, end) => withBgNames(file, normalizeAnim(decodeAnim(JSON.parse(decoder.decode(bytes.subarray(start, end)))), file));
 
 export function hasAnimation(file) { return INDEX.has(file); }
 
@@ -52,7 +54,7 @@ export function animation(file) {
   const [chunk, start, end] = at;
   const t0 = globalThis.performance?.now?.();
   const work = inflated(chunk).then(bytes => {
-    const anim = decode(bytes, start, end);
+    const anim = decode(file, bytes, start, end);
     globalThis.performance?.measure?.(`pb:anim:${file}`, { start: t0 });
     return anim;
   });
@@ -65,7 +67,7 @@ export function animation(file) {
 export function animationData() {
   return all ??= Promise.all(ANIMS_GZ_B64.map((_, chunk) => inflate(chunk))).then(bytes => {
     const data = {};
-    for (const [file, [chunk, start, end]] of INDEX) data[file] = decode(bytes[chunk], start, end);
+    for (const [file, [chunk, start, end]] of INDEX) data[file] = decode(file, bytes[chunk], start, end);
     return data;
   }).catch(error => { all = undefined; throw error; });
 }

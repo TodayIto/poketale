@@ -93,9 +93,15 @@ export function entryPictures(spec, { fetchBytes, wild = false, named = false, i
     foe2: beside?.full ?? null, named: named ? theirs?.box ?? null : null }));
 }
 
-export function entrySound(path, { fetchBytes, pictureWays } = {}) {
+export function entryLevel({ volume, sound } = {}) {
+  if (typeof volume?.levels === 'function') return () => volume.levels()?.sfx ?? 0;
+  const fixed = sound === false ? 0 : volume?.sfx ?? 1;
+  return () => fixed;
+}
+
+export function entrySound(path, { fetchBytes, pictureWays, level = () => 1 } = {}) {
   const audio = new Audio();
-  audio.crossOrigin = 'anonymous'; audio.preload = 'auto'; audio.volume = 0.6;
+  audio.crossOrigin = 'anonymous'; audio.preload = 'auto';
   const url = `${DEFAULT_ASSET_BASE}audio/${path}`, route = entryRoute({ fetchBytes, pictureWays }), left = route.order(url);
   const next = () => {
     const way = left.shift();
@@ -104,5 +110,10 @@ export function entrySound(path, { fetchBytes, pictureWays } = {}) {
   };
   audio.onerror = next;
   next();
-  return () => { audio.play().catch(() => {}); };
+  return () => {
+    const now = Math.max(0, Math.min(1, level()));
+    if (!now) return;
+    audio.volume = 0.6 * now;
+    audio.play().catch(() => {});
+  };
 }

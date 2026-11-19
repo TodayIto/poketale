@@ -1,5 +1,5 @@
 import breeding from '../data/breeding.json' with { type: 'json' };
-import { completeSet, MAX_IV, MAX_MOVES, SHINY_ODDS, STATS, toID } from './mon.mjs';
+import { completeSet, learnsetOf, MAX_IV, MAX_MOVES, SHINY_ODDS, STATS, toID } from './mon.mjs';
 import { REGIONAL_FORMES } from './evolution.mjs';
 
 export const EGG_CHANCE = Object.freeze({ sameSpecies: [70, 50], otherSpecies: [50, 20], ditto: [50, 20] });
@@ -137,7 +137,7 @@ export function eggMovesOf(dex, name) {
 	return breeding.eggMoves[s.id] ?? breeding.eggMoves[lowestStage(dex, s.name).id] ?? [];
 }
 
-const levelMoves = (levelUp, species) => new Set((levelUp?.[species.id] ?? []).map(([, move]) => move));
+const levelMoves = (levelUp, species) => new Set((learnsetOf(levelUp, species) ?? []).map(([, move]) => move));
 
 function pushMoves(moves, more) {
 	for (const move of more) {

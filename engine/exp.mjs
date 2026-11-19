@@ -2,8 +2,8 @@ import { newMovePp } from './pp.mjs';
 import { friendlyExp, stepInBattle } from './friendship.mjs';
 import { setLevel, newMoveSlot } from './showdown-compat.mjs';
 import { formatRules, EV_STAT_MAX, EV_TOTAL_MAX } from './rules.mjs';
-import { MAX_LEVEL, STATS, NON_HP_STATS, toID } from './mon.mjs';
-import { genderAllows, evolutionStops, levelEvolution, battleEvolution, ABSENT_TRADE_EVOLUTION } from './evolution.mjs';
+import { MAX_LEVEL, STATS, NON_HP_STATS, learnsetOf, toID } from './mon.mjs';
+import { genderAllows, evolutionStops, levelEvolution, battleEvolution, ABSENT_TRADE_EVOLUTION, lockMark } from './evolution.mjs';
 import { winnerSide } from './winner.mjs';
 
 const states = new WeakMap();
@@ -208,7 +208,7 @@ function gainEffort(pokemon, base) {
 }
 
 function learnLevelMoves(battle, state, pokemon) {
-	const learnset = state.levelUp[speciesOf(battle, pokemon).id] || [];
+	const learnset = learnsetOf(state.levelUp, speciesOf(battle, pokemon)) || [];
 	for (const [level, moveid] of learnset) {
 		if (level !== pokemon.level) continue;
 		const move = battle.dex.moves.get(moveid);
@@ -292,8 +292,7 @@ function conditionText(t) {
 function evolvingMon(battle, pokemon) {
 	return { species: pokemon.m.cloak ?? speciesOf(battle, pokemon).name, gender: pokemon.gender, item: toID(pokemon.set.item), uid: pokemon.m.uid,
 		moves: pokemon.baseMoveSlots.map(s => s.id), nature: pokemon.m.natureOrig ?? pokemon.set.nature, ability: pokemon.m.start.ability,
-		stats: { atk: pokemon.storedStats.atk, def: pokemon.storedStats.def }, counts: pokemon.m.counts,
-		...(pokemon.m.evolveLocked === true ? { evolveLocked: true } : {}), ...(pokemon.set.gigantamax === true ? { gigantamax: true } : {}) };
+		stats: { atk: pokemon.storedStats.atk, def: pokemon.storedStats.def }, counts: pokemon.m.counts, ...lockMark(pokemon.m.evolveLocked) };
 }
 
 export function getEvolutions(battle) {
@@ -311,7 +310,7 @@ export function getEvolutions(battle) {
 		const byLevel = leveled ? levelEvolution(battle.dex, mon, now) : null;
 		const to = byLevel ?? battleEvolution(battle.dex, mon, { ...now, won });
 		if (to) list.push(entry(to, byLevel ? { level: pokemon.level } : {}));
-		else if (leveled && !evolutionStops(battle.dex, mon)) {
+		else if (leveled && !evolutionStops(battle.dex, mon, 'level')) {
 			for (const t of species.evos.map(id => battle.dex.species.get(id)).filter(t => genderAllows(pokemon.gender, t))) {
 				if ((t.evoType || t.evoCondition || t.evoRegion || !t.evoLevel) && !(t.evoLevel > pokemon.level)) list.push(entry(t.name, { unsupported: conditionText(t) }));
 			}

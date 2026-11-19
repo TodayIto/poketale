@@ -65,3 +65,20 @@ export function gen9Tms() {
   list.forEach((tm, i) => { if (tm.number !== i + 1) throw new Error(`기술머신 번호가 비었습니다: ${i + 1}`); });
   return list;
 }
+
+const TR_VERSION_GROUP = '20';
+export function swshTrs() {
+  const { Dex } = require(resolve(root, 'vendor/pokemon-showdown/dist/sim'));
+  const english = new Map(csv('move_names.csv').filter(r => r.local_language_id === '9').map(r => [r.move_id, r.name]));
+  const itemIds = new Map(csv('items.csv').map(r => [r.id, r.identifier]));
+  const list = csv('machines.csv').filter(r => r.version_group_id === TR_VERSION_GROUP && Number(r.machine_number) >= 100).map(r => {
+    const number = Number(r.machine_number) - 100, digits = String(number).padStart(2, '0');
+    if (itemIds.get(r.item_id) !== `tr${digits}`) throw new Error(`기술레코드 ${digits}: PokeAPI 도구가 tr${digits} 가 아닙니다 (${itemIds.get(r.item_id)})`);
+    const move = Dex.moves.get(englishID(english.get(r.move_id) ?? ''));
+    if (!move.exists) throw new Error(`기술레코드 ${digits}: Showdown 에 없는 기술 (PokeAPI move ${r.move_id})`);
+    return { number, move: move.id };
+  }).sort((a, b) => a.number - b.number);
+  list.forEach((tr, i) => { if (tr.number !== i) throw new Error(`기술레코드 번호가 비었습니다: ${i}`); });
+  if (list.length !== 100) throw new Error(`기술레코드가 100개가 아닙니다: ${list.length}`);
+  return list;
+}

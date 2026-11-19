@@ -1,4 +1,5 @@
 import { PUFF_FLAVORS, PUFF_GRADES } from '../story/amie.mjs';
+import { itemPictureKey } from './item-picture.js';
 
 export const HEARTS = 3;
 
@@ -178,23 +179,11 @@ export function amieTextures(scene) {
   }
 }
 
-const SD_ITEMS = 'https://play.pokemonshowdown.com/sprites/itemicons-sheet.png';
-export async function loadItemSheet(scene) {
-  if (scene.textures.exists('sd-items')) return;
-  const bytes = await scene.assets.fetchBytes(SD_ITEMS);
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
-  try {
-    const img = await scene.assets.loadImage(url);
-    scene.life.check();
-    if (!scene.textures.exists('sd-items')) scene.textures.addSpriteSheet('sd-items', img, { frameWidth: 24, frameHeight: 24 });
-  } finally { URL.revokeObjectURL(url); }
-}
-
 export function foodPicture(scene, icon, x, y, size) {
   const fit = image => image.setScale(Math.min(size / image.width, size / image.height));
   if (icon?.puff) return fit(scene.add.image(x, y, `amie-puff-${icon.puff}`));
   if (icon?.atlas && scene.textures.exists(icon.atlas)) return fit(scene.add.image(x, y, icon.atlas, icon.frame));
-  if (Number.isInteger(icon?.sheet) && scene.textures.exists('sd-items')) return fit(scene.add.image(x, y, 'sd-items', icon.sheet));
+  if (icon?.url && scene.textures.exists(itemPictureKey(icon.url))) return fit(scene.add.image(x, y, itemPictureKey(icon.url)));
   const art = foodTexture(scene, icon?.emoji);
   if (art) return fit(scene.add.image(x, y, art));
   if (icon?.emoji) {
@@ -208,9 +197,9 @@ export function foodElement(scene, icon, doc) {
   const art = foodArtOf(icon?.emoji);
   if (art) return Object.assign(doc.createElement('span'), { className: 'art', innerHTML: artSvg(art) });
   if (icon?.emoji) return Object.assign(doc.createElement('span'), { className: 'emoji', textContent: icon.emoji });
-  const key = icon?.puff ? `amie-puff-${icon.puff}` : icon?.atlas ?? (Number.isInteger(icon?.sheet) ? 'sd-items' : null);
+  const key = icon?.puff ? `amie-puff-${icon.puff}` : icon?.atlas ?? (icon?.url ? itemPictureKey(icon.url) : null);
   if (!key || !scene.textures.exists(key)) return doc.createElement('span');
-  const frame = scene.textures.getFrame(key, icon.puff ? undefined : icon.frame ?? icon.sheet);
+  const frame = scene.textures.getFrame(key, icon.puff || icon.url ? undefined : icon.frame);
   const side = Math.max(frame.cutWidth, frame.cutHeight);
   const canvas = doc.createElement('canvas');
   canvas.width = canvas.height = side;

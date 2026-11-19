@@ -5,6 +5,7 @@ import { rulesAt } from './setting-changes.mjs';
 import { battlesOff } from './battles-off.mjs';
 import { PLAYER_NAME } from './rules.mjs';
 import { sceneLines } from './ai-names.mjs';
+import { withoutPictures } from './asset-maid.mjs';
 
 export const FORGE_MODE = 'otherAx';
 
@@ -27,7 +28,7 @@ export const forgeAt = (chat, { quiet = true } = {}) => (quiet && !battlesOff(ch
 
 export const forgeKey = id => hashKey(`forge\n${id}`);
 
-export const sceneText = text => stripForPrompt(dropOocs(text));
+export const sceneText = text => stripForPrompt(dropOocs(withoutPictures(text)));
 
 export function sceneOf(chat, at) {
   return chat.message.slice(Math.max(0, at - SCENE_SIZE + 1), at + 1)
@@ -74,11 +75,15 @@ export async function runForge(llm, messages, reading) {
   return pickBlock(answer, reading);
 }
 
+export const appendBlock = (message, block) => {
+  message.data = `${String(message.data ?? '').replace(/\s+$/, '')}\n\n${block}`;
+};
+
 export function appendBattle(chat, { id, basis }, block, now) {
   const at = forgeAt(chat);
   const message = chat?.message?.[at];
   if (!message || messageId(message, at) !== id) return false;
   if (JSON.stringify(forgeBasis(chat, at, now)) !== JSON.stringify(basis)) return false;
-  message.data = `${String(message.data ?? '').replace(/\s+$/, '')}\n\n${block}`;
+  appendBlock(message, block);
   return true;
 }

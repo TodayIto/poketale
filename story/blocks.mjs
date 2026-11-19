@@ -9,12 +9,13 @@ import { STATS } from '../engine/mon.mjs';
 import { toID, koSpellings, readsOfficial } from '../names/index.js';
 import { DEFAULT_EMOJI, CUSTOM_EFFECTS, customItemId, splitEmoji, topEffect } from './custom-items.mjs';
 import { ruleNote } from './failure.mjs';
-import { readTime, clockHourOf } from './compat.mjs';
+import { readTime, clockHourOf, readRegion } from './compat.mjs';
 import { norm } from './norm.mjs';
 import { readHair, readOutfit } from './trainer-colors.mjs';
 import { readStyles } from './trainer-pool.mjs';
 import { ITEM_EFFECTS_READY } from './item-effects.mjs';
-import { readFormWords } from './form-words.mjs';
+import { readFormWords, readsNamesSince } from './form-words.mjs';
+import { ITEM_NAMES_SINCE } from './items.mjs';
 
 export { norm };
 
@@ -25,13 +26,28 @@ const ITEM_ALIASES = Object.freeze({
   linkingcord: ['링킹코드'], leafstone: ['잎의돌', '나뭇잎의돌'], thunderstone: ['번개의돌'], shinystone: ['빛나는돌'], metalcoat: ['메탈코트'],
   kingsrock: ['왕의징표', '킹스락'], dragonscale: ['드래곤스케일'], dubiousdisc: ['수상한디스크', '괴상한디스크'], reapercloth: ['영계의옷'],
   electirizer: ['일렉트라이저'], magmarizer: ['마그마라이저'], sachet: ['향주머니'],
+
+  healthfeather: ['Health Wing', '체력날개'], musclefeather: ['Muscle Wing', '근력날개'], resistfeather: ['Resist Wing', '저항력날개'],
+  geniusfeather: ['Genius Wing', '지력날개'], cleverfeather: ['Clever Wing', '정신력날개'], swiftfeather: ['Swift Wing', '순발력날개'],
 });
 
-function buildReverse(kind, official) {
+const ITEM_RULE = new Map(Object.entries(ITEM_NAMES_SINCE).flatMap(([rule, ids]) => ids.map(id => [id, rule])));
+
+export const readsItem = (id, reading) => !ITEM_RULE.has(id) || reading?.[ITEM_RULE.get(id)] !== false;
+
+const itemRulesOff = reading => Object.keys(ITEM_NAMES_SINCE).filter(rule => reading?.[rule] === false);
+
+const SPECIES_RULES = Object.freeze([...new Set(Object.values(speciesTable).map(r => r.since).filter(Boolean))]);
+
+const speciesRulesOff = reading => SPECIES_RULES.filter(rule => reading?.[rule] === false);
+
+function buildReverse(kind, official, off = []) {
   const names = new Map(), aliases = new Map();
   const add = (k, id) => { if (!k) return; const old = names.get(k); if (old === undefined || id.length < old.length) names.set(k, id); };
   const alias = (k, id) => { if (!k) return; aliases.set(k, aliases.has(k) && aliases.get(k) !== id ? null : id); };
   for (const [id, r] of Object.entries(TABLES[kind])) {
+    if (kind === 'items' && off.includes(ITEM_RULE.get(id))) continue;
+    if (r.since && off.includes(r.since)) continue;
     if (r.en) add(toID(r.en), id), add(norm(r.en), id);
     if (kind === 'items') for (const other of ITEM_ALIASES[id] ?? []) alias(norm(other), id);
     const [ko, ...before] = koSpellings(r, { officialKo: official });
@@ -47,7 +63,7 @@ function buildReverse(kind, official) {
     const region = /^(.+)의 ?모습$/.exec(m[2].trim());
     if (region) alias(norm(region[1]) + base, id), alias(base + norm(region[1]), id);
   }
-  return reverse[`${kind}:${official}`] = { names, aliases };
+  return reverse[`${kind}:${official}:${off}`] = { names, aliases };
 }
 
 export const readsFormNames = reading => reading?.aiFormNames !== false;
@@ -61,6 +77,10 @@ const COLOR_KEYS = new Set(['hair', 'outfit', 'foePartnerHair', 'foePartnerOutfi
 
 export const readsMobStyles = reading => reading?.mobStyles !== false;
 const STYLE_KEYS = new Set(['outfitStyle', 'foePartnerStyle']);
+
+export const readsBattleRegion = reading => reading?.battleRegion !== false;
+
+export const readsLevelSpellings = reading => reading?.levelSpellings !== false;
 const FIELD_RE = /^\s*(effect|for)(?:\s*[:：]\s*|\s+)(\S.*?)\s*$/iu;
 
 const FOR_TAIL_RE = /^(?:(\S+)\s+)?for(?:\s*[:：]\s*|\s+)(\S.*)$/iu;
@@ -153,15 +173,15 @@ function readId(kind, raw, allLetters, reading) {
   const table = TABLES[kind];
   if (!table) throw new TypeError(`모르는 이름표: ${kind}`);
   const id = allLetters && NON_LATIN.test(String(raw ?? '')) ? '' : toID(raw);
-  if (id && Object.hasOwn(table, id)) return id;
-  const official = readsOfficial(reading);
-  const { names, aliases } = reverse[`${kind}:${official}`] ?? buildReverse(kind, official);
+  if (id && Object.hasOwn(table, id) && (kind !== 'items' || readsItem(id, reading)) && readsNamesSince(table[id].since, reading)) return id;
+  const official = readsOfficial(reading), off = kind === 'items' ? itemRulesOff(reading) : kind === 'species' ? speciesRulesOff(reading) : [];
+  const { names, aliases } = reverse[`${kind}:${official}:${off}`] ?? buildReverse(kind, official, off);
   const k = norm(raw);
   return names.get(id) ?? names.get(k) ?? aliases.get(k) ?? (kind === 'items' ? tmId(raw, reading) : null)
     ?? (kind === 'species' && readsFormNames(reading) ? formId(id, k) ?? formWords(raw, reading) : null);
 }
 
-const formWords = (raw, reading) => readFormWords(raw, { readHalf: half => readId('species', half, false, reading), shared: id => Object.hasOwn(SHARED_FORMS, id) });
+const formWords = (raw, reading) => readFormWords(raw, { readHalf: half => readId('species', half, false, reading), shared: id => Object.hasOwn(SHARED_FORMS, id), reading });
 
 let tmByMove;
 function tmId(raw, reading) {
@@ -404,6 +424,8 @@ const BATTLE_KEYS = words({
   opponent: ['opponent', 'type', 'battle', 'vs', '상대', '종류', '배틀'], name: ['name', 'trainer', 'trainername', '이름', '트레이너이름'],
   gender: ['gender', 'sex', '성별'], look: ['look', 'looks', 'appearance', '모습', '외모', '겉모습'], class: ['class', 'trainerclass', 'job', '직업'], rank: ['rank', 'tier', '등급'],
   place: ['place', 'biome', 'location', 'area', '장소', '바이옴', '지형'], time: ['time', '시간', '시간대'], pokemon: ['pokemon', 'mon', '포켓몬'],
+
+  region: ['region', '지방', '지역'],
   format: ['format', 'battleformat', 'battlestyle', 'style', '형식', '배틀형식', '방식'],
   partner: ['partner', 'ally', 'partnername', 'allyname', '동료', '파트너', '동료이름'],
   partnerPokemon: ['partnerpokemon', 'allypokemon', 'partnermon', 'allymon', '동료포켓몬', '파트너포켓몬'],
@@ -453,6 +475,15 @@ function takeLevel(text, res = LEVEL_RES) {
 
 const LEVEL_MORE = [/(?:\blevel|\blvl|\blv|레벨)\s*[:：]?\s*\.?\s*(\d{1,3})(?!\d)/i, /(?<=[\p{Script=Latin}\d])lv\.?\s*(\d{1,3})(?!\d)/iu];
 const HEAD_GENDER = /\s([♂♀])\uFE0F?$/u;
+
+const FIELD_LEVEL = /^(?:([♂♀])\uFE0F?\s*)?(?:(?:level|lvl|lv|레벨)\s*[:：]?\s*\.?\s*)?(\d{1,3})\s*(?:레벨)?\s*(?:([♂♀])\uFE0F?)?$/iu;
+
+function fieldLevel(text, keyed) {
+  const m = FIELD_LEVEL.exec(text.trim());
+  if (!m || (m[1] && m[3]) || (!keyed && !/[a-z레]/i.test(text))) return null;
+  const sign = m[1] ?? m[3];
+  return { level: Number(m[2]), ...(sign ? { gender: GENDER.get(norm(sign)) } : {}) };
+}
 
 function readHead(head, reading, form, level) {
   const { level: own, rest } = takeLevel(head);
@@ -522,6 +553,8 @@ function parseSet(value, errors, dest, warnings = errors, reading, tags = false)
 
       const lv = takeLevel(seg);
       if (level == null && lv.level != null && !lv.rest) { level = lv.level; continue; }
+      const more = level == null && readsLevelSpellings(reading) ? fieldLevel(seg, false) : null;
+      if (more) { level = more.level; if (more.gender) set.gender = more.gender; continue; }
       if (/^\d+(?:\.\d+)?\s*%$/.test(seg)) { set.hpPercent = percent(seg, warn); continue; }
       if (GENDER.has(norm(seg)) && /^[♂♀]$/.test(seg)) { set.gender = GENDER.get(norm(seg)); continue; }
       if (NOT_SHINY.has(norm(seg))) continue;
@@ -550,7 +583,9 @@ function parseSet(value, errors, dest, warnings = errors, reading, tags = false)
       ivField(v, seg);
     } else if (k === 'level') {
       const n = /^(?:lv\.?\s*)?(\d{1,3})$/i.exec(v);
-      if (n) level = Number(n[1]); else errors.push(note('badLevel', { value: v }));
+      const more = n || !readsLevelSpellings(reading) ? null : fieldLevel(v, true);
+      if (n) level = Number(n[1]);
+      else if (more) { level = more.level; if (more.gender) set.gender = more.gender; } else errors.push(note('badLevel', { value: v }));
     } else if (k === 'ability') {
       const id = need('abilities', v, errors, reading); if (id) set.ability = id;
     } else if (k === 'item') {
@@ -608,7 +643,7 @@ export function parseBattle(body, reading) {
 
   let format = null, partnerName = null, foePartnerName = null, foePartnerLook = null, foePartnerGender = null;
   const partnerTeam = [], foePartnerTeam = [];
-  const foeLooks = readsFoeLooks(reading), colorFields = readsTrainerColors(reading), styleFields = readsMobStyles(reading);
+  const foeLooks = readsFoeLooks(reading), colorFields = readsTrainerColors(reading), styleFields = readsMobStyles(reading), regionField = readsBattleRegion(reading);
 
   let style = [], foePartnerStyle = null;
 
@@ -617,7 +652,7 @@ export function parseBattle(body, reading) {
     const read = BATTLE_KEYS.get(key);
 
     const k = (!foeLooks && (read === 'foePartnerLook' || read === 'foePartnerGender')) || (!colorFields && COLOR_KEYS.has(read))
-      || (!styleFields && STYLE_KEYS.has(read)) ? null : read;
+      || (!styleFields && STYLE_KEYS.has(read)) || (!regionField && read === 'region') ? null : read;
     if (!k) { errors.push(note('unknownKey', { line })); continue; }
     if (k === 'pokemon' || k === 'partnerPokemon' || k === 'foePartnerPokemon') {
       const r = parseSet(value, errors, false, errors, reading);
@@ -642,6 +677,10 @@ export function parseBattle(body, reading) {
     } else if (k === 'place') {
       const b = storyNames.biomes[norm(value)];
       if (b) spec.place = b; else errors.push(note('unknownPlace', { value }));
+    } else if (k === 'region') {
+
+      const r = readRegion(value);
+      if (r) spec.region = r;
     } else if (k === 'time') {
       const t = readTime(value), hour = clockHourOf(value);
       if (t) spec.time = t; else errors.push(note('timeWord', { value }));
@@ -737,6 +776,11 @@ function ref(str, errors) {
   return { name: s };
 }
 
+function levelRef(text, reading) {
+  const m = readsLevelSpellings(reading) ? /^(.*?)\s*=?\s*(?<![\p{L}\p{N}])(?:level|lvl|lv|레벨)\s*[:：.]?$/iu.exec(text) : null;
+  return m?.[1] ? m[1] : text;
+}
+
 function headRef(value, rest = true, reading) {
   const s = value.trim();
   const slot = /^(#\s*\d+(?:번)?)\s*(.*)$/.exec(s);
@@ -822,7 +866,7 @@ function parseOp(op, value, errors, warnings, reading) {
     case 'level': {
       const m = /^(.*?)\s*(?:([+-])\s*(\d{1,3})|=\s*(?:lv\.?\s*)?(\d{1,3})|(?:lv\.?\s*|레벨\s*)?(\d{1,3}))\s*(?:레벨)?$/i.exec(value);
       if (!m || !m[1] || /^#\s*$/.test(m[1])) { errors.push(note('badLevelChange', { value })); return null; }
-      const who = ref(m[1], errors);
+      const who = ref(levelRef(m[1], reading), errors);
       if (!who) return null;
       if (m[3] != null) {
         const delta = Number(m[2] + m[3]);

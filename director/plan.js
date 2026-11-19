@@ -10,7 +10,7 @@ import { loadExpText } from './steps-exp.js';
 import { gimmickOptions } from './steps-mega.js';
 import { commitChoice } from '../ai/commit.js';
 import { positionAt } from './read.js';
-import { recordingView } from './text.js';
+import { screenLog, recordingView } from './text.js';
 import { sameName, sideParts } from '../story/blocks.mjs';
 
 const PLAN_MAX_TURNS = 6;
@@ -184,7 +184,7 @@ async function resolveDouble(ctx, request, turn) {
     }
     if (command.kind === 'item') {
 
-      if (!bag || !((bag.counts.get(command.item) ?? 0) - (taken.get(command.item) ?? 0) > 0)) return no('noItem');
+      if (!bag || !(bag.remaining(command.item, taken) > 0)) return no('noItem');
       const named = slotOf(side, command.target), cheered = bag.cheerSlot(command.item);
       const slot = named >= 0 ? named : cheered >= 0 ? cheered : side.pokemon.indexOf(pokemon);
       let pick;
@@ -241,8 +241,8 @@ export async function planTurns(sim, snapshot, turns, { options = {}, enemyAI, n
     enemyAI.loadState?.(battle, snapshot.ai);
     const reseeds = snapshot.reseeds ?? [];
 
-    const lines = [], marks = {};
-    const view = recordingView(line => lines.push(line));
+    const screen = screenLog(), marks = {}, { lines } = screen;
+    const view = recordingView(screen.add);
     const step = createSteps({ battle, view, names, warn: () => {}, bag, options, run, mode: { silent: true }, wild, lang, onInput: () => {} });
     const reader = createProtocolReader();
     const readOn = async () => {
@@ -326,7 +326,7 @@ export async function planTurns(sim, snapshot, turns, { options = {}, enemyAI, n
     }
     const to = { v: SNAPSHOT_VERSION, spec: snapshot.spec, inputs: structuredClone(inputs), ai: enemyAI.saveState?.(battle) ?? null,
       turn: battle.turn, fp, check: stateCheck(battle), ...(reseeds.length ? { reseeds: structuredClone(reseeds) } : {}) };
-    return { entries, turns: results, to, lines, marks, log: [...battle.log], logFrom };
+    return { entries, turns: results, to, lines, hp: screen.hp, marks, log: [...battle.log], logFrom };
   } finally {
     battle.destroy();
   }

@@ -10,9 +10,13 @@ Version 0.0.8 requests RisuAI's request-replacement permission to refresh party 
 
 After installing this file once, future versions can be installed with RisuAI's plugin update control. Updates are downloaded from this repository's main branch.
 
-Images and sounds are loaded at runtime from PokeRogue assets and PokéAPI Pokémon and badge sprites on `raw.githubusercontent.com`, and from `play.pokemonshowdown.com`. The plugin has no server of its own.
+Images and sounds are loaded at runtime from PokeRogue assets and PokéAPI Pokémon, badge and item sprites on `raw.githubusercontent.com`, and from `play.pokemonshowdown.com`. The plugin has no server of its own.
 
-Pokémon can say their names in the PokéPark 2 voices: load the voice zips from The Sounds Resource in the settings as downloaded, without unpacking them. The game's file names tell whose line each file is (`data/pokepark2-voices.json`, read out of PokéPark 2's sound banks and scripts), which also mends the few lines the "Miscellaneous Voices" zip files under another Pokémon's folder; other zips are read by folders named after each Pokémon. Several zips can be loaded; the one higher in the list is used first. A Pokémon says the line the game itself plays at that moment — its greeting when it appears, its hurt cry when it faints, its battle shout in a move, its happy line when pleased. Where the zip lacks the game's line for that moment, it says the kind of line most Pokémon use then, and a random one when even that is missing; Pokémon in no zip keep the game cries. The voices are kept in RisuAI's plugin storage in parts, so a battle reads only those of the Pokémon in it. PokéTale neither includes nor downloads any of them.
+## Device preferences and cry packs
+
+Panel preferences are stored on this device through RisuAI's safe local storage. Cry packs are stored on this device through RisuAI's local plugin storage; neither stores story or chat state. If device storage is unavailable, preferences use the shared settings and imported cry packs remain available for the current page only.
+
+To use a cry pack, download a ZIP from [The Sounds Resource — PokéPark 2](https://sounds.spriters-resource.com/wii/pokepark2wondersbeyond) yourself and import it under Settings > Sound. Matching scenes use the pack's voice clips instead of the normal cry. Audio files are not included with this plugin.
 
 ## Build
 

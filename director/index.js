@@ -2,7 +2,7 @@ import { createStoryBattle, extractResult } from '../engine/core.mjs';
 import { createProtocolReader } from './parse.js';
 import { createSteps } from './steps.js';
 import { arrange } from './order.js';
-import { text, nameWithAffix, recordingView } from './text.js';
+import { text, nameWithAffix, screenLog, recordingView } from './text.js';
 import { checkLang, DEFAULT_LANG } from './lang.js';
 import { simpleAI, isReviving, lockedTurn } from './simple-ai.js';
 import { monView } from './mon.js';
@@ -170,15 +170,15 @@ export async function snapshotLines(sim, snapshot, { lang = DEFAULT_LANG, names,
   const { battle, wild, bag, run } = buildEngine(sim, snapshot.spec, options, names, lang);
   try {
     replaySnapshot(battle, snapshot, fingerprint(battle), entry => applyInput({ battle, bag, run }, entry));
-    const lines = [], marks = {};
-    const view = recordingView(line => lines.push(line));
+    const screen = screenLog(), marks = {};
+    const view = recordingView(screen.add);
     const step = createSteps({ battle, view, names, warn: () => {}, bag, options, run, mode: { silent: true }, wild, lang, onInput: () => {} });
     for (const item of arrange(createProtocolReader().read(battle.log, battle.storyLogMeta))) {
       await step(item);
-      if (item.kind === 'turn') marks[Number(item.args[0])] = lines.length;
+      if (item.kind === 'turn') marks[Number(item.args[0])] = screen.lines.length;
     }
     await step.flush();
-    return { lines, marks };
+    return { lines: screen.lines, hp: screen.hp, marks };
   } finally {
     battle.destroy();
   }

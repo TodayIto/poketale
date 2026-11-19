@@ -5,6 +5,7 @@ import { itemId, customText } from '../story/custom-items.mjs';
 import { TOOL_TURNS, CHEER_STATS, CHEER_COUNT, ownsPokemon, ownsTrainer, cheerOwns } from '../story/tools.mjs';
 import { chooseEventAction, chooseParts, revive, sideLead } from './showdown-compat.mjs';
 import { trainerOf } from './seats.mjs';
+import { escapeWith } from './run.mjs';
 
 export const BAG_ITEMS = {
 
@@ -38,6 +39,18 @@ export const BAG_ITEMS = {
 	xaccuracy: { name: 'X Accuracy', boost: 'accuracy' },
 
 	direhit: { name: 'Dire Hit', crit: true },
+
+	guardspec: { name: 'Guard Spec.', mist: true },
+
+	pokedoll: { name: 'Poké Doll', escape: true },
+	fluffytail: { name: 'Fluffy Tail', escape: true },
+	poketoy: { name: 'Poké Toy', escape: true },
+
+	blueflute: { name: 'Blue Flute', cure: ['slp'], reusable: true },
+	redflute: { name: 'Red Flute', attract: true, reusable: true },
+	yellowflute: { name: 'Yellow Flute', confusion: true, reusable: true },
+
+	pokeflute: { name: 'Poké Flute', wakeAll: true, reusable: true, key: true },
 
 	freshwater: { name: 'Fresh Water', heal: 30 },
 	sodapop: { name: 'Soda Pop', heal: 50 },
@@ -78,6 +91,13 @@ export function isBall(id) {
 	return Object.hasOwn(BALLS, id);
 }
 
+export const onNoPokemon = item => !!(item?.mist || item?.escape || item?.wakeAll);
+
+const mistUp = side => !!side.sideConditions['mist'];
+const putMist = (side, user, effect) => side.addSideCondition('mist', user, effect);
+
+const sleepersOut = battle => battle.getAllActive().filter(p => !p.fainted && p.status === 'slp' && !p.hasAbility('soundproof'));
+
 export function installBag(sim, battle, options = {}) {
 	if (battle.storyBag) throw new Error('가방이 이미 설치됐습니다');
 	const state = {
@@ -99,7 +119,7 @@ export function installBag(sim, battle, options = {}) {
 		if (!choice) throw new Error('가방 행동인데 선택이 없습니다');
 		if (isBall(choice.item)) throwBall(sim, this, state, choice, user);
 		else if (bagItem(this, choice.item).tool) useTool(this, state, choice);
-		else useItem(sim, this, state, choice);
+		else useItem(sim, this, state, choice, this.sides[0], user);
 	});
 
 	const endTurn = battle.endTurn;
@@ -138,15 +158,28 @@ export function checkBagItem(battle, choice) {
 	const item = bagItem(battle, id);
 	if (!item) return fail('unknownitem', choice?.item);
 	if (item.tool) return checkTool(battle, state, id, item, choice);
+	return effectCheck(battle, state, item, choice);
+}
+
+function effectCheck(battle, state, item, choice) {
+	const side = battle.sides[0];
+
+	if (item.escape) return state.options.wild ? { ok: true } : fail('trainer');
+	if (item.mist) return mistUp(side) ? fail('noeffect') : { ok: true };
+	if (item.wakeAll) return { ok: true };
 
 	const target = side.pokemon.find(p => p.m.uid === choice.target);
 	if (!target) return fail('notarget', choice.target);
+	return targetCheck(target, item, choice.move);
+}
+
+function targetCheck(target, item, move) {
 	if (target.isActive && target.volatiles['embargo']) return fail('embargo');
 	if (item.revive) return target.fainted ? { ok: true } : fail('notfainted');
 	if (item.pp) {
 
-		const slots = ppSlots(target, item, choice.move);
-		if (!slots) return fail('nomove', choice.move);
+		const slots = ppSlots(target, item, move);
+		if (!slots) return fail('nomove', move);
 		return slots.some(s => s.pp < s.maxpp) ? { ok: true } : fail('noeffect');
 	}
 	if (target.fainted) return fail('fainted');
@@ -164,6 +197,7 @@ function itemHasEffect(target, item) {
 	if (item.heal && target.hp < target.maxhp) return true;
 	if (item.cure && target.status && (item.cure === 'all' || item.cure.includes(target.status))) return true;
 	if (item.confusion && target.isActive && target.volatiles['confusion']) return true;
+	if (item.attract && target.isActive && target.volatiles['attract']) return true;
 	return false;
 }
 
@@ -174,6 +208,8 @@ function ppSlots(target, item, move) {
 }
 
 const realSpecies = pokemon => pokemon.battle.dex.species.get(pokemon.m.start.species);
+
+const CAUGHT_FORMS = Object.freeze({ 'Eternatus-Eternamax': 'Eternatus' });
 
 const foesOut = battle => battle.sides.filter(side => side.n % 2).flatMap(side => side.active).filter(p => p && !p.fainted);
 
@@ -232,12 +268,17 @@ function toolEffect(item, id) {
 
 function useTool(battle, state, choice) {
 	const item = bagItem(battle, choice.item), tag = item.tool;
-	state.toolsUsed.add(choice.item);
 	const line = (pokemon, ...more) => battle.add('-story-tool', pokemon, pokemon.m.uid, choice.item, item.name, tag, ...more);
+
+	if (!checkTool(battle, state, choice.item, item, choice).ok) {
+		const who = (tag === 'cheer' ? battle.sides[0].pokemon.find(p => p.m.uid === choice.target) : toolTarget(battle, toolOwner(state, choice.item))?.pokemon)
+			?? battle.sides[0].active.find(p => p && !p.fainted);
+		if (who) line(who, '[fail]');
+		return;
+	}
+	state.toolsUsed.add(choice.item);
 	if (tag === 'cheer') {
 		const target = battle.sides[0].pokemon.find(p => p.m.uid === choice.target);
-
-		if (!target?.isActive || target.fainted) { if (target) line(target, '[fail]'); return; }
 		line(target);
 		const stats = cheerStats(target), picked = [];
 		while (picked.length < CHEER_COUNT && stats.length) picked.push(stats.splice(battle.random(stats.length), 1)[0]);
@@ -245,8 +286,6 @@ function useTool(battle, state, choice) {
 		return;
 	}
 	const bound = toolTarget(battle, toolOwner(state, choice.item));
-
-	if (!bound) { const user = battle.sides[0].active.find(p => p && !p.fainted); if (user) line(user, '[fail]'); return; }
 	state.effects = state.effects.filter(e => !(e.tag === tag && sameTarget(e, bound)));
 	state.effects.push({ tag, item: choice.item, until: battle.turn + TOOL_TURNS, ...(bound.trainer ? { trainer: bound.trainer } : { uid: bound.pokemon.m.uid }) });
 	line(bound.pokemon, ...(bound.trainer ? [`[trainer] ${bound.trainer}`] : []));
@@ -301,7 +340,7 @@ export function chooseBagParts(battle, parts) {
 	return { ok: true };
 }
 
-const isEnemyItem = item => !!item && !item.revive && !item.pp && !item.boost && !item.crit && !!(item.heal || item.cure);
+const isEnemyItem = item => !!item && !item.revive && !item.pp && !item.boost && !item.crit && !item.reusable && !onNoPokemon(item) && !!(item.heal || item.cure);
 
 export function checkEnemyItem(battle, choice) {
 	if (battle.ended) return fail('ended');
@@ -357,14 +396,26 @@ function itemEffect(item, id) {
 
 const healOf = (item, target) => (item.heal === 'full' ? target.maxhp : item.heal === 'food' ? foodHeal(target.maxhp) : item.heal);
 
-function useItem(sim, battle, state, choice, side = battle.sides[0]) {
+function useItem(sim, battle, state, choice, side = battle.sides[0], user = null) {
 	const item = bagItem(battle, choice.item);
-	const target = side.pokemon.find(p => p.m.uid === choice.target);
-	if (!target || (target.fainted && !item.revive)) return;
+	const target = side.pokemon.find(p => p.m.uid === choice.target) ?? (onNoPokemon(item) ? user : undefined);
+	if (!target) return;
 	const effect = itemEffect(item, choice.item);
 	const from = `[from] ${effect.fullname}`;
 
-	battle.add('-story-item', target, target.m.uid, choice.item, ...(Object.hasOwn(BAG_ITEMS, choice.item) ? [] : [item.name]));
+	const label = Object.hasOwn(BAG_ITEMS, choice.item) ? [] : [item.name];
+
+	if (!(state ? effectCheck(battle, state, item, choice) : targetCheck(target, item, choice.move)).ok) {
+		battle.add('-story-item', target, target.m.uid, choice.item, ...label, '[fail]');
+		return;
+	}
+	const woken = item.wakeAll ? sleepersOut(battle) : [];
+	battle.add('-story-item', target, target.m.uid, choice.item, ...label, ...(item.wakeAll && !woken.length ? ['[none]'] : []));
+
+	for (const pokemon of woken) {
+		battle.add('-curestatus', pokemon, 'slp', '[msg]');
+		pokemon.clearStatus();
+	}
 
 	if (item.revive) {
 
@@ -379,6 +430,11 @@ function useItem(sim, battle, state, choice, side = battle.sides[0]) {
 		target.clearStatus();
 	}
 	if (item.confusion && target.isActive && target.volatiles['confusion']) target.removeVolatile('confusion');
+	if (item.attract && target.isActive && target.volatiles['attract']) {
+
+		battle.add('-end', target, 'move: Attract', from);
+		target.removeVolatile('attract');
+	}
 	if (item.pp) {
 		for (const slot of ppSlots(target, item, choice.move)) {
 			if (slot.pp >= slot.maxpp) continue;
@@ -388,8 +444,11 @@ function useItem(sim, battle, state, choice, side = battle.sides[0]) {
 	}
 	if (item.boost) battle.boost({ [item.boost]: X_STAGES }, target, target, effect);
 	if (item.crit) target.addVolatile('focusenergy', target, effect);
+	if (item.mist) putMist(side, target, effect);
 
-	state?.itemsUsed.push({ turn: battle.turn, item: choice.item, target: choice.target, ...(choice.move && item.oneMove ? { move: choice.move } : {}) });
+	if (!item.reusable) state?.itemsUsed.push({ turn: battle.turn, item: choice.item, target: choice.target, ...(choice.move && item.oneMove ? { move: choice.move } : {}) });
+
+	if (item.escape) escapeWith(battle, target, from);
 }
 
 function throwBall(sim, battle, state, choice, user) {
@@ -418,7 +477,7 @@ function throwBall(sim, battle, state, choice, user) {
 	state.itemsUsed.push({ turn: battle.turn, item: choice.item, target: foe.m.uid });
 	if (!roll.caught) return;
 	state.captured = {
-		uid: foe.m.uid, species: realSpecies(foe).name, level: foe.level, ball: choice.item,
+		uid: foe.m.uid, species: (battle.storyWrittenForms && CAUGHT_FORMS[realSpecies(foe).name]) || realSpecies(foe).name, level: foe.level, ball: choice.item,
 		turn: battle.turn, shakes: roll.shakes, critical: roll.critical, toBox,
 	};
 

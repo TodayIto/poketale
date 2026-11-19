@@ -109,9 +109,16 @@ function attemptRun(battle, state) {
 		const odds = escapeOdds(unmodifiedSpeed(user), unmodifiedSpeed(foe), state.attempts);
 		if (odds < 256) escaped = battle.random(256) < odds;
 	}
-	battle.add('-story-run', user, user.m.uid, escaped ? 'escaped' : 'failed', ...from);
-	if (!escaped) return;
-	state.ran = true;
+	if (!escaped) {
+		battle.add('-story-run', user, user.m.uid, 'failed', ...from);
+		return;
+	}
+	escapeWith(battle, user, ...from);
+}
+
+export function escapeWith(battle, user, ...from) {
+	battle.add('-story-run', user, user.m.uid, 'escaped', ...from);
+	if (battle.storyRun) battle.storyRun.ran = true;
 	battle.tie();
 }
 

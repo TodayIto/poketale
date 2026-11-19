@@ -10,6 +10,8 @@ export const EXCLUDED_KO = Object.freeze(['슬리퍼', '부스터', '파이어',
 
 export const EXCLUDED_EN = Object.freeze(['Ditto', 'Golem', 'Electrode', 'Persian', 'Slowpoke', 'Mew']);
 
+const REGIONS_KO = Object.freeze({ Alola: '알로라', Galar: '가라르', Hisui: '히스이', Paldea: '팔데아' });
+
 const AFTER_KO = new Set([...'가이은는을를의와과도에랑로으만까부처보한들야아여였예요인다나든라마뿐밖조하께고네죠']);
 const isHangul = c => c >= 0xac00 && c <= 0xd7a3;
 const isWordEn = c => (c >= 0x61 && c <= 0x7a) || (c >= 0x41 && c <= 0x5a) || (c >= 0x30 && c <= 0x39);
@@ -41,6 +43,13 @@ function namesOf(official) {
 
     const m = /^(.+?)\s*\(([^()\s]+)\)$/.exec(record.ko ?? '');
     if (m && m[2].includes(m[1]) && !skipKo.has(m[2])) ko.push([m[2], record.num]);
+
+    const region = REGIONS_KO[/^[^-]+-(Alola|Galar|Hisui|Paldea)(?:-(?:Aqua|Blaze|Combat))?$/.exec(record.en)?.[1]];
+    const base = region && record.en !== 'Pikachu-Alola' ? speciesTable[record.base] : null;
+    for (const name of base ? koSpellings(base, reading) : []) {
+      for (const glue of ['', '의']) ko.push([`${region}${glue}${name}`, record.num]);
+      if (skipKo.has(name)) for (const glue of [' ', '의 ']) ko.push([`${region}${glue}${name}`, record.num]);
+    }
   }
   return { ko, en };
 }

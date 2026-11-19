@@ -103,7 +103,7 @@ name: name
 </pkb-shop>
 
 ### Field Descriptions
-- shop: mart for a Poké Mart or a small shop, department for a department store.
+- shop: mart for a Poké Mart or a small shop, department for a department store. In a big city, or a city that has a department store in the games (Celadon City, Goldenrod City, Lilycove City, Veilstone City), use department.
 - name: Optional. The shop's name, in the story's language.
 - {{user}} can buy through the Shop Block, and those purchases come back afterwards. Narrate only the purchases {{user}}'s message states, with a Change Block as usual.`;
 
@@ -182,7 +182,14 @@ export const LEVEL_LINE = "- Choose an opponent and levels that fit the story an
 const FIELDS_END = '\n\n### Battle Results\n';
 if (BATTLE_ENTRY.split(FIELDS_END).length !== 2) throw new Error('BATTLE_ENTRY: no single Battle Results heading after Field Descriptions');
 
-export const BATTLE_ENTRY_OTHER = BATTLE_ENTRY.replace(FIELDS_END, `\n${LEVEL_LINE}${FIELDS_END}`);
+export const BATTLE_REGION_FORMAT = 'region: region';
+export const BATTLE_REGION_LINE = '- region: The region where the battle takes place (e.g., Kanto, Paldea).';
+const PLACE_FORMAT = '\nplace: place\n';
+const PLACE_LINE = /(\n- place: [^\n]*)/;
+if (BATTLE_ENTRY.split(PLACE_FORMAT).length !== 2 || (BATTLE_ENTRY.match(new RegExp(PLACE_LINE, 'g')) ?? []).length !== 1) throw new Error('BATTLE_ENTRY: no single place line');
+
+export const BATTLE_ENTRY_OTHER = BATTLE_ENTRY.replace(PLACE_FORMAT, `\nplace: place\n${BATTLE_REGION_FORMAT}\n`).replace(PLACE_LINE, `$1\n${BATTLE_REGION_LINE}`)
+  .replace(FIELDS_END, `\n${LEVEL_LINE}${FIELDS_END}`);
 
 const PREFIX = '포켓몬 배틀 · ';
 const TRAINER_PREFIX = `${PREFIX}지난 배틀 · `;
@@ -279,6 +286,9 @@ export function breedingLabels(state) {
   return slots.length === 2 && slots.every(n => n > 0) ? slots.sort((a, b) => a - b).map(ownLabel) : null;
 }
 
+export const LEAD_ITEMS = ['cleansetag', 'pureincense'];
+export const leadItemLine = (id, namer) => `${namer.items(id)} held by the lead Pokémon: wild Pokémon appear less often.`;
+
 const KIND_LABEL = { double: ['Double Battle'], tag: ['Tag Battle'] };
 
 export function varTexts(state, { sim, battle = null, lang = 'ko', en = null, effectItems = true } = {}) {
@@ -310,9 +320,14 @@ export function varTexts(state, { sim, battle = null, lang = 'ko', en = null, ef
     if (mon.set.ability) fields.push(`Ability: ${namer.abilities(mon.set.ability)}`);
     fields.push(`Item: ${mon.set.item ? item(mon.set.item) : 'None'}`);
     fields.push(`Moves: ${(mon.set.moves ?? []).map(m => namer.moves(m)).join(', ') || 'None'}`);
+
+    if (mon.evolveLocked === true) fields.push(EVOLVE_LOCK_FIELD);
     party.push(`[${fields.join(' | ')}]`);
   });
   if (!(state?.party ?? []).length) party.push('[Own Pokémon | None]');
+
+  const lead = state?.party?.[0];
+  if (lead && !isEgg(lead) && LEAD_ITEMS.includes(lead.set?.item)) party.push(leadItemLine(lead.set.item, namer));
 
   const pair = breedingLabels(state);
   if (pair) party.push(`[Breeding | ${pair.join(' & ')} are being raised together]`);
@@ -324,6 +339,8 @@ export function varTexts(state, { sim, battle = null, lang = 'ko', en = null, ef
     bag: `[Bag | ${items.length ? items.join(' | ') : 'Empty'}]`,
   };
 }
+
+export const EVOLVE_LOCK_FIELD = 'Evolution: Stopped';
 
 const bagTags = (state, id, tools = true) => {
   if (!ITEM_EFFECTS_READY) return '';

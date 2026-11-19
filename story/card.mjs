@@ -212,15 +212,11 @@ export const CARD_CSS = [
     + ` .x-risu-pkb-bdally > .x-risu-pkb-info{display:contents;}`
     + ` .x-risu-pkb-bdally .x-risu-pkb-info > *{grid-column:2;}`
     + ` .x-risu-pkb-bdally .x-risu-pkb-info > .x-risu-pkb-title{grid-column:2 / 4;grid-row:1;}`
-    + ` .x-risu-pkb-bdally > .x-risu-pkb-ally{grid-column:3;grid-row:2 / span 2;}`
+    + ` .x-risu-pkb-bdally > .x-risu-pkb-ally{grid-column:2 / 4;grid-row:auto;align-self:start;margin-top:6px;}`
     + ` .x-risu-pkb-bdally .x-risu-pkb-act{grid-column:1 / -1;grid-row:auto;margin-top:10px;}`
     + ` .x-risu-pkb-bdally .x-risu-pkb-err,.x-risu-pkb-bdally .x-risu-pkb-note{margin-top:10px;}`
-    + ` .x-risu-pkb-allyt > span{display:block;}`
-    + ` .x-risu-pkb-allyt > .x-risu-pkb-allysep{display:none;}`
 
-    + ` .x-risu-pkb-l-progress .x-risu-pkb-bdally > .x-risu-pkb-ally{grid-column:2 / 4;grid-row:3;margin-top:6px;}`
-    + ` .x-risu-pkb-l-progress .x-risu-pkb-allyt > span{display:inline;}`
-    + ` .x-risu-pkb-l-progress .x-risu-pkb-allyt > .x-risu-pkb-allysep{display:inline;}`
+    + ` .x-risu-pkb-l-progress .x-risu-pkb-bdally > .x-risu-pkb-ally{grid-row:3;}`
     + ` }`,
 ].join(' ');
 

@@ -32,7 +32,7 @@ export function createNamer({ lang = 'ko', en = null, ko = tableKo } = {}) {
     const local = ko('moves', move);
     return write('moves', `Z-${englishOf('moves', move)}`, `Z-${englishOf('moves', move)}`, local ? `Z${local}` : null);
   };
-  // The English species name without counting a mention, for comparing names
+
   const plainSpecies = value => {
     const form = formNames(value);
     return form?.en ?? englishOf('species', form ? form.id : value);

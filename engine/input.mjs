@@ -2,23 +2,6 @@ import { MAX_LEVEL, STATUS_IDS } from './mon.mjs';
 import { isCustomItem, customText } from '../story/custom-items.mjs';
 import { friendshipLocked } from './friendship.mjs';
 
-// A saved battle start played again (a retry) takes each Pokémon's evolution lock and Gigantamax factor as they are
-// now, so its end proposes no evolution the Pokémon has since been kept from
-export function withTraitsOf(state, spec) {
-	if (!Array.isArray(spec?.p1?.team)) return spec;
-	const mons = new Map([...state.party, ...state.box].map(mon => [mon.uid, mon]));
-	const team = spec.p1.team.map(member => {
-		const mon = mons.get(member?.uid);
-		if (!mon || !member.set) return member;
-		const locked = mon.evolveLocked === true, gigantamax = mon.set.gigantamax === true;
-		if (locked === (member.evolveLocked === true) && gigantamax === (member.set.gigantamax === true)) return member;
-		const { evolveLocked: _, ...rest } = member;
-		const { gigantamax: __, ...set } = member.set;
-		return { ...rest, set: gigantamax ? { ...set, gigantamax: true } : set, ...(locked ? { evolveLocked: true } : {}) };
-	});
-	return { ...spec, p1: { ...spec.p1, team } };
-}
-
 export function engineMember(mon, customItems = null) {
 	const known = values => Object.fromEntries(Object.entries(values ?? {}).filter(([id]) => mon.set.moves.includes(id)));
 	const member = { uid: mon.uid, set: structuredClone(mon.set), status: mon.status === 'fnt' ? '' : mon.status || '', pp: known(mon.pp), exp: mon.exp };
@@ -39,6 +22,20 @@ export function engineMember(mon, customItems = null) {
 	if (mon.evolveLocked === true) member.evolveLocked = true;
 	if (mon.counts) member.counts = { ...mon.counts };
 	return member;
+}
+
+export function withLocksOf(state, spec) {
+	if (!Array.isArray(spec?.p1?.team)) return spec;
+	const mons = new Map([...state.party, ...state.box].map(mon => [mon.uid, mon]));
+	let changed = false;
+	const team = spec.p1.team.map(member => {
+		const mon = mons.get(member?.uid);
+		if (!mon || (mon.evolveLocked === true) === (member.evolveLocked === true)) return member;
+		changed = true;
+		const { evolveLocked: _, ...rest } = member;
+		return mon.evolveLocked === true ? { ...rest, evolveLocked: true } : rest;
+	});
+	return changed ? { ...spec, p1: { ...spec.p1, team } } : spec;
 }
 
 const isCount = value => Number.isFinite(value) && value >= 0;

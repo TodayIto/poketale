@@ -52,7 +52,8 @@ function summaryView(screen, mon, env, t) {
   const party = hatchedParty(state), at = party.findIndex(m => m.uid === mon.uid);
   const hero = { spriteId: shown.spriteId, shiny: shown.shiny, dex: summary.dexNumber, name: shown.name, gender: shown.gender, species: names.species(slot.speciesId),
     level: shown.level, types: summary.types, hp: shown.hp, maxhp: shown.maxhp, hpClass: shown.hpClass, status: shown.status, fainted: shown.fainted, rename: t('panel.rename'),
-    ...(summary.traits && !summary.traits.held && !env.locked ? { lock: { locked: summary.traits.locked, label: t(summary.traits.locked ? 'panel.sc.unlockEvolution' : 'panel.sc.lockEvolution') } } : {}) };
+
+    ...(summary.lock && !summary.lock.held && !env.locked ? { lock: { locked: summary.lock.locked, label: t(summary.lock.locked ? 'panel.sc.unlockEvolution' : 'panel.sc.lockEvolution') } } : {}) };
   const pages = SUMMARY_PAGES.map(id => ({ id, label: t(`panel.sc.page.${id}`) }));
 
   const strip = () => party.map(m => {
@@ -76,7 +77,8 @@ function summaryView(screen, mon, env, t) {
     };
 
     if (summary.bond) out.profile.friendship = summary.bond;
-    if (summary.traits?.text) out.profile.traits = summary.traits.text;
+
+    if (summary.lock?.text) out.profile.lock = summary.lock.text;
   } else if (screen.page === 'stats') {
 
     const modes = statModes(ctx).filter(mode => (mode === 'ivs' ? !!summary.ivs : mode === 'evs' ? !!summary.evs : true));

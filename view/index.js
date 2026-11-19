@@ -1,5 +1,5 @@
 // from pokerogue src/main.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 // from pokerogue src/scene-base.ts @ 7d7da4a8 (AGPL-3.0-only)
 import Phaser from 'phaser';
 import { BattleScene } from './scene.js';
@@ -15,6 +15,7 @@ import { refitScale } from './refit.js';
 import { screenButtons } from './ui/tap-back.js';
 import { GAME_SPEEDS, DEFAULT_SPEED } from './game-speed.js';
 import { QUALITIES, DEFAULT_QUALITY, CANVAS_SIZE } from './quality.js';
+import { SPRITE_STYLES, DEFAULT_SPRITE_STYLE } from './sprites/styles.js';
 import { POSITIONS } from './positions.js';
 import { rendererConfig } from './color-matrix.js';
 
@@ -34,6 +35,8 @@ export async function createBattleView(options) {
   options.quality ??= DEFAULT_QUALITY;
   if (!QUALITIES.includes(options.quality)) throw new TypeError(`Unknown quality: ${options.quality} (${QUALITIES.join(' | ')})`);
   const [width, height] = CANVAS_SIZE[options.quality];
+  options.spriteStyle ??= DEFAULT_SPRITE_STYLE;
+  if (!SPRITE_STYLES.includes(options.spriteStyle)) throw new TypeError(`Unknown spriteStyle: ${options.spriteStyle} (${SPRITE_STYLES.join(' | ')})`);
   const life = new Lifetime();
   let resolveScene, rejectScene;
   const ready = new Promise((resolve, reject) => { resolveScene = resolve; rejectScene = reject; });

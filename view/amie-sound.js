@@ -57,18 +57,18 @@ export function amieSound(audio, { now = () => performance.now() } = {}) {
     preload(names) {
       if (off()) return;
       for (const path of new Set(names.map(name => AMIE_SFX[name]?.path).filter(Boolean))) {
-        try { audio.load(path); } catch {                        }
+        try { audio.load(path, false, 'sfx'); } catch {                        }
       }
     },
     play(name) {
       const sfx = AMIE_SFX[name];
-      if (!sfx || off() || audio.suspended) return false;
+      if (!sfx || off() || audio.suspended || audio.level?.('sfx') === 0) return false;
       const t = now();
       if (t - (last.get(name) ?? -Infinity) < sfx.gap) return false;
       while (recent.length && t - recent[0] >= BURST_MS) recent.shift();
       if (recent.length >= BURST && !sfx.key) return false;
       last.set(name, t); recent.push(t);
-      Promise.resolve(audio.play(sfx.path, sfx.rate ?? 1, sfx.volume)).catch(() => {});
+      Promise.resolve(audio.play(sfx.path, sfx.rate ?? 1, sfx.volume, { kind: 'sfx' })).catch(() => {});
       return true;
     },
     music(place) {
@@ -76,8 +76,7 @@ export function amieSound(audio, { now = () => performance.now() } = {}) {
       if (!key || off()) return;
       if (playing === key && audio.currentBgm?.key === key) return;
       playing = key;
-      const track = audio.playBgm(key);
-      if (track) track.audio.volume = MUSIC_VOLUME;
+      audio.playBgm(key, { volume: MUSIC_VOLUME });
     },
     stopMusic() {
       if (off() || !playing) return;

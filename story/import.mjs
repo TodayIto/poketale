@@ -6,7 +6,7 @@ import { dropOocs } from './chat.mjs';
 import { COMPAT_LINES, COMPAT_LINE_RE, COMPAT_FIELD_SEP, compatHead, compatFold, dropTaken } from './compat.mjs';
 import { readStored, isRecord, isUnreadable } from './stored.mjs';
 import { ruleNote, ruleError, refusal, failed } from './failure.mjs';
-import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty, friendshipOf, isEgg, tidyBreeding, stateFormat, dropHeldEvolution } from './state.mjs';
+import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty, friendshipOf, isEgg, tidyBreeding, stateFormat, dropStoppedEvolution } from './state.mjs';
 import { FRIENDSHIP_MAX, friendshipLocked } from '../engine/friendship.mjs';
 import { STATS, STATUS_IDS } from '../engine/mon.mjs';
 import { evTotal } from './training.mjs';
@@ -37,9 +37,7 @@ export const FIELD_FROM = Object.freeze(['record', 'auto', 'user', 'ai', 'curren
 const SET_FIELDS = ['species', 'name', 'level', 'gender', 'shiny', 'nature', 'ability', 'item', 'moves', 'ivs', 'evs', 'teraType'];
 const MON_FIELDS = [...SET_FIELDS, 'hpPercent', 'status', 'place'];
 
-export const DEBUG_FIELDS = ['friendship', 'friendshipLocked', 'eggCycles'];
-// A partner's traits: will not evolve, and the Gigantamax factor (kept in the set as Showdown's gigantamax)
-export const TRAIT_FIELDS = ['evolveLocked', 'gigantamax'];
+export const DEBUG_FIELDS = ['friendship', 'friendshipLocked', 'eggCycles', 'evolveLocked'];
 
 const EGG_CYCLES_MAX = 255;
 const ACTIONS = ['add', 'update', 'skip'];
@@ -478,7 +476,7 @@ export function currentMonDraft(ctx, state, uid) {
   const found = [...state.party, ...state.box].find(m => m.uid === uid);
   const { set, hpPercent, status } = valuesOf(ctx, state, found);
   const debug = isEgg(found) ? { eggCycles: Math.ceil(found.egg.cycles) }
-    : { friendship: friendshipOf(ctx, found), friendshipLocked: friendshipLocked(found), evolveLocked: found.evolveLocked === true, gigantamax: found.set.gigantamax === true };
+    : { friendship: friendshipOf(ctx, found), friendshipLocked: friendshipLocked(found), evolveLocked: found.evolveLocked === true };
   const mon = { key: 'e1', place, set, hpPercent, status, ...debug, from: Object.fromEntries([...MON_FIELDS, ...Object.keys(debug)].map(f => [f, 'current'])),
     match: { uid, place, label: labelOf(set) }, action: 'update', problems: [], seed: `0:e1` };
   mon.problems = monProblems(mon, ctx, DEBUG_KIND);
@@ -525,7 +523,7 @@ function editValue(sim, field, value) {
     case 'status': return String(value ?? '');
     case 'place': return value;
     case 'friendship': case 'eggCycles': return Number(value);
-    case 'friendshipLocked': case 'evolveLocked': case 'gigantamax': return value === true;
+    case 'friendshipLocked': case 'evolveLocked': return value === true;
   }
   return fail('badEditField', { field });
 }
@@ -533,7 +531,7 @@ function editValue(sim, field, value) {
 export function editMon(draft, key, field, value, ctx) {
   const next = clone(draft);
   const mon = monAt(next, key);
-  if (!MON_FIELDS.includes(field) && !([...DEBUG_FIELDS, ...TRAIT_FIELDS].includes(field) && field in mon)) fail('badEditField', { field });
+  if (!MON_FIELDS.includes(field) && !(DEBUG_FIELDS.includes(field) && field in mon)) fail('badEditField', { field });
   if (mon.egg && field !== 'place') fail('badEditField', { field });
   const v = editValue(ctx.sim, field, value);
   if (field in mon.set && field !== 'place') mon.set[field] = v; else mon[field] = v;
@@ -628,7 +626,7 @@ export function commitImport(chat, draft, ctx, { now = Date.now(), held = [] } =
       set: { ...Object.fromEntries(SET_FIELDS.map(f => [f, clone(m.set[f])])), item: m.set.item ? itemId(m.set.item) : '', moves: m.set.moves.map(toID) },
       hpPercent: m.hpPercent, status: m.status, ...(m.from.friendship === 'user' || locks(m) ? { friendship: m.friendship } : {}),
       ...(m.from.friendshipLocked === 'user' ? { friendshipLocked: m.friendshipLocked } : {}),
-      ...Object.fromEntries(TRAIT_FIELDS.filter(f => m.from[f] === 'user').map(f => [f, m[f]])),
+      ...(m.from.evolveLocked === 'user' ? { evolveLocked: m.evolveLocked } : {}),
       ...(m.from.eggCycles === 'user' ? { eggCycles: m.eggCycles } : {}), from: { ...m.from },
     }));
     const counts = Object.fromEntries(Object.entries(draft.bag).map(([itemId, e]) => [itemId, e.count]));
@@ -686,8 +684,6 @@ export function importPlace(messages, record) {
 }
 
 function updatedMon(ctx, old, set) {
-  // An imported set carries the import fields only; the Gigantamax factor stays unless the import says otherwise
-  if (old.set.gigantamax === true && set.gigantamax === undefined) set.gigantamax = true;
   const mon = { ...clone(old), set };
   mon.pp = Object.fromEntries(Object.entries(old.pp ?? {}).filter(([id]) => set.moves.includes(id)));
   const ppUps = Object.entries(old.ppUps ?? {}).filter(([id]) => set.moves.includes(id));
@@ -732,10 +728,8 @@ export function applyImport(state, imp, ctx) {
     if (entry.evolveLocked !== undefined && !isEgg(mon)) {
       if (entry.evolveLocked === true) mon.evolveLocked = true; else delete mon.evolveLocked;
     }
-    if (entry.gigantamax !== undefined && !isEgg(mon)) {
-      if (entry.gigantamax === true) mon.set.gigantamax = true; else delete mon.set.gigantamax;
-    }
-    if (!isEgg(mon)) dropHeldEvolution(sim.Dex, mon);
+
+    if (!isEgg(mon)) dropStoppedEvolution(sim.Dex, mon, ctx);
     if (entry.eggCycles !== undefined && isEgg(mon)) mon.egg.cycles = entry.eggCycles;
     if (!isEgg(mon)) markDex(next, sim, mon.set.species, true);
     if (entry.place !== 'box') partyOrder.push(mon.uid);

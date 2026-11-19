@@ -1,24 +1,37 @@
 import POKEAPI_SPRITES from '../../data/pokeapi-sprite-map.json' with { type: 'json' };
+import POKEAPI_ITEMS from '../../data/pokeapi-item-map.json' with { type: 'json' };
 import { showdownUrl, showdownSprite, imageSprite } from './showdown.js';
-import { loadPokerogueStill } from './pokerogue.js';
+import { loadPokerogueStill, pokerogueSheetPath } from './pokerogue.js';
 import { LoadError, missingFile } from '../retry.js';
+import { SPRITE_STYLES, DEFAULT_SPRITE_STYLE } from './styles.js';
 
 export const POKEAPI_ROOT = 'https://raw.githubusercontent.com/PokeAPI/sprites/1dd55c0436d2a5b6e324c0b780e1b1b416fbfb64/sprites/';
 export const POKEAPI_BASE = `${POKEAPI_ROOT}pokemon/`;
 
-export function spriteSources(mon, back) {
+export const pokeapiItemUrl = id => (Object.hasOwn(POKEAPI_ITEMS, id) ? `${POKEAPI_ROOT}items/${POKEAPI_ITEMS[id]}.png` : null);
+
+export const SPRITE_ORDERS = Object.freeze({
+  '3d': Object.freeze(['ani', 'gen5ani', 'pokeapi', 'gen5', 'pokerogue']),
+  dot: Object.freeze(['gen5ani', 'gen5', 'pokeapi', 'pokerogue', 'ani']),
+});
+
+export function spriteSources(mon, back, style = DEFAULT_SPRITE_STYLE) {
+  if (!SPRITE_STYLES.includes(style)) throw new Error(`Unknown sprite style: ${style} (${SPRITE_STYLES.join(' | ')})`);
   const stem = POKEAPI_SPRITES[mon.spriteId];
-  return [
-    { kind: 'showdown', url: showdownUrl(mon, back, 'ani') },
-    { kind: 'showdown', url: showdownUrl(mon, back, 'gen5ani') },
-    ...(stem ? [{ kind: 'pokeapi', url: `${POKEAPI_BASE}${back ? 'back/' : ''}${mon.shiny ? 'shiny/' : ''}${stem}.png` }] : []),
-    { kind: 'showdown', url: showdownUrl(mon, back, 'gen5') },
-    { kind: 'pokerogue' },
-  ];
+  const steps = {
+    ani: { kind: 'showdown', url: showdownUrl(mon, back, 'ani') },
+    gen5ani: { kind: 'showdown', url: showdownUrl(mon, back, 'gen5ani') },
+    pokeapi: stem ? { kind: 'pokeapi', url: `${POKEAPI_BASE}${back ? 'back/' : ''}${mon.shiny ? 'shiny/' : ''}${stem}.png` } : null,
+    gen5: { kind: 'showdown', url: showdownUrl(mon, back, 'gen5') },
+    pokerogue: { kind: 'pokerogue' },
+  };
+  return SPRITE_ORDERS[style].map(name => steps[name]).filter(Boolean);
 }
 
 const CACHE_SIZE = 24, SHEET_BUDGET = 8 * 1024 * 1024, SHEET_KEEP = 12;
 const cache = new Map();
+
+const orderKey = sources => sources.map(source => source.url ?? source.kind).join(' ');
 
 function dropSheet(entry) {
   if (!entry.sheet) return;
@@ -42,8 +55,8 @@ function remember(id, entry) {
   }
 }
 
-export async function loadMonSprite(assets, mon, back, key, reference) {
-  const sources = spriteSources(mon, back), id = sources[0].url;
+export async function loadMonSprite(assets, mon, back, key, reference, style = DEFAULT_SPRITE_STYLE) {
+  const sources = spriteSources(mon, back, style), id = orderKey(sources);
   const hit = cache.get(id);
   if (hit) {
     const result = await showdownSprite(assets, mon, back, key, hit.url, hit.bytes, [], true, hit);
@@ -53,9 +66,17 @@ export async function loadMonSprite(assets, mon, back, key, reference) {
   const failures = [], down = new Set();
   for (const source of sources) {
     if (source.kind === 'pokerogue') {
-      if (!reference) break;
-      if (failures.length) assets.diagnostics.push({ sprite: mon.spriteId, back, fallback: failures });
-      return loadPokerogueStill(assets, mon, back, key, reference);
+      if (!reference) continue;
+      const url = assets.url(pokerogueSheetPath(mon, back, reference));
+      try {
+        const result = await loadPokerogueStill(assets, mon, back, key, reference);
+        if (failures.length) assets.diagnostics.push({ sprite: mon.spriteId, back, fallback: failures });
+        return result;
+      } catch (error) {
+        assets.life.check();
+        failures.push({ url, error: String(error.message ?? error) });
+        continue;
+      }
     }
     const host = new URL(source.url).host;
     if (down.has(host)) continue;

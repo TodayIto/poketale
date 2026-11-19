@@ -12,6 +12,7 @@
     "pokemon_species.csv",
     "machines.csv",
     "item_flavor_text.ko.csv",
+    "item_flavor_text.en.csv",
     "pokemon_stats.csv",
     "items.csv"
   ],
@@ -26,6 +27,7 @@
     "pokemon_species.csv": "e66e2eeb25fd3836b0ebab6bf87bbf01960aa3c0555e2bac495fa8393c5e0c45",
     "machines.csv": "f9df7faaf0a60896fa344abd2b639f83f79c2a24e1fd4bb3560ca7da76e9a6ad",
     "item_flavor_text.ko.csv": "44a6091d05b63a1904c2924aedeb475b9a92e4a48987916ac01e5e5e50042fa3",
+    "item_flavor_text.en.csv": "c935f13fb6143a233c241fffb1479ffdbf0d19350e32cf9d882250f7550dad3a",
     "pokemon_stats.csv": "fa2c44263a3706468682fefc3e0b3c4f5487fe9febed7d4ebcd6939c34b16aa8",
     "items.csv": "f08cd6dc30b447cb91cbe9232c79052e8521f32f6105bb1489b5bfabf4ca3241",
     "LICENSE.md": "1c04595dc662981c20956ae4251dfa7b62b475c345eddf98bc9b904cb2373f2c"
@@ -35,6 +37,11 @@
       "from": "item_flavor_text.csv",
       "sha256_of_source": "f85281c97e4a423fb6ae673a3d2cfab116ac2e7bb9fcdecfb43ac8b1e1fb8676",
       "rule": "language_id=3 (한국어) 행 중 도구마다 version_group_id 가 가장 큰 한 줄만. 행 내용은 그대로 (원본 6MB 를 저장소에 넣지 않으려고)"
+    },
+    "item_flavor_text.en.csv": {
+      "from": "item_flavor_text.csv",
+      "sha256_of_source": "f85281c97e4a423fb6ae673a3d2cfab116ac2e7bb9fcdecfb43ac8b1e1fb8676",
+      "rule": "language_id=9 (영어) 행 중 도구마다 version_group_id 가 가장 큰 한 줄만. 행 내용은 그대로 (도구의 영어 공식 설명 — 공개 PR #10, 사용자 2026-11-19)"
     }
   },
   "normalization": "UTF-8, CRLF normalized to LF before hashing"

@@ -1,4 +1,4 @@
-// Modified for PokeTale on 2026-11-16. See THIRD-PARTY-NOTICES.md.
+// Modified for PokeTale on 2026-11-19. See THIRD-PARTY-NOTICES.md.
 // Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
 // Motions ported from PlayNav (https://github.com/poooooby/PlayNav) src/amie/play.lua - lifeMotion / stepLife (breathing, sway, hops, the wriggle while stroked,
 // the flinch, dozing), reward (a double hop with notes), the wake ("!", a white flash, it turns round), the high five leap, feeding (a flash with stars, then
@@ -12,7 +12,8 @@ import { keyAction, playSelect, playError } from './ui/keys.js';
 import { loadItemIcons } from './ui/bag.js';
 import { loadFont } from './fonts.js';
 import { placeSprite } from './sprites/placement.js';
-import { amieTextures, loadItemSheet, foodPicture, foodElement, HEARTS, emote } from './amie-art.js';
+import { amieTextures, foodPicture, foodElement, HEARTS, emote } from './amie-art.js';
+import { loadItemPicture } from './item-picture.js';
 import { playGame } from './amie-games.js';
 import { fieldFor, fitCanvas, restoreCanvas, frameFor, petScale, gameBarFor } from './amie-layout.js';
 import { mountAmieFrame } from './amie-frame.js';
@@ -50,11 +51,11 @@ const level = (value, steps) => steps.filter(t => value >= t).length;
 export class AmieScreen {
   constructor(scene) { this.scene = scene; this.isOpen = false; }
 
-  async load(mon, party) {
+  async load(mon, party, foods = []) {
     const s = this.scene;
     const [front, back, others] = await Promise.all([s.assets.mon(mon, false), s.assets.mon(mon, true).catch(() => null),
       Promise.all(party.map(other => s.assets.mon(other, false).catch(() => null))),
-      loadItemIcons(s).catch(() => {}), loadItemSheet(s).catch(() => {})]);
+      loadItemIcons(s).catch(() => {}), ...foods.filter(f => f.icon?.url).map(f => loadItemPicture(s, f.icon.url))]);
     s.life.check();
 
     return { front, back, others: party.flatMap((other, i) => (others[i] ? [{ uid: other.uid, enjoy: other.enjoy, asset: others[i] }] : [])) };
@@ -64,7 +65,7 @@ export class AmieScreen {
     awake = false, trainWhy = null, lock = null, notice = null, records = {}, onChange = () => {}, onOpen = () => {} }) {
     const s = this.scene;
     if (this.isOpen) throw new Error('Petting screen already open');
-    const { front, back, others } = await this.load(mon, party);
+    const { front, back, others } = await this.load(mon, party, foods);
     amieTextures(s);
     loadFont(FRAME_FONT).catch(error => console.warn('[poke-battle] 쓰다듬기 글꼴을 올리지 못함 — 대체 글꼴로', error));
     this.isOpen = true;

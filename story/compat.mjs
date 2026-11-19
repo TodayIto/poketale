@@ -11,11 +11,22 @@ export const COMPAT_LINES = Object.freeze({
 });
 const NUMBERED = new Set(['party', 'allied', 'opposing']);
 
-export const COMPAT_ENTRIES = Object.freeze([
+export const COMPAT_VAR = 'pkb_compat';
+
+export const GYM_REWARD_LINE = '- When {{user}} wins a Gym battle, island trial or grand trial, the Gym Leader, captain or kahuna also hands over what they give in the games, such as a TM or a Z-Crystal; record it in a Change Block.';
+
+export const GYM_ENTRY_MARK = 'qualifies a challenger for its Pokémon League';
+
+export const compatEntries = gymMark => Object.freeze([
   { name: '👾 Pokémon Status', lines: ['party', 'allied', 'opposing'] },
   { name: '💻 Pokémon Storage', lines: ['storageAdd', 'storageRemove'] },
   { name: '📣 Battle Intention', lines: ['intention'] },
-].map(entry => Object.freeze({ ...entry, lines: Object.freeze(entry.lines), mark: `[${COMPAT_LINES[entry.lines[0]]}` })));
+  { name: 'General Challenge and League', add: GYM_REWARD_LINE, mark: gymMark },
+].map(entry => Object.freeze({
+  ...entry, lines: Object.freeze(entry.lines ?? []),
+  mark: entry.lines ? `[${COMPAT_LINES[entry.lines[0]]}` : entry.mark || null,
+})));
+export const COMPAT_ENTRIES = compatEntries(GYM_ENTRY_MARK);
 
 export const compatFold = foldNorm;
 
@@ -49,8 +60,6 @@ export function dropTaken(text) {
   return kept.length === lines.length && kept.every((line, i) => line === lines[i]) ? all : kept.join('\n');
 }
 
-export const COMPAT_VAR = 'pkb_compat';
-
 export const COMPAT_TABS = Object.freeze({ button: 'yptab-button', panel: 'yptab-panel' });
 
 export const SETTLEMENT_BOT = Object.freeze({ marker: '$yp_SexualForfeitActive', vars: Object.freeze({ mode: '$yp_YariPokeMode', winInstruction: '$yp_YariPokeWinInstruction', gender: '$yp_UserGender' }) });
@@ -76,15 +85,16 @@ const COMPAT_TRAINER_GENDERS = new Map([['2', 'M'], ['3', 'F']]);
 
 export const compatTrainerGender = chat => compatVar(chat, COMPAT_TRAINER_GENDER_VAR, COMPAT_TRAINER_GENDERS);
 
-// A partner Pikachu the bot's story starts with in Kanto: Pokémon Yellow's (game story with starter 4), the original
-// anime's from Professor Oak (adventure 5) and Pokémon Journeys' (adventure 4), which can Gigantamax
-export const COMPAT_PARTNER_VARS = Object.freeze(['$yp_StartRegion', '$yp_Adventure', '$yp_Starter']);
+const COMPAT_START_VARS = Object.freeze({ region: 'yp_StartRegion', adventure: 'yp_Adventure', starter: 'yp_Starter', mode: 'yp_StartMode' });
+
+export const COMPAT_PARTNER_VARS = Object.freeze(Object.values(COMPAT_START_VARS).map(name => `$${name}`));
 export function compatPartnerStart(chat) {
-  const read = name => String(chat?.scriptstate?.[`$${name}`] ?? '').trim();
-  if (read('yp_StartRegion') !== '1') return null;
-  const adventure = read('yp_Adventure');
-  if (adventure === '4') return { gigantamax: true };
-  return adventure === '5' || (adventure === '1' && read('yp_Starter') === '4') ? { gigantamax: false } : null;
+  const read = key => String(chat?.scriptstate?.[`$${COMPAT_START_VARS[key]}`] ?? '').trim();
+  if (read('region') !== '1') return null;
+  const adventure = read('adventure');
+  if (adventure === '5') return 'anime';
+  if (adventure === '4') return 'journeys';
+  return adventure === '1' && read('starter') === '4' && read('mode') === '1' ? 'yellow' : null;
 }
 
 export const COMPAT_SETTINGS = Object.freeze([
@@ -195,6 +205,14 @@ const decode = text => text.replace(/&(?:#(\d+)|#x([0-9a-f]+)|(\w+));/gi, (whole
 const OPEN = `{{#when::keep::{{getvar::${COMPAT_VAR}}}::isnot::1}}`;
 const CLOSE = '{{/when}}';
 
+function addedBlock(line) {
+  return `{{#when::keep::{{getvar::${COMPAT_VAR}}}::is::1}}\n${line}{{/when}}`;
+}
+
+const escapeRe = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const [ADDED_BEFORE, ADDED_AFTER] = addedBlock('\0').split('\0');
+const ADDED_RE = new RegExp(`${escapeRe(ADDED_BEFORE)}[^\\n]*?${escapeRe(ADDED_AFTER)}`, 'g');
+
 function split(content) {
   const lines = String(content ?? '').split('\n');
   let n = 0;
@@ -217,30 +235,41 @@ export const unwrap = content => {
   return head + body.slice(OPEN.length + 1, -(CLOSE.length + 1));
 };
 
+export const removeAdded = content => String(content ?? '').replace(ADDED_RE, '');
+
+export function addLine(content, line) {
+  const text = String(content ?? ''), block = addedBlock(line);
+  const others = text.match(ADDED_RE) ?? [];
+  if (others.length === 1 && others[0] === block) return text;
+  return `${removeAdded(text)}${block}`;
+}
+
+const edit = (want, content, on) => (want.add ? (on ? addLine(content, want.add) : removeAdded(content)) : on ? wrap(content) : unwrap(content));
+
 function find(lore, want, taken) {
   const free = (entry, i) => !taken.has(i) && typeof entry?.content === 'string';
   let at = lore.findIndex((entry, i) => free(entry, i) && entry.comment === want.name);
-  if (at < 0) at = lore.findIndex((entry, i) => free(entry, i) && entry.content.includes(want.mark));
+  if (at < 0 && want.mark) at = lore.findIndex((entry, i) => free(entry, i) && entry.content.includes(want.mark));
   return at;
 }
 
-export function applyCompat(lore, on) {
+export function applyCompat(lore, on, entries = COMPAT_ENTRIES) {
   const list = Array.isArray(lore) ? lore : [];
   const taken = new Set(), found = [], missing = [];
   const next = list.slice();
   let changed = false;
-  for (const want of COMPAT_ENTRIES) {
+  for (const want of entries) {
     const at = find(list, want, taken);
     if (at < 0) { missing.push(want.name); continue; }
     taken.add(at); found.push(want.name);
-    const content = on ? wrap(list[at].content) : unwrap(list[at].content);
+    const content = edit(want, list[at].content, on);
     if (content !== list[at].content) { next[at] = { ...list[at], content }; changed = true; }
   }
   return { lore: next, changed, found, missing };
 }
 
-export function compatUpToDate(lore) {
-  const { found, changed } = applyCompat(lore, true);
+export function compatUpToDate(lore, entries = COMPAT_ENTRIES) {
+  const { found, changed } = applyCompat(lore, true, entries);
   return !found.length || !changed;
 }
 
@@ -275,6 +304,8 @@ const WEATHER_WORDS = wordTable(STATUS_WORDS.weather);
 const INDOOR_WORDS = wordTable({ indoors: STATUS_WORDS.indoors });
 
 const REGION_WORDS = wordTable(STATUS_WORDS.regions);
+
+export const readRegion = text => wordIn(REGION_WORDS, text);
 
 const blockPlaces = Object.entries(storyNames.biomes).reduce((groups, [word, biome]) => ({ ...groups, [biome]: [...groups[biome] ?? [], word] }), {});
 const morePlaces = STATUS_WORDS.places;
@@ -322,7 +353,7 @@ export function readStatusWindow(inner) {
     timeOfDay: fields.time ? readTime(fields.time) : null,
     hour: fields.time ? clockHourOf(fields.time) : null,
     weather: fields.weather ? (indoors ? 'none' : wordIn(WEATHER_WORDS, fields.weather) ?? 'none') : null,
-    region: fields.region ? wordIn(REGION_WORDS, fields.region) : null,
+    region: fields.region ? readRegion(fields.region) : null,
     place: ['area', 'site', 'location'].map(key => (fields[key] ? wordIn(PLACE_WORDS, fields[key]) : null)).find(Boolean) ?? null,
     location: fields.location ?? null,
     site: fields.site ?? null,
@@ -356,6 +387,18 @@ export function statusMoneyAt(chat, upto = Infinity) {
   for (let i = Math.min(upto, messages.length - 1); i >= 0; i--) {
     const found = windowsIn(messages[i]).find(w => w.money !== null);
     if (found) return { money: found.money, index: i };
+  }
+  return null;
+}
+
+export const battleRegion = ({ block = null, status = null, earlier = null, blockFirst = false } = {}) =>
+  (blockFirst ? block ?? status : status ?? block) ?? earlier ?? null;
+
+export function earlierRegion(chat, index) {
+  const messages = chat?.message ?? [];
+  for (let i = Math.min(index, messages.length) - 1; i >= 0; i--) {
+    const found = windowsIn(messages[i]).find(w => w.region);
+    if (found) return found.region;
   }
   return null;
 }

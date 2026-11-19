@@ -12,6 +12,8 @@ import { BASE_TEXT, z } from './panel-zoom.mjs';
 import { screenCss, screenHtml, screenSheets } from './panel-screens-html.mjs';
 import { ringSvg, RING_ICON, RING_COLOR } from './gauge-ring.mjs';
 import { ENJOY_MAX } from './amie.mjs';
+import { SHORTCUT_ART, shortcutArt } from './panel-art.mjs';
+import { PICKS, TALE_ROWS } from './panel.mjs';
 
 export const panelSpriteUrl = (id, shiny) => (id === EGG_SPRITE ? `${POKEAPI_BASE}egg.png`
   : `https://play.pokemonshowdown.com/sprites/gen5${shiny ? '-shiny' : ''}/${encodeURIComponent(id)}.png`);
@@ -22,7 +24,6 @@ const monImg = src => `<img${src === null ? '' : ` src="${esc(src)}"`} alt="" lo
 
 const PR_BASE = 'https://raw.githubusercontent.com/pagefaultgames/pokerogue-assets/37789817134f881da0a038af21991ccc93a66372/';
 export const PR_ITEMS = `${PR_BASE}images/items.png`;
-export const SD_ITEMS = 'https://play.pokemonshowdown.com/sprites/itemicons-sheet.png';
 
 export const ICON = {
   // Poke Ball for the party tab; box and bag icons
@@ -35,8 +36,15 @@ export const ICON = {
     + '<path d="M4.6 12h14.8" stroke="currentColor" stroke-width="2"/><rect x="10" y="10.2" width="4" height="4" rx="1" fill="#fff" stroke="currentColor" stroke-width="1.7"/>'
     + '<path d="M8 16.4v2.4M16 16.4v2.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
 
+  settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.7 9.5L21.3 9.7L21.3 14.3L18.7 14.5L18.6 15L20.2 17L17 20.2L15 18.6L14.5 18.7L14.3 21.3L9.7 21.3L9.5 18.7L9 18.6L7 20.2'
+    + 'L3.8 17L5.4 15L5.3 14.5L2.7 14.3L2.7 9.7L5.3 9.5L5.4 9L3.8 7L7 3.8L9 5.4L9.5 5.3L9.7 2.7L14.3 2.7L14.5 5.3L15 5.4L17 3.8L20.2 7L18.6 9z" fill="#fff" stroke="#23435f" stroke-width="1.8" stroke-linejoin="round"/>'
+    + '<circle cx="12" cy="12" r="3.1" fill="#cfe0ec" stroke="#23435f" stroke-width="1.8"/></svg>',
+
   amie: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.5 20.6l-7.2-7A4.5 4.5 0 0 1 11.5 7.2a4.5 4.5 0 0 1 7.2 6.4z" fill="#fff" stroke="#23435f" stroke-width="2" stroke-linejoin="round"/>'
     + '<path d="M19.6 1.8l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" fill="#fff" stroke="#23435f" stroke-width="1" stroke-linejoin="round"/></svg>',
+  train: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12h8" stroke="#23435f" stroke-width="2.4" stroke-linecap="round"/>'
+    + '<rect x="4.2" y="6.4" width="3.8" height="11.2" rx="1.3" fill="#fff" stroke="#23435f" stroke-width="2"/><rect x="16" y="6.4" width="3.8" height="11.2" rx="1.3" fill="#fff" stroke="#23435f" stroke-width="2"/>'
+    + '<path d="M2.4 10v4M21.6 10v4" stroke="#23435f" stroke-width="2.2" stroke-linecap="round"/></svg>',
 
   travel: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.6" fill="#fff" stroke="#23435f" stroke-width="2"/>'
     + '<path d="M12 4.6l2.7 7.4H9.3z" fill="#d8434d" stroke="#23435f" stroke-width="1.4" stroke-linejoin="round"/>'
@@ -54,6 +62,8 @@ export const ICON = {
   rest: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2c.5 1.9 3.1 3 3.1 5.8A3.1 3.1 0 0 1 4.9 7c0-1.4.7-2.2 1.4-2.9.1 1 .6 1.6 1.3 1.8C7.2 4.4 7.3 2.6 8 1.2z" fill="currentColor"/>'
     + '<path d="M2.6 14.4l10.8-3.3M13.4 14.4L2.6 11.1" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>',
 
+  lab: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.2 1.8h3.6M6.8 1.8v4.1L3.3 11.6a2 2 0 0 0 1.7 3h6a2 2 0 0 0 1.7-3L9.2 5.9V1.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>'
+    + '<path d="M4.9 10.2h6.2l1 1.8a1 1 0 0 1-.9 1.5H4.8a1 1 0 0 1-.9-1.5z" fill="currentColor"/></svg>',
   stop: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
   swap: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.8 8a4.8 4.8 0 1 1-2.4-4.16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'
     + '<path d="M12.6 5.1L9.7 3.4l.9-1.6z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
@@ -65,13 +75,16 @@ export const ICON = {
   prev: '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M11 2.5v11L3.5 8z"/></svg>',
   next: '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M5 2.5v11L12.5 8z"/></svg>',
 
+  go: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+
   add: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
 
   heal: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13.6L2.7 8.4A3.1 3.1 0 0 1 8 4.3a3.1 3.1 0 0 1 5.3 4.1z" fill="currentColor"/></svg>',
 };
 const tabLabel = (tab, lang) => esc(say(lang, `panel.tab.${tab}`));
 
-export const TAB_COLOR = { party: '#d8434d', box: '#3d7196', bag: '#c98a1d', amie: '#e0719a', travel: '#2f9a6e' };
+export const TAB_COLOR = { party: '#d8434d', box: '#3d7196', bag: '#c98a1d', travel: '#2f9a6e', settings: '#5f7a91' };
+const PICK_COLOR = { amie: '#e0719a', train: '#e07a32' };
 
 const C = '.x-risu-pkbp';
 
@@ -82,7 +95,7 @@ const SPARK = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 0C10.8 6
 const sparks = () => `<span class="x-risu-pkbp-spk" aria-hidden="true">${SPARKS.map(([x, y, size, delay]) =>
   `<span style="left:${x}%;top:${y}%;width:${z(size)};height:${z(size)};animation-delay:${delay}s">${SPARK}</span>`).join('')}</span>`;
 
-export const PANEL_SHEETS = Object.freeze([[`${C}-icpr span`, PR_ITEMS], [`${C}-icsd`, SD_ITEMS], ...screenSheets(PR_BASE), [`${C}-dxi`, DEX_ICONS]].map(sheet => Object.freeze(sheet)));
+export const PANEL_SHEETS = Object.freeze([[`${C}-icpr span`, PR_ITEMS], ...screenSheets(PR_BASE), [`${C}-dxi`, DEX_ICONS]].map(sheet => Object.freeze(sheet)));
 
 export function sheetCss(address, { dexIcons = true } = {}) {
   return PANEL_SHEETS.map(([selector, url]) => {
@@ -96,31 +109,31 @@ export function sheetCss(address, { dexIcons = true } = {}) {
 export const SIZE = Object.freeze({
   wide: Object.freeze({ top: 84, width: 'clamp(340px, 28vw, 400px)', screenWidth: 'clamp(380px, 31vw, 430px)', text: 15, bottomGap: 12 }),
   phone: Object.freeze({ max: 640, top: 100, text: 13, sheetMax: 380 }),
-  tab: Object.freeze({ w: 40, h: 44, wPhone: 38, hPhone: 38, cur: 46, border: 2.5, gap: 7, pad: 10, foldGap: 4, icon: 24, iconPhone: 22, shadow: 2 }),
+  tab: Object.freeze({ w: 40, h: 44, wPhone: 38, hPhone: 38, cur: 46, border: 2.5, gap: 7, pad: 10, foldGap: 4, icon: 24, iconPhone: 22, shadow: 2, resume: 6 }),
   fold: Object.freeze({ min: 24, minTouch: 32, beside: 4 }),
-  bar: Object.freeze({ peek: 2, rise: 4, drop: 480 }),
+  bar: Object.freeze({ peek: 2, rise: 4, tabs: 7, move: 200, step: 20, fade: 120, out: 80, reach: 12 }),
   touch: Object.freeze({ min: 40, row: 38 }),
   hostBar: 60,
   window: Object.freeze({ room: 120 }),
-  // how far the panel may sit from its normal height. min..max is the settings slider's range, as in 0.0.8.
-  // farMin..farMax is the widest a dragged panel may go (option "drag the panel"); the panel narrows that to the
-  // screen it is on (shiftLimits)
   shift: Object.freeze({ min: -60, max: 60, default: 0, farMin: -100, farMax: 900, edge: 8, minSheet: 320 }),
 });
 
-// The range the panel can move on a screen `height` px tall (`below` = px kept free at the bottom for the chat
-// input): up until its top is `edge` px from the top, down until `minSheet` px are left for an open sheet.
-export function shiftLimits({ width, height, below = SIZE.hostBar + SIZE.wide.bottomGap } = {}) {
-  if (!(height > 0)) return { min: SIZE.shift.min, max: SIZE.shift.max };
+const shiftWithin = (value, min, max) => (typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, Math.round(value))) || 0 : SIZE.shift.default);
+
+export const panelShift = value => shiftWithin(value, SIZE.shift.min, SIZE.shift.max);
+
+export const panelLift = value => shiftWithin(value, SIZE.shift.farMin, SIZE.shift.farMax);
+
+export function shiftLimits({ width, height, below } = {}) {
+  const { shift } = SIZE;
+  if (!(height > 0)) return { min: shift.min, max: shift.max };
   const top = width > 0 && width <= SIZE.phone.max ? SIZE.phone.top : SIZE.wide.top;
-  return { min: Math.max(SIZE.shift.farMin, SIZE.shift.edge - top),
-    max: Math.min(SIZE.shift.farMax, Math.max(SIZE.shift.max, Math.floor(height - below - top - SIZE.shift.minSheet))) };
+  const free = Number.isFinite(below) ? below : SIZE.hostBar + SIZE.wide.bottomGap;
+  return { min: Math.max(shift.farMin, Math.min(shift.min, shift.edge - top)),
+    max: Math.min(shift.farMax, Math.max(shift.max, Math.floor(height - free - top - shift.minSheet))) };
 }
 
-export const panelShift = value => (typeof value === 'number' && Number.isFinite(value)
-  ? Math.min(SIZE.shift.farMax, Math.max(SIZE.shift.farMin, Math.round(value))) : SIZE.shift.default);
-
-const TAP_TARGETS = ['back', 'fold', 'smon', 'quill', 'badge', 'brd', 'rst', 'pairx', 'add', 'nav', 'boxname', 'seg button', 'mini button', 'gclr', 'gnav', 'dxarr', 'dxback', 'dxlk', 'dxpg'];
+const TAP_TARGETS = ['back', 'fold', 'smon', 'quill', 'badge', 'brd', 'rst', 'lbp', 'pairx', 'add', 'nav', 'boxname', 'seg button', 'mini button', 'gclr', 'gnav', 'dxarr', 'dxback', 'dxlk', 'dxpg'];
 const { wide: W, phone: PH, tab: TB, fold: FD, bar: MB } = SIZE;
 
 const SHIFT = 'var(--pkbp-shift,0px)';
@@ -130,6 +143,8 @@ const maxBelow = (vh, top) => `calc(${vh} - ${top}px - ${BELOW} - max(${SHIFT},0
 const DVH = '@supports (height:100dvh)';
 
 const STRIP = TB.cur - TB.border;
+
+const GATHER = MB.move + (MB.tabs - 2) * MB.step;
 
 const foldFit = (least, normal) => {
   const room = `var(--pkbp-room,${normal + TB.foldGap + TB.shadow}px)`;
@@ -143,13 +158,13 @@ const CSS = [
   `${C}{position:fixed;right:0;top:${topAt(W.top)};--pkbp-max:${maxBelow('100vh', W.top)};z-index:45;display:flex;align-items:flex-start;--pkbp-z:${W.text / BASE_TEXT};`
     + `font-family:${FONT};font-weight:400;font-size:${z(BASE_TEXT)};line-height:1.35;color:#23435f;letter-spacing:0;text-align:left;`
 
-    + `${foldFit(FD.min, TB.w)}transform:translateX(calc(100% - var(--pkbp-tw) - var(--pkbp-fg)));transition:transform .2s ease-out;`
+    + `${foldFit(FD.min, TB.w)}--pkbp-th:${TB.h}px;transform:translateX(calc(100% - var(--pkbp-tw) - var(--pkbp-fg)));transition:transform .2s ease-out;`
 
     + `pointer-events:none;}`,
 
   `${DVH}{${C}{--pkbp-max:${maxBelow('100dvh', W.top)};}}`,
   `${C}${C}-open{--pkbp-tw:${TB.w}px;transform:none;z-index:1100;pointer-events:auto;}`,
-  `${C}-tab,${C}-mbar,${C}-offer{pointer-events:auto;}`,
+  `${C}-tab,${C}-offer{pointer-events:auto;}`,
   `${C}${C}-gone{display:none;}`,
   `${C} *{box-sizing:border-box;}`,
   `:where(${C}) button{font:inherit;margin:0;color:#1d3347;}`,
@@ -161,7 +176,7 @@ const CSS = [
   `${C}-tab{position:relative;display:flex;align-items:center;justify-content:center;width:var(--pkbp-tw);height:${TB.h}px;padding:0;border:${TB.border}px solid #23435f;border-right:0;border-radius:9px 0 0 9px;`
     + `color:#23435f;box-shadow:-2px 3px 0 #1a3247;cursor:pointer;}`,
   ...Object.entries(TAB_COLOR).map(([tab, color]) => `${C}-t${tab}{background:${color};}`),
-  `${C}-tresume{margin-top:6px;background:#23435f;}`,
+  `${C}-tresume{margin-top:${TB.resume}px;background:#23435f;}`,
 
   `${C}-taux{background:#c3cfd8;color:#6f8494;border-color:#7d93a4;box-shadow:-2px 3px 0 #8fa3b3;}`,
   `${C}-taux${C}-on{background:#d8434d;color:#fff;border-color:#23435f;box-shadow:-2px 3px 0 #1a3247;}`,
@@ -176,8 +191,9 @@ const CSS = [
     // Task alert mark: a yellow "!"
   `${C}-bang{position:absolute;top:-7px;left:-6px;padding:0 4px;border:1.5px solid #c09a2c;border-radius:8px;background:#ffd84a;color:#6b4a00;font:10px/1.4 sans-serif;}`,
 
-  `${C}-mbar{display:none;order:-1;position:relative;flex:none;width:var(--pkbp-tw);height:${TB.h}px;padding:0 0 0 ${MB.peek * 2}px;border:0;background:none;color:#23435f;cursor:pointer;}`,
-  `${C}-gathered ${C}-mbar{display:block;}`,
+  `${C}-mbar{position:absolute;top:${TB.pad}px;left:0;z-index:${MB.tabs + 1};display:block;width:var(--pkbp-tw);height:var(--pkbp-th);padding:0 0 0 ${MB.peek * 2}px;`
+    + `border:0;background:none;color:#23435f;cursor:pointer;opacity:0;visibility:hidden;pointer-events:none;transition:opacity ${MB.out}ms linear,visibility 0s ${MB.out}ms;}`,
+  `${C}-gathered ${C}-mbar{opacity:1;visibility:visible;pointer-events:auto;transition:opacity ${MB.fade}ms linear ${GATHER - MB.fade}ms,visibility 0s ${GATHER - MB.fade}ms;}`,
   `${C}-mbf{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;height:100%;border:${TB.border}px solid #23435f;border-right:0;`
     + `border-radius:9px 0 0 9px;background:linear-gradient(160deg,#ffffff,#e6f0f7);box-shadow:-2px 3px 0 #1a3247;}`,
   `${C}-mbf::before{content:"";width:min(16px, 100% - 4px);height:4px;border-radius:2px;background:#9fb6c8;}`,
@@ -187,11 +203,16 @@ const CSS = [
   `${C}-mbar ${C}-bang{z-index:3;top:-${MB.rise * 2 + 3}px;left:-2px;}`,
   `${C}-mbar:active ${C}-mbf{transform:translateY(2px);box-shadow:-2px 1px 0 #1a3247;}`,
 
-  `${C}-mbar::after{content:"";position:absolute;z-index:3;left:0;right:calc(0px - var(--pkbp-fg));top:-${MB.rise * 2}px;bottom:-${TB.gap / 2}px;}`,
+  `${C}-mbar::after{content:"";position:absolute;z-index:3;left:-${MB.reach}px;right:calc(0px - var(--pkbp-fg));top:-${MB.rise * 2 + MB.reach}px;bottom:-${TB.gap / 2 + MB.reach}px;}`,
 
-  `${C}-drop{display:flex;flex-direction:column;gap:${TB.gap}px;align-items:inherit;max-height:${MB.drop}px;clip-path:inset(-40px -40px -40px -40px);`
-    + `transition:max-height .32s ease-out,clip-path .32s ease-out;}`,
-  `${C}-gathered ${C}-drop{max-height:0;clip-path:inset(0 -40px 100% -40px);visibility:hidden;transition:max-height .2s ease-in,clip-path .2s ease-in,visibility 0s .2s;}`,
+  `${C}-drop{display:flex;flex-direction:column;gap:${TB.gap}px;align-items:inherit;}`,
+  `${C}-gathered ${C}-drop{visibility:hidden;transition:visibility 0s ${GATHER}ms;}`,
+  ...Array.from({ length: MB.tabs }, (_, i) => `${C}-drop > :nth-child(${i + 1}){--pkbp-i:${i};--pkbp-out:${Math.max(0, i - 1) * MB.step}ms;z-index:${MB.tabs - i};}`),
+  ...Array.from({ length: MB.tabs }, (_, i) => `${C}-drop > :nth-last-child(${i + 1}){--pkbp-in:${i * MB.step}ms;}`),
+  `${C}-tresume,${C}-tresume ~ ${C}-tab{--pkbp-x:${TB.resume}px;}`,
+  `${C}-drop > ${C}-tab{translate:0 0;transition:translate ${MB.move}ms cubic-bezier(.2,.7,.3,1) var(--pkbp-out,0ms);}`,
+  `${C}-gathered ${C}-drop > ${C}-tab{translate:0 calc(var(--pkbp-i,0) * (0px - var(--pkbp-th) - ${TB.gap}px) - var(--pkbp-x,0px));pointer-events:none;`
+    + `transition:translate ${MB.move}ms cubic-bezier(.45,0,.6,1) var(--pkbp-in,0ms);}`,
 
   `${C}-sheet{position:relative;z-index:1;display:flex;flex-direction:column;align-self:stretch;visibility:hidden;pointer-events:none;transition:visibility 0s .2s;}`,
   `${C}-open ${C}-sheet{visibility:visible;pointer-events:auto;transition:none;}`,
@@ -317,6 +338,36 @@ const CSS = [
   `${C}-bce{background:rgba(255,255,255,.45);border-style:dashed;cursor:default;}`,
   `${C}-bc${C}-fnt img{filter:grayscale(1);opacity:.55;}`,
 
+  `${C}-lbp{display:flex;align-items:center;flex:none;gap:3px;height:22px;padding:0 7px 0 5px;border:1.5px solid ${TAB_COLOR.box};border-radius:7px;background:#fff;color:${TAB_COLOR.box};font-size:${z(12)};line-height:1;white-space:nowrap;box-shadow:0 1.5px 0 #23435f;cursor:pointer;}`,
+  `${C}-lbp svg{display:block;width:12px;height:12px;}`,
+  `${C}-lbp${C}-on{background:${TAB_COLOR.box};color:#fff;border-color:#23435f;}`,
+  `${C}-lbp:active{transform:translateY(1px);box-shadow:none;}`,
+
+  `${C}-lbn{display:block;width:7px;height:7px;margin-left:2px;border-radius:50%;background:#ffd84a;box-shadow:0 0 0 1.5px #23435f;}`,
+
+  `${C}-lbm{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:${z(84)};margin-bottom:8px;padding:10px;`
+    + `border-radius:12px;background:linear-gradient(160deg,#f2f7fb,#e3edf5);overflow:hidden;}`,
+  `${C}-lbsil{position:absolute;left:50%;top:50%;width:${z(168)};height:${z(84)};transform:translate(-50%,-50%);color:#d6e3ee;pointer-events:none;}`,
+  `${C}-lbsil svg{display:block;width:100%;height:100%;}`,
+  `${C}-lbpl{position:absolute;left:10px;top:7px;max-width:30%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#6f8494;font-size:${z(11)};}`,
+  `${C}-lbsl{position:relative;display:flex;align-items:center;justify-content:center;width:${z(44)};height:${z(44)};padding:0;border:2.5px solid #23435f;border-radius:6px;`
+    + `background:#fff;color:#23435f;box-shadow:0 3px 0 #1a3247;}`,
+  `button${C}-lbsl{cursor:pointer;}`,
+  `button${C}-lbsl:active{transform:translateY(2px);box-shadow:0 1px 0 #1a3247;}`,
+  `${C}-lbsl > svg{display:block;width:18px;height:18px;}`,
+  `${C}-lbsl${C}-off{border-color:#a9b5be;background:#eef2f5;color:#a9b5be;box-shadow:0 3px 0 #c3cfd8;}`,
+  `${C}-lbfz{display:block;transform:scale(1.3);}`,
+  `${C}-lbcs{position:relative;display:flex;gap:2px;}`,
+  `${C}-lbc{display:block;flex:none;width:12px;height:12px;border:2px solid #23435f;background:#e2e7eb;}`,
+  `${C}-lbc${C}-on{background:#4aa3e8;box-shadow:inset 0 2px 0 #9fd2f6;}`,
+
+  `${C}-it${C}-off{border-color:#c3cfd8;color:#a9b5be;box-shadow:none;cursor:default;}`,
+  `${C}-it${C}-off ${C}-ic{opacity:.45;}`,
+  `${C}-it${C}-off ${C}-itc{color:#a9b5be;}`,
+
+  `${C}-bc{position:relative;}`,
+  `${C}-bcn{position:absolute;top:1px;right:1px;z-index:1;padding:0 3px;border:1.5px solid #c09a2c;border-radius:6px;background:#ffd84a;color:#6b4a00;font:${z(9)}/1.3 sans-serif;pointer-events:none;}`,
+
   `${C}-money{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding:6px 10px;border:2px solid #789db7;border-radius:9px;background:#fff;color:#23435f;box-shadow:0 2.5px 0 #466c87;}`,
   `${C}-money span{font-size:${z(12)};color:#5d7486;} ${C}-money b{font-size:${z(14)};color:#14304a;}`,
   `${C}-grp{margin:8px 2px 4px;font-size:${z(11)};color:#5d7486;letter-spacing:.05em;}`,
@@ -327,7 +378,9 @@ const CSS = [
   `${C}-ic{position:relative;flex:none;display:block;width:24px;height:24px;overflow:hidden;}`,
   `${C}-icpr{position:absolute;left:0;top:0;width:32px;height:32px;transform:scale(.75);transform-origin:0 0;}`,
   `${C}-icpr span{position:absolute;display:block;background-image:url("${PR_ITEMS}");background-repeat:no-repeat;image-rendering:pixelated;}`,
-  `${C}-icsd{display:block;width:24px;height:24px;background-image:url("${SD_ITEMS}");background-repeat:no-repeat;image-rendering:pixelated;}`,
+
+  `${C}-icpa{position:absolute;left:0;top:0;width:32px;height:32px;transform:scale(.75);transform-origin:0 0;}`,
+  `${C}-icpa img{position:absolute;left:1px;top:1px;width:30px;height:30px;max-width:none;image-rendering:pixelated;}`,
   `${C}-icdot{display:block;width:14px;height:14px;margin:5px;border-radius:50%;background:#e9b24c;box-shadow:inset 0 0 0 2px #a5741c;}`,
   `${C}-icem{display:flex;align-items:center;justify-content:center;font-size:${z(19)};}`,
   `${C}-itn{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}`,
@@ -389,7 +442,7 @@ const CSS = [
   `${C}-muted{color:#8193a1;}`,
   `${C}-sw{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:${z(32)};padding:4px 1px;border:0;border-top:1.5px solid #eef2f5;border-radius:0;`
     + `background:transparent;color:#14304a;font-size:${z(13)};text-align:left;cursor:pointer;}`,
-  `${C}-sech + ${C}-sw{border-top:0;}`,
+  `${C}-sech + ${C}-sw,${C}-sec > ${C}-sw:first-child{border-top:0;}`,
   `${C}-swsub{padding-left:14px;}`,
   `${C}-swk{flex:none;position:relative;width:34px;height:20px;border-radius:10px;background:#c3cfd8;box-shadow:inset 0 0 0 1.5px #7d93a4;}`,
   `${C}-swk::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 0 #7d93a4;transition:left .15s;}`,
@@ -402,12 +455,35 @@ const CSS = [
   `${C}-rowk{flex:0 0 ${z(96)};color:#5d7486;}`,
   `${C}-rowv{flex:1;min-width:0;color:#14304a;word-break:keep-all;overflow-wrap:anywhere;}`,
 
+  `${C}-bset ${C}-seg${C}-dxsub button${C}-on{background:${TAB_COLOR.settings};box-shadow:0 2px 0 #3e5468;}`,
+  `${C}-bset ${C}-sech{color:#4a6378;}`,
+
+  `${C}-tlr{padding:4px 1px 6px;color:#14304a;font-size:${z(13)};}`,
+  `${C}-tseg{display:flex;margin:5px 0 0;padding:2px;border:2px solid #789db7;border-radius:9px;background:#fff;box-shadow:0 2px 0 #466c87;}`,
+  `${C}-tseg > *{flex:1 1 0;min-width:0;padding:4px 0 3px;border:0;border-radius:6px;background:transparent;color:#5d7486;font-size:${z(12.5)};text-align:center;cursor:pointer;}`,
+  `${C}-tseg > ${C}-on{background:${TAB_COLOR.settings};color:#fff;box-shadow:0 2px 0 #3e5468;cursor:default;}`,
+
+  `${C}-tall{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:${z(40)};margin:2px 0 4px;padding:6px 8px 6px 12px;border:2px solid #23435f;`
+    + `border-radius:10px;background:linear-gradient(180deg,#ffffff,#e3ecf3);color:#14304a;font-size:${z(13.5)};box-shadow:0 3px 0 #466c87;cursor:pointer;}`,
+  `${C}-tall:active{transform:translateY(2px);box-shadow:0 1px 0 #466c87;}`,
+
+  `${C}-go{flex:none;display:flex;gap:8px;margin:0 10px;padding:4px 0 11px;}`,
+  `${C}-gob{position:relative;flex:1 1 0;min-width:0;display:flex;align-items:center;height:${z(56)};padding:0 6px 0 11px;border:2.5px solid #23435f;border-radius:11px;`
+    + `overflow:hidden;color:#14304a;box-shadow:0 3px 0 #1a3247;cursor:pointer;text-align:left;}`,
+  `${C}-gob:active{transform:translateY(2px);box-shadow:0 1px 0 #1a3247;}`,
+  `${C}-goa{position:absolute;inset:0;pointer-events:none;} ${C}-goa svg{display:block;width:100%;height:100%;}`,
+  `${C}-gon{position:relative;flex:1;min-width:0;font-size:${z(14.5)};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`
+    + `text-shadow:-1.5px 0 #fff,1.5px 0 #fff,0 -1.5px #fff,0 1.5px #fff,-1px -1px #fff,1px 1px #fff,-1px 1px #fff,1px -1px #fff;}`,
+  `${C}-goi{position:relative;flex:none;display:flex;align-items:center;justify-content:center;width:${z(20)};height:${z(20)};border:1.5px solid #23435f;border-radius:50%;`
+    + `background:#fff;color:#23435f;box-shadow:0 1.5px 0 #1a3247;}`,
+  `${C}-goi svg{display:block;width:62%;height:62%;}`,
+
   `@media (pointer:coarse){${C}{${foldFit(FD.minTouch, TB.w)}}}`,
 
   `@media (max-width:${PH.max}px){`
-    + `${C}{top:${topAt(PH.top)};--pkbp-max:${maxBelow('100vh', PH.top)};--pkbp-z:${PH.text / BASE_TEXT};${foldFit(FD.minTouch, TB.wPhone)}}`
+    + `${C}{top:${topAt(PH.top)};--pkbp-max:${maxBelow('100vh', PH.top)};--pkbp-z:${PH.text / BASE_TEXT};${foldFit(FD.minTouch, TB.wPhone)}--pkbp-th:${TB.hPhone}px;}`
     + `${C}${C}-open{--pkbp-tw:${TB.wPhone}px;}`
-    + `${C}-tab{height:${TB.hPhone}px;} ${C}-mbar{height:${TB.hPhone}px;} ${C}-tab svg{${iconFit(TB.iconPhone)}}`
+    + `${C}-tab{height:${TB.hPhone}px;} ${C}-tab svg{${iconFit(TB.iconPhone)}}`
     + `${C}-board,${C}-board${C}-scr{width:min(${PH.sheetMax}px, calc(100vw - ${TB.wPhone + STRIP}px));}`
     + `}`,
   `${DVH}{@media (max-width:${PH.max}px){${C}{--pkbp-max:${maxBelow('100dvh', PH.top)};}}}`,
@@ -419,11 +495,11 @@ const CSS = [
     + `${TAP_TARGETS.map(name => `${C}-${name}::after`).join(',')}{content:"";position:absolute;left:50%;top:50%;`
     + `width:max(100%,${SIZE.touch.min}px);height:max(100%,${SIZE.touch.min}px);transform:translate(-50%,-50%);}`
     + `${C}-opt{display:flex;align-items:center;min-height:${SIZE.touch.row}px;}`
-    // The summary's evolution lock follows the quill (22px wide, 5px apart): keep their touch areas from overlapping
-    + `${C}-lock{margin-left:${SIZE.touch.min - 27}px;}`
+
+    + `${C}-hname ${C}-quill::after{width:25px;}`
     + `}`,
 
-  `@media (prefers-reduced-motion:reduce){${C},${C}-sheet,${C}-drop,${C}-swk::after{transition:none !important;}}`,
+  `@media (prefers-reduced-motion:reduce){${C},${C}-sheet,${C}-drop,${C}-drop > ${C}-tab,${C}-mbar,${C}-swk::after{transition:none !important;}}`,
   BADGE_CSS,
   DEX_CSS,
   screenCss(PR_BASE),
@@ -445,13 +521,15 @@ export const sheetArt = css => (css ? `<div><style>${css}</style></div>` : '');
 
 export const panelShell = () => shell('', '', [PANEL_STATES.gone]);
 
-export function renderPanel(model, { aux = null, picture = directPicture, shift = SIZE.shift.default, below = null, room = null, rested = null, panelSwitches = null } = {}) {
+export function renderPanel(model, { aux = null, picture = directPicture, shift = SIZE.shift.default, below = null, room = null, rested = null, drag = false, tale = null } = {}) {
   const { lang } = model;
   const t = key => esc(say(lang, key));
   const hits = [];
   const hit = desc => { hits.push(desc); return `x-risu-pkbp-hit x-risu-pkbp-h${hits.length - 1}`; };
 
   const swipe = (prev, next) => { hits.push(prev, next); return `x-risu-pkbp-swipe x-risu-pkbp-sp${hits.length - 2} x-risu-pkbp-sn${hits.length - 1}`; };
+
+  const hover = desc => { hits.push(desc); return `x-risu-pkbp-hover x-risu-pkbp-hv${hits.length - 1}`; };
   const cls = (...list) => list.filter(Boolean).join(' ');
 
   const sideTabs = model.tabs.map(tab => {
@@ -475,10 +553,11 @@ export function renderPanel(model, { aux = null, picture = directPicture, shift 
     ? `<div class="x-risu-pkbp-offer" role="dialog" aria-label="${t('panel.offer.ask')}"><div>${t('panel.offer.ask')}</div><div class="x-risu-pkbp-offb">`
       + `<button type="button" class="${cls('x-risu-pkbp-offn', hit({ t: 'later' }))}">${t('panel.offer.later')}</button>`
       + `<button type="button" class="${cls('x-risu-pkbp-offy', hit({ t: 'offer', asked: true }))}">${t('panel.offer.yes')}</button></div></div>` : '';
-  const lift = panelShift(shift);
+  const lift = panelLift(shift);
   const place = [lift === SIZE.shift.default ? '' : `--pkbp-shift:${lift}px;`, Number.isFinite(below) ? `--pkbp-below:${Math.round(below)}px;` : '',
     Number.isFinite(room) ? `--pkbp-room:${Math.max(0, Math.floor(room))}px;` : ''].join('');
-  const tabs = `<div class="x-risu-pkbp-drop">${sideTabs + resume + auxTab}</div>` + bar + note + (model.travel ? `<style>${COMPAT_TABS_CSS}</style>` : '') + (place ? `<style>${C}{${place}}</style>` : '');
+  const tabs = `<div class="x-risu-pkbp-drop">${sideTabs + resume + auxTab}</div>` + bar + note + (model.travel ? `<style>${COMPAT_TABS_CSS}</style>` : '') + (place ? `<style>${C}{${place}}</style>` : '')
+    + (drag ? `<style>${DRAG_CSS}</style>` : '');
   const out = [];
 
   let base = null, slots = null;
@@ -488,17 +567,27 @@ export function renderPanel(model, { aux = null, picture = directPicture, shift 
     const { head, strip, body } = screenHtml(model.screen, lang, hit, { icon: ICON, img: slot => monImg(picture(slot)), gender: (g, name) => genderMark(g, lang, name), fold, statusMark: slot => statusMark(slot, lang), swipe });
     out.push(`<div class="x-risu-pkbp-board x-risu-pkbp-scr"><div class="x-risu-pkbp-hd" style="border-bottom-color:${TAB_COLOR[model.screen.tab]}">${head}</div>${strip}`
       + `<div class="x-risu-pkbp-bd">${body}</div>${model.window ? windowHtml(model.window, hit, lang) : ''}</div>`);
+  } else if (model.open && model.pick) {
+
+    const back = `<button type="button" class="${cls('x-risu-pkbp-back', hit({ t: 'pickBack' }))}" aria-label="${t('panel.back')}" title="${t('panel.back')}">${ICON.back}</button>`;
+    const fold = `<button type="button" class="${cls('x-risu-pkbp-fold', hit({ t: 'fold' }))}" aria-label="${t('panel.fold')}" title="${t('panel.fold')}">${ICON.fold}</button>`;
+    out.push(`<div class="${cls('x-risu-pkbp-board', hit({ t: 'blank' }))}"><div class="x-risu-pkbp-hd" style="border-bottom-color:${PICK_COLOR[model.pick.kind]}">${back}${ICON[model.pick.kind]}`
+      + `<span class="x-risu-pkbp-hdt">${t(`panel.go.${model.pick.kind}`)}</span><span class="x-risu-pkbp-hdr"></span>${fold}</div>`
+      + `<div class="x-risu-pkbp-bd">${pickHtml(model, hit, picture)}</div>${model.window ? windowHtml(model.window, hit, lang) : ''}</div>`);
   } else if (model.open) {
     const right = model.tab === 'party' ? `${model.party.filter(Boolean).length}/${PARTY_MAX}`
-      : model.tab === 'box' ? `${model.box.cells.filter(Boolean).length}/${BOX_SIZE}`
+      : model.tab === 'box' ? (model.lab?.open ? '' : `${model.box.cells.filter(Boolean).length}/${BOX_SIZE}`)
       : model.tab === 'travel' && model.sub === 'badge' ? `${model.badges.count}/${model.badges.total}` : '';
 
-    out.push(`<div class="${cls('x-risu-pkbp-board', hit({ t: 'blank' }))}">`);
-    out.push(`<div class="x-risu-pkbp-hd" style="border-bottom-color:${TAB_COLOR[model.tab]}">${ICON[model.tab]}${model.tab === 'travel' && model.subs?.length === 1 ? esc(say(lang, `panel.sub.${model.subs[0]}`)) : tabLabel(model.tab, lang)}`
-      + `<span class="x-risu-pkbp-hdr">${esc(right)}</span>${model.tab === 'party' ? breedButton(model, hit) + restButton(model, hit) : ''}`
+    out.push(`<div class="${cls('x-risu-pkbp-board', model.tab === 'settings' && 'x-risu-pkbp-bset', hit({ t: 'blank' }))}">`);
+
+    const single = model.tab === 'travel' ? model.subs : model.tab === 'settings' ? model.setSubs : null;
+    out.push(`<div class="x-risu-pkbp-hd" style="border-bottom-color:${TAB_COLOR[model.tab]}">${ICON[model.tab]}${single?.length === 1 ? esc(say(lang, `panel.sub.${single[0]}`)) : tabLabel(model.tab, lang)}`
+      + `<span class="x-risu-pkbp-hdr">${esc(right)}</span>${model.tab === 'party' ? breedButton(model, hit) + restButton(model, hit) : model.tab === 'box' ? labButton(model, hit) : ''}`
       + `<button type="button" class="${cls('x-risu-pkbp-fold', hit({ t: 'fold' }))}" aria-label="${t('panel.fold')}" title="${t('panel.fold')}">${ICON.fold}</button></div>`);
 
     if (model.tab === 'travel' && model.subs.length > 1) out.push(subBarHtml(model.subs, model.sub, hit, lang));
+    if (model.tab === 'settings' && model.setSubs.length > 1) out.push(subBarHtml(model.setSubs, model.setSub, hit, lang));
     const sub = model.tab === 'travel' ? model.sub : null;
     if (sub === 'dex') {
 
@@ -507,14 +596,15 @@ export function renderPanel(model, { aux = null, picture = directPicture, shift 
 
       out.push(`<div class="${cls('x-risu-pkbp-bd', sub === 'badge' && !model.badges.open && 'x-risu-pkbp-bdg')}">`);
       if (model.tab === 'party') out.push(partyHtml(model, hit, picture, rested));
-      else if (model.tab === 'box') out.push(boxHtml(model, hit, picture));
-      else if (model.tab === 'amie') out.push(amieHtml(model, hit, picture));
-      else if (sub === 'trip') out.push(travelHtml(model, hit, panelSwitches));
-      else if (sub === 'badge') out.push(badgeCaseHtml(model.badges, lang, hit, { img: url => monImg(picture({ url })), icon: iconHtml }, { icon: ICON, swipe }));
-      else out.push(bagHtml(model, hit));
+      else if (model.tab === 'box') out.push(model.lab?.open ? labHtml(model, hit, picture) : boxHtml(model, hit, picture, hover));
+      else if (model.tab === 'settings') out.push(model.setSub === 'bot' ? botSettingsHtml(model, hit) : taleHtml(model, hit, tale));
+      else if (sub === 'trip') out.push(travelHtml(model, hit));
+      else if (sub === 'badge') out.push(badgeCaseHtml(model.badges, lang, hit, { img: url => monImg(picture({ url })), icon: icon => iconHtml(icon, picture) }, { icon: ICON, swipe }));
+      else out.push(bagHtml(model, hit, picture));
       out.push('</div>');
     }
     out.push(debugRow(model, hit));
+    if (model.tab === 'party') out.push(goRow(model, hit));
 
     if (sub) out.push(`<div class="x-risu-pkbp-wslot">${SLOT.win}</div>`);
     else if (model.window) out.push(windowHtml(model.window, hit, lang));
@@ -531,6 +621,8 @@ export function renderPanel(model, { aux = null, picture = directPicture, shift 
   const states = [model.open && PANEL_STATES.open, model.locked && PANEL_STATES.locked, model.bar.on && PANEL_STATES.gathered].filter(Boolean);
   return { tabs, sheet, base, slots, dexIcons: !!(model.open && model.dex), open: !!model.open, locked: !!model.locked, gathered: model.bar.on, html: shell(tabs, sheet, states), hits };
 }
+
+export const DRAG_CSS = `${C}-tabs,${C}-tabs *{touch-action:none;}`;
 
 const SLOT = Object.freeze({ over: '\u0000over\u0000', win: '\u0000win\u0000' });
 
@@ -587,7 +679,7 @@ function partyHtml(model, hit, picture, rested) {
     const picked = model.picked === slot.uid;
 
     if (slot.egg) {
-      return `<div class="x-risu-pkbp-cell"><button type="button" class="x-risu-pkbp-slot${i === 0 ? ' x-risu-pkbp-lead' : ''}${picked ? ' x-risu-pkbp-picked' : ''}${model.breedPick ? ' x-risu-pkbp-off' : ''} ${hit({ t: 'slot', where: 'party', uid: slot.uid })}">`
+      return `<div class="x-risu-pkbp-cell"><button type="button" class="x-risu-pkbp-slot${i === 0 ? ' x-risu-pkbp-lead' : ''}${picked ? ' x-risu-pkbp-picked' : ''}${model.breedPick || model.fusePick ? ' x-risu-pkbp-off' : ''} ${hit({ t: 'slot', where: 'party', uid: slot.uid })}">`
         + `<span class="x-risu-pkbp-pic">${monImg(picture(slot))}</span><span class="x-risu-pkbp-info"><span class="x-risu-pkbp-nm"><span class="x-risu-pkbp-nmt">${esc(slot.name)}</span></span></span></button></div>`;
     }
     const status = statusMark(slot, lang);
@@ -597,7 +689,7 @@ function partyHtml(model, hit, picture, rested) {
     const mark = model.breedPick && picked ? '<span class="x-risu-pkbp-mark x-risu-pkbp-markn">1</span>'
       : bred ? `<span class="x-risu-pkbp-mark x-risu-pkbp-mark${bred}">${bred === 'bred' ? '♥' : '!'}</span>` : '';
     const healed = !!rested?.includes(slot.uid);
-    const slotHtml = `<button type="button" class="x-risu-pkbp-slot${i === 0 ? ' x-risu-pkbp-lead' : ''}${bred ? ` x-risu-pkbp-${bred}` : ''}${slot.fainted ? ' x-risu-pkbp-fnt' : ''}${picked ? ' x-risu-pkbp-picked' : ''}${healed ? ' x-risu-pkbp-healed' : ''} ${hit({ t: 'slot', where: 'party', uid: slot.uid })}">`
+    const slotHtml = `<button type="button" class="x-risu-pkbp-slot${i === 0 ? ' x-risu-pkbp-lead' : ''}${bred ? ` x-risu-pkbp-${bred}` : ''}${slot.fainted ? ' x-risu-pkbp-fnt' : ''}${picked ? ' x-risu-pkbp-picked' : ''}${healed ? ' x-risu-pkbp-healed' : ''}${model.fusePick && !picked && !model.fusePick.includes(slot.uid) ? ' x-risu-pkbp-off' : ''} ${hit({ t: 'slot', where: 'party', uid: slot.uid })}">`
       + `<span class="x-risu-pkbp-pic">${monImg(picture(slot))}</span>`
       + '<span class="x-risu-pkbp-info">'
       + `<span class="x-risu-pkbp-nm"><span class="x-risu-pkbp-nmt">${esc(slot.name)}</span>${genderMark(slot.gender, lang, slot.name)}</span>`
@@ -632,29 +724,47 @@ function pairBand(model, pair, hit, picture) {
     + `<span class="x-risu-pkbp-pairb">${button('rebreed', 'swap', 'panel.breed.swap')}${button('unbreed', 'stop', 'panel.breed.stop')}</span></div>`;
 }
 
-function amieHtml(model, hit, picture) {
-  const { lang } = model;
+function pickHtml(model, hit, picture) {
+  const { lang, pick } = model;
   const t = (key, values) => esc(say(lang, key, values));
-  const cells = model.party.filter(slot => slot && !slot.egg).map(slot => {
-    const off = model.locked || !slot.pet;
+  const amie = pick.kind === 'amie';
+  const cells = pick.slots.map(slot => {
     const inner = `<span class="x-risu-pkbp-pic">${monImg(picture(slot))}</span><span class="x-risu-pkbp-info">`
       + `<span class="x-risu-pkbp-nm"><span class="x-risu-pkbp-nmt">${esc(slot.name)}</span>${genderMark(slot.gender, lang, slot.name)}</span>`
       + `<span class="x-risu-pkbp-r"><span>Lv${slot.level}${slot.fainted ? `<span class="x-risu-pkbp-st x-risu-pkbp-stfnt">${t('panel.fainted')}</span>` : ''}</span>`
-      + `${model.debug ? `<span class="x-risu-pkbp-enj">${t('panel.amieEnjoy', { n: slot.enjoy })}</span>` : ''}</span></span>`;
+      + `${amie && model.debug ? `<span class="x-risu-pkbp-enj">${t('panel.amieEnjoy', { n: slot.enjoy })}</span>` : ''}</span></span>`;
 
-    const ring = `<span class="x-risu-pkbp-ering" role="img" title="${t('amie.enjoy')}" aria-label="${t('amie.enjoy')}">${ringSvg('enjoy', slot.enjoy / ENJOY_MAX)}<i>${RING_ICON.enjoy}</i></span>`;
-    return `<div class="x-risu-pkbp-cell">${ring}${off
+    const ring = amie ? `<span class="x-risu-pkbp-ering" role="img" title="${t('amie.enjoy')}" aria-label="${t('amie.enjoy')}">${ringSvg('enjoy', slot.enjoy / ENJOY_MAX)}<i>${RING_ICON.enjoy}</i></span>` : '';
+    return `<div class="x-risu-pkbp-cell">${ring}${slot.off
       ? `<span class="x-risu-pkbp-slot x-risu-pkbp-off" aria-disabled="true">${inner}</span>`
-      : `<button type="button" class="x-risu-pkbp-slot ${hit({ t: 'pet', uid: slot.uid })}">${inner}</button>`}</div>`;
+      : `<button type="button" class="x-risu-pkbp-slot ${hit({ t: amie ? 'pet' : 'train', uid: slot.uid })}">${inner}</button>`}</div>`;
   });
-  return `<div class="x-risu-pkbp-hint">${t(model.locked ? 'panel.amieLocked' : 'panel.amieHint')}</div><div class="x-risu-pkbp-party">${cells.join('')}</div>`;
+  return `<div class="x-risu-pkbp-hint">${t(pick.hint)}</div><div class="x-risu-pkbp-party">${cells.join('')}</div>`;
 }
 
-function travelHtml(model, hit, panelSwitches = null) {
+function goRow(model, hit) {
+  const buttons = PICKS.map(kind => {
+    const [top, bottom] = SHORTCUT_ART[kind].back, name = esc(say(model.lang, `panel.go.${kind}`));
+    return `<button type="button" class="x-risu-pkbp-gob x-risu-pkbp-go${kind} ${hit({ t: 'pick', pick: kind })}" style="background:linear-gradient(180deg,${top},${bottom})">`
+      + `<span class="x-risu-pkbp-goa">${shortcutArt(kind)}</span><span class="x-risu-pkbp-gon">${name}</span><span class="x-risu-pkbp-goi">${ICON.go}</span></button>`;
+  });
+  return `<div class="x-risu-pkbp-go">${buttons.join('')}</div>`;
+}
+
+function switchRow(lang, label, on, press, { off = false, sub = false } = {}) {
+  const t = key => esc(say(lang, key));
+  const look = ['x-risu-pkbp-sw', on && 'x-risu-pkbp-on', sub && 'x-risu-pkbp-swsub', off && 'x-risu-pkbp-off'].filter(Boolean).join(' ');
+  const inner = `<span>${esc(label)}</span><span class="x-risu-pkbp-swk"></span>`;
+  const state = `aria-checked="${on}" title="${t(on ? 'panel.travel.on' : 'panel.travel.off')}"`;
+  return off ? `<span class="${look}" role="switch" aria-disabled="true" ${state}>${inner}</span>`
+    : `<button type="button" class="${look} ${press()}" role="switch" ${state}>${inner}</button>`;
+}
+
+const section = (lang, head, body) => `<div class="x-risu-pkbp-sec">${head ? `<div class="x-risu-pkbp-sech">${esc(say(lang, head))}</div>` : ''}${body}</div>`;
+
+function travelHtml(model, hit) {
   const { travel, lang, locked } = model;
   const t = key => esc(say(lang, key));
-  const cls = (...list) => list.filter(Boolean).join(' ');
-  const sec = (head, body) => `<div class="x-risu-pkbp-sec"><div class="x-risu-pkbp-sech">${t(head)}</div>${body}</div>`;
 
   const clearOf = `x-risu-pkbp-gclr x-risu-pkbp-emo`, clearName = `title="${t('panel.travel.clear')}" aria-label="${t('panel.travel.clear')}"`;
   const clear = () => (locked ? `<span class="${clearOf} x-risu-pkbp-off" aria-disabled="true" ${clearName}>❌</span>`
@@ -663,25 +773,77 @@ function travelHtml(model, hit, panelSwitches = null) {
     : !travel.guide.text ? `<div class="x-risu-pkbp-guide x-risu-pkbp-muted">${t('panel.travel.none')}</div>`
       : `<div class="x-risu-pkbp-gtxt"><div class="x-risu-pkbp-guide">${esc(travel.guide.text)}</div>${clear()}</div>`;
   const goal = travel.guide?.goal ? `<div class="x-risu-pkbp-goal"><b>${t('panel.travel.goal')}</b><span>${esc(travel.guide.goal)}</span></div>` : '';
-  const switches = travel.settings.map(({ key, on }) => {
-    const look = cls('x-risu-pkbp-sw', on && 'x-risu-pkbp-on', key === 'banter' && 'x-risu-pkbp-swsub', locked && 'x-risu-pkbp-off');
-    const inner = `<span>${t(`panel.travel.set.${key}`)}</span><span class="x-risu-pkbp-swk"></span>`;
-    const state = `aria-checked="${on}" title="${t(on ? 'panel.travel.on' : 'panel.travel.off')}"`;
-    return locked ? `<span class="${look}" role="switch" aria-disabled="true" ${state}>${inner}</span>`
-      : `<button type="button" class="${look} ${hit({ t: 'botSet', key, on: !on })}" role="switch" ${state}>${inner}</button>`;
-  }).join('');
-
-  const start = travel.start.map(({ key, value }) => `<div class="x-risu-pkbp-row"><span class="x-risu-pkbp-rowk">${t(`panel.travel.row.${key}`)}</span><span class="x-risu-pkbp-rowv">${esc(textGenderSigns(value))}</span></div>`).join('');
-  return sec('panel.travel.guide', guide + goal)
-    + (locked ? `<div class="x-risu-pkbp-hint">${t('panel.travel.locked')}</div>` : '')
-    + sec('panel.travel.settings', switches)
-    // the panel's own switches (kept on this device); the same three are in the plugin settings
-    + (panelSwitches?.length ? sec('panel.travel.panel', panelSwitches.map(({ key, on }) => `<button type="button" class="${cls('x-risu-pkbp-sw', on && 'x-risu-pkbp-on', hit({ t: 'panelSet', key, on: !on }))}" role="switch" `
-      + `aria-checked="${on}" title="${t(on ? 'panel.travel.on' : 'panel.travel.off')}"><span>${t(`settings.row.${key}`)}</span><span class="x-risu-pkbp-swk"></span></button>`).join('')) : '')
-    + (start ? sec('panel.travel.start', start) : '');
+  return section(lang, 'panel.travel.guide', guide + goal);
 }
 
-function boxHtml(model, hit, picture) {
+function botSettingsHtml(model, hit) {
+  const { travel, lang, locked } = model;
+  const t = key => esc(say(lang, key));
+  const switches = travel.settings.map(({ key, on }) => switchRow(lang, say(lang, `panel.travel.set.${key}`), on, () => hit({ t: 'botSet', key, on: !on }), { off: locked, sub: key === 'banter' })).join('');
+
+  const start = travel.start.map(({ key, value }) => `<div class="x-risu-pkbp-row"><span class="x-risu-pkbp-rowk">${t(`panel.travel.row.${key}`)}</span><span class="x-risu-pkbp-rowv">${esc(textGenderSigns(value))}</span></div>`).join('');
+  return (locked ? `<div class="x-risu-pkbp-hint">${t('panel.travel.locked')}</div>` : '')
+    + section(lang, null, switches)
+    + (start ? section(lang, 'panel.travel.start', start) : '');
+}
+
+function taleHtml(model, hit, tale) {
+  const { lang, locked } = model;
+  const t = key => esc(say(lang, key));
+  const row = key => {
+    if (!tale) return '';
+
+    const options = tale[`${key}s`];
+    if (Array.isArray(options)) {
+      const label = t(`settings.row.${key}`);
+      const choices = options.map(([id, name]) => (id === tale[key]
+        ? `<span class="x-risu-pkbp-on" role="radio" aria-checked="true">${esc(name)}</span>`
+        : `<button type="button" class="${hit({ t: 'tale', key, value: id })}" role="radio" aria-checked="false">${esc(name)}</button>`)).join('');
+      return `<div class="x-risu-pkbp-tlr"><span>${label}</span><span class="x-risu-pkbp-tseg" role="radiogroup" aria-label="${label}">${choices}</span></div>`;
+    }
+    if (key === 'battles') {
+      if (!tale.battles) return '';
+      const { on, usable } = tale.battles;
+      return switchRow(lang, say(lang, 'settings.row.battlesOff'), on, () => hit({ t: 'tale', key, value: !on }), { off: locked || !usable });
+    }
+    const on = tale[key] === true;
+    return switchRow(lang, say(lang, `settings.row.${key}`), on, () => hit({ t: 'tale', key, value: !on }));
+  };
+  const groups = Object.entries(TALE_ROWS).map(([group, keys]) => section(lang, `panel.tale.${group}`, keys.map(row).join(''))).join('');
+  return groups + `<button type="button" class="x-risu-pkbp-tall ${hit({ t: 'allSettings' })}"><span>${t('panel.tale.all')}</span><span class="x-risu-pkbp-goi">${ICON.go}</span></button>`;
+}
+
+function labButton(model, hit) {
+  const lab = model.lab;
+  if (!lab?.pill) return '';
+  const busy = lab.research ? '<span class="x-risu-pkbp-lbn"></span>' : '';
+  return `<button type="button" class="x-risu-pkbp-lbp${lab.open ? ' x-risu-pkbp-on' : ''} ${hit({ t: 'lab' })}" aria-pressed="${lab.open}">${ICON.lab}${esc(say(model.lang, 'panel.lab'))}${busy}</button>`;
+}
+
+const LAB_MACHINE = '<span class="x-risu-pkbp-lbsil" aria-hidden="true"><svg viewBox="0 0 120 60" preserveAspectRatio="xMidYMid meet"><path fill="currentColor" d="'
+  + 'M8 52h104v6H8zM16 22h14v30H16zM90 22h14v30H90zM30 27h12v6H30zM78 27h12v6H78zM14 18h18v5H14zM88 18h18v5H88z'
+  + 'M42 10a8 8 0 0 1 8-8h20a8 8 0 0 1 8 8v42H42zM52 0h16v3H52z'
+  + '"/></svg></span>';
+
+function labHtml(model, hit, picture = directPicture) {
+  const { lab, lang } = model;
+  const send = esc(say(lang, 'panel.lab.send'));
+  const research = lab.research;
+  const slot = research
+    ? `<span class="x-risu-pkbp-lbsl" role="img" aria-label="${esc(research.name)}" title="${esc(research.name)}"><span class="x-risu-pkbp-lbfz">${iconHtml(research.icon, picture)}</span></span>`
+      + `<span class="x-risu-pkbp-lbcs" role="progressbar" aria-valuemin="0" aria-valuemax="${research.total}" aria-valuenow="${research.done}">`
+      + Array.from({ length: research.total }, (_, i) => `<span class="x-risu-pkbp-lbc${i < research.done ? ' x-risu-pkbp-on' : ''}"></span>`).join('') + '</span>'
+    : lab.send ? `<button type="button" class="x-risu-pkbp-lbsl ${hit({ t: 'labSend' })}" aria-label="${send}" title="${send}">${ICON.add}</button>`
+    : `<span class="x-risu-pkbp-lbsl x-risu-pkbp-off" aria-disabled="true" aria-label="${send}">${ICON.add}</span>`;
+  const place = lab.place ? `<span class="x-risu-pkbp-lbpl">${esc(lab.place)}</span>` : '';
+  const list = lab.fossils.map(f => (f.ok
+    ? `<button type="button" class="x-risu-pkbp-it ${hit({ t: 'labFossil', item: f.id })}">`
+    : '<span class="x-risu-pkbp-it x-risu-pkbp-off" aria-disabled="true">')
+    + `${iconHtml(f.icon, picture)}<span class="x-risu-pkbp-itn">${esc(f.name)}</span><span class="x-risu-pkbp-itc">×${f.count}</span>${f.ok ? '</button>' : '</span>'}`);
+  return `<div class="x-risu-pkbp-lbm">${LAB_MACHINE}${place}${slot}</div>${list.join('')}`;
+}
+
+function boxHtml(model, hit, picture, hover) {
   const { box, lang } = model;
   const t = key => esc(say(lang, key));
   const nav = d => `<button type="button" class="x-risu-pkbp-nav ${hit({ t: 'boxnav', d })}" aria-label="${t(d < 0 ? 'panel.boxPrev' : 'panel.boxNext')}">${d < 0 ? ICON.prev : ICON.next}</button>`;
@@ -689,25 +851,24 @@ function boxHtml(model, hit, picture) {
   const name = () => `<button type="button" class="x-risu-pkbp-boxname ${hit({ t: 'boxname' })}" title="${t('panel.rename')}"><span class="x-risu-pkbp-boxnm">${esc(box.name)}</span>`
     + `<span class="x-risu-pkbp-boxat">(${box.index + 1}/${box.count})</span></button>`;
   const head = `<div class="x-risu-pkbp-boxhd">${nav(-1)}${name()}${nav(1)}</div>`;
+
   const cells = box.cells.map(slot => (slot
-    ? `<button type="button" class="x-risu-pkbp-bc${slot.fainted ? ' x-risu-pkbp-fnt' : ''}${model.picked === slot.uid ? ' x-risu-pkbp-picked' : ''} ${hit({ t: 'slot', where: 'box', uid: slot.uid })}" title="${esc(slot.egg ? slot.name : `${slot.name} Lv${slot.level}`)}">`
-      + `${monImg(picture(slot))}</button>`
+    ? `<button type="button" class="x-risu-pkbp-bc${slot.fainted ? ' x-risu-pkbp-fnt' : ''}${model.picked === slot.uid ? ' x-risu-pkbp-picked' : ''} ${hit({ t: 'slot', where: 'box', uid: slot.uid })}${slot.fresh ? ` ${hover({ t: 'seen', uid: slot.uid })}` : ''}" title="${esc(slot.egg ? slot.name : `${slot.name} Lv${slot.level}`)}">`
+      + `${monImg(picture(slot))}${slot.fresh ? '<span class="x-risu-pkbp-bcn">!</span>' : ''}</button>`
     : '<span class="x-risu-pkbp-bc x-risu-pkbp-bce"></span>'));
   return `${head}<div class="x-risu-pkbp-grid">${cells.join('')}</div>`;
 }
 
-function iconHtml(icon) {
+function iconHtml(icon, picture = directPicture) {
+  if (icon?.url) return `<span class="x-risu-pkbp-ic"><span class="x-risu-pkbp-icpa">${monImg(picture({ url: icon.url }))}</span></span>`;
   if (icon?.emoji) return `<span class="x-risu-pkbp-ic x-risu-pkbp-icem x-risu-pkbp-emo">${esc(icon.emoji)}</span>`;
   if (icon?.sheet === 'pokerogue') {
     return `<span class="x-risu-pkbp-ic"><span class="x-risu-pkbp-icpr"><span style="left:${icon.ox}px;top:${icon.oy}px;width:${icon.w}px;height:${icon.h}px;background-position:-${icon.x}px -${icon.y}px"></span></span></span>`;
   }
-  if (icon?.sheet === 'showdown') {
-    return `<span class="x-risu-pkbp-ic"><span class="x-risu-pkbp-icsd" style="background-position:-${(icon.num % 16) * 24}px -${Math.floor(icon.num / 16) * 24}px"></span></span>`;
-  }
   return '<span class="x-risu-pkbp-ic"><span class="x-risu-pkbp-icdot"></span></span>';
 }
 
-function bagHtml(model, hit) {
+function bagHtml(model, hit, picture = directPicture) {
   const { bag, lang } = model;
   const out = [];
 
@@ -717,7 +878,7 @@ function bagHtml(model, hit) {
     out.push(`<div class="x-risu-pkbp-grp">${esc(group.label)}</div>`);
     for (const item of group.items) {
       out.push(`<button type="button" class="x-risu-pkbp-it${model.picked === item.id ? ' x-risu-pkbp-picked' : ''} ${hit({ t: 'item', item: item.id })}">`
-        + `${iconHtml(item.icon)}<span class="x-risu-pkbp-itn">${esc(item.name)}</span>`
+        + `${iconHtml(item.icon, picture)}<span class="x-risu-pkbp-itn">${esc(item.name)}</span>`
         + (item.tag ? `<span class="x-risu-pkbp-itg">${esc(item.tag)}</span>` : '')
         + `<span class="x-risu-pkbp-itc">×${item.count}</span></button>`);
     }

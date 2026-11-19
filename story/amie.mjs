@@ -1,4 +1,4 @@
-// Modified for PokeTale on 2026-11-16. See THIRD-PARTY-NOTICES.md.
+// Modified for PokeTale on 2026-11-19. See THIRD-PARTY-NOTICES.md.
 // Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
 // Ported from PlayNav (https://github.com/poooooby/PlayNav): data/amie_rules.lua (PET, HIT, HIGH_FIVE, IDLE numbers),
 // src/amie/session.lua (petTouch, hit, highFive, feedStart / feedHold: bites), src/amie/play.lua (handlePress, update: wake, petting, high five, dozing),

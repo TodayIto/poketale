@@ -1,13 +1,13 @@
 import { esc, safeKey } from './card.mjs';
 import { moneyAmount } from './diary.mjs';
 import { say } from './screen-text.mjs';
-import { PR_ITEMS, SD_ITEMS } from './panel-html.mjs';
+import { PR_ITEMS } from './panel-html.mjs';
 
 export const SHOP_MS = Object.freeze({ grow: 320, fold: 220, paid: 800 });
 
 export const CART_MAX = 99;
 
-export const cartMost = (mode, row) => (mode === 'sell' ? row?.owned ?? 0 : row?.limited ? 1 : CART_MAX);
+export const cartMost = (mode, row) => (mode === 'sell' ? row?.owned ?? 0 : row?.limited || row?.one ? 1 : CART_MAX);
 
 export const SPECIAL_TAB = 'special';
 
@@ -32,11 +32,9 @@ function btn(key, action, inner, { cls = '', label = '', item = '', off = false 
 }
 
 function itemPicture(icon) {
+  if (icon?.url) return `<span class="x-risu-pkb-shic"><span class="x-risu-pkb-shicpa"><img src="${esc(icon.url)}" alt="" loading="lazy"></span></span>`;
   if (icon?.sheet === 'pokerogue') {
     return `<span class="x-risu-pkb-shic"><span class="x-risu-pkb-shicpr"><span style="left:${icon.ox}px;top:${icon.oy}px;width:${icon.w}px;height:${icon.h}px;background-position:-${icon.x}px -${icon.y}px"></span></span></span>`;
-  }
-  if (icon?.sheet === 'showdown') {
-    return `<span class="x-risu-pkb-shic"><span class="x-risu-pkb-shicsd" style="background-position:-${(icon.num % 16) * 24}px -${Math.floor(icon.num / 16) * 24}px"></span></span>`;
   }
   return '<span class="x-risu-pkb-shic"><span class="x-risu-pkb-shicdot"></span></span>';
 }
@@ -180,7 +178,8 @@ export const SHOP_CSS = [
   `.x-risu-pkb-shic{position:relative;flex:none;display:block;width:24px;height:24px;overflow:hidden;}`,
   `.x-risu-pkb-shicpr{position:absolute;left:0;top:0;width:32px;height:32px;transform:scale(.75);transform-origin:0 0;}`,
   `.x-risu-pkb-shicpr span{position:absolute;display:block;background-image:url("${PR_ITEMS}");background-repeat:no-repeat;image-rendering:pixelated;}`,
-  `.x-risu-pkb-shicsd{display:block;width:24px;height:24px;background-image:url("${SD_ITEMS}");background-repeat:no-repeat;image-rendering:pixelated;}`,
+  `.x-risu-pkb-shicpa{position:absolute;left:0;top:0;width:32px;height:32px;transform:scale(.75);transform-origin:0 0;}`,
+  `.x-risu-pkb-shicpa img{position:absolute;left:1px;top:1px;width:30px;height:30px;max-width:none;image-rendering:pixelated;}`,
   `.x-risu-pkb-shicdot{display:block;width:14px;height:14px;margin:5px;border-radius:50%;background:#e9b24c;box-shadow:inset 0 0 0 2px #a5741c;}`,
   `.x-risu-pkb-shn{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:#14304a;}`,
   `.x-risu-pkb-show{flex:none;font-size:11px;color:#7b8c99;}`,

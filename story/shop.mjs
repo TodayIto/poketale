@@ -2,10 +2,11 @@ import SHOP from '../data/shop.json' with { type: 'json' };
 import { shopsIn, shopsInText, seededIndex } from './blocks.mjs';
 import { latestStatus, OWN_MONEY_SHOWN } from './compat.mjs';
 import { badgeCount } from './badges.mjs';
-import { isBall } from '../engine/bag.mjs';
+import { isBall, BAG_ITEMS } from '../engine/bag.mjs';
 import { OUTSIDE_ITEMS } from './items.mjs';
 import { norm, escapeRe } from './norm.mjs';
 import { isCustomItem } from './custom-items.mjs';
+import { regionGimmick, DEFAULT_FOE_GIMMICKS } from './gimmicks.mjs';
 
 export { shopsIn, shopsInText };
 
@@ -13,6 +14,8 @@ export const PREMIER_EVERY = 10;
 
 export const PREMIER = SHOP.premier;
 const SHOP_KINDS = ['mart', 'department'];
+
+export const ONE_PER_PLAYER = Object.freeze(['teraorb', 'oldrod', 'goodrod', 'superrod', 'griseouscore', 'adamantcrystal', 'lustrousglobe', 'pokeflute']);
 
 const priceIn = (table, id) => (Object.hasOwn(table, id) ? table[id] : null);
 
@@ -89,6 +92,15 @@ function townMatcher(town) {
   const core = townCore(town);
   return core.length >= 2 ? place => norm(place).includes(core) : () => false;
 }
+
+export const placeMatcher = townMatcher;
+const ROUTE_RE = [/(\d{1,3})\s*번\s*(?:도로|수로)/u, /\broute\s*(\d{1,3})\b/i, /^(\d{1,3})\s*번$/u];
+
+export function routeOf(text) {
+  const s = String(text ?? '').normalize('NFKC');
+  for (const re of ROUTE_RE) { const m = re.exec(s); if (m) return Number(m[1]); }
+  return null;
+}
 const TOWN_MATCHERS = new Map(SHOP.specialties.flatMap(s => s.towns).map(town => [town, townMatcher(town)]));
 
 export function townSpecialties(places, region = null) {
@@ -107,22 +119,47 @@ function weighted(list, seed) {
   return list.at(-1)[0];
 }
 
-function specialGoods(shop, seed) {
-  const { count, tiers } = SHOP.specials[shop];
-  const out = [];
+function tierItems(shop, tier, region, foeGimmicks) {
+  if (tier.gimmick) {
+    const sold = foeGimmicks === 'pokerogue' ? () => true : gimmick => gimmick === regionGimmick(region);
+    return SHOP.specials.gimmickGoods.filter(g => g.tier === tier.tier && sold(g.gimmick)).flatMap(g => g.items);
+  }
+  const trs = SHOP.specials.trs;
+  if (tier.tier !== trs.tier || region !== trs.region) return tier.items;
+  return [...tier.items.filter(id => !Object.hasOwn(trs.replaces, id)), ...(shop === trs.shop ? trs.items : [])];
+}
+
+function specialGoods(shop, seed, region, foeGimmicks, owned = new Set()) {
+  const { count } = SHOP.specials[shop];
+  const tiers = SHOP.specials[shop].tiers.map(t => ({ ...t, items: tierItems(shop, t, region, foeGimmicks) })).filter(t => t.items.length);
+  const draws = [];
   for (let i = 0, n = weighted(count, `${seed}:sp`); i < n; i++) {
     const tier = tiers.find(t => t.tier === weighted(tiers.map(t => [t.tier, t.weight]), `${seed}:sp:${i}:tier`));
-    const left = tier.items.filter(id => !out.some(o => o.id === id));
-    if (!left.length) continue;
-    const id = left[seededIndex(`${seed}:sp:${i}:item`, left.length)];
-    out.push({ id, price: SHOP.specials.prices[id], special: true, limited: seed });
+    const left = tier.items.filter(id => !draws.some(d => d.id === id));
+    if (left.length) draws.push({ i, tier, id: left[seededIndex(`${seed}:sp:${i}:item`, left.length)] });
+  }
+
+  const ids = new Set(draws.map(d => d.id));
+  const free = tier => tier.items.filter(id => !ids.has(id) && !owned.has(id));
+  const out = [];
+  for (const { i, tier, id } of draws) {
+    let pick = id;
+    if (owned.has(id)) {
+      const open = tiers.filter(t => free(t).length);
+      if (!open.length) continue;
+      const again = free(tier).length ? tier : open.find(t => t.tier === weighted(open.map(t => [t.tier, t.weight]), `${seed}:sp:${i}:owned:tier`));
+      const items = free(again);
+      pick = items[seededIndex(`${seed}:sp:${i}:owned:item`, items.length)];
+      ids.add(pick);
+    }
+    out.push({ id: pick, price: SHOP.specials.prices[pick], special: true, limited: seed });
   }
   return out;
 }
 
 export const limitedKey = (seed, id) => `${seed}|${id}`;
 
-export function shopStock({ kind, region = null, period = null, badges = 0, town = [], bought = new Set() } = {}) {
+export function shopStock({ kind, region = null, period = null, badges = 0, town = [], bought = new Set(), foeGimmicks = DEFAULT_FOE_GIMMICKS, bag = {} } = {}) {
   const shop = SHOP_KINDS.includes(kind) ? kind : 'mart';
   const seed = shelvesSeed({ kind: shop, region, period });
   const basics = SHOP.mart.basics.filter(row => shop === 'department' || (badges ?? 0) >= row.badges).flatMap(row => row.items);
@@ -132,7 +169,9 @@ export function shopStock({ kind, region = null, period = null, badges = 0, town
   const picks = fresh(seededPick([...new Set(items)].filter(id => !have.has(id)), min + seededIndex(`${seed}:count`, max - min + 1), seed));
   picks.push(...fresh(townSpecialties(town, region)));
   const row = special => id => ({ id, price: SHOP.prices[id], special });
-  let stock = [...basics.map(row(false)), ...picks.map(row(true))];
+
+  const one = entry => (ONE_PER_PLAYER.includes(entry.id) ? { ...entry, one: true } : entry);
+  let stock = [...basics.filter(id => !(ONE_PER_PLAYER.includes(id) && bag?.[id] > 0)).map(row(false)).map(one), ...picks.map(row(true))];
   const sale = SHOP.sale;
   const share = sale.shareMin + seededIndex(`${seed}:share`, sale.shareMax - sale.shareMin + 1);
   const onSale = new Set(seededPick(stock.map(entry => entry.id), saleCount(stock.length, share), `${seed}:sale`));
@@ -141,7 +180,8 @@ export function shopStock({ kind, region = null, period = null, badges = 0, town
     const price = salePrice(entry.price, sale.offMin + seededIndex(`${seed}:off:${entry.id}`, sale.offMax - sale.offMin + 1));
     return price < entry.price ? { ...entry, price, was: entry.price } : entry;
   });
-  const specials = specialGoods(shop, seed).filter(entry => !have.has(entry.id))
+  const owned = new Set(ONE_PER_PLAYER.filter(id => bag?.[id] > 0 && !bought.has(limitedKey(seed, id))));
+  const specials = specialGoods(shop, seed, region, foeGimmicks, owned).filter(entry => !have.has(entry.id))
     .map(entry => (bought.has(limitedKey(seed, entry.id)) ? { ...entry, soldOut: true } : entry));
   return [...stock, ...specials];
 }
@@ -164,7 +204,8 @@ export function checkout(state, cart, stock, { compatMoney = false, budget = nul
   const lines = Object.entries(cart ?? {}).filter(([, count]) => count !== 0);
   if (!lines.length) return { error: 'empty' };
   const shelf = new Map((stock ?? []).map(entry => [entry.id, entry]));
-  if (lines.some(([id, count]) => !shelf.has(id) || !Number.isSafeInteger(count) || count < 1 || (shelf.get(id).limited && (count > 1 || shelf.get(id).soldOut)))) return { error: 'changed' };
+  if (lines.some(([id, count]) => !shelf.has(id) || !Number.isSafeInteger(count) || count < 1 || ((shelf.get(id).limited || shelf.get(id).one) && count > 1)
+    || shelf.get(id).soldOut)) return { error: 'changed' };
   const total = lines.reduce((sum, [id, count]) => sum + shelf.get(id).price * count, 0);
   const tracked = !compatMoney && Number.isFinite(state?.money);
   if (tracked ? total > state.money : Number.isFinite(budget) && total > budget) return { error: 'notEnough' };
@@ -180,7 +221,8 @@ export function checkout(state, cart, stock, { compatMoney = false, budget = nul
 
 export function sellPrice(id) {
 
-  if (isCustomItem(id) || (OUTSIDE_ITEMS[id]?.kind === 'key' && !Object.hasOwn(SHOP.sellPrices ?? {}, id))) return null;
+  const key = OUTSIDE_ITEMS[id]?.kind === 'key' || !!BAG_ITEMS[id]?.key;
+  if (isCustomItem(id) || (key && !Object.hasOwn(SHOP.sellPrices ?? {}, id))) return null;
   const price = shopPrice(id) ?? priceIn(SHOP.specials.prices, id) ?? priceIn(SHOP.sellPrices, id);
   return Number.isFinite(price) && price > 0 ? Math.floor(price / 2) : null;
 }

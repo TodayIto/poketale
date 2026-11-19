@@ -5,6 +5,7 @@ import { THEMES as THEME_IDS, DEFAULT_THEME } from '../../view/ui/theme.js';
 import { DIFFICULTIES as DIFFICULTY_IDS } from '../../ai/index.js';
 import { GAME_SPEEDS, DEFAULT_SPEED } from '../../view/game-speed.js';
 import { QUALITIES as QUALITY_IDS } from '../../view/quality.js';
+import { SPRITE_STYLES as SPRITE_STYLE_IDS, DEFAULT_SPRITE_STYLE } from '../../view/sprites/styles.js';
 import { RULE_IDS, DEFAULT_RULE } from '../../engine/rules.mjs';
 import { EXP_SHARE_MODES } from '../../story/items.mjs';
 import { EXP_RATES, RATES, DEFAULT_EXP_RATE, EXP_RATE_DIGITS, EXP_RATE_MIN, EXP_RATE_MAX, isExpRate, isExpRateSetting } from '../../engine/exp.mjs';
@@ -12,7 +13,7 @@ import { TRADE_EVOLUTIONS as TRADE_EVOLUTION_IDS, DEFAULT_TRADE_EVOLUTION_SETTIN
 import { FOE_GIMMICK_MODES, DEFAULT_FOE_GIMMICKS } from '../../story/gimmicks.mjs';
 import { numberPadCss, openNumberPad } from './number-pad.js';
 import { pushBack } from './contextmenu.js';
-import { controlsCss, switchControl, stepperControl, segmentControl, sliderControl } from './controls.js';
+import { controlsCss, switchControl, stepperControl, segmentControl, stepBarControl } from './controls.js';
 import { PICTURE_ROUTES, DEFAULT_PICTURE_ROUTE } from './picture-route.js';
 import { shrinkPicture } from './my-picture.js';
 import { loadFont } from '../../view/fonts.js';
@@ -20,12 +21,17 @@ import { FONT, noteRule } from '../../story/card.mjs';
 import { WHAT, failureText } from '../../story/failure.mjs';
 import { sayer, perLang } from '../../story/screen-text.mjs';
 import { SHEET_FONT } from '../../story/style.mjs';
-import { TAB_COLOR, ICON as PANEL_ICON, SIZE as PANEL_SIZE, panelShift } from '../../story/panel-html.mjs';
-import { SCREEN_PLACES, DEFAULT_SCREEN_PLACE } from '../../story/panel.mjs';
+import { TAB_COLOR, ICON as PANEL_ICON, SIZE as PANEL_SIZE, panelLift } from '../../story/panel-html.mjs';
+import { SCREEN_PLACES, DEFAULT_SCREEN_PLACE, PANEL_OPENS, DEFAULT_PANEL_OPEN, panelOpenOf } from '../../story/panel.mjs';
 import { ITEM_EFFECTS_READY } from '../../story/item-effects.mjs';
+import { CRY_PACK_SOURCE } from './voice-pack-store.js';
+import { copyText } from './copy-text.js';
 import { IMPORT_AI_RECENT, IMPORT_AI_RECENT_MIN, IMPORT_AI_RECENT_MAX, importAiRecent } from '../../story/import-ai.mjs';
 
 export const SETTINGS_KEY = 'pkb_settings';
+
+const VOLUME_MAX = 100, VOLUME_STEP = 10;
+export const VOLUME_KEYS = Object.freeze({ bgm: 'volumeBgm', sfx: 'volumeSfx', cry: 'volumeCry', ui: 'volumeUi' });
 
 export const LANGS = [['ko', '한국어'], ['en', 'English']];
 
@@ -37,8 +43,9 @@ export const langOf = tag => (/^ko\b/i.test(String(tag ?? '')) ? 'ko' : 'en');
 
 export const hostLang = () => langOf(globalThis.navigator?.language);
 export const DEFAULT_SETTINGS = Object.freeze({ iron: false, sound: false, sendFormat: 'key', theme: DEFAULT_THEME, orientation: 'portrait', lang: null, autoSend: false, commands: false, aux: false, auxRecent: 8, oocTrial: false, difficulty: 'normal',
-  rule: DEFAULT_RULE, expShare: 'always', expRate: DEFAULT_EXP_RATE, friendshipRate: DEFAULT_EXP_RATE, hatchRate: DEFAULT_EXP_RATE, tradeEvolution: DEFAULT_TRADE_EVOLUTION_SETTING, speed: DEFAULT_SPEED, typeHints: false, effectItems: false, foeGimmicks: DEFAULT_FOE_GIMMICKS, moveAnims: true, quality: 'high', panelPicture: DEFAULT_PICTURE_ROUTE, outsideScreens: DEFAULT_SCREEN_PLACE, panelShift: PANEL_SIZE.shift.default, aboveOthers: true, importRecent: IMPORT_AI_RECENT,
-  panelFold: true, panelDrag: false, panelStay: false, silhouette: true, looks: Object.freeze({}), oldLook: null, debug: false,
+  rule: DEFAULT_RULE, expShare: 'always', expRate: DEFAULT_EXP_RATE, friendshipRate: DEFAULT_EXP_RATE, hatchRate: DEFAULT_EXP_RATE, tradeEvolution: DEFAULT_TRADE_EVOLUTION_SETTING, speed: DEFAULT_SPEED, typeHints: false, effectItems: false, foeGimmicks: DEFAULT_FOE_GIMMICKS, moveAnims: true, spriteStyle: DEFAULT_SPRITE_STYLE, quality: 'high', panelPicture: DEFAULT_PICTURE_ROUTE, outsideScreens: DEFAULT_SCREEN_PLACE, panelShift: PANEL_SIZE.shift.default, panelOpen: DEFAULT_PANEL_OPEN, panelStay: false, panelDrag: false, aboveOthers: true, importRecent: IMPORT_AI_RECENT,
+  volume: 0, volumeBgm: VOLUME_MAX, volumeSfx: VOLUME_MAX, volumeCry: VOLUME_MAX, volumeUi: VOLUME_MAX,
+  silhouette: true, looks: Object.freeze({}), oldLook: null, debug: false,
   bots: Object.freeze([]), botsOff: Object.freeze([]) });
 
 export const DEFAULT_LOOK = Object.freeze({ gender: 'm', myBack: 'silhouette', myPicture: 'silhouette' });
@@ -68,14 +75,40 @@ export const EXP_RATE_TYPED = perLang(t => Object.freeze({
 }));
 export const SPEEDS = perLang(t => Object.freeze(GAME_SPEEDS.map(speed => Object.freeze([speed, t('settings.speed', { speed })]))));
 export const QUALITIES = labelled(QUALITY_IDS, 'settings.quality');
+export const SPRITE_STYLES = labelled(SPRITE_STYLE_IDS, 'settings.spriteStyle');
 export const PANEL_PICTURES = labelled(PICTURE_ROUTES, 'settings.panelPicture');
 export const OUTSIDE_SCREENS = labelled(SCREEN_PLACES, 'settings.outsideScreens');
 
-export const PANEL_SHIFT_SLIDER = perLang(t => Object.freeze({
-  min: PANEL_SIZE.shift.min, max: PANEL_SIZE.shift.max, low: t('settings.panelShift.up'), high: t('settings.panelShift.down'),
-  typed: Object.freeze({ range: t('settings.panelShift.range', { min: PANEL_SIZE.shift.min, max: PANEL_SIZE.shift.max }), label: text => text,
-    digits: Object.freeze({ ints: 2, decimals: 0, sign: true }), valid: Number.isInteger }),
-}));
+export const PANEL_OPEN_CHOICES = labelled(PANEL_OPENS, 'settings.panelOpen');
+
+const toStep = (value, step) => Math.sign(value) * Math.round(Math.abs(value) / step) * step || 0;
+
+const volumeOf = (value, fallback) => (typeof value === 'number' && Number.isFinite(value) ? toStep(Math.min(VOLUME_MAX, Math.max(0, value)), VOLUME_STEP) : fallback);
+
+export function soundLevels(settings) {
+  const s = settings ?? {}, master = volumeOf(s.volume, 0) / VOLUME_MAX;
+  return Object.fromEntries(Object.entries(VOLUME_KEYS).map(([kind, key]) => [kind, master * volumeOf(s[key], VOLUME_MAX) / VOLUME_MAX]));
+}
+
+export function volumeFeed(read) {
+  const listeners = new Set();
+  const levels = () => soundLevels(read());
+  let last = JSON.stringify(levels());
+  return {
+    levels,
+    listen(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+    changed() {
+      const now = levels(), key = JSON.stringify(now);
+      if (key === last) return;
+      last = key;
+      for (const fn of [...listeners]) { try { fn(now); } catch (error) { console.warn('[poke-battle] 음량 알림', error); } }
+    },
+  };
+}
+
+export const VOLUME_BAR = Object.freeze({ min: 0, max: VOLUME_MAX, step: VOLUME_STEP });
+
+const volumeOn = settings => settings?.volume > 0;
 
 export const LOOKS = labelled(LOOK_IDS, 'settings.look');
 export const PICTURE_LOOKS = labelled(PICTURE_LOOK_IDS, 'settings.look');
@@ -116,6 +149,8 @@ export const SETTING_TABS = perLang((t, lang) => {
   const underCommands = { needs: commandsOn, needsHelp: t('settings.needsCommands') };
   const helper = { group: 'aux' };
   const thisChat = { group: 'chat' };
+  const level = { control: 'bar', bar: VOLUME_BAR };
+  const underMaster = { needs: volumeOn, needsHelp: t('settings.needsVolume') };
   return Object.freeze([
     { id: 'battle', rows: [row('rule', RULES(lang)), row('expShare', EXP_SHARES(lang)), row('expRate', EXP_RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }),
       row('friendshipRate', RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }), row('hatchRate', RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }),
@@ -124,14 +159,15 @@ export const SETTING_TABS = perLang((t, lang) => {
       ...(ITEM_EFFECTS_READY ? [row('effectItems', onOff)] : [])] },
     { id: 'screen', rows: [
       ...(LANG_OPEN ? [row('lang', LANGS, { help: LANG_HELP })] : []),
-      row('sound', onOff), row('cryPack'), row('moveAnims', onOff),
+      row('moveAnims', onOff),
+      row('spriteStyle', SPRITE_STYLES(lang)),
       row('silhouette', LOOKS(lang), { get: s => (s.silhouette ? 'silhouette' : 'color'), set: id => ({ silhouette: id === 'silhouette' }) }),
       row('persona'),
       row('gender', GENDERS(lang), { look: true }), row('myBack', LOOKS(lang), { look: true }), row('myPicture', PICTURE_LOOKS(lang), { look: true }),
       row('theme', THEMES(lang)), row('quality', QUALITIES(lang)), row('panelPicture', PANEL_PICTURES(lang)), row('outsideScreens', OUTSIDE_SCREENS(lang)),
-      row('panelShift', null, { control: 'slider', slider: PANEL_SHIFT_SLIDER(lang) }), row('aboveOthers', onOff),
-      row('panelStay', onOff), row('panelFold', onOff), row('panelDrag', onOff),
+      row('panelDrag', onOff), row('panelOpen', PANEL_OPEN_CHOICES(lang)), row('panelStay', onOff), row('aboveOthers', onOff),
     ] },
+    { id: 'sound', rows: [row('volume', null, level), ...Object.values(VOLUME_KEYS).map(key => row(key, null, { ...level, ...underMaster, ...(key === VOLUME_KEYS.cry || key === VOLUME_KEYS.ui ? { help: '' } : {}) })), row('voicePack')] },
     { id: 'story', rows: [row('sendFormat', SEND_FORMATS(lang), { help: SEND_FORMAT_NOTES(lang) }), row('autoSend', onOff, { permission: 'sendChat' }),
       row('commands', onOff), row('oocTrial', onOff), row('debug', onOff),
       row('aux', onOff, { ...underCommands, ...helper }), row('auxRecent', AUX_RECENTS(lang), { ...underCommands, ...ordered, ...helper })] },
@@ -166,7 +202,7 @@ export function normalizeSettings(raw) {
   const s = value && typeof value === 'object' ? value : {};
   return {
     iron: s.iron === true,
-    sound: s.sound === true,
+    sound: volumeOf(s.volume, s.sound === true ? VOLUME_MAX : 0) > 0,
     sendFormat: pick(s.sendFormat, SEND_FORMAT_IDS, DEFAULT_SETTINGS.sendFormat),
     theme: pick(s.theme, THEME_IDS, DEFAULT_SETTINGS.theme),
     orientation: 'portrait',
@@ -188,15 +224,18 @@ export function normalizeSettings(raw) {
     effectItems: ITEM_EFFECTS_READY && s.effectItems === true,
     foeGimmicks: pick(s.foeGimmicks, FOE_GIMMICK_MODES, DEFAULT_SETTINGS.foeGimmicks),
     moveAnims: s.moveAnims !== false,
+    spriteStyle: pick(s.spriteStyle, SPRITE_STYLE_IDS, DEFAULT_SETTINGS.spriteStyle),
     quality: pick(s.quality, QUALITY_IDS, DEFAULT_SETTINGS.quality),
     panelPicture: pick(s.panelPicture, PICTURE_ROUTES, DEFAULT_SETTINGS.panelPicture),
     outsideScreens: pick(s.outsideScreens, SCREEN_PLACES, DEFAULT_SETTINGS.outsideScreens),
-    panelShift: panelShift(s.panelShift),
-    aboveOthers: s.aboveOthers !== false,
-    panelFold: s.panelFold !== false,
-    panelDrag: s.panelDrag === true,
+    panelShift: panelLift(s.panelShift),
+    panelOpen: panelOpenOf(s) ?? DEFAULT_PANEL_OPEN,
     panelStay: s.panelStay === true,
+    panelDrag: s.panelDrag === true,
+    aboveOthers: s.aboveOthers !== false,
     importRecent: importAiRecent(s.importRecent),
+    volume: volumeOf(s.volume, s.sound === true ? VOLUME_MAX : 0),
+    ...Object.fromEntries(Object.values(VOLUME_KEYS).map(key => [key, volumeOf(s[key], VOLUME_MAX)])),
     silhouette: s.silhouette !== false,
     debug: s.debug === true,
     looks: lookMap(s.looks),
@@ -295,11 +334,13 @@ export async function saveSettings(storage, settings) {
 
 const SETTINGS_Z = 300;
 
-const TAB_COLORS = { battle: TAB_COLOR.party, screen: TAB_COLOR.box, story: TAB_COLOR.bag, bot: '#3f8f5a' };
+const TAB_COLORS = { battle: TAB_COLOR.party, screen: TAB_COLOR.box, sound: '#7a5bb0', story: TAB_COLOR.bag, bot: '#3f8f5a' };
 const TAB_ICONS = {
   battle: PANEL_ICON.party,
   screen: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="3" width="13" height="9" rx="1.5" fill="#fff" stroke="#18242e" stroke-width="1.5"/>'
     + `<path d="M5 14h6" stroke="#fff" stroke-width="1.5"/><circle cx="6" cy="7.5" r="1.4" fill="${TAB_COLORS.screen}"/><path d="M3.5 11l3-3 2 2 2.5-3 2 4z" fill="${TAB_COLORS.screen}"/></svg>`,
+  sound: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h2.6L8.5 2.8v10.4L4.6 10H2z" fill="#fff" stroke="#18242e" stroke-width="1.4" stroke-linejoin="round"/>'
+    + '<path d="M10.6 5.6a3.2 3.2 0 0 1 0 4.8M12.4 3.8a5.8 5.8 0 0 1 0 8.4" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg>',
   story: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 2.5h8l3 3v8h-11z" fill="#fff" stroke="#18242e" stroke-width="1.5"/>'
     + `<path d="M5 7h6M5 9.5h6M5 12h4" stroke="${TAB_COLORS.story}" stroke-width="1.4"/></svg>`,
   bot: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="4.5" width="11" height="9" rx="2" fill="#fff" stroke="#18242e" stroke-width="1.5"/>'
@@ -320,10 +361,10 @@ export function importSummary({ time, count, names = [] }, lang) {
   return `${when} · ${what}`;
 }
 
-export function mountSettings({ parent = document.body, settings, bot = null, persona = null, notice = '', picture = null, cryPacks = [], imports = null, battlesOff = null, inUse = {}, lang,
-  onChange = () => {}, onPicture = async () => {}, onCryPackAdd = async () => ({ packs: cryPacks, results: [] }), onCryPackRemove = async () => ({ packs: cryPacks, saved: true }),
-  onPermission = async () => false, onImport = async () => {}, onCancelImport = async () => imports,
-  onBattlesOff = async () => battlesOff, onClose = () => {} }) {
+export function mountSettings({ parent = document.body, settings, bot = null, persona = null, notice = '', picture = null, imports = null, battlesOff = null, voicePacks = [], inUse = {}, lang,
+  onChange = () => {}, onPicture = async () => {}, onPermission = async () => false, onImport = async () => {}, onCancelImport = async () => imports,
+  onBattlesOff = async () => battlesOff, onVoicePackAdd = async () => ({ packs: voicePacks, results: [] }), onVoicePackRemove = async () => ({ packs: voicePacks, removed: true }),
+  copy = copyText, onClose = () => {} }) {
   const t = sayer(lang);
   const NEEDS_CHAT = t('settings.needsChat');
   let current = normalizeSettings(settings);
@@ -365,7 +406,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     .pkb-settings .row.off .lab { opacity:.55; }
     /* Choices: a switch, a stepper or a segment per row (controls.js - SETTING_TABS row.control) at the row's right */
     ${controlsCss('.pkb-settings')}
-    .pkb-settings .row > .sw, .pkb-settings .row > .step, .pkb-settings .row > .seg, .pkb-settings .row > .sld { justify-self:end; }
+    .pkb-settings .row > .sw, .pkb-settings .row > .step, .pkb-settings .row > .seg, .pkb-settings .row > .stb, .pkb-settings .row > .psl { justify-self:end; }
     /* Rows under another (row.needs): indented right below it, joined to it by a line on the left, no dashes inside the group; greyed while it is off */
     .pkb-settings .row.joined { border-bottom-color:transparent; }
     .pkb-settings .row.sub { position:relative; min-height:42px; padding-left:22px; }
@@ -377,27 +418,18 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
       box-shadow:0 2px 0 var(--navy-dark); cursor:pointer; }
     .pkb-settings .btn:not(:disabled):active { transform:translateY(2px); box-shadow:none; }
     .pkb-settings .btn:disabled { cursor:default; box-shadow:none; }
-    /* My picture field: open only for "picture". The cry pack field shares its box and is always open (sound off only keeps it quiet) */
-    .pkb-settings .pic, .pkb-settings .cry { grid-column:2 / 4; display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:4px 0 2px; padding:8px; border:1.5px solid #789db7; border-radius:9px;
+    /* My picture field: open only for "picture" */
+    .pkb-settings .pic { grid-column:2 / 4; display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:4px 0 2px; padding:8px; border:1.5px solid #789db7; border-radius:9px;
       background:#f4f9fc; box-shadow:0 2px 0 #466c87; }
     .pkb-settings .pic.locked { display:none; }
     .pkb-settings .pic .preview { flex:none; width:44px; height:52px; display:flex; align-items:center; justify-content:center; overflow:hidden;
       border:1.5px solid #8fb0c8; border-radius:7px; background:#dbe8f2; }
     .pkb-settings .pic .preview img { display:block; max-width:100%; max-height:100%; }
     .pkb-settings .pic .btns { display:flex; flex-wrap:wrap; gap:6px; }
-    .pkb-settings .pic:not(.locked) .btn:disabled, .pkb-settings .cry .btn:disabled { opacity:.45; }
-    ${noteRule('.pkb-settings .pic .fail, .pkb-settings .cry .fail', 'error')}
-    .pkb-settings .pic .fail, .pkb-settings .cry .fail { flex-basis:100%; margin:0 0 3px; font-size:12px; }
-    .pkb-settings .pic .fail[hidden], .pkb-settings .cry .fails[hidden] { display:none; }
-    .pkb-settings .cry .fails { flex-basis:100%; display:flex; flex-direction:column; gap:6px; }
-    /* Cry packs: one line per pack, the one used first on top; the load button under the remove buttons */
-    .pkb-settings .cry .packs { flex-basis:100%; min-width:0; margin:0; padding:0; list-style:none; }
-    .pkb-settings .cry .pack { display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1.5px dashed #c3d4e1; }
-    .pkb-settings .cry .pack:first-child { padding-top:0; }
-    .pkb-settings .cry .pack > span, .pkb-settings .cry .state { flex:1 1 140px; min-width:0; font-size:13px; color:#23435f; overflow-wrap:anywhere; }
-    .pkb-settings .cry .state.dim { color:#6d879b; }
-    .pkb-settings .cry .state[hidden] { display:none; }
-    .pkb-settings .cry > .btn { margin-left:auto; }
+    .pkb-settings .pic:not(.locked) .btn:disabled { opacity:.45; }
+    ${noteRule('.pkb-settings .pic .fail', 'error')}
+    .pkb-settings .pic .fail { flex-basis:100%; margin:0 0 3px; font-size:12px; }
+    .pkb-settings .pic .fail[hidden] { display:none; }
     /* Bot name field */
     .pkb-settings .add { grid-column:2 / 4; display:flex; gap:6px; margin-top:4px; }
     .pkb-settings .add input { flex:1; min-width:0; font:inherit; font-size:13px; padding:6px 8px; border:2px solid var(--navy); border-radius:7px; background:#fff; color:#23435f; }
@@ -438,6 +470,25 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     ${noteRule('.pkb-settings .import-fail', 'error')}
     .pkb-settings .import-fail { grid-column:2 / 4; margin:4px 0 2px; font-size:12px; }
     .pkb-settings .import-fail[hidden] { display:none; }
+    /* Voice packs (row.key voicePack): the row's load button; under it one line per pack (the one used first on top) with its remove button, then failure lines */
+    .pkb-settings .packs { grid-column:2 / 4; margin:0; padding:0 0 0 8px; list-style:none; border-left:1.5px solid #c3d4e1; }
+    .pkb-settings .packs[hidden], .pkb-settings .voice-fails[hidden] { display:none; }
+    .pkb-settings .pack { display:flex; align-items:center; gap:8px; min-height:30px; font-size:12.5px; color:#23435f; }
+    .pkb-settings .pack > span { flex:1; min-width:0; overflow-wrap:anywhere; }
+    .pkb-settings .pack small { font-size:inherit; color:#5f7a90; white-space:nowrap; }
+    .pkb-settings .pack.busy > span { color:#6d879b; }
+    .pkb-settings .pack .btn { padding:3px 8px 2px; font-size:11.5px; }
+    .pkb-settings .row .btn:disabled { opacity:.45; }
+    .pkb-settings .voice-fails { grid-column:2 / 4; display:flex; flex-direction:column; gap:4px; }
+    ${noteRule('.pkb-settings .voice-fails p', 'error')}
+    .pkb-settings .voice-fails p { margin:2px 0; font-size:12px; word-break:keep-all; overflow-wrap:anywhere; }
+    /* The row's two buttons (copy the download page's link, load); the copy's result under the list: a line, or the address to copy by hand */
+    .pkb-settings .voice-btns { display:flex; gap:6px; justify-self:end; }
+    .pkb-settings .copied[hidden], .pkb-settings .by-hand[hidden] { display:none; }
+    ${noteRule('.pkb-settings .copied', 'info')}
+    ${noteRule('.pkb-settings .by-hand', 'info')}
+    .pkb-settings .copied, .pkb-settings .by-hand { grid-column:2 / 4; margin:4px 0 2px; font-size:12px; word-break:keep-all; }
+    .pkb-settings .by-hand input { display:block; width:100%; margin-top:4px; padding:4px 6px; font:inherit; font-size:12px; border:1.5px solid #8fb0c8; border-radius:6px; background:#fff; color:#23435f; }
     /* Message window: the chosen row's description + a blinking red triangle at the bottom right */
     .pkb-settings .msg { flex:none; position:relative; min-height:76px; margin:0 10px 10px; padding:9px 12px; border:3px solid #4f6f8a; border-radius:10px; background:#fff;
       box-shadow:inset 0 0 0 2px #dbe8f2, 0 3px 0 #466c87; font-size:13px; line-height:1.55; white-space:pre-line; word-break:keep-all; overflow-wrap:anywhere; }
@@ -499,8 +550,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     return r;
   };
 
-  const choices = (kind, list, value, label, change, { disabled = false, typed = null, slider = null } = {}) => {
-    if (slider) typed = slider.typed;
+  const choices = (kind, list, value, label, change, { disabled = false, typed = null, bar = null } = {}) => {
     const ask = typed && ((current, done) => openNumberPad({
       parent: card, title: label, range: typed.range, format: typed.label, text: current === null ? '' : String(current), digits: typed.digits,
       accepts: text => text !== '' && typed.valid(Number(text)), words: { ok: t('settings.padOk'), cancel: t('settings.padCancel'), delete: t('settings.padDelete') },
@@ -508,7 +558,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     }));
     const c = kind === 'switch' ? switchControl({ value, label, change, words: { on: t('settings.on'), off: t('settings.off') } })
       : kind === 'stepper' ? stepperControl({ list, value, label, change, words: { prev: t('settings.prev'), next: t('settings.next') }, typed: typed && { unset: typed.unset, label: typed.label, ask } })
-        : kind === 'slider' ? sliderControl({ min: slider.min, max: slider.max, value, label, change, words: { low: slider.low, high: slider.high, type: t('settings.typeNumber') }, ask })
+        : kind === 'bar' ? stepBarControl({ ...bar, value, label, change, words: { prev: t('settings.prev'), next: t('settings.next') } })
           : segmentControl({ list, value, label, change });
     c.disable(disabled);
     return c;
@@ -565,83 +615,6 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     changeButton.disabled = removeButton.disabled = locked || busy || !image;
     if (image && preview.firstChild?.src !== image) preview.replaceChildren(Object.assign(document.createElement('img'), { src: image, alt: t('settings.myPictureAlt') }));
     else if (!image) preview.replaceChildren();
-  }
-
-  const cry = document.createElement('div'); cry.className = 'cry';
-  const cryList = document.createElement('ul'); cryList.className = 'packs';
-  const cryState = document.createElement('span'); cryState.className = 'state'; cryState.setAttribute('role', 'status');
-  const cryInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.zip,application/zip,application/x-zip-compressed', multiple: true, hidden: true });
-  const cryFails = document.createElement('div'); cryFails.className = 'fails'; cryFails.setAttribute('role', 'alert'); cryFails.hidden = true;
-  let packs = cryPacks ?? [], cryBusy = false;
-  const cryRemoveButtons = [];
-  const showCryFails = lines => {
-    cryFails.replaceChildren(...lines.map(text => Object.assign(document.createElement('p'), { className: 'fail', textContent: text })));
-    cryFails.hidden = !lines.length;
-  };
-
-  // Focus is loose when it fell out of the window (the file picker can leave it on the page) or sits on this field's buttons, which get disabled or redrawn.
-  const looseFocus = () => !root.contains(document.activeElement) || cry.contains(document.activeElement);
-  // `removing` is the id of the pack being removed, null while adding. `run` returns the fail lines to show.
-  const changeCryPacks = async (removing, run) => {
-    if (cryBusy) return;
-    const closeButton = root.querySelector('.hd .x');
-    const held = cry.contains(document.activeElement) ? document.activeElement : null;
-    const at = packs.findIndex(pack => pack.id === removing);
-    // Focus waits on the close button while busy so keys (Escape included) keep reaching the window.
-    if (looseFocus()) closeButton.focus();
-    cryBusy = true; showCryFails([]); drawCryPacks();
-    try { showCryFails(await run()); } catch (error) {
-      console.warn('[poke-battle] 울음소리 팩을 바꾸지 못함', error);
-      const name = packs.find(pack => pack.id === removing)?.name;
-      showCryFails([`${name ? `${name}: ` : ''}${failureText(removing === null ? WHAT.cryPack : WHAT.cryPackRemove, error, lang)}`]);
-    } finally {
-      cryBusy = false; drawCryPacks();
-      if (looseFocus() || document.activeElement === closeButton) {
-        // A redrawn remove button replaces the one that had focus: the same pack's, else the one that moved into its place.
-        const still = packs.findIndex(pack => pack.id === removing);
-        const back = held?.isConnected ? held : removing === null ? cryLoadButton
-          : cryRemoveButtons[still >= 0 ? still : Math.min(at, cryRemoveButtons.length - 1)] ?? cryLoadButton;
-        back.focus();
-        // A button on a hidden tab cannot take focus.
-        if (document.activeElement !== back) closeButton.focus();
-      }
-    }
-  };
-  const addCryPacks = files => changeCryPacks(null, async () => {
-    const { packs: next, results } = await onCryPackAdd(files);
-    packs = next ?? packs;
-    return results.flatMap(({ name, info, saved, error }) => (!info ? [`${name}: ${failureText(WHAT.cryPack, error, lang)}`]
-      : saved === false ? [`${name}: ${failureText(WHAT.cryPackSave, error, lang)}\n${t('settings.cryPackSessionOnly')}`] : []));
-  });
-  const removeCryPack = id => changeCryPacks(id, async () => {
-    const name = packs.find(pack => pack.id === id)?.name ?? '';
-    const { packs: next, saved, error } = await onCryPackRemove(id);
-    packs = next ?? packs;
-    return saved === false ? [`${name}: ${failureText(WHAT.cryPackRemove, error, lang)}\n${t('settings.cryPackMayReturn')}`] : [];
-  });
-  const cryLoadButton = button(t('settings.cryPackLoad'), () => cryInput.click());
-  cryInput.onchange = () => {
-    const files = [...cryInput.files]; cryInput.value = '';
-    if (files.length) addCryPacks(files);
-  };
-  cry.append(cryList, cryState, cryLoadButton, cryInput, cryFails);
-  function drawCryPacks() {
-    cryRemoveButtons.length = 0;
-    cryList.replaceChildren(...packs.map(pack => {
-      const item = document.createElement('li'); item.className = 'pack';
-      const what = document.createElement('span'); what.textContent = t('settings.cryPackLoaded', { name: pack.name, count: pack.count });
-      const remove = button(t('settings.remove'), () => removeCryPack(pack.id));
-      remove.setAttribute('aria-label', t('settings.cryPackRemove', { name: pack.name }));
-      remove.disabled = cryBusy;
-      cryRemoveButtons.push(remove);
-      item.append(what, remove);
-      return item;
-    }));
-    cryList.hidden = !packs.length;
-    cryState.textContent = cryBusy ? t('settings.cryPackBusy') : packs.length ? '' : t('settings.cryPackNone');
-    cryState.hidden = !cryBusy && packs.length > 0;
-    cryState.classList.toggle('dim', cryBusy || !packs.length);
-    cryLoadButton.disabled = cryBusy;
   }
 
   const enabledNow = () => !!bot?.name && botEnabled(current, bot.name);
@@ -763,20 +736,95 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
   let chatBattles = battlesOff, battlesBusy = false, battlesChoices = null, battlesRow = null;
   const battlesFail = document.createElement('p'); battlesFail.className = 'import-fail'; battlesFail.setAttribute('role', 'alert'); battlesFail.hidden = true;
   const battlesUsable = () => !!chatBattles && enabledNow() && !isUnreadable(chatBattles.status);
-  const switchBattles = async off => {
+  const switchBattles = async on => {
     battlesBusy = true; battlesFail.hidden = true; drawBattles();
-    try { chatBattles = await onBattlesOff(off); } catch (error) {
-      console.warn('[poke-battle] 이 채팅 배틀 끄기를 바꾸지 못함', error);
+    try { chatBattles = await onBattlesOff(!on); } catch (error) {
+      console.warn('[poke-battle] 배틀 사용을 바꾸지 못함', error);
       battlesFail.textContent = failureText(WHAT.botSetting, error, lang); battlesFail.hidden = false;
     } finally { battlesBusy = false; drawBattles(); }
   };
   function drawBattles() {
     if (!battlesChoices) return;
-    battlesChoices.set(chatBattles?.off === true);
+    battlesChoices.set(chatBattles?.off !== true);
     battlesChoices.disable(battlesBusy || !battlesUsable());
     battlesRow.classList.toggle('off', !battlesUsable());
   }
   const battlesHelp = row => () => (!bot ? NEEDS_CHAT : isUnreadable(chatBattles?.status) ? `${row.help}\n${unreadableLine(lang)}` : row.help);
+
+  let packs = voicePacks ?? [], voiceBusy = false;
+  const voiceInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.zip,application/zip,application/x-zip-compressed', multiple: true, hidden: true });
+  const voiceLoad = button(t('settings.voicePackLoad'), () => voiceInput.click()); voiceLoad.classList.add('load');
+  const voiceList = document.createElement('ul'); voiceList.className = 'packs';
+
+  const voiceCopy = button(t('settings.cryPackCopy'), () => copyLink());
+  const voiceButtons = document.createElement('span'); voiceButtons.className = 'voice-btns'; voiceButtons.append(voiceCopy, voiceLoad);
+  const copied = document.createElement('p'); copied.className = 'copied'; copied.setAttribute('role', 'status'); copied.hidden = true; copied.textContent = t('settings.cryPackCopied');
+  const byHand = document.createElement('div'); byHand.className = 'by-hand'; byHand.hidden = true;
+  const byHandField = Object.assign(document.createElement('input'), { type: 'text', readOnly: true, value: CRY_PACK_SOURCE });
+  byHandField.setAttribute('aria-label', t('settings.cryPackCopy'));
+  byHandField.addEventListener('focus', () => byHandField.select());
+  byHand.append(t('settings.cryPackCopyHand'), byHandField);
+  let copiedTimer = null;
+  async function copyLink() {
+    clearTimeout(copiedTimer); copied.hidden = true;
+    let done = false;
+    try { done = await copy(CRY_PACK_SOURCE); } catch { done = false; }
+    byHand.hidden = done;
+    if (done) { copied.hidden = false; copiedTimer = setTimeout(() => { copied.hidden = true; }, 2000); } else byHandField.select?.();
+  }
+  const voiceFails = document.createElement('div'); voiceFails.className = 'voice-fails'; voiceFails.setAttribute('role', 'alert'); voiceFails.hidden = true;
+  const FAIL_LINES = { notPack: 'settings.voicePackNotPack', full: 'settings.voicePackFull', unsaved: 'settings.voicePackUnsaved' };
+  const showVoiceFails = lines => {
+    voiceFails.replaceChildren(...lines.map(text => Object.assign(document.createElement('p'), { textContent: text })));
+    voiceFails.hidden = !lines.length;
+  };
+
+  const changeVoice = async run => {
+    if (voiceBusy) return;
+    voiceBusy = true; showVoiceFails([]); drawVoice();
+    try { showVoiceFails(await run()); } catch (error) {
+      console.warn('[poke-battle] 목소리 팩을 바꾸지 못함', error);
+      showVoiceFails([failureText(WHAT.action, error, lang)]);
+    } finally {
+      const active = document.activeElement, lost = !active || !root.contains?.(active) || !!voiceList.contains?.(active);
+      voiceBusy = false; drawVoice();
+      if (lost && !root.querySelector('.page[hidden] .row.voice')) voiceLoad.focus();
+    }
+  };
+  voiceInput.onchange = () => {
+    const files = [...voiceInput.files]; voiceInput.value = '';
+    if (!files.length) return;
+    changeVoice(async () => {
+      const { packs: next, results } = await onVoicePackAdd(files);
+      packs = next ?? packs;
+      return results.filter(result => result.why).map(({ name, why }) => t(FAIL_LINES[why] ?? FAIL_LINES.unsaved, { name }));
+    });
+  };
+  const removeVoice = pack => changeVoice(async () => {
+    const { packs: next, removed } = await onVoicePackRemove(pack.id);
+    packs = next ?? packs.filter(other => other.id !== pack.id);
+    return removed === false ? [t('settings.voicePackNotRemoved', { name: pack.name })] : [];
+  });
+  function drawVoice() {
+    voiceList.replaceChildren(...packs.map(pack => {
+      const item = document.createElement('li'); item.className = 'pack';
+
+      const what = document.createElement('span'), meta = document.createElement('small');
+      meta.textContent = [t('settings.voicePackCount', { count: pack.count }), ...(pack.saved === false ? [t('settings.voicePackTemp')] : [])].map(part => ` · ${part}`).join('');
+      what.append(pack.name, meta);
+      const remove = button(t('settings.remove'), () => removeVoice(pack));
+      remove.setAttribute('aria-label', t('settings.voicePackRemove', { name: pack.name })); remove.disabled = voiceBusy;
+      item.append(what, remove);
+      return item;
+    }));
+    if (voiceBusy) {
+      const item = document.createElement('li'); item.className = 'pack busy';
+      const what = document.createElement('span'); what.textContent = t('settings.voicePackBusy'); item.append(what);
+      voiceList.prepend(item);
+    }
+    voiceList.hidden = !voiceList.childElementCount;
+    voiceLoad.disabled = voiceBusy;
+  }
 
   const pages = new Map();
   for (const tab of SETTING_TABS(lang)) {
@@ -801,14 +849,16 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
       } else if (row.key === 'bots') {
         line(page, row.label, botHelp(row.help)).append(form, names);
       } else if (row.key === 'battlesOff') {
-        battlesChoices = choices(row.control, row.options, chatBattles?.off === true, row.label, switchBattles);
+        battlesChoices = choices(row.control, row.options, chatBattles?.off !== true, row.label, switchBattles);
         battlesRow = line(page, row.label, battlesHelp(row), battlesChoices.el);
         battlesRow.append(battlesFail);
+      } else if (row.key === 'voicePack') {
+        const r = line(page, row.label, () => row.help, voiceButtons);
+        r.classList.add('voice');
+        r.append(voiceInput, copied, byHand, voiceList, voiceFails);
       } else if (row.key === 'import') {
         importRow = line(page, row.label, importHelp(row), importButton);
         importRow.append(hist, importFail);
-      } else if (row.key === 'cryPack') {
-        line(page, row.label, () => row.help).append(cry);
       } else if (row.key === 'persona') {
         line(page, t('settings.personaOf', { label: row.label, name: persona ?? t('settings.unknown') }), () => (persona ? row.help : NEEDS_CHAT)).classList.toggle('off', !persona);
       } else if (row.look) {
@@ -825,7 +875,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
             return;
           }
           commit(normalizeSettings({ ...current, ...rowPatch(row, id) }));
-        }, { typed: row.typed, slider: row.slider });
+        }, { typed: row.typed, bar: row.bar });
         const above = page.children[page.children.length - 1];
         const r = line(page, row.label, () => (row.needs && !row.needs(current) ? row.needsHelp : row.help), group.el);
         if (row.needs && !row.group) {
@@ -843,7 +893,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     pick(pages.get(id).querySelector('.row'));
   }
   drawPicture();
-  drawCryPacks();
+  drawVoice();
   drawBots();
   drawImports();
   drawBattles();

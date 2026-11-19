@@ -20,6 +20,7 @@ const steps = [
   "ai/build-pokerogue-moves.mjs",
   "tools/extract-effects-text.mjs",
   "tools/build-bag-data.mjs",
+  "tools/build-pokeapi-items.mjs",
   "tools/extract-exp-text.mjs",
   "tools/extract-summary-text.mjs",
   "tools/extract-view-text.mjs",

@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
 
@@ -23,7 +23,12 @@ try {
 } finally { Pop-Location }
 
 Get-Pinned 'pokerogue' 'https://github.com/pagefaultgames/pokerogue.git' '7d7da4a829258b19e3f1615185fc6dd4d3d815f7'
-git -C vendor/pokerogue submodule update --init --depth 1; Assert-Ok 'pokerogue submodule update'
+git -C vendor/pokerogue submodule update --init --depth 1; Assert-Ok 'pokerogue submodule update'   # assets 37789817, locales 485b48eb (pinned by the parent commit)
+Push-Location vendor/pokerogue
+try {
+	$env:COREPACK_ENABLE_DOWNLOAD_PROMPT = '0'
+	corepack pnpm@10.34.5 install --frozen-lockfile; Assert-Ok 'pokerogue pnpm install'
+} finally { Pop-Location }
 
 if (-not (Test-Path 'vendor/galmuri/Galmuri11.ttf')) {
 	$tgz = Join-Path ([IO.Path]::GetTempPath()) 'galmuri-2.40.3.tgz'

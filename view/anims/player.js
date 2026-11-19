@@ -1,9 +1,11 @@
 // from pokerogue src/data/battle-anims.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 
 import Phaser from 'phaser';
 import { animation, moveFile } from './data.js';
-import { framePosition } from './geometry.js';
+import { framePosition, copyPosition, screenCover, backgroundPhase } from './geometry.js';
+import { backgroundEnd, hasBackground } from './background.js';
+import { tintState, tintMatrix } from './bg-engine.js';
 import { delay } from '../lifetime.js';
 import { LoadError } from '../retry.js';
 import { isPlayerSide, firstOnSide } from '../positions.js';
@@ -20,6 +22,8 @@ const PRIORITY = {
   3: ({ focus }) => ['moveAbove', focus],
 };
 const FOCUS = { 1: 'target', 2: 'user' };
+
+export const AFTER_ANIM_MS = 500;
 
 const appliedTones = new WeakMap();
 
@@ -79,6 +83,11 @@ export class AnimationPlayer {
         work.push(loading);
       }
     }
+
+    for (const name of new Set((anim.bgFrames ?? []).map(state => state?.pic).filter(Boolean))) {
+      textures.push(`anim-bg:${name}`);
+      work.push(assets.image(`anim-bg:${name}`, `images/battle_anims/${encodeURIComponent(name)}.png`, null));
+    }
     for (const event of Object.values(anim.frameTimedEvents ?? {}).flat()) {
       if (event.eventType === 'AnimTimedAddBgEvent' && event.resourceName) {
         textures.push(`anim-bg:${event.resourceName}`);
@@ -98,7 +107,7 @@ export class AnimationPlayer {
     let framesAt = null;
     const scene = this.scene;
     let user = scene.requireMon(side), target = scene.requireMon(targetSide);
-    // The opposing variant swaps user and target to place its frames; the cry stays the mover's.
+
     const mover = user.mon;
 
     const actors = { user: user.container, target: target.container };
@@ -115,8 +124,46 @@ export class AnimationPlayer {
     if (this.running) throw new Error('Animation already playing');
     this.running = true;
 
-    const cache = [[], [], []], spareEffects = [], sounds = [], tweens = [];
-    let bg, tail = 0;
+    const cache = [[], [], []], spareEffects = [], tweens = [];
+
+    let bg, bgTint, bgPlane;
+    const paint = () => {
+      if (bgPlane) bg.setFillStyle(((Math.round(bgTint.r) << 16) | (Math.round(bgTint.g) << 8) | Math.round(bgTint.b)) >>> 0);
+      else setColorMatrix(bg, bgTint.s > 0 ? tintMatrix(bgTint) : null);
+    };
+    const putBackground = (event, plane) => {
+      if (bg) { scene.tweens.killTweensOf(bg); bg.destroy(); }
+      bgPlane = plane || !event.resourceName;
+      bg = !bgPlane
+        ? scene.add.tileSprite((event.bgX ?? 0) - 320, (event.bgY ?? 0) - 284, 896, 576, `anim-bg:${event.resourceName}`)
+        : scene.add.rectangle(plane ? -320 : (event.bgX ?? 0) - 320, plane ? -284 : (event.bgY ?? 0) - 284, 896, 576, 0);
+      bg.setOrigin(0).setScale(1.25).setAlpha(plane ? 0 : (event.opacity ?? 0) / 255);
+    };
+
+    let bgKey;
+    const showOriginal = state => {
+      const key = state ? state.pic : undefined;
+      if (key !== bgKey) {
+        if (bg) { bg.destroy(); bg = undefined; }
+        bgKey = key;
+        if (state) {
+          const [x, y] = state.at;
+          bgPlane = !key;
+          bg = bgPlane ? scene.add.rectangle(-320, -284, 896, 576, 0) : scene.add.tileSprite(x - 320, y - 284, 896, 576, `anim-bg:${key}`);
+          bg.setOrigin(0).setScale(1.25);
+          scene.field.add(bg); scene.field.moveBelow(bg, (firstOnSide(scene, 'enemy') ?? user).container);
+        }
+      }
+      if (!state) return;
+      bg.setAlpha(state.o / 255);
+      bgTint = tintState(state.c);
+      paint();
+      if (!bgPlane) {
+
+        bg.tilePositionX = -state.sx * 0.5;
+        bg.tilePositionY = backgroundPhase(scene.textures.get?.(`anim-bg:${key}`)?.getSourceImage?.()?.height, state.at[1]) - state.sy * 0.5;
+      }
+    };
     if (opposite) { [user, target] = [target, user]; shown.reverse(); }
     const originals = [...new Set([user.getSprite(), target.getSprite()])];
     const visible = originals.map(s => s.visible);
@@ -130,16 +177,19 @@ export class AnimationPlayer {
     const eventAt = event => {
       if (event.eventType === 'AnimTimedSoundEvent') {
         if (!sound) return;
-        const path = event.resourceName ? `battle_anims/${event.resourceName}` : scene.audio.cryVoice(scene.audio.cryPath(mover), 'move');
-        sounds.push(scene.audio.play(path, Math.max(0.01, (event.pitch ?? 100) / 100), (event.volume ?? 100) / 100).then(()=>null,e=>e));
-      } else if (event.eventType === 'AnimTimedAddBgEvent') {
-        if (bg) { scene.tweens.killTweensOf(bg); bg.destroy(); }
-        bg = event.resourceName
-          ? scene.add.tileSprite((event.bgX ?? 0) - 320, (event.bgY ?? 0) - 284, 896, 576, `anim-bg:${event.resourceName}`)
-          : scene.add.rectangle((event.bgX ?? 0) - 320, (event.bgY ?? 0) - 284, 896, 576, 0);
-        bg.setOrigin(0).setScale(1.25).setAlpha((event.opacity ?? 0) / 255);
+        const path = event.resourceName ? `battle_anims/${event.resourceName}` : scene.audio.cryVoice?.(mover, 'move') ?? scene.audio.cryPath(mover);
+
+        scene.audio.play(path, Math.max(0.01, (event.pitch ?? 100) / 100), (event.volume ?? 100) / 100).catch(error => {
+          if (error?.name !== 'AbortError') this.diagnostics.add(`Sound failed: ${path}: ${error?.message ?? error}`);
+        });
+      } else if (event.eventType === 'AnimTimedAddBgEvent' || (event.eventType === 'AnimTimedUpdateBgEvent' && !bg && event.plane)) {
+
+        const plane = event.eventType === 'AnimTimedUpdateBgEvent';
+        putBackground(event, plane);
+
+        if (event.resourceName && !plane) bg.tilePositionY = backgroundPhase(scene.textures.get?.(`anim-bg:${event.resourceName}`)?.getSourceImage?.()?.height, event.bgY ?? 0);
         scene.field.add(bg); scene.field.moveBelow(bg, (firstOnSide(scene, 'enemy') ?? user).container);
-        tail = Math.max(tail, (event.duration ?? 0) * 2);
+        if (plane) eventAt(event);
       } else if (event.eventType === 'AnimTimedUpdateBgEvent' && bg) {
         const config = { targets: bg, duration: (event.duration ?? 0) * frameMs };
         if (event.bgX !== undefined) config.x = event.bgX * 0.5 - 320;
@@ -147,7 +197,6 @@ export class AnimationPlayer {
         if (event.opacity !== undefined) config.alpha = event.opacity / 255;
         if (frameMs) tweens.push(scene.tweens.add(config));
         else { if ('x' in config) bg.x = config.x; if ('y' in config) bg.y = config.y; if ('alpha' in config) bg.alpha = config.alpha; }
-        tail = Math.max(tail, (event.duration ?? 0) * 2);
       }
     };
     try {
@@ -163,7 +212,7 @@ export class AnimationPlayer {
       originals.forEach(s => s.setVisible(false));
       for (let f = 0; f < anim.frames.length; f++) {
         scene.life.check();
-        const counts = [0, 0, 0];
+        const counts = [0, 0, 0], cover = screenCover(anim.frames[f]);
         for (const frame of anim.frames[f]) {
           const kind = frame.target;
           if (![0, 1, 2].includes(kind)) throw new Error(`Invalid frame target: ${kind}`);
@@ -196,10 +245,9 @@ export class AnimationPlayer {
             const name = exists ? frame.graphicFrame : 0;
             if (sprite.frame.name !== name) sprite.setFrame(name);
           }
-          const pos = framePosition(frame, user, target);
+          const pos = framePosition(frame, user, target, cover.has(frame));
           const scale = kind === 2 ? 1 : mon.getSpriteScale();
-          const x = pos.x + (kind === 2 ? 0 : (0.5 - sourceSprite.originX) * sourceSprite.width * scale);
-          const y = pos.y + (kind === 2 ? 0 : -sourceSprite.height / 2 * (scale - 1) + (1-sourceSprite.originY)*sourceSprite.height*scale);
+          const { x, y } = kind === 2 ? pos : copyPosition(pos, mon);
           const scaleX = pos.scaleX * scale, scaleY = pos.scaleY * scale, alpha = (frame.opacity ?? 0) / 255;
           const visible = !!frame.visible && (kind === 2 || shown[kind]);
           const blend = frame.blendType === 1 ? Phaser.BlendModes.ADD : frame.blendType === 2 ? Phaser.BlendModes.DIFFERENCE : Phaser.BlendModes.NORMAL;
@@ -224,12 +272,21 @@ export class AnimationPlayer {
           }
         }
         for (const event of anim.frameTimedEvents?.[f] ?? []) eventAt(event);
+        if (anim.bgFrames) showOriginal(anim.bgFrames[f]);
         if (frameMs) await delay(scene, frameMs);
-        tail = Math.max(0, tail - 1);
+      }
+      if (anim.bgFrames) {
+
+        for (let f = anim.frames.length; f < anim.bgFrames.length; f++) {
+          showOriginal(anim.bgFrames[f]);
+          if (frameMs) await delay(scene, frameMs);
+        }
+        showOriginal(null);
+        await delay(scene, frameMs && anim.bgFrames.some(Boolean) ? AFTER_ANIM_MS : 17);
+        return;
       }
       // Fast sweep still presents one rendered state per variant; all data frames used the same renderer path.
-      await delay(scene, frameMs ? tail * frameMs : 17);
-      for (const error of await Promise.all(sounds)) if (error) throw error;
+      await delay(scene, frameMs && hasBackground(anim.frameTimedEvents) ? Math.max(0, backgroundEnd(anim.frameTimedEvents) - anim.frames.length) * frameMs + AFTER_ANIM_MS : 17);
     } finally {
       tweens.forEach(t => t.remove());
       if (bg) { scene.tweens.killTweensOf(bg); bg.destroy(); }

@@ -103,6 +103,8 @@ export function dexLooks(state, sim, num) {
   return [...plain.map(id => ({ id, shiny: false })), ...shiny.map(id => ({ id, shiny: true }))];
 }
 
+const UNKNOWN = '???';
+
 const measure = (value, unit) => (typeof value === 'number' ? `${value.toFixed(1)}${unit}` : String(value ?? ''));
 
 export function dexView({ state, sim, lang, names, ui, home = null, regions = [], mentions = [] }) {
@@ -124,10 +126,11 @@ export function dexView({ state, sim, lang, names, ui, home = null, regions = []
     seen: shown.list.filter(n => seen.has(n)).length, caught: shown.list.filter(n => caught.has(n)).length, total: shown.list.length, rows, open: null,
   };
   const open = ui?.dexOpen;
-  if (open && caught.has(open.num)) {
+  if (open && seen.has(open.num)) {
     const list = dexList(open.key) ?? shown;
-    const caughtIn = list.list.filter(n => caught.has(n));
-    const here = caughtIn.indexOf(open.num);
+    const seenIn = list.list.filter(n => seen.has(n));
+    const here = seenIn.indexOf(open.num);
+    const got = caught.has(open.num);
     const looks = dexLooks(state, sim, open.num);
     const look = looks[((open.look ?? 0) % looks.length + looks.length) % looks.length];
     const species = sim.Dex.species.get(look.id);
@@ -138,28 +141,30 @@ export function dexView({ state, sim, lang, names, ui, home = null, regions = []
 
       name: entry ? rows0[0]?.name ?? entry.name : displayName(sim.Dex, names, species.id),
       form: entry ? entry.form || (entry.name !== (rows0[0]?.name ?? entry.name) ? entry.name : '') : species.forme.replace(/-/g, ' '),
-      types: [...species.types], category: entry ? entry.category ?? rows0[0]?.category ?? '' : '',
-      height: entry ? measure(entry.height, 'm') : measure(species.heightm, 'm'), weight: entry ? measure(entry.weight, 'kg') : measure(species.weightkg, 'kg'),
-      text: entry?.text ?? '', spriteId: spriteIdOf(species) || species.id, shiny: look.shiny,
+      caught: got, types: got ? [...species.types] : [],
+
+      category: !entry ? '' : got ? entry.category ?? rows0[0]?.category ?? '' : say(lang, 'dex.categoryUnknown'),
+      height: !got ? UNKNOWN : entry ? measure(entry.height, 'm') : measure(species.heightm, 'm'),
+      weight: !got ? UNKNOWN : entry ? measure(entry.weight, 'kg') : measure(species.weightkg, 'kg'),
+      text: got ? entry?.text ?? '' : '', spriteId: spriteIdOf(species) || species.id, shiny: look.shiny,
       looks: looks.length, look: looks.indexOf(look),
-      prev: here > 0 ? caughtIn[here - 1] : null, next: here >= 0 && here < caughtIn.length - 1 ? caughtIn[here + 1] : null,
+      prev: here > 0 ? seenIn[here - 1] : null, next: here >= 0 && here < seenIn.length - 1 ? seenIn[here + 1] : null,
     };
   }
   return view;
 }
 
+const isNum = num => Number.isInteger(num) && num >= 1 && num <= NATIONAL_LAST;
+
 const stepKey = (key, d) => { const at = Math.max(0, REGIONAL.findIndex(x => x.key === dexKey(key))); return REGIONAL[(at + d + REGIONAL.length) % REGIONAL.length].key; };
 
-export function dexPress(ui, hit, { state, sim, lang }) {
+export function dexPress(ui, hit) {
   const same = { ui, effect: null };
   switch (hit.t) {
     case 'dexNav': return { ui: { ...ui, dex: { key: stepKey(hit.key, hit.d < 0 ? -1 : 1), national: false }, dexOpen: null, message: null }, effect: null };
     case 'dexMode': return { ui: { ...ui, dex: { key: dexKey(hit.key) ?? REGIONAL[0].key, national: !hit.national }, dexOpen: null, message: null }, effect: null };
-    case 'dexRow': {
-      if (dexFill(state, sim).caught.has(hit.num)) return { ui: { ...ui, dexOpen: { num: hit.num, look: 0, key: hit.key }, message: null }, effect: null };
-      return same;
-    }
-    case 'dexStep': return ui.dexOpen && dexFill(state, sim).caught.has(hit.num) ? { ui: { ...ui, dexOpen: { ...ui.dexOpen, num: hit.num, look: 0 } }, effect: null } : same;
+    case 'dexRow': return isNum(hit.num) ? { ui: { ...ui, dexOpen: { num: hit.num, look: 0, key: hit.key }, message: null }, effect: null } : same;
+    case 'dexStep': return ui.dexOpen && isNum(hit.num) ? { ui: { ...ui, dexOpen: { ...ui.dexOpen, num: hit.num, look: 0 } }, effect: null } : same;
     case 'dexLook': return ui.dexOpen ? { ui: { ...ui, dexOpen: { ...ui.dexOpen, look: hit.look } }, effect: null } : same;
     case 'dexClose': return { ui: { ...ui, dexOpen: null }, effect: null };
     default: return same;

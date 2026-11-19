@@ -1,4 +1,5 @@
 import speciesTable from '../data/names/species.json' with { type: 'json' };
+import formWordsTable from '../data/names/form-words.json' with { type: 'json' };
 import aiForms from '../data/names/ai-forms.json' with { type: 'json' };
 import formRegions from '../data/names/form-regions.json' with { type: 'json' };
 import { toID } from '../names/index.js';
@@ -32,7 +33,11 @@ function formWord(word) {
 
 const setKey = list => [...new Set(list)].sort().join(' ');
 
-let bases, formsOf;
+let bases;
+
+export const readsNamesSince = (since, reading) => !since || reading?.[since] !== false;
+const NEW_NAMES = 'formNames009';
+const formsOf = new Map();
 function buildBases() {
   bases = new Map();
   const add = (k, id) => { if (k) bases.set(k, bases.has(k) && bases.get(k) !== id ? null : id); };
@@ -69,10 +74,10 @@ function formeKey(r) {
   return words.every(w => REGIONS.has(w)) ? null : setKey(words) || null;
 }
 
-function buildForms() {
-  formsOf = new Map();
+function buildForms(newNames) {
+  const forms = new Map();
   for (const [id, r] of Object.entries(speciesTable)) {
-    if (!r.base) continue;
+    if (!r.base || !readsNamesSince(r.since, { [NEW_NAMES]: newNames })) continue;
     const row = aiForms[id], named = Array.isArray(row);
     const label = /\(([^()]+)\)$/.exec(r.ko ?? '')?.[1];
     const keys = [
@@ -80,11 +85,26 @@ function buildForms() {
       [2, label ? setKey(wordsIn(label).map(formWord).filter(Boolean)) || null : null],
       [2, formeKey(r)],
     ];
-    const list = formsOf.get(r.base) ?? [];
+    const list = forms.get(r.base) ?? [];
     for (const [tier, key] of keys) if (key && !list.some(f => f.id === id && f.tier === tier && f.key === key)) list.push({ id, tier, key });
-    formsOf.set(r.base, list);
+    forms.set(r.base, list);
   }
-  return formsOf;
+
+  if (newNames) {
+    for (const [id, names] of Object.entries(formWordsTable)) {
+      const r = speciesTable[id];
+      if (!r) continue;
+      const base = r.base ?? id, list = forms.get(base) ?? [];
+      for (const name of names) {
+        const at = baseIn(wordsIn(name));
+        const key = setKey((at?.id === base ? at.rest : wordsIn(name)).map(formWord).filter(Boolean)) || null;
+        if (key && !list.some(f => f.id === id && f.tier === 3 && f.key === key)) list.push({ id, tier: 3, key });
+      }
+      forms.set(base, list);
+    }
+  }
+  formsOf.set(newNames, forms);
+  return forms;
 }
 
 function pick(ids, shared) {
@@ -96,7 +116,8 @@ function pick(ids, shared) {
   return all.every(id => id.startsWith(short)) ? short : null;
 }
 
-export function readFormWords(raw, { readHalf, shared = () => false } = {}) {
+export function readFormWords(raw, { readHalf, shared = () => false, reading } = {}) {
+  const newNames = readsNamesSince(NEW_NAMES, reading);
   const text = String(raw ?? '').normalize('NFKC').trim();
   const halves = /^(.+?)\s*\(([^()]+)\)$/.exec(text);
   if (halves && readHalf) {
@@ -104,11 +125,11 @@ export function readFormWords(raw, { readHalf, shared = () => false } = {}) {
     if (typeof a === 'string' && a === b) return a;
   }
   const words = wordsIn(text), found = baseIn(words);
-  if (found) return formOf(words, found, halves, shared);
+  if (found) return formOf(words, found, halves, shared, newNames);
 
   const got = new Set();
   for (const split of gluedSplits(words)) {
-    const at = baseIn(split), id = at && formOf(split, at, null, shared);
+    const at = baseIn(split), id = at && formOf(split, at, null, shared, newNames);
     if (id) got.add(JSON.stringify(id));
   }
   return got.size === 1 ? JSON.parse([...got][0]) : null;
@@ -130,15 +151,15 @@ function* gluedSplits(words) {
   }
 }
 
-function formOf(words, found, halves, shared) {
+function formOf(words, found, halves, shared, newNames) {
 
   const side = list => new Set(list.map(formWord).filter(Boolean));
   const front = side(words.slice(0, found.before)), back = side(words.slice(found.end));
   if ([...front].some(w => back.has(w)) && !(halves && wordsIn(halves[1]).length === found.end)) return null;
   const written = [...new Set(found.rest.map(formWord).filter(Boolean))];
   if (!written.length) return null;
-  const key = setKey(written), forms = (formsOf ?? buildForms()).get(found.id) ?? [];
-  for (const tier of [1, 2]) {
+  const key = setKey(written), forms = (formsOf.get(newNames) ?? buildForms(newNames)).get(found.id) ?? [];
+  for (const tier of newNames ? [1, 2, 3] : [1, 2]) {
     const got = pick(forms.filter(f => f.tier === tier && f.key === key).map(f => f.id), shared);
     if (got !== undefined) return got;
   }

@@ -40,7 +40,9 @@ export function createShopCards(host) {
       const list = sellList(state);
       return { state, ctx, list, paid: sellCheckout(state, cart, list, options) };
     }
-    const list = shopStock({ kind: shop.kind, region: ctx.region, period: ctx.period, badges: ctx.badges, town: ctx.town, bought: limitedBought(pass.chat, { survey: pass.survey }) });
+
+    const list = shopStock({ kind: shop.kind, region: ctx.region, period: ctx.period, badges: ctx.badges, town: ctx.town, bought: limitedBought(pass.chat, { survey: pass.survey }),
+      foeGimmicks: host.foeGimmicks?.(), bag: state?.bag });
     return { state, ctx, list, paid: checkout(state, cart, list, options) };
   }
   async function viewOf(pass, found, { grow = false } = {}) {

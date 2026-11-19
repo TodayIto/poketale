@@ -9,7 +9,7 @@ import { PHONE_CSS, isPhone, layoutOf, mountPhoneLayout, choiceCursor } from './
 import { pushBack } from './contextmenu.js';
 import { mountScreenButtons } from './screen-buttons.js';
 import { ENTRY_CSS, mountEntry, backToChat, entryNamed, entryFoes, fadeScreen, STAMP_SOUND } from './entry.js';
-import { entryPictures, entrySound } from './entry-art.js';
+import { entryPictures, entrySound, entryLevel } from './entry-art.js';
 import { PLAYER_NAME } from '../../story/state.mjs';
 import { mountLoading } from './loading.js';
 import { outcomeOf, isLoss } from '../../story/outcome.mjs';
@@ -135,7 +135,9 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     const pictures = entryPictures(startSpec, { fetchBytes, wild: kind === 'wild', named: !!named, image: me.image, pictureWays: extraViewOptions.pictureWays,
       second: second?.sprite ?? null });
     const myName = startSpec.p1?.name && startSpec.p1.name !== PLAYER_NAME ? startSpec.p1.name : say(lang, 'window.me');
-    const stamp = extraViewOptions.sound ? entrySound(STAMP_SOUND, { fetchBytes, pictureWays: extraViewOptions.pictureWays }) : null;
+
+    const level = entryLevel(extraViewOptions);
+    const stamp = level() > 0 ? entrySound(STAMP_SOUND, { fetchBytes, pictureWays: extraViewOptions.pictureWays, level }) : null;
     return mountEntry(root, { kind, boss, named, reduced, pictures, sound: stamp, foeBlack: !!startSpec.p2?.trainerSilhouette, foe2Black: !!second?.black, meBlack: me.black,
       names: { me: myName, foe: kind === 'wild' ? '' : foes.map(f => f.name).filter(Boolean) } });
   })();

@@ -27,7 +27,10 @@ export function createStoryBattle(sim, given, options = {}) {
 	const rng = new sim.PRNG(given.seed);
 	for (const [key, seat] of Object.entries(shape.seats)) {
 		context.sets[key] = seat.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera }));
-		battle.setPlayer(key, { name: seat.name, team: sim.Teams.pack(context.sets[key].map(set => heldItemForm(sim.Dex, set))) });
+
+		const team = context.sets[key].map((set, i) => heldItemForm(sim.Dex, set,
+			{ own: key === 'p1', status: seat.team[i].status, gen: given.formGen ?? null, writtenForms: !!given.writtenForms }));
+		battle.setPlayer(key, { name: seat.name, team: sim.Teams.pack(team) });
 	}
 
 	if (shape.waiting) context.sets.waiting = shape.waiting.team.map(m => completeSet(sim.Dex, m.set, rng, { levelUp: options.levelUp, label: m.uid, tera: !m.noTera }));
@@ -62,7 +65,7 @@ export function extractResult(sim, battle) {
 	const [mine, theirs, ally, other] = battle.sides;
 	const own = p => !p.m.partner && !p.m.trainer;
 
-	const foeMon = p => ({ ...resultMon(sim, p), appeared: p.previouslySwitchedIn > 0 });
+	const sideMon = p => ({ ...resultMon(sim, p), appeared: p.previouslySwitchedIn > 0 });
 	const half = (side, extra, mon) => {
 		const team = [...side.pokemon.filter(own), ...extra];
 		return { id: side.id, name: side.name, pokemonLeft: team.length === side.pokemon.length ? side.pokemonLeft : team.filter(p => !p.fainted).length,
@@ -76,11 +79,11 @@ export function extractResult(sim, battle) {
 		turn: battle.turn,
 
 		...(battle.activePerHalf > 1 ? { double: true } : {}),
-		sides: [half(mine, [], p => resultMon(sim, p)), half(theirs, split, foeMon)],
+		sides: [half(mine, [], sideMon), half(theirs, split, sideMon)],
 
 		...(partner.length ? { partner: partner.map(p => resultMon(sim, p)) } : {}),
 
-		...(foePartner.length ? { foePartner: foePartner.map(foeMon) } : {}),
+		...(foePartner.length ? { foePartner: foePartner.map(sideMon) } : {}),
 
 		...extensionResults(battle),
 	};
@@ -115,7 +118,8 @@ function resultMon(sim, p) {
 		teraType: p.m.noTera && !p.set.teraType ? undefined : p.teraType,
 		terastallized: p.terastallized || '',
 
-		moves: p.baseMoveSlots.map((s, i) => ({ id: s.id, pp: s.pp, maxpp: s.maxpp, ppUps: p.ppUps[i] ?? 0 })),
+		moves: p.baseMoveSlots.map((s, i) => (p.m.crowned?.slot === i && s.id === p.m.crowned.move ? { id: 'ironhead', pp: p.m.crowned.pp, maxpp: p.m.crowned.maxpp, ppUps: p.m.crowned.ppUps }
+			: { id: s.id, pp: s.pp, maxpp: s.maxpp, ppUps: p.ppUps[i] ?? 0 })),
 		exp: p.m.exp,
 		friendship: p.m.friendship,
 		friendshipCarry: p.m.friendshipCarry || undefined,

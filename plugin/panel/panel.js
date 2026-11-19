@@ -1,14 +1,15 @@
-import { panelModel, reduce, initialUi, levelUpPlan, levelUpAction, evolutionMoves, evolveAction, teachAction, rememberAction, petAction, recordAction, trainAction, spinInto, actions, boxName,
-  pendingCount, DEFAULT_SCREEN_PLACE, liveScreen, screenTab, slotView, namesFor, restedSlots } from '../../story/panel.mjs';
+import { panelModel, reduce, initialUi, openUi, openWays, DEFAULT_PANEL_OPEN, levelUpPlan, levelUpAction, evolutionMoves, evolveAction, teachAction, rememberAction, petAction, recordAction, trainAction, spinInto, actions, boxName,
+  pendingCount, DEFAULT_SCREEN_PLACE, liveScreen, screenTab, slotView, namesFor, restedSlots, fishLine } from '../../story/panel.mjs';
 import { screenView } from '../../story/panel-screens.mjs';
 import { loadExpText } from '../../director/steps-exp.js';
 import { rememberableMoves } from '../../story/state.mjs';
 import { trainBlock } from '../../story/training.mjs';
-import { renderPanel, panelShell, PANEL_STATES, OWN_CLASS, sheetCss, sheetArt, REST_GLOW_MS, panelShift, shiftLimits, SIZE } from '../../story/panel-html.mjs';
+import { renderPanel, panelShell, PANEL_STATES, OWN_CLASS, sheetCss, sheetArt, REST_GLOW_MS, SIZE, panelShift, panelLift, shiftLimits } from '../../story/panel-html.mjs';
 import { unreadableLine } from '../../story/stored.mjs';
 import { WHAT, failureText } from '../../story/failure.mjs';
 import { CHAT_SCREEN } from '../battle/stage.js';
-import { bagMoney, compatTravel } from '../../story/compat.mjs';
+import { bagMoney, compatTravel, latestStatus } from '../../story/compat.mjs';
+import { labAt } from '../../story/fossil.mjs';
 import { dexHome, preStoryRegions } from '../../story/dex.mjs';
 import { storyMentions } from '../../story/dex-mentions.mjs';
 import { sceneNow } from '../../story/scene-now.mjs';
@@ -37,9 +38,22 @@ export const isTap = (down, up) => !!down && Math.hypot(up.x - down.x, up.y - do
 
 export const TAB_MARGIN = 10;
 
-export async function startPanel({ doc, read, queueAction, screens, changes = () => () => {}, resume = async () => {}, toggleAux = async () => null, debugAdd = async () => {}, debugEdit = async () => {}, debugHeal = async () => {}, debugBadges = async () => {}, debugLock = async () => {},
+export const HOVER = Object.freeze({ dwell: 0, slack: 64, grace: 100 });
+
+const HOVER_SETTLE = SIZE.bar.move + (SIZE.bar.tabs - 2) * SIZE.bar.step;
+
+export function canHover(win = globalThis) {
+  try { return !!win.matchMedia?.('(hover: hover) and (pointer: fine)').matches; } catch { return false; }
+}
+
+export const DRAG_START = 6;
+
+const notMouse = event => typeof event?.pointerType === 'string' && event.pointerType !== '' && event.pointerType !== 'mouse';
+
+export async function startPanel({ doc, read, queueAction, screens, changes = () => () => {}, resume = async () => {}, toggleAux = async () => null, debugAdd = async () => {}, debugEdit = async () => {}, debugHeal = async () => {}, debugBadges = async () => {}, debugLock = async () => {}, fish = async () => null,
   botTravel = async () => {}, quickImport = async () => {}, importLater = async () => {}, pictures = null, place = () => DEFAULT_SCREEN_PLACE, trainer = async () => null, shift = () => 0,
-  restSound = () => {}, fold = () => true, drag = () => false, moveShift = async () => {}, stay = () => false, panelSwitches = () => null, setPanelSwitch = async () => {} }) {
+  restSound = () => {}, mouse = canHover, open = () => DEFAULT_PANEL_OPEN, stay = () => false, drag = () => false, moveShift = async () => {},
+  tale = () => null, setTale = async () => {}, openSettings = async () => {} }) {
   const body = await doc.querySelector('body');
   if (!body) return null;
   const root = await doc.createElement('div');
@@ -50,7 +64,10 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     .map(selector => root.querySelector(selector)));
   if (!outer || !tabsBox || !sheetBox) { await root.remove(); return null; }
 
-  let ui = initialUi();
+  let mode = open();
+  let ui = openUi(initialUi(), mode);
+
+  const ways = () => openWays(mode, mouse());
   let now = null;
   let chatId;
   const chatScreens = new Map();
@@ -62,22 +79,114 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
   let glow = null;
 
   const tabsOut = () => !!now?.show && !away && (ui.open || !ui.gathered);
+  const outsideSteps = () => tabsOut() && (ui.open ? !stay() : !ways().always);
+  let down = null;
+  const outsideListeners = {
+    pointerdown: ({ clientX, clientY }) => { down = Number.isFinite(clientX) && Number.isFinite(clientY) ? { x: clientX, y: clientY, at: Date.now() } : null; },
+    click: async ({ clientX, clientY }) => {
+      const from = down;
+      down = null;
+      if (stopped || busy || !outsideSteps() || !Number.isFinite(clientX) || !Number.isFinite(clientY) || !isTap(from, { x: clientX, y: clientY, at: Date.now() })) return;
+      if (ownClick(clientX, clientY)) return;
+      try {
+        const [sheet, tabs] = await Promise.all([sheetBox.getBoundingClientRect(), tabsBox.getBoundingClientRect()]);
 
-  // Dragging the panel up and down (setting panelDrag). A press that starts on the tab strip and moves more than
-  // DRAG_START px up or down drags; only the vertical distance counts, so the panel stays on the right edge.
-  // While dragging only the newest position is written (one style write at a time); the height is saved on release.
-  const DRAG_START = 6;
-  let lift = null;                              // { id, y, from, moved } while a press on the tabs may become a drag
-  let dragged = null, liftWrite = Promise.resolve(), liftPending = null;
-  let screenSize = null;                        // host page size, read when the panel is recomputed
-  // The height is kept on the screen. With the drag option off the slider's whole range stays allowed as before the
-  // option existed, and a height that was dragged to earlier stays where it is.
-  const fitShift = value => {
-    const fits = shiftLimits({ ...screenSize, below: now?.below ?? undefined });
-    const min = drag() ? fits.min : Math.min(SIZE.shift.min, fits.min), max = drag() ? fits.max : Math.max(SIZE.shift.max, fits.max);
-    return panelShift(Math.min(max, Math.max(min, value)));
+        if (ownClick(clientX, clientY)) return;
+        const within = (r, m) => r.width > 0 && r.height > 0 && clientX >= r.left - m && clientX <= r.right + m && clientY >= r.top - m && clientY <= r.bottom + m;
+        if ((ui.open && within(sheet, 0)) || within(tabs, TAB_MARGIN)) return;
+        if (!stopped && !busy && outsideSteps()) await press({ t: 'outside' });
+      } catch (error) { console.warn('[poke-battle] 패널', error); }
+    },
   };
-  const shiftNow = () => dragged ?? fitShift(shift());
+
+  function listenWhile(listeners, off = () => {}) {
+    let listening = null;
+    let listenLine = Promise.resolve();
+    return on => {
+      listenLine = listenLine.then(async () => {
+        if (on && !stopped && !listening) {
+
+          const added = await Promise.allSettled(Object.entries(listeners).map(async ([type, fn]) => [type, await doc.addEventListener(type, fn, true)]));
+          const failed = added.find(r => r.status === 'rejected');
+          if (failed) {
+            await Promise.allSettled(added.filter(r => r.status === 'fulfilled').map(({ value: [type, id] }) => doc.removeEventListener(type, id)));
+            throw failed.reason;
+          }
+          listening = added.map(r => r.value);
+        } else if ((!on || stopped) && listening) {
+          const ids = listening;
+          listening = null;
+          off();
+          await Promise.all(ids.map(([type, id]) => doc.removeEventListener(type, id)));
+        }
+      }).catch(error => console.warn('[poke-battle] 패널', error));
+      return listenLine;
+    };
+  }
+
+  const listenOutside = listenWhile(outsideListeners, () => { down = null; });
+
+  const STRIP_FRESH = 500;
+  let dwell = null, grace = null;
+  let hoverOpen = false, hoverAt = 0;
+  let strip = null, measuring = false, pointer = null;
+  const clearDwell = () => { clearTimeout(dwell); dwell = null; };
+  const clearGrace = () => { clearTimeout(grace); grace = null; };
+
+  function endHover() {
+    clearDwell(); clearGrace();
+    hoverOpen = false; strip = null; pointer = null;
+  }
+  const barEnter = event => {
+    if (stopped || !ways().hover || notMouse(event) || !ui.gathered || ui.open || dwell) return;
+    dwell = setTimeout(() => {
+      dwell = null;
+      if (stopped || !ways().hover || busy || !now?.show || away || !ui.gathered || ui.open) return;
+      press({ t: 'bar' }, { hover: true }).catch(error => console.warn('[poke-battle] 패널', error));
+    }, HOVER.dwell);
+  };
+  const barLeave = () => clearDwell();
+
+  async function hoverBar(element, hit) {
+    if (hit.t !== 'bar' || !ways().hover) return;
+    await element.addEventListener('pointerenter', barEnter);
+    await element.addEventListener('pointerleave', barLeave);
+  }
+
+  const hoverBeat = (box, hit) => box === tabsBox && hit.t !== 'bar' && hoverOpen && Date.now() - hoverAt < HOVER_SETTLE;
+
+  function judge() {
+    if (!hoverOpen || !strip || !pointer) return;
+    const { rect } = strip, m = HOVER.slack, { x, y } = pointer;
+    if (rect.width > 0 && rect.height > 0 && x >= rect.left - m && x <= rect.right + m && y >= rect.top - m && y <= rect.bottom + m) return clearGrace();
+    if (grace) return;
+    grace = setTimeout(() => {
+      grace = null;
+      if (stopped || !ways().hover || busy || !hoverOpen || ui.open || ui.gathered || !tabsOut()) return;
+      press({ t: 'outside' }, { hover: true }).catch(error => console.warn('[poke-battle] 패널', error));
+    }, HOVER.grace);
+  }
+  const listenHover = listenWhile({
+    pointermove: event => {
+      const { clientX: x, clientY: y } = event ?? {};
+      if (stopped || !hoverOpen || notMouse(event) || !Number.isFinite(x) || !Number.isFinite(y)) return;
+      pointer = { x, y };
+      if (strip && Date.now() - strip.at < STRIP_FRESH) return judge();
+      if (measuring) return;
+      measuring = true;
+      tabsBox.getBoundingClientRect().then(rect => { strip = { rect, at: Date.now() }; }, error => console.warn('[poke-battle] 패널', error))
+        .finally(() => { measuring = false; judge(); });
+    },
+  });
+
+  let lift = null;
+  let dragged = null;
+  let liftWrite = Promise.resolve(), liftPending = null;
+  let windowSize = null;
+  const clampTo = (value, { min, max }) => panelLift(Math.min(max, Math.max(min, value)));
+  const screenRange = () => shiftLimits({ ...windowSize, below: now?.below ?? undefined });
+
+  const shiftNow = () => dragged ?? clampTo(shift(), screenRange());
   function writeLift(value) {
     liftPending = value;
     liftWrite = liftWrite.then(async () => {
@@ -88,34 +197,32 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     }).catch(error => console.warn('[poke-battle] 패널 끌기', error));
     return liftWrite;
   }
-  let foldWas = null;                           // the "tuck the tabs away" setting at the last draw
-
   const liftListeners = {
-    pointerdown: async ({ clientX, clientY, pointerId, button }) => {
+    pointerdown: async ({ clientX, clientY, button }) => {
+      lift = null;
       if (stopped || busy || !drag() || !now?.show || away || button > 0 || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
-      const press = { id: pointerId, y: clientY, from: shiftNow(), moved: false, on: false };
-      lift = press;
+      const hold = { y: clientY, from: shiftNow(), moved: false, on: false };
+      lift = hold;
       try {
         const r = await tabsBox.getBoundingClientRect();
-        press.on = r.width > 0 && clientX >= r.left - TAB_MARGIN && clientX <= r.right + TAB_MARGIN && clientY >= r.top - TAB_MARGIN && clientY <= r.bottom + TAB_MARGIN;
-      } catch { press.on = false; }
-      if (!press.on && lift === press) lift = null;
+        hold.on = r.width > 0 && r.height > 0 && clientX >= r.left - TAB_MARGIN && clientX <= r.right + TAB_MARGIN && clientY >= r.top - TAB_MARGIN && clientY <= r.bottom + TAB_MARGIN;
+      } catch { hold.on = false; }
+      if (!hold.on && lift === hold) lift = null;
     },
-    pointermove: ({ clientX, clientY, pointerId }) => {
-      const press = lift;
-      if (!press || !press.on || press.id !== pointerId || !Number.isFinite(clientY)) return;
-      const dy = clientY - press.y;
-      if (!press.moved && Math.abs(dy) < DRAG_START) return;
-      press.moved = true;
-      dragged = fitShift(press.from + dy);
+    pointermove: ({ clientY }) => {
+      const hold = lift;
+      if (!hold?.on || stopped || !Number.isFinite(clientY)) return;
+      const dy = clientY - hold.y;
+      if (!hold.moved && Math.abs(dy) < DRAG_START) return;
+      hold.moved = true;
+      dragged = clampTo(hold.from + dy, screenRange());
       writeLift(dragged);
     },
-    pointerup: async ({ pointerId }) => {
-      const press = lift;
-      if (!press || press.id !== pointerId) return;
+    pointerup: async () => {
+      const hold = lift;
       lift = null;
-      if (!press.moved) return;
-      swipedAt = Date.now();                    // the click that ends a drag is not a press on a tab
+      if (!hold?.moved || dragged === null) return;
+      swipedAt = Date.now();
       const value = dragged;
       try { await liftWrite; await moveShift(value); } catch (error) { console.warn('[poke-battle] 패널 끌기', error); }
       dragged = null;
@@ -125,45 +232,13 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
   };
   liftListeners.pointercancel = liftListeners.pointerup;
 
-  let down = null;
-  const outsideListeners = {
-    pointerdown: ({ clientX, clientY }) => { down = Number.isFinite(clientX) && Number.isFinite(clientY) ? { x: clientX, y: clientY, at: Date.now() } : null; },
-    click: async ({ clientX, clientY }) => {
-      const from = down;
-      down = null;
-      if (stopped || busy || !tabsOut() || !Number.isFinite(clientX) || !Number.isFinite(clientY) || !isTap(from, { x: clientX, y: clientY, at: Date.now() })) return;
-      try {
-        const [sheet, tabs] = await Promise.all([sheetBox.getBoundingClientRect(), tabsBox.getBoundingClientRect()]);
-        const within = (r, m) => r.width > 0 && r.height > 0 && clientX >= r.left - m && clientX <= r.right + m && clientY >= r.top - m && clientY <= r.bottom + m;
-        if ((ui.open && within(sheet, 0)) || within(tabs, TAB_MARGIN)) return;
-        if (ui.open && stay()) return;                       // setting: an open panel stays open
-        if (!stopped && !busy && tabsOut()) await press({ t: 'outside' });
-      } catch (error) { console.warn('[poke-battle] 패널', error); }
-    },
-  };
-  let listening = null;
-  let listenLine = Promise.resolve();
-
-  function listenOutside(on) {
-    listenLine = listenLine.then(async () => {
-      if (on && !stopped && !listening) {
-
-        const added = await Promise.allSettled(Object.entries(outsideListeners).map(async ([type, fn]) => [type, await doc.addEventListener(type, fn, true)]));
-        const failed = added.find(r => r.status === 'rejected');
-        if (failed) {
-          await Promise.allSettled(added.filter(r => r.status === 'fulfilled').map(({ value: [type, id] }) => doc.removeEventListener(type, id)));
-          throw failed.reason;
-        }
-        listening = added.map(r => r.value);
-      } else if ((!on || stopped) && listening) {
-        const ids = listening;
-        listening = null;
-        down = null;
-        await Promise.all(ids.map(([type, id]) => doc.removeEventListener(type, id)));
-      }
-    }).catch(error => console.warn('[poke-battle] 패널', error));
-    return listenLine;
-  }
+  const listenLift = listenWhile(liftListeners, () => {
+    lift = null;
+    if (dragged === null) return;
+    dragged = null;
+    liftPending = null;
+    outer.setStyleAttribute('').catch(() => {});
+  });
 
   function refresh({ force = false } = {}) {
     if (!force) {
@@ -193,15 +268,25 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
 
     const travel = cur?.on && cur.compat ? compatTravel(cur.chat) : null;
 
-    if (cur?.on && chatScreen) {
-      try { screenSize = { width: Number(await doc.clientWidth()), height: Number(await doc.clientHeight()) }; } catch { screenSize = null; }
-    }
-
     const dex = cur?.on ? { home: dexHome(cur.chat, !!cur.compat), regions: cur.compat ? preStoryRegions(cur.chat) : [],
       mentions: [...storyMentions(cur.chat)].sort((a, b) => a - b) } : null;
 
+    const nextMode = open();
+    if (nextMode !== mode) {
+      const hovered = ways().hover;
+      ui = openUi(ui, nextMode, mode);
+      mode = nextMode;
+      if (ways().hover !== hovered) shown.tabs = null;
+    }
+
+    const height = shift();
+    windowSize = cur?.on && chatScreen && floor && (drag() || panelLift(height) !== panelShift(height))
+      ? await floor.getBoundingClientRect().then(r => (r.top > 0 ? { width: Math.round(r.width), height: Math.round(r.top) } : null),
+        error => { console.warn('[poke-battle] 패널 화면 크기 재기', error); return null; }) : null;
+
+    const taleNow = cur?.on ? tale(cur.chat, cur.lang) : null;
     const sig = JSON.stringify([cur?.key ?? null, cur?.lang ?? null, !!cur?.on, battle.phase, chatScreen, !!cur?.compat, !!cur?.debug, cur?.aux?.on ?? null, cur?.offer ?? null, travel, dex,
-      pictures?.route() ?? null, place(), shift(), below, room, screenSize]);
+      pictures?.route() ?? null, place(), height, below, room, mode, !!stay(), !!drag(), taleNow, windowSize]);
     if (!force && sig === lastSig) return;
     if ((cur?.id ?? null) !== chatId) {
       const id = cur?.id ?? null;
@@ -209,7 +294,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
         if (ui.screen) chatScreens.set(chatId, ui.screen); else chatScreens.delete(chatId);
         const back = chatScreens.get(id) ?? null;
         chatScreens.delete(id);
-        ui = { ...initialUi(), open: ui.open, pairHidden: ui.pairHidden, gathered: ui.gathered, ...(back ? { screen: back, tab: screenTab(back) } : {}) };
+        ui = { ...initialUi(), open: ui.open, pairHidden: ui.pairHidden, gathered: ui.gathered, seen: ui.seen, ...(back ? { screen: back, tab: screenTab(back) } : {}) };
       }
       chatId = id;
     }
@@ -226,6 +311,8 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
       now.money = bagMoney(cur.chat, cur.compat, cur.state);
       now.compat = !!cur.compat;
       now.dex = dex;
+      now.labHere = labAt(latestStatus(cur.chat));
+      now.tale = taleNow;
     }
     await draw();
     lastSig = sig;
@@ -254,11 +341,13 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
         if (!hit) return null;
         const listener = event => {
           if (swipedJust()) return;
+          if (hoverBeat(box, hit)) return;
           if (hit.t === 'blank' ? echo(event) : (took(event), false)) return;
           press(hit).catch(error => console.warn('[poke-battle] 패널', error));
         };
         if (hit.t === 'blank') return [element, listener];
         await element.addEventListener('click', listener);
+        await hoverBar(element, hit);
         return null;
       }));
       for (const one of bound) {
@@ -292,6 +381,14 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
       });
     }
 
+    const passes = hits.some(hit => hit?.t === 'seen') ? await box.querySelectorAll('.x-risu-pkbp-hover') : null;
+    const passed = passes ? await passes.length() : 0;
+    for (let i = 0; i < passed; i++) {
+      const element = await passes.at(i);
+      const hit = hits[Number((await element.getClassName()).match(/x-risu-pkbp-hv(\d+)/)?.[1])];
+      if (hit) await element.addEventListener('pointerenter', () => { press(hit, { hover: true }).catch(error => console.warn('[poke-battle] 패널', error)); });
+    }
+
     for (const [element, listener] of blanks) await element.addEventListener('click', listener);
   }
 
@@ -308,13 +405,15 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
   let swipeFrom = null, swipedAt = 0;
   const swipedJust = () => Date.now() - swipedAt < 400 || !!lift?.moved;
 
-  let taken = null;
-  const took = event => { taken = { x: event?.clientX, y: event?.clientY, at: Date.now() }; };
+  let taken = null, tookLast = null;
+  const took = event => { taken = tookLast = { x: event?.clientX, y: event?.clientY, at: Date.now() }; };
   const echo = event => {
     const last = taken;
     taken = null;
     return !!last && Date.now() - last.at < ECHO_MS && last.x === event?.clientX && last.y === event?.clientY;
   };
+
+  const ownClick = (x, y) => !!tookLast && Date.now() - tookLast.at < ECHO_MS && tookLast.x === x && tookLast.y === y;
 
   let drawing = Promise.resolve();
   function draw() {
@@ -335,19 +434,16 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     if (!now?.show) {
 
       if (shown.tabs) { await tabsBox.setInnerHTML(''); shown.tabs = ''; }
-      listenOutside(false);
+      listenOutside(false); endHover(); listenHover(false); listenLift(false);
       return setStates([PANEL_STATES.gone]);
     }
-    if (away) { listenOutside(false); return setStates([PANEL_STATES.gone]); }
-    if (!fold() && ui.gathered) ui = { ...ui, gathered: false };          // setting: the tabs never tuck away
-    if (fold() && foldWas === false) ui = { ...ui, gathered: true };      // the setting was just turned on: tucked again (seen once the panel is closed)
-    foldWas = fold();
+    if (away) { listenOutside(false); endHover(); listenHover(false); listenLift(false); return setStates([PANEL_STATES.gone]); }
     const screen = await screenNow();
 
     const shownUi = now.unreadable && !ui.message ? { ...ui, message: { text: unreadableLine(now.lang), error: true } } : ui;
     const view = renderPanel(panelModel({ state: now.state, ctx: now.ctx, lang: now.lang, locked: now.locked, resume: now.resume, debug: now.debug, offer: now.offer, travel: now.travel,
-      compat: now.compat, dexHome: now.dex?.home ?? null, dexRegions: now.dex?.regions ?? [], dexMentions: now.dex?.mentions ?? [], ui: shownUi, screen, money: now.money }), { aux: now.aux, picture: pictures?.src, shift: shiftNow(), below: now.below, room: now.room,
-      rested: glow && Date.now() < glow.until ? glow.uids : null, panelSwitches: panelSwitches() });
+      compat: now.compat, dexHome: now.dex?.home ?? null, dexRegions: now.dex?.regions ?? [], dexMentions: now.dex?.mentions ?? [], ui: shownUi, screen, money: now.money, labHere: now.labHere ?? false }), { aux: now.aux, picture: pictures?.src, shift: shiftNow(), below: now.below, room: now.room,
+      rested: glow && Date.now() < glow.until ? glow.uids : null, drag: !!drag(), tale: now.tale ?? null });
     const states = [view.open && PANEL_STATES.open, view.locked && PANEL_STATES.locked, view.gathered && PANEL_STATES.gathered].filter(Boolean);
 
     if (view.open && view.sheet !== shown.sheet) {
@@ -360,11 +456,15 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
       if (art !== shown.art) { await artBox.setInnerHTML(sheetArt(art)); shown.art = art; }
     }
 
-    // with the drag option on, a touch that starts on the tabs is ours: the browser must not turn it into a scroll
-    const tabs = view.tabs + (drag() ? '<style>.x-risu-pkbp-tabs,.x-risu-pkbp-tabs *{touch-action:none;}</style>' : '');
-    if (tabs !== shown.tabs) { await fill(tabsBox, tabs, view.hits); shown.tabs = tabs; }
+    if (view.tabs !== shown.tabs) { await fill(tabsBox, view.tabs, view.hits); shown.tabs = view.tabs; }
     await setStates(states);
-    listenOutside(tabsOut());
+    listenOutside(outsideSteps());
+    if (!ui.gathered) clearDwell();
+    if (hoverOpen && (!ways().hover || !(tabsOut() && !ui.open && !ui.gathered))) endHover();
+
+    else if (!hoverOpen && !stopped && ways().hover && tabsOut() && !ui.open && !ui.gathered) hoverOpen = true;
+    listenHover(hoverOpen);
+    listenLift(!!drag());
   }
 
   async function screenNow() {
@@ -383,10 +483,12 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     return null;
   }
 
-  const envNow = () => ({ state: now.state, ctx: now.ctx, lang: now.lang, locked: now.locked, debug: now.debug, place: place() });
+  const envNow = () => ({ state: now.state, ctx: now.ctx, lang: now.lang, locked: now.locked, debug: now.debug, place: place(), open: mode, stay: !!stay(), labHere: now.labHere ?? false });
 
-  async function press(hit) {
+  async function press(hit, { hover: byHover = false } = {}) {
     if (busy || !now) return;
+    if (!byHover) endHover();
+    else if (hit.t === 'bar') { hoverOpen = true; hoverAt = Date.now(); }
     if (hit.t === 'aux') {
       busy = true;
       try { await toggleAux(); } finally { busy = false; }
@@ -466,8 +568,9 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
           const onRename = async name => {
             try { await queueAction(actions.nickname(mon, name), target); return true; } catch (error) { console.warn('[poke-battle] 별명', error); return false; }
           };
+
           const onEvolveLock = now?.locked ? null : async locked => {
-            try { return !!await queueAction(actions.evolveLock(mon, locked), target); } catch (error) { console.warn('[poke-battle] 진화 설정', error); return false; }
+            try { await queueAction(actions.evolveLock(mon, locked), target); return true; } catch (error) { console.warn('[poke-battle] 진화 잠금', error); return false; }
           };
           await screens.session(open => open.summary(mon, onRename, now?.state.customItems, onEvolveLock));
           return void await refresh({ force: true });
@@ -558,7 +661,10 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
 
           const mon = findMon(effect.uid);
           if (!mon) return;
-          const result = await screens.session(open => open.training(mon, sceneNow(now.chat)));
+          const scene = sceneNow(now.chat);
+          away = true;
+          await draw();
+          const result = await screens.session(open => open.training(mon, scene)).finally(() => { away = false; });
           const action = trainAction(mon, result);
           if (action) await queue(action, undefined, target, lang);
           else await refresh({ force: true });
@@ -586,8 +692,28 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
           } catch (error) { say(failureText(WHAT.debugBadges, error, lang), true); }
           return void await refresh({ force: true });
         }
-        case 'panelSet': {
-          try { await setPanelSwitch(effect.key, effect.on); } catch (error) { say(failureText(WHAT.action, error, lang), true); }
+        case 'tale': {
+
+          try { await setTale(effect.key, effect.value, target); } catch (error) {
+            console.warn('[poke-battle] 패널 설정', error);
+            say(failureText(effect.key === 'battles' ? WHAT.botSetting : WHAT.settings, error, lang), true);
+          }
+          return void await refresh({ force: true });
+        }
+        case 'settings': {
+
+          try { await openSettings(); } catch (error) { console.warn('[poke-battle] 설정 창', error); }
+          return;
+        }
+        case 'fish': {
+
+          try {
+            const result = await fish(effect.rod, target);
+            if (result) say(fishLine(result, lang, namesFor(lang, now.ctx.sim)));
+          } catch (error) {
+            if (!error?.why) console.warn('[poke-battle] 낚시', error);
+            say(failureText(WHAT.fish, error, lang), true);
+          }
           return void await refresh({ force: true });
         }
         case 'botTravel': {
@@ -686,11 +812,6 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
 
   await refresh({ force: true });
 
-  const lifts = [];
-  for (const [type, fn] of Object.entries(liftListeners)) {
-    try { lifts.push([type, await doc.addEventListener(type, fn, true)]); } catch (error) { console.warn('[poke-battle] 패널 끌기', error); }
-  }
-
   const keys = await doc.addEventListener('keydown', async event => {
     const key = keyOf(event);
     if (!key || stopped || !ui.open || busy || !now?.show || now.live) return;
@@ -703,7 +824,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
   const unpictures = pictures?.onChange(picturesArrived) ?? (() => {});
   return {
     refresh: () => refresh({ force: true }),
-    stop: async () => { stopped = true; unlisten(); unpictures(); await listenOutside(false); for (const [type, id] of lifts) await doc.removeEventListener(type, id).catch(() => {}); try { await doc.removeEventListener('keydown', keys); await root.remove(); } catch {                    } },
+    stop: async () => { stopped = true; unlisten(); unpictures(); endHover(); await Promise.all([listenOutside(false), listenHover(false), listenLift(false)]); try { await doc.removeEventListener('keydown', keys); await root.remove(); } catch {                    } },
     get ui() { return ui; },
   };
 }

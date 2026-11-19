@@ -1,4 +1,4 @@
-// Modified for PokeTale on 2026-11-16. See THIRD-PARTY-NOTICES.md.
+// Modified for PokeTale on 2026-11-19. See THIRD-PARTY-NOTICES.md.
 // Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
 // Copyright (c) 2026 poooooby, MIT License. See THIRD-PARTY-NOTICES.md.
 export const FRIENDSHIP_MAX = 255;
@@ -9,12 +9,26 @@ export const FRIEND_BALL_FRIENDSHIP = 150;
 
 export const FRIENDSHIP_STEPS = Object.freeze({
 	mention: [3, 2, 1], level: [5, 3, 2], boss: [1, 1, 1], faint: [-1, -1, -1], faintHigh: [-5, -5, -10], vitamin: [5, 3, 2], berry: [10, 5, 2],
+	wing: [3, 2, 1], mochi: [2, 1, 0],
 	energypowder: [-5, -5, -10], healpowder: [-5, -5, -10], energyroot: [-10, -10, -15], revivalherb: [-15, -15, -20],
 });
+export const FRIENDSHIP_STEPS_SV = Object.freeze({
+	mention: [3, 2, 1], level: [3, 2, 0], boss: [1, 1, 1], faint: [-1, -1, -1], faintHigh: [-5, -5, -10], vitamin: [4, 2, 0], berry: [10, 5, 1],
+	wing: [2, 1, 0], mochi: [2, 1, 0],
+	energypowder: [-5, -5, -10], healpowder: [-5, -5, -10], energyroot: [-5, -5, -10], revivalherb: [-5, -5, -10],
+	expcandyxs: [1, 1, 0], expcandys: [1, 1, 0], expcandym: [2, 1, 0], expcandyl: [3, 2, 0], expcandyxl: [4, 2, 0],
+});
+
+const FRIENDSHIP_BANDS = Object.freeze({ old: Object.freeze([100, 200]), sv: Object.freeze([100, 160]) });
 
 const FAINT_LEVEL_GAP = 30;
 
-export const friendshipStep = (value, kind) => FRIENDSHIP_STEPS[kind][value < 100 ? 0 : value < 200 ? 1 : 2];
+export function friendshipStep(value, kind, sv = false) {
+	const row = (sv ? FRIENDSHIP_STEPS_SV : FRIENDSHIP_STEPS)[kind];
+	if (!row) throw new Error(`No friendship step: ${kind}`);
+	const [middle, high] = FRIENDSHIP_BANDS[sv ? 'sv' : 'old'];
+	return row[value < middle ? 0 : value < high ? 1 : 2];
+}
 
 export const baseFriendship = (table, species) => table?.friendship?.[species.num] ?? DEFAULT_FRIENDSHIP;
 
@@ -58,7 +72,7 @@ export const friendshipLocked = holder => holder?.friendshipLocked === true;
 export function stepInBattle(battle, pokemon, kind) {
 	const state = states.get(battle);
 	if (!state || pokemon.m.friendship === undefined || friendshipLocked(pokemon.m)) return;
-	const { value, carry } = changeFriendship(pokemon.m.friendship, friendshipStep(pokemon.m.friendship, kind),
+	const { value, carry } = changeFriendship(pokemon.m.friendship, friendshipStep(pokemon.m.friendship, kind, state.sv),
 		{ item: pokemon.item, ball: pokemon.set.pokeball, rate: state.rate, carry: pokemon.m.friendshipCarry });
 	pokemon.m.friendship = value;
 	pokemon.m.friendshipCarry = carry;
@@ -68,7 +82,7 @@ export const isCarry = value => Number.isFinite(value) && value >= 0 && value < 
 
 export function installFriendship(sim, battle, spec, { exp: table } = {}) {
 	const members = new Map(spec.p1.team.map(m => [m.uid, m]));
-	const state = { rate: spec.friendshipRate ?? 1, out: new Set() };
+	const state = { rate: spec.friendshipRate ?? 1, sv: spec.friendshipSv === true, out: new Set() };
 	states.set(battle, state);
 	for (const pokemon of battle.sides[0].pokemon) {
 		if (pokemon.m.partner) continue;

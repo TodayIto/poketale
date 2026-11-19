@@ -1,5 +1,5 @@
 // from pokerogue src/ui/containers/move-info-overlay.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 
 import { addWindow } from './window.js';
 import { addTextObject, styledText } from './text.js';

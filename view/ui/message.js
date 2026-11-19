@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/message-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/battle-message-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/message-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 import { addTextObject } from './text.js';

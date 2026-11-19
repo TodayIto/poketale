@@ -59,8 +59,8 @@ export function megaGift(dex, team, { named = null, seed } = {}) {
   return { uid: pick.uid, item: stones[seeded(seed, pick.uid, stones.length)].id };
 }
 
-export function foeGimmicks(dex, mode, { battle, region, seed, p2, partner = null, foePartner = null }) {
-  if (mode !== 'region') return {};
+export function foeGimmicks(dex, mode, { battle, region, seed, p2, partner = null, foePartner = null, unknownRogue = false }) {
+  if (mode !== 'region' || (unknownRogue && !region)) return {};
   const gimmick = battle.wild ? 'none' : regionGimmick(region);
   const p2Named = namedTrainer(battle), secondNamed = battle.foePartner ? namedTrainer({ name: battle.foePartner.name }) : null;
 

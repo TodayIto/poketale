@@ -1,9 +1,14 @@
 import { A1, PART_ICON } from '../../view/frame-parts.js';
+import { pixelSvg } from '../../view/amie-art.js';
 
 const PREV = PART_ICON.prev, NEXT = PART_ICON.next;
 
-const KNOB = 24, KNOB_PHONE = 30;
-const SLIDER_GROOVE = 'linear-gradient(90deg,transparent calc(50% - 1px),#789db7 calc(50% - 1px) calc(50% + 1px),transparent calc(50% + 1px)),#dfeaf3';
+const CELL = 12, CELL_GAP = 2;
+const CELL_ON = 'background:#4aa3e8; box-shadow:inset 0 2px 0 #9fd2f6;', CELL_EMPTY = '#cfd8df';
+
+const BIG_ROWS = ['....o', '...oo', '..ooo', '.oooo', 'ooooo', '.oooo', '..ooo', '...oo', '....o'];
+const BIG_PREV = pixelSvg(BIG_ROWS, { o: 'currentColor' }), BIG_NEXT = pixelSvg(BIG_ROWS.map(row => [...row].reverse().join('')), { o: 'currentColor' });
+const ARROW_SPOT = 44;
 
 export const controlsCss = scope => `
   ${scope} .sw { position:relative; flex:none; width:44px; height:26px; padding:0; border:2px solid #7d93a4; border-radius:13px; background:#c3cfd8; cursor:pointer; }
@@ -29,23 +34,19 @@ export const controlsCss = scope => `
   ${scope} .seg button[aria-checked="true"] { background:linear-gradient(#ec5a64,#d8434d); color:#fff; box-shadow:0 1.5px 0 var(--red-dark); }
   ${scope} .seg button:disabled { color:#a9b5be; cursor:default; }
   ${scope} .seg button[aria-checked="true"]:disabled { background:#c3cfd8; color:#fff; box-shadow:none; }
-  ${scope} .sld { display:flex; align-items:center; gap:5px; }
-  ${scope} .sld .end { flex:none; font-size:12px; color:#5d7486; white-space:nowrap; }
-  ${scope} .sld input { flex:none; width:118px; height:40px; margin:0; padding:0; background:transparent; -webkit-appearance:none; appearance:none; cursor:pointer; }
-  ${scope} .sld input:focus { outline:none; }
-  ${scope} .sld input::-webkit-slider-runnable-track { height:8px; border:1.5px solid #789db7; border-radius:5px; background:${SLIDER_GROOVE}; }
-  ${scope} .sld input::-moz-range-track { height:8px; border:1.5px solid #789db7; border-radius:5px; background:${SLIDER_GROOVE}; }
-  ${scope} .sld input::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:${KNOB}px; height:${KNOB}px; margin-top:${(8 - KNOB) / 2 - 1.5}px;
-    border:${A1.border}px solid var(--navy-dark); border-radius:${A1.radius}px; background:${A1.paper}; box-shadow:${A1.drop}; }
-  ${scope} .sld input::-moz-range-thumb { box-sizing:border-box; width:${KNOB}px; height:${KNOB}px; border:${A1.border}px solid var(--navy-dark); border-radius:${A1.radius}px; background:${A1.paper}; box-shadow:${A1.drop}; }
-  ${scope} .sld input:focus-visible::-webkit-slider-thumb { outline:2px solid #ffcf4a; }
-  ${scope} .sld .fld { position:relative; flex:none; min-width:50px; height:30px; padding:0 6px; border:2px solid #789db7; border-radius:7px; background:#fff; color:#14304a;
-    font-size:14px; text-align:center; box-shadow:inset 0 1.5px 0 rgba(0,0,0,.08); cursor:pointer; }
-  ${scope} .sld .fld::after { content:""; position:absolute; left:0; right:0; top:50%; height:40px; transform:translateY(-50%); }
-  ${scope} .sld.off { opacity:.45; }
-  @media (max-width:640px) { ${scope} .sld input { width:104px; height:44px; }
-    ${scope} .sld input::-webkit-slider-thumb { width:${KNOB_PHONE}px; height:${KNOB_PHONE}px; margin-top:${(8 - KNOB_PHONE) / 2 - 1.5}px; }
-    ${scope} .sld input::-moz-range-thumb { width:${KNOB_PHONE}px; height:${KNOB_PHONE}px; } }
+  ${scope} .stb { display:flex; align-items:center; gap:2px; }
+  ${scope} .stb .arr { position:relative; flex:none; width:22px; height:30px; padding:0; display:flex; align-items:center; justify-content:center; border:0; background:transparent;
+    color:var(--navy); cursor:pointer; }
+  ${scope} .stb .arr::after { content:""; position:absolute; left:50%; top:50%; width:${ARROW_SPOT}px; height:${ARROW_SPOT}px; transform:translate(-50%,-50%); }
+  ${scope} .stb .arr svg { width:10px; height:18px; display:block; }
+  ${scope} .stb .arr:disabled { opacity:.3; cursor:default; }
+  ${scope} .stb .cells { flex:none; display:flex; gap:${CELL_GAP}px; padding:8px 1px; touch-action:pan-y; cursor:pointer; }
+  ${scope} .stb .cells:focus { outline:none; }
+  ${scope} .stb .cells:focus-visible { outline:2px solid #ffcf4a; outline-offset:-3px; }
+  ${scope} .stb .cel { position:relative; flex:none; width:${CELL}px; height:${CELL}px; border:2px solid var(--navy); border-radius:0; background:${CELL_EMPTY}; }
+  ${scope} .stb .cel.on { ${CELL_ON} }
+  ${scope} .stb.off { opacity:.45; }
+  ${scope} .stb.off .cells { cursor:default; }
   @media (prefers-reduced-motion:reduce) { ${scope} .sw::before { transition:none; } }`;
 
 const make = (tag, className, props = {}) => Object.assign(document.createElement(tag), { className, ...props });
@@ -111,26 +112,76 @@ export function stepperControl({ list, value, label, change, words, typed = null
   return { el, set, disable: on => { off = on; edit.disabled = on; set(now); } };
 }
 
-export const signed = n => (n > 0 ? `+${n}` : n < 0 ? `\u2212${-n}` : '0');
+function steer(target, { min, max, step, pressed, dragged, control }) {
+  let drag = null;
+  const keys = { ArrowLeft: -step, ArrowDown: -step, ArrowRight: step, ArrowUp: step };
+  target.addEventListener('keydown', e => {
+    if (control.off()) return;
+    const to = e.key === 'Home' ? min : e.key === 'End' ? max : e.key in keys ? control.now() + keys[e.key] : null;
+    if (to === null) return;
+    e.preventDefault();
+    control.pick(to);
+  });
 
-export function sliderControl({ min, max, value, label, change, words, ask }) {
-  const el = make('span', 'sld');
+  const at = (x, read) => {
+    const box = target.getBoundingClientRect();
+    if (x < box.left) return min;
+    if (x >= box.right) return max;
+    return read((x - box.left) / box.width);
+  };
+  target.addEventListener('pointerdown', e => {
+    if (control.off() || e.button !== 0) return;
+    drag = e.pointerId;
+    try { target.setPointerCapture?.(e.pointerId); } catch {                           }
+    control.show(at(e.clientX, pressed));
+  });
+  target.addEventListener('pointermove', e => { if (drag !== null && e.pointerId === drag) control.show(at(e.clientX, dragged)); });
+  target.addEventListener('pointerup', e => { if (drag === null || e.pointerId !== drag) return; drag = null; control.pick(control.shown()); });
+  target.addEventListener('pointercancel', () => { if (drag === null) return; drag = null; control.show(control.now()); });
+  return { stop: () => { drag = null; } };
+}
+
+const stepWithin = (min, max, step) => v => Math.min(max, Math.max(min, min + Math.round((v - min) / step) * step));
+
+export function stepBarControl({ min, max, step, value, label, change, words }) {
+  const count = Math.round((max - min) / step);
+  const el = make('span', 'stb');
   el.setAttribute('role', 'group'); el.setAttribute('aria-label', label);
-  const low = make('span', 'end', { textContent: words.low }), high = make('span', 'end', { textContent: words.high });
-  const range = make('input', '', { type: 'range' });
-  Object.assign(range, { min: String(min), max: String(max), step: '1' });
-  range.setAttribute('aria-label', label);
-  const box = make('button', 'fld', { type: 'button' });
-  name(box, `${label}: ${words.type}`);
-  el.append(low, range, high, box);
-  const within = v => Math.min(max, Math.max(min, Math.round(v)));
-  let now = within(value), off = false;
-  const show = v => { range.value = String(v); box.textContent = signed(v); range.setAttribute('aria-valuetext', signed(v)); };
+  const prev = make('button', 'arr', { type: 'button', innerHTML: BIG_PREV }), next = make('button', 'arr', { type: 'button', innerHTML: BIG_NEXT });
+  name(prev, words.prev); name(next, words.next);
+  prev.setAttribute('tabindex', '-1'); next.setAttribute('tabindex', '-1');
+  const bar = make('span', 'cells');
+  bar.setAttribute('role', 'slider'); bar.setAttribute('aria-label', label); bar.setAttribute('aria-orientation', 'horizontal');
+  bar.setAttribute('aria-valuemin', String(min)); bar.setAttribute('aria-valuemax', String(max));
+  const cellValue = i => min + (i + 1) * step;
+  const cells = Array.from({ length: count }, (_, i) => {
+    const cell = make('span', 'cel');
+    cell.onclick = () => { if (!off) pick(cellValue(i)); };
+    bar.append(cell);
+    return cell;
+  });
+  el.append(prev, bar, next);
+  const within = stepWithin(min, max, step);
+  let now = within(value), shown = now, off = false;
+  const show = v => {
+    shown = v;
+    const k = (v - min) / step;
+    cells.forEach((cell, i) => cell.classList.toggle('on', i < k));
+    bar.setAttribute('aria-valuenow', String(v)); bar.setAttribute('aria-valuetext', String(v));
+    prev.disabled = off || v <= min; next.disabled = off || v >= max;
+  };
   const set = v => { now = within(v); show(now); };
-  const pick = v => { const next = within(v); if (next === now) return show(now); set(next); change(next); };
-  range.oninput = () => show(within(Number(range.value)));
-  range.onchange = () => pick(Number(range.value));
-  box.onclick = () => { if (!off) ask(now, v => { if (Number.isFinite(v)) pick(v); }); };
-  set(now);
-  return { el, set, disable: on => { off = on; range.disabled = on; box.disabled = on; el.classList.toggle('off', on); } };
+  const pick = v => { const to = within(v); if (to === now) return show(now); set(to); change(to); };
+  prev.onclick = () => pick(now - step);
+  next.onclick = () => pick(now + step);
+  const steering = steer(bar, { min, max, step, pressed: f => cellValue(Math.min(count - 1, Math.floor(f * count))), dragged: f => min + Math.round(f * count) * step,
+    control: { now: () => now, shown: () => shown, off: () => off, show, pick } });
+  const disable = on => {
+    off = on; steering.stop();
+    el.classList.toggle('off', on);
+    bar.setAttribute('tabindex', on ? '-1' : '0'); bar.setAttribute('aria-disabled', String(on));
+    show(now);
+  };
+  disable(false);
+  return { el, set, disable };
 }

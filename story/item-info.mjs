@@ -1,20 +1,32 @@
 import data from '../data/items-outside.json' with { type: 'json' };
-import { tmNumber } from './items.mjs';
+import { tmNumber, trNumber } from './items.mjs';
 
-export const itemText = id => (Object.hasOwn(data.text, id) ? data.text[id] : null);
+export const itemText = (id, lang = 'ko') => {
+  const table = lang === 'ko' ? data.text : lang === 'en' ? data.textEn : null;
+  return table && Object.hasOwn(table, id) ? table[id] : null;
+};
 
-export function tmMove(id) {
-  const n = tmNumber(id);
-  return n ? data.tms[n - 1] ?? null : null;
+function machineOf(id) {
+  const tm = tmNumber(id);
+  if (tm) return { moves: data.tms, learn: data.learn, i: tm - 1 };
+  const tr = trNumber(id);
+  return tr === null ? null : { moves: data.trs, learn: data.trLearn, i: tr };
 }
 
-const bitsCache = new Map();
-function bitsOf(key) {
-  let bits = bitsCache.get(key);
+export function tmMove(id) {
+  const machine = machineOf(id);
+  return machine?.moves[machine.i] ?? null;
+}
+
+const bitsCache = new WeakMap();
+function bitsOf(learn, key) {
+  let table = bitsCache.get(learn);
+  if (!table) bitsCache.set(learn, table = new Map());
+  let bits = table.get(key);
   if (!bits) {
-    const raw = atob(data.learn[key].padEnd(Math.ceil(data.learn[key].length / 4) * 4, '='));
+    const raw = atob(learn[key].padEnd(Math.ceil(learn[key].length / 4) * 4, '='));
     bits = Uint8Array.from(raw, c => c.charCodeAt(0));
-    bitsCache.set(key, bits);
+    table.set(key, bits);
   }
   return bits;
 }
@@ -22,13 +34,14 @@ function bitsOf(key) {
 const MAX_FORME_HOPS = 4;
 
 export function canLearnTm(sim, species, id) {
-  const n = tmNumber(id);
-  if (!n || n > data.tms.length) return false;
+  const machine = machineOf(id);
+  if (!machine || machine.i >= machine.moves.length) return false;
+  const { learn, i } = machine;
   let s = sim.Dex.species.get(species);
   for (let hop = 0; s?.exists && hop < MAX_FORME_HOPS; hop++) {
-    if (Object.hasOwn(data.learn, s.id)) {
-      const bits = bitsOf(s.id);
-      return !!((bits[(n - 1) >> 3] >> ((n - 1) & 7)) & 1);
+    if (Object.hasOwn(learn, s.id)) {
+      const bits = bitsOf(learn, s.id);
+      return !!((bits[i >> 3] >> (i & 7)) & 1);
     }
     const parent = sim.Dex.species.get(s.changesFrom || s.baseSpecies);
     if (!parent.exists || parent.id === s.id) break;

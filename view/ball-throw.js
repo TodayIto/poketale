@@ -1,5 +1,5 @@
 // from pokerogue src/phases/attempt-capture-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-16. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 // from pokerogue src/data/pokeball.ts (doPokeballBounceAnim, getPokeballTintColor) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/animations.ts (addPokeballOpenParticles, addPokeballCaptureStars) @ 7d7da4a8 (AGPL-3.0-only)
 

@@ -1,9 +1,9 @@
-import { installBag, checkBagItem, chooseBagItem, chooseBagParts, BAG_ITEMS, isBall, bagItem } from '../engine/bag.mjs';
+import { installBag, checkBagItem, chooseBagItem, chooseBagParts, BAG_ITEMS, isBall, bagItem, onNoPokemon } from '../engine/bag.mjs';
 import { BALLS } from '../engine/capture.mjs';
 import catchRates from '../data/catch-rates.json' with { type: 'json' };
 import ko from './text-bag-ko.json' with { type: 'json' };
 import en from './text-bag-en.json' with { type: 'json' };
-import { phrase } from './text.js';
+import { phrase, text as baseText } from './text.js';
 import { displayName } from '../engine/mon.mjs';
 import { DEFAULT_LANG } from './lang.js';
 import { cheerOwns } from '../story/tools.mjs';
@@ -16,8 +16,10 @@ export const POCKETS = [
   { id: 'heal', items: ['potion', 'superpotion', 'hyperpotion', 'maxpotion', 'fullrestore', 'revive', 'maxrevive',
     'freshwater', 'sodapop', 'lemonade', 'moomoomilk', 'sweetheart', 'energypowder', 'energyroot', 'revivalherb', 'ether', 'maxether', 'elixir', 'maxelixir'] },
   { id: 'status', items: ['antidote', 'burnheal', 'iceheal', 'awakening', 'paralyzeheal', 'fullheal', 'healpowder',
-    'lavacookie', 'oldgateau', 'casteliacone', 'lumiosegalette', 'shaloursable', 'ragecandybar', 'bigmalasada', 'pewtercrunchies'] },
-  { id: 'battle', items: ['xattack', 'xdefense', 'xspatk', 'xspdef', 'xspeed', 'xaccuracy', 'direhit'] },
+    'lavacookie', 'oldgateau', 'casteliacone', 'lumiosegalette', 'shaloursable', 'ragecandybar', 'bigmalasada', 'pewtercrunchies',
+    'pokeflute', 'blueflute', 'redflute', 'yellowflute'] },
+
+  { id: 'battle', items: ['xattack', 'xdefense', 'xspatk', 'xspdef', 'xspeed', 'xaccuracy', 'direhit', 'guardspec', 'pokedoll', 'fluffytail', 'poketoy'] },
   { id: 'ball', items: Object.keys(BALLS) },
   { id: 'food', items: [] },
 ];
@@ -53,6 +55,8 @@ export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG 
 
     case 'twofoes': return { blocked: bagText('battle.noPokeballMulti', {}, lang) };
 
+    case 'trainer': return { blocked: baseText('battle.noEscapeTrainer', {}, lang) };
+
     default: return { blocked: bagText('party-ui-handler.anyEffect', {}, lang) };
     }
   };
@@ -61,10 +65,14 @@ export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG 
     if (isBall(id)) return 'enemy';
     const item = bagItem(battle, id);
     if (item.tool) return item.tool === 'cheer' ? 'party' : 'enemy';
-    return item.boost || item.crit ? 'active' : 'party';
+    return item.boost || item.crit || onNoPokemon(item) ? 'active' : 'party';
   };
 
-  const left = (id, taken) => (isTool(id) ? Math.min(counts.get(id), 1) : counts.get(id)) - (taken?.get(id) ?? 0);
+  const left = (id, taken) => {
+    if (!counts.has(id)) return 0;
+    const have = isTool(id) ? Math.min(counts.get(id), 1) : counts.get(id);
+    return BAG_ITEMS[id]?.reusable ? have : have - (taken?.get(id) ?? 0);
+  };
   function itemView(id, party, position, taken) {
     const base = { id, name: itemName(id), count: isTool(id) ? counts.get(id) : left(id, taken), target: targetKind(id),
       ...(Object.hasOwn(story, id) ? { emoji: story[id].emoji } : {}) };
@@ -84,6 +92,8 @@ export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG 
   }
   return {
     counts,
+
+    remaining: left,
 
     menu(party, position = 0, taken = null) {
 

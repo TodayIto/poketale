@@ -3,7 +3,7 @@ import { interpolate } from './text.js';
 import { checkLang, DEFAULT_LANG } from './lang.js';
 import { expForLevel, levelForExp, replaceMove } from '../engine/exp.mjs';
 import { newMovePp } from '../engine/pp.mjs';
-import { MAX_LEVEL, NON_HP_STATS, spriteIdOf } from '../engine/mon.mjs';
+import { MAX_LEVEL, NON_HP_STATS, learnsetOf, spriteIdOf } from '../engine/mon.mjs';
 import { createLedger } from './ledger.js';
 import { identName, teamOf } from './read.js';
 import { ownTemplate } from './own-text.js';
@@ -269,7 +269,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
     await sayTimed('menu.evolutionDone', { pokemonName: preName, evolvedPokemonName: mon(to).name }, { promptDelay: 4000 });
     const outcome = { species: to.name, baseSpecies: to.baseSpecies, name: nicknamed ? member.name : to.name, moves: member.moves.map(m => ({ ...m })) };
 
-    for (const [level, id] of levelUp?.[to.id] ?? []) {
+    for (const [level, id] of learnsetOf(levelUp, to) ?? []) {
       if (level !== 0 || outcome.moves.some(m => m.id === id)) continue;
       const move = battle.dex.moves.get(id);
       if (!move.exists) continue;
