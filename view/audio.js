@@ -97,6 +97,7 @@ export class BattleAudio {
     this.assets = assets; this.parent = parent; this.sounds = new Map(); this.active = new Set();
     this.diagnostics = [];
     this.silent = options.sound === false;
+    this.cries = typeof options.cries === 'function' ? options.cries : null; this.pack = null; this.packRead = null;
     this.wild = options.wild ?? true;
     const chosen = battleMusic(options);
     this.battleBgm = chosen.key;
@@ -128,8 +129,11 @@ export class BattleAudio {
     const audio = new Audio();
     audio.crossOrigin = 'anonymous'; audio.preload = 'auto'; audio.loop = loop;
     audio.volume = loop ? BGM_VOLUME : 0.6;
-    const url = this.assets.url(`audio/${path}`), route = this.assets.route;
-    const ways = route ? route.order(url) : ['direct'];
+    // "cry/<key>.m4a#<n>" is one voice of a pack that holds several for that Pokémon; the game cry stays its fallback.
+    const isCry = path.startsWith('cry/'), base = isCry ? path.replace(/#\d+$/, '') : path;
+    const url = this.assets.url(`audio/${base}`), route = this.assets.route;
+    // A player's cry pack goes first; a missing entry or a codec the browser lacks falls through to the game cry.
+    const ways = [...(this.cries && isCry ? ['pack'] : []), ...(route ? route.order(url) : ['direct'])];
     let finished = false, sourcedNow;
     const sourced = new Promise(resolve => { sourcedNow = resolve; });
     const ready = new Promise(resolve => {
@@ -142,10 +146,19 @@ export class BattleAudio {
       const left = [...ways];
       let triedDirect = false;
       const next = () => {
+        if (this.destroyed) return;
         const way = left.shift();
         if (!way) {
           if (!finished) { this.diagnostics.push(`Audio unavailable: ${path}`); done(); }
           sourcedNow(); return;
+        }
+        if (way === 'pack') {
+          this.packUrl(path).then(src => {
+            if (this.destroyed) return;
+            if (!src) { next(); return; }
+            audio.src = src; sourcedNow(); audio.load();
+          }, error => { this.note(`Cry pack failed: ${path} (${error?.message ?? error})`); next(); });
+          return;
         }
         if (way === 'direct') { triedDirect = true; audio.src = url; sourcedNow(); audio.load(); return; }
         route.objectUrl(url, () => audioType(url)).then(src => {
@@ -154,7 +167,8 @@ export class BattleAudio {
           audio.src = src; sourcedNow(); audio.load();
         }, error => { this.note(`Audio via host failed: ${path} (${error?.message ?? error})`); if (!this.destroyed) next(); });
       };
-      const timer = setTimeout(() => { this.diagnostics.push(`Audio load timeout: ${path}`); done(); }, 15000);
+      // The timer ends the wait, not the loading: a source that arrives or fails later still moves on to the next way.
+      const timer = setTimeout(() => { this.diagnostics.push(`Audio load timeout: ${path}`); const fallback = audio.onerror; done(); audio.onerror = fallback; }, 15000);
       audio.onloadeddata = done;
       audio.onerror = next;
       this.assets.life.signal.addEventListener('abort', done, { once: true });
@@ -179,6 +193,36 @@ export class BattleAudio {
   cryPath(mon) {
     const key = Object.hasOwn(CRIES, mon?.spriteId ?? '') ? CRIES[mon.spriteId] : null;
     return key ? `cry/${key}.m4a` : null;
+  }
+
+  // The packs are read once per battle (the next battle reads them again), so a pack that fails to read cannot make
+  // every cry read all of them again.
+  readPack() {
+    return (this.packRead ??= Promise.resolve().then(() => this.cries()).then(pack => (this.pack = pack ?? null),
+      error => { this.packRead = null; throw error; }));
+  }
+
+  async packUrl(path) {
+    const pack = await this.readPack();
+    const [, key, variant] = /^cry\/(.+)\.m4a(?:#(\d+))?$/.exec(path) ?? [];
+    return pack && key ? pack.url(key, Number(variant ?? 0)) : null;
+  }
+
+  // A pack can hold several voices for one Pokémon (every line of a voice rip): each cry picks one at random from the
+  // pack as read so far (preloading reads it), so a slow storage read never holds a cry back. A moment ('appear',
+  // 'faint', 'move', 'happy') narrows the pick to the lines the game itself plays then, when the pack knows any.
+  // Line 0 is the plain path, which preloading has already loaded.
+  cryVoice(path, moment = null) {
+    if (!path || !this.cries || this.silent || this.destroyed) return path;
+    this.readPack().catch(() => {});
+    let count = 0, fitting = [];
+    try {
+      const key = path.slice('cry/'.length, -'.m4a'.length);
+      count = this.pack?.variants?.(key) ?? 0;
+      if (moment) fitting = this.pack?.lines?.(key, moment) ?? [];
+    } catch (error) { this.note(`Cry pack failed: ${path} (${error?.message ?? error})`); }
+    const line = fitting.length ? fitting[Math.floor(Math.random() * fitting.length)] : count > 1 ? Math.floor(Math.random() * count) : 0;
+    return line ? `${path}#${line}` : path;
   }
 
   music(key) {
@@ -261,7 +305,7 @@ export class BattleAudio {
   }
 
   async play(path, rate = 1, volume = 0.6, { maxMs = Infinity } = {}) {
-    if (!path || this.suspended || this.silent) return;
+    if (!path || this.destroyed || this.suspended || this.silent) return;
     const { audio, ready } = this.load(path);
     await ready;
     if (this.suspended) await this.awake();
@@ -293,9 +337,9 @@ export class BattleAudio {
     });
   }
 
-  cry(mon, slow = false) { return this.play(this.cryPath(mon), slow ? 0.85 : 1); }
+  cry(mon, slow = false, moment = null) { return this.play(this.cryVoice(this.cryPath(mon), moment), slow ? 0.85 : 1); }
 
-  faintCry(mon) { return this.play(this.cryPath(mon), 0.85, undefined, { maxMs: 3000 }); }
+  faintCry(mon) { return this.play(this.cryVoice(this.cryPath(mon), 'faint'), 0.85, undefined, { maxMs: 3000 }); }
 
   playUi(name) {
     if (this.destroyed || !UI_SOUNDS.includes(name)) return;

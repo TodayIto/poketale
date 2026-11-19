@@ -153,7 +153,7 @@ export class BattleScene extends Phaser.Scene {
         fromBall ? this.audio.play('se/pb_rel.wav') : Promise.resolve(),
       ]);
 
-      await Promise.all([this.audio.cry(mon, mon.maxhp > 0 && mon.hp / mon.maxhp <= 0.25), delay(this, 1000)]);
+      await Promise.all([this.audio.cry(mon, mon.maxhp > 0 && mon.hp / mon.maxhp <= 0.25, 'appear'), delay(this, 1000)]);
     })()]);
   }
 

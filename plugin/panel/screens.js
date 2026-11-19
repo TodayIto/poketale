@@ -83,7 +83,7 @@ const CSS = `
 `;
 
 export function createPanelScreens({ fetchBytes, settings = () => ({}), lang, show = async () => {}, hide = async () => {}, createView = openBattleView, phone = isPhone(), trainer, battleFormat,
-  replies = null } = {}) {
+  replies = null, cries = null } = {}) {
   let busy = false;
 
   function mountHost(shown) {
@@ -134,7 +134,7 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), lang, sh
   async function screensFor(host, shown, notice) {
     const options = settings();
     return createOutsideScreens({ sim, fetchBytes, levelUp: loadLevelUp, exp: EXP_TABLE, trainer, battleFormat, lang: shown,
-      viewOptions: { theme: options.theme, sound: options.sound, pictureWays: viewPictureWays(options.panelPicture) },
+      viewOptions: { theme: options.theme, sound: options.sound, pictureWays: viewPictureWays(options.panelPicture), cries },
       createView: async viewOptions => {
         host.loading.show();
         const view = await createView(viewOptions);

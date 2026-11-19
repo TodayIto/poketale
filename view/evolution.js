@@ -97,7 +97,7 @@ export class EvolutionScene {
     try {
       await delay(s, 1000);
       if (flip) await this.turn(Math.PI);
-      s.audio.cry(this.from).catch(() => {});
+      s.audio.cry(this.from, false, 'happy').catch(() => {});
 
       await delay(s, 1000);
       this.playBgm(BGM);
@@ -146,7 +146,7 @@ export class EvolutionScene {
 
       this.stopBgm();
       await delay(s, 250);
-      s.audio.cry(to).catch(() => {});
+      s.audio.cry(to, false, 'happy').catch(() => {});
       await delay(s, 1250);
       this.playBgm(FANFARE);
       return true;

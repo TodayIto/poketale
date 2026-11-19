@@ -12,6 +12,8 @@ After installing this file once, future versions can be installed with RisuAI's 
 
 Images and sounds are loaded at runtime from PokeRogue assets and PokéAPI Pokémon and badge sprites on `raw.githubusercontent.com`, and from `play.pokemonshowdown.com`. The plugin has no server of its own.
 
+Pokémon can say their names in the PokéPark 2 voices: load the voice zips from The Sounds Resource in the settings as downloaded, without unpacking them. The game's file names tell whose line each file is (`data/pokepark2-voices.json`, read out of PokéPark 2's sound banks and scripts), which also mends the few lines the "Miscellaneous Voices" zip files under another Pokémon's folder; other zips are read by folders named after each Pokémon. Several zips can be loaded; the one higher in the list is used first. A Pokémon says the line the game itself plays at that moment — its greeting when it appears, its hurt cry when it faints, its battle shout in a move, its happy line when pleased. Where the zip lacks the game's line for that moment, it says the kind of line most Pokémon use then, and a random one when even that is missing; Pokémon in no zip keep the game cries. The voices are kept in RisuAI's plugin storage in parts, so a battle reads only those of the Pokémon in it. PokéTale neither includes nor downloads any of them.
+
 ## Build
 
 Requirements: Node.js 24 or later, npm and Git. On Windows, run from the project root:

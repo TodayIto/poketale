@@ -207,7 +207,7 @@ export class SummaryScreen {
     this.tab.setTexture(`summary_tabs_${this.page + 1}`);
     this.populate(this.pageC, this.page);
     this.pageC.setVisible(true);
-    if (!first) s.audio.cry(mon).catch(() => {});
+    if (!first) s.audio.cry(mon, false, 'appear').catch(() => {});
   }
 
   populate(container, page) {

@@ -3,6 +3,7 @@ import { mark } from './marks.js';
 import { startStoryLink, openSettings, currentSettings, openLang, queueAction, storyNow, onStoryChange, showWindow, hideWindow, resumeHere, toggleAux, debugAdd, debugEdit, debugHeal, debugBadges, debugLock, writeBotTravel, setPanelShift, setPanelSwitch, panelShiftNow, quickImport, importLater, battleFormat, watchReplies } from './story-link.js';
 import { startPanel } from '../panel/panel.js';
 import { createPanelScreens } from '../panel/screens.js';
+import { cryPackSource } from './cry-pack-store.js';
 import { createPanelPictures } from '../panel/pictures.js';
 import { createRestSound } from '../panel/rest-sound.js';
 import { DEFAULT_ASSET_BASE } from '../../view/assets.js';
@@ -40,7 +41,7 @@ guardContextMenu(globalThis.document);
     const doc = await risuai.getRootDocument();
     if (doc) {
       useMainDocument(doc, () => currentSettings().aboveOthers, () => currentSettings().debug);
-      const screens = createPanelScreens({ fetchBytes, settings: currentSettings, lang: openLang, battleFormat,
+      const screens = createPanelScreens({ fetchBytes, settings: currentSettings, lang: openLang, battleFormat, cries: cryPackSource(risuai.pluginStorage),
         show: showWindow, hide: hideWindow, replies: watchReplies, trainer: () => personaName(risuai).catch(() => null) });
       const pictures = createPanelPictures({ route: () => currentSettings().panelPicture, probe: probeImage, fetchBytes, still: pokerogueStillUrl,
         clean: (address, viaHost) => defringeAddress(address, viaHost ? fetchBytes : null) });

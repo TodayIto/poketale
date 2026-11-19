@@ -200,7 +200,7 @@ export class BattleEncounter {
       for (const tint of tints) tint.setVisible(false).setAlpha(1);
     } else {
 
-      for (const { position, mon } of wild) { s.audio.cry(mon).catch(() => {}); s.info[position].show().catch(() => {}); }
+      for (const { position, mon } of wild) { s.audio.cry(mon, false, 'appear').catch(() => {}); s.info[position].show().catch(() => {}); }
       await Promise.all(wild.map(({ position }) => s.pokemon[position].untint(100, 'Sine.easeOut')));
     }
   }

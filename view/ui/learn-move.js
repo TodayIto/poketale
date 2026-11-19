@@ -107,7 +107,7 @@ export class LearnMoveSummary {
 
     let menu;
     try {
-      s.audio.cry(mon).catch(() => {});
+      s.audio.cry(mon, false, 'happy').catch(() => {});
 
       menu = openMenu(s, { input: action => this.input(action), paused: () => this.confirming, close: () => { this.finish = this.fail = null; } });
       this.finish = menu.finish; this.fail = menu.fail;

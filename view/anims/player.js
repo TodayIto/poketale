@@ -98,6 +98,8 @@ export class AnimationPlayer {
     let framesAt = null;
     const scene = this.scene;
     let user = scene.requireMon(side), target = scene.requireMon(targetSide);
+    // The opposing variant swaps user and target to place its frames; the cry stays the mover's.
+    const mover = user.mon;
 
     const actors = { user: user.container, target: target.container };
 
@@ -128,7 +130,7 @@ export class AnimationPlayer {
     const eventAt = event => {
       if (event.eventType === 'AnimTimedSoundEvent') {
         if (!sound) return;
-        const path = event.resourceName ? `battle_anims/${event.resourceName}` : scene.audio.cryPath(user.mon);
+        const path = event.resourceName ? `battle_anims/${event.resourceName}` : scene.audio.cryVoice(scene.audio.cryPath(mover), 'move');
         sounds.push(scene.audio.play(path, Math.max(0.01, (event.pitch ?? 100) / 100), (event.volume ?? 100) / 100).then(()=>null,e=>e));
       } else if (event.eventType === 'AnimTimedAddBgEvent') {
         if (bg) { scene.tweens.killTweensOf(bg); bg.destroy(); }

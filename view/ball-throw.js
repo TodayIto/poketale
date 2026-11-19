@@ -91,7 +91,7 @@ async function play(scene, ball, { shakes = 0, result, critical = false } = {}, 
 
     sound('se/pb_rel.wav');
     container.y = originalY;
-    if (pokemon.mon.status !== 'slp') scene.audio.cry(pokemon.mon, pokemon.mon.hp / pokemon.mon.maxhp <= 0.25);
+    if (pokemon.mon.status !== 'slp') scene.audio.cry(pokemon.mon, pokemon.mon.hp / pokemon.mon.maxhp <= 0.25, 'appear');
     pokemon.tint(ballTint(key));
     container.setVisible(true);
     scene.effects.showDoll('enemy', true);

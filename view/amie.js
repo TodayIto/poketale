@@ -460,7 +460,7 @@ export class AmieScreen {
     const s = this.scene;
     if (!now && s.time.now - this.cryAt < 4000) return;
     this.cryAt = s.time.now;
-    s.audio?.cry(this.mon).catch(() => {});
+    s.audio?.cry(this.mon, false, 'happy').catch(() => {});
   }
 
   bump(squash) { this.life.squash = squash; this.life.squashT = 0.35; }

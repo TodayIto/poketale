@@ -427,7 +427,7 @@ export class TrainingScreen {
           this.front.anims.timeScale = 1;
           this.emote('bang');
           this.burstAt('note', 3, this.monX, this.feetY - this.reach * 1.6);
-          this.scene.audio?.cry(this.mon).catch(() => {});
+          this.scene.audio?.cry(this.mon, false, 'happy').catch(() => {});
           break;
         default: break;
       }
@@ -479,7 +479,7 @@ export class TrainingScreen {
     this.shown = null;
     this.burstAt('star', 6, mid.x, mid.y, { rise: 1.4, scale: 1 });
     this.burstAt('note', 2, this.monX, this.feetY - this.reach * 1.6);
-    s.audio?.cry(this.mon).catch(() => {});
+    s.audio?.cry(this.mon, false, 'happy').catch(() => {});
   }
 
   flyEffect() {
