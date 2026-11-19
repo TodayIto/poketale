@@ -19,11 +19,11 @@ export async function prepareOutside(scene, { mons = [] } = {}) {
   scene.outside = true;
 }
 
-export function showSummary(scene, slot, { rename, onOpen } = {}) {
+export function showSummary(scene, slot, { rename, lock, onOpen } = {}) {
   if (!scene.messages) throw new Error('Call prepareOutside before showSummary');
   if (!slot?.summary) throw new Error('showSummary needs a slot with summary');
   const screen = scene.summaryScreen ??= new SummaryScreen(scene);
-  return screen.show({ party: [slot], index: 0, rename, onOpen });
+  return screen.show({ party: [slot], index: 0, rename, lock, onOpen });
 }
 
 export async function startPartyScene(scene, { party, cursor = 0 } = {}) {

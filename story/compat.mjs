@@ -76,6 +76,17 @@ const COMPAT_TRAINER_GENDERS = new Map([['2', 'M'], ['3', 'F']]);
 
 export const compatTrainerGender = chat => compatVar(chat, COMPAT_TRAINER_GENDER_VAR, COMPAT_TRAINER_GENDERS);
 
+// A partner Pikachu the bot's story starts with in Kanto: Pokémon Yellow's (game story with starter 4), the original
+// anime's from Professor Oak (adventure 5) and Pokémon Journeys' (adventure 4), which can Gigantamax
+export const COMPAT_PARTNER_VARS = Object.freeze(['$yp_StartRegion', '$yp_Adventure', '$yp_Starter']);
+export function compatPartnerStart(chat) {
+  const read = name => String(chat?.scriptstate?.[`$${name}`] ?? '').trim();
+  if (read('yp_StartRegion') !== '1') return null;
+  const adventure = read('yp_Adventure');
+  if (adventure === '4') return { gigantamax: true };
+  return adventure === '5' || (adventure === '1' && read('yp_Starter') === '4') ? { gigantamax: false } : null;
+}
+
 export const COMPAT_SETTINGS = Object.freeze([
   { key: 'solo', name: 'yp_SoloJourney' },
   { key: 'light', name: 'yp_LightheartedTone' },

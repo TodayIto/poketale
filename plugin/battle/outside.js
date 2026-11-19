@@ -16,7 +16,7 @@ export function createOutsideScreens({ sim, createView, fetchBytes, levelUp, exp
   }
   return {
 
-    openSummary: ({ parent, mon, customItems, theme, onRename }) => withView({ parent, theme }, (view, ctx) => showOutsideSummary({ view, ctx: { ...ctx, customItems }, mon, onRename })),
+    openSummary: ({ parent, mon, customItems, theme, onRename, onEvolveLock }) => withView({ parent, theme }, (view, ctx) => showOutsideSummary({ view, ctx: { ...ctx, customItems }, mon, onRename, onEvolveLock })),
 
     openLearnMove: ({ parent, mon, move, party, theme }) => withView({ parent, theme }, (view, ctx) => learnMoveOutside({ view, ctx, mon, move, party })),
 

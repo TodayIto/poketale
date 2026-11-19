@@ -419,6 +419,8 @@ const CSS = [
     + `${TAP_TARGETS.map(name => `${C}-${name}::after`).join(',')}{content:"";position:absolute;left:50%;top:50%;`
     + `width:max(100%,${SIZE.touch.min}px);height:max(100%,${SIZE.touch.min}px);transform:translate(-50%,-50%);}`
     + `${C}-opt{display:flex;align-items:center;min-height:${SIZE.touch.row}px;}`
+    // The summary's evolution lock follows the quill (22px wide, 5px apart): keep their touch areas from overlapping
+    + `${C}-lock{margin-left:${SIZE.touch.min - 27}px;}`
     + `}`,
 
   `@media (prefers-reduced-motion:reduce){${C},${C}-sheet,${C}-drop,${C}-swk::after{transition:none !important;}}`,

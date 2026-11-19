@@ -9,7 +9,7 @@ import { say, sayer, perLang } from '../../story/screen-text.mjs';
 import { TAB_COLOR, panelSpriteUrl } from '../../story/panel-html.mjs';
 import { itemName, bagItemName, itemLabel, namesFor, canHold } from '../../story/panel.mjs';
 import { natureName, statName, moneyAmount } from '../../story/diary.mjs';
-import { editMon, setAction, setBag, refillMon, draftProblems, draftPartyCount, bagDraft, canTake, DEBUG_FIELDS, typedRange, mainlineBreaks } from '../../story/import.mjs';
+import { editMon, setAction, setBag, refillMon, draftProblems, draftPartyCount, bagDraft, canTake, DEBUG_FIELDS, TRAIT_FIELDS, typedRange, mainlineBreaks } from '../../story/import.mjs';
 import { EGG_SPRITE } from '../../engine/breeding.mjs';
 import { isCustomItem, customText, DEFAULT_EMOJI, CUSTOM_EFFECTS, ownerName } from '../../story/custom-items.mjs';
 import { ITEM_EFFECTS_READY } from '../../story/item-effects.mjs';
@@ -17,6 +17,7 @@ import { learnableTms } from '../../story/item-info.mjs';
 import { STATS, MAX_LEVEL, MAX_MOVES, MAX_IV, PARTY_MAX, STATUS_IDS, displayName, toID, spriteIdOf } from '../../engine/mon.mjs';
 import { EV_STAT_MAX, EV_TOTAL_MAX } from '../../engine/rules.mjs';
 import { FRIENDSHIP_MAX } from '../../engine/friendship.mjs';
+import { gigantamaxLine } from '../../engine/evolution.mjs';
 import storyNames from '../../data/story-names.json' with { type: 'json' };
 import itemTable from '../../data/names/items.json' with { type: 'json' };
 import { pushBack } from './contextmenu.js';
@@ -30,7 +31,7 @@ const GROUPS = [
   { id: 'basic', fields: ['species', 'name', 'level', 'friendship', 'eggCycles'] },
   { id: 'battle', fields: ['nature', 'ability', 'moves', 'item'], details: true },
   { id: 'now', fields: ['hpPercent', 'status'], details: true },
-  { id: 'look', fields: ['gender', 'shiny'], details: true },
+  { id: 'look', fields: ['gender', 'shiny', 'gigantamax', 'evolveLocked'], details: true },
   { id: 'advanced', fields: ['ivs', 'evs', 'teraType'], details: true },
 ];
 export const FIELD_GROUPS = perLang(t => Object.freeze(GROUPS.map(g => Object.freeze({ ...g, label: t(`import.group.${g.id}`) }))));
@@ -714,6 +715,8 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       status: () => select(STATUS_CHOICES(lang), m.status ?? '', fieldLabel.status, v => edit(m.key, 'status', v)),
       gender: () => choices(genderChoices(sim, s.species, lang), s.gender ?? '', fieldLabel.gender, v => edit(m.key, 'gender', v)),
       shiny: () => choices(SHINY_CHOICES(lang), !!s.shiny, fieldLabel.shiny, v => edit(m.key, 'shiny', v)),
+      gigantamax: () => choices(SHINY_CHOICES(lang), !!m.gigantamax, fieldLabel.gigantamax, v => edit(m.key, 'gigantamax', v)),
+      evolveLocked: () => choices(SHINY_CHOICES(lang), !!m.evolveLocked, fieldLabel.evolveLocked, v => edit(m.key, 'evolveLocked', v)),
       ivs: () => statInputs(m, 'ivs', range.iv),
       evs: () => statInputs(m, 'evs', range.ev),
       teraType: () => select([...(s.teraType ? [] : [['', t('import.notChosen')]]), ...lists.types.filter(([t]) => t !== 'Stellar' || s.teraType === 'Stellar')], s.teraType ?? '',
@@ -727,7 +730,10 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     };
 
     const group = g => el('fieldset', {}, el('legend', { textContent: g.label }),
-      g.fields.filter(f => !DEBUG_FIELDS.includes(f) || m[f] !== undefined).map(f => fieldRow(m, f, controls[f](), notes[f] ?? null)));
+      g.fields.filter(f => !(DEBUG_FIELDS.includes(f) || TRAIT_FIELDS.includes(f)) || m[f] !== undefined)
+        // The Gigantamax factor is offered for a kind that can Gigantamax now or once evolved, or kept visible while it is on
+        .filter(f => f !== 'gigantamax' || m.gigantamax || gigantamaxLine(sim.Dex, s.species))
+        .map(f => fieldRow(m, f, controls[f](), notes[f] ?? null)));
 
     const toggle = el('button', { type: 'button', className: 'more-btn' },
       el('span', { textContent: t(details ? 'import.detailsHide' : 'import.detailsShow') }),

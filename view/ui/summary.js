@@ -34,6 +34,12 @@ const TEXT = Object.freeze({ ...SUMMARY_TEXT, ot: 'pokemon-summary.ot', type: 'p
 const QUILL = ['......oo', '.....owo', '....owwo', '...owwo.', '..owwo..', '..owo...', '.oo.....', 'o.......'];
 const QUILL_COLOR = { o: 0x484848, w: 0xf8f8f8 };
 const QUILL_HIT = 14;
+// Evolution lock, drawn like the quill: shut and gold when the Pokémon will not evolve
+const LOCK_SHUT = ['..oooo..', '.o....o.', '.o....o.', 'oooooooo', 'owwwwwwo', 'owwoowwo', 'owwwwwwo', 'oooooooo'];
+const LOCK_OPEN = ['..oooo..', '.o....o.', '.o......', 'oooooooo', 'owwwwwwo', 'owwoowwo', 'owwwwwwo', 'oooooooo'];
+const LOCK_COLOR = { shut: { o: 0x484848, w: 0xf8c020 }, open: { o: 0x484848, w: 0xf8f8f8 } };
+// On the level line left of the gender mark: a long name never pushes it under the page beside
+const LOCK_X = 84, LOCK_Y = -26;
 export const PAGES = ['profile', 'stats', 'moves'];
 
 const MEMO_RIGHT = 7 + 1224 / 6, PAGE_BOTTOM = 159, BOND_HEART_W = 7, BOND_HEART_DY = 5, BOND_SIZES = [96, 80, 66];
@@ -59,7 +65,7 @@ export function openSummary(menu) {
 export class SummaryScreen {
   constructor(scene) { this.scene = scene; }
 
-  async show({ party, index, onOpen, rename }) {
+  async show({ party, index, onOpen, rename, lock }) {
     if (this.finish || this.opening) throw new Error('Summary screen already open');
     const s = this.scene;
     if (!party?.[index]?.summary) throw new Error('No summary for this party slot');
@@ -71,6 +77,7 @@ export class SummaryScreen {
       this.party = party; this.index = index; this.page = PROFILE;
       this.moveSelect = false; this.moveCursor = 0; this.statusShown = false; this.transitioning = false;
       this.rename = typeof rename === 'function' ? rename : null; this.renaming = false;
+      this.lock = typeof lock === 'function' ? lock : null; this.locking = false;
       await fadeSwap(s, () => { this.build(); this.showMon(asset, true); });
     } catch (error) { this.clear(); throw error; } finally { this.opening = false; }
 
@@ -179,9 +186,10 @@ export class SummaryScreen {
     if (shiny) layer.add(shiny);
 
     const quill = this.rename ? this.drawQuill(layer) : null;
+    const evolveLock = this.lock && summary.traits && !summary.traits.held ? this.drawLock(layer, summary.traits.locked) : null;
 
     const gender = GENDER_COLORS[mon.gender] ? addGenderMark(s, 96, -17, mon.gender, `GENDER_${mon.gender}`, { originY: 1 }).setVisible(!nameShowsGender(mon.name)) : null;
-    this.nameRefs = { name, shiny, quill, gender };
+    this.nameRefs = { name, shiny, quill, evolveLock, gender };
     this.placeQuill();
     layer.add(s.add.sprite(6, -19, 'pb', ballFrame(summary.ball)).setOrigin(0, 1));
 
@@ -271,19 +279,34 @@ export class SummaryScreen {
       if (summary.nature.mint) p.add(styledText(s, 7, 113 + 14.83, summary.nature.mint, 'WINDOW_ALT').setOrigin(0, 0));
     }
 
-    if (summary.bond) this.bondLine(p, 113 + 14.83 * (summary.nature ? (summary.nature.mint ? 2 : 1) : 0), summary.bond);
+    const y = 113 + 14.83 * (summary.nature ? (summary.nature.mint ? 2 : 1) : 0);
+    if (summary.bond || summary.traits?.text) this.bondLine(p, y, summary.bond, summary.traits?.text);
   }
 
-  bondLine(p, y, bond) {
-    const s = this.scene, heart = s.add.image(7, y + BOND_HEART_DY, artTexture(s, bond.band === 'lowest' ? 'heartCold' : 'heart')).setOrigin(0, 0);
-    const x = 7 + BOND_HEART_W + 3;
-    let text;
-    for (const fontSize of BOND_SIZES) {
-      text?.destroy();
-      text = styledText(s, x, y, bond.text, 'WINDOW_ALT', { fontSize, wordWrap: { width: (MEMO_RIGHT - x) * 6 } }).setOrigin(0, 0);
-      if (y + text.displayHeight <= PAGE_BOTTOM) break;
+  // The bond line (after its heart) and the traits line under it, made smaller together until both fit the page
+  bondLine(p, y, bond, traits) {
+    const s = this.scene, x = 7 + BOND_HEART_W + 3;
+    let lines = [];
+    // Both lines under a nature and its mint leave room only for smaller text
+    for (const fontSize of bond && traits ? [...BOND_SIZES, 56, 48] : BOND_SIZES) {
+      for (const text of lines) text.destroy();
+      lines = [];
+      let bottom = y;
+      for (const [left, line] of [[x, bond?.text], [7, traits]]) {
+        if (!line) continue;
+        const text = styledText(s, left, bottom, line, 'WINDOW_ALT', { fontSize, wordWrap: { width: (MEMO_RIGHT - left) * 6 } }).setOrigin(0, 0);
+        lines.push(text);
+        bottom += text.displayHeight;
+      }
+      if (bottom <= PAGE_BOTTOM) break;
     }
-    p.add([heart, text]);
+    if (bond) {
+      const heart = s.add.image(7, y, artTexture(s, bond.band === 'lowest' ? 'heartCold' : 'heart')).setOrigin(0, 0);
+      // Shrunk text under it: the heart stays beside its own line, clear of the traits line
+      heart.setY(y + (traits ? Math.min(BOND_HEART_DY, Math.max(0, lines[0].displayHeight - heart.displayHeight)) : BOND_HEART_DY));
+      p.add(heart);
+    }
+    p.add(lines);
   }
   statsPage(container, content, mon, summary) {
     const s = this.scene, p = s.add.container(0, -159);
@@ -440,7 +463,7 @@ export class SummaryScreen {
   }
 
   async startRename() {
-    if (!this.rename || this.renaming || !this.finish || this.transitioning) return;
+    if (!this.rename || this.renaming || this.locking || !this.finish || this.transitioning) return;
     const s = this.scene, mon = this.party[this.index];
     playSelect(s);
     this.renaming = true;
@@ -484,8 +507,43 @@ export class SummaryScreen {
     quill.hit.setPosition(x + QUILL[0].length / 2, y + QUILL.length / 2);
   }
 
+  drawLock(layer, shut) {
+    const s = this.scene, icon = s.add.graphics().setPosition(LOCK_X, LOCK_Y);
+    this.paintLock(icon, shut);
+    const hit = s.add.rectangle(LOCK_X + LOCK_SHUT[0].length / 2, LOCK_Y + LOCK_SHUT.length / 2, QUILL_HIT, QUILL_HIT, 0, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    hit.on('pointerup', this.tap(() => this.toggleLock()));
+    layer.add([icon, hit]);
+    return { icon, hit };
+  }
+
+  paintLock(icon, shut) {
+    if (!icon) return;
+    const colors = LOCK_COLOR[shut ? 'shut' : 'open'];
+    icon.clear();
+    (shut ? LOCK_SHUT : LOCK_OPEN).forEach((row, y) => [...row].forEach((cell, x) => { if (colors[cell] !== undefined) icon.fillStyle(colors[cell]).fillRect(x, y, 1, 1); }));
+  }
+
+  async toggleLock() {
+    if (!this.lock || this.locking || this.renaming || !this.finish || this.transitioning) return;
+    const s = this.scene, mon = this.party[this.index];
+    playSelect(s);
+    this.locking = true;
+    try {
+      const traits = await this.lock();
+      if (!this.container || !this.finish || this.party[this.index] !== mon) return;
+      if (!traits) { await this.notice(s.words('own.evolveLockFailed')); return; }
+      mon.summary.traits = traits;
+      this.paintLock(this.nameRefs?.evolveLock?.icon, traits.locked);
+      if (this.page === PROFILE) this.populate(this.pageC, PROFILE);
+    } catch (error) {
+      if (s.life.signal.aborted || !this.container) return;
+      if (!(error instanceof LoadError)) console.error(error);
+      await this.notice(s.words('own.evolveLockFailed'));
+    } finally { this.locking = false; }
+  }
+
   clear() {
-    this.renameForm?.clear(); this.renaming = false;
+    this.renameForm?.clear(); this.renaming = false; this.locking = false;
     this.release();
     this.descriptionScroll?.remove(); this.descriptionScroll = null;
     this.details?.clear(); this.details = null;

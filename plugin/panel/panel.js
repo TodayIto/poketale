@@ -373,7 +373,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     if (!live || !ui.open) return null;
     try {
       await loadExpText(now.lang);
-      const values = screenView(live, { state: now.state, ctx: now.ctx, lang: now.lang, trainer: live.kind === 'summary' ? await trainer() : null });
+      const values = screenView(live, { state: now.state, ctx: now.ctx, lang: now.lang, locked: !!now.locked, trainer: live.kind === 'summary' ? await trainer() : null });
       if (values) return values;
     } catch (error) {
       console.warn('[poke-battle] 패널 화면', error);
@@ -466,7 +466,10 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
           const onRename = async name => {
             try { await queueAction(actions.nickname(mon, name), target); return true; } catch (error) { console.warn('[poke-battle] 별명', error); return false; }
           };
-          await screens.session(open => open.summary(mon, onRename, now?.state.customItems));
+          const onEvolveLock = now?.locked ? null : async locked => {
+            try { return !!await queueAction(actions.evolveLock(mon, locked), target); } catch (error) { console.warn('[poke-battle] 진화 설정', error); return false; }
+          };
+          await screens.session(open => open.summary(mon, onRename, now?.state.customItems, onEvolveLock));
           return void await refresh({ force: true });
         }
         case 'levelup': return void await (place() === 'window' ? levelUpWindow(effect.uid, target, lang) : levelUpStep(effect.uid, target, lang));

@@ -164,7 +164,7 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), lang, sh
       const parent = host.stage;
       const screen = (name, opening) => (...args) => { host.opening(name); return opening(...args); };
       const working = work({
-        summary: screen('summary', (mon, onRename, customItems) => screens.openSummary({ parent, mon, customItems, ...(onRename ? { onRename } : {}) })),
+        summary: screen('summary', (mon, onRename, customItems, onEvolveLock) => screens.openSummary({ parent, mon, customItems, ...(onRename ? { onRename } : {}), ...(onEvolveLock ? { onEvolveLock } : {}) })),
         learnMove: screen('learnMove', (mon, move, party) => screens.openLearnMove({ parent, mon, move, party })),
         evolution: screen('evolution', (mon, into, learn) => screens.openEvolution({ parent, mon, into, learn })),
         rememberMove: screen('rememberMove', (mon, moves, party) => screens.openRememberMove({ parent, mon, moves, party })),

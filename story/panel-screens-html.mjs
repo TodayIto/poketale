@@ -3,6 +3,7 @@ import { z } from './panel-zoom.mjs';
 import { ballFrame } from '../view/ui/bag.js';
 import { langPath } from '../view/lang-images.js';
 import { artSvg } from '../view/amie-art.js';
+import { LOCKED, UNLOCKED } from '../view/lock-icon.js';
 
 const C = '.x-risu-pkbp';
 
@@ -58,6 +59,7 @@ export function screenCss(base) {
     `${C}-quill{display:flex;align-items:center;justify-content:center;flex:none;width:22px;height:20px;padding:0;border:1.5px solid #789db7;border-radius:6px;background:#fff;color:#23435f;box-shadow:0 1.5px 0 #466c87;cursor:pointer;}`,
     `${C}-quill svg{width:13px;height:13px;display:block;}`,
     `${C}-quill:active{transform:translateY(1px);box-shadow:none;}`,
+    `${C}-lock${C}-lockon{border-color:#b8860b;background:#fff4c8;color:#6b4a00;box-shadow:0 1.5px 0 #8a6408;}`,
     `${C}-hsub{font-size:${z(12)};color:#5d7486;}`,
     `${C}-htypes{display:flex;gap:4px;}`,
     `${C}-hhp{display:flex;align-items:center;gap:6px;font-size:${z(11)};color:#5d7486;white-space:nowrap;}`,
@@ -184,7 +186,10 @@ function heroHtml(hero, lang, hit, helpers, swiped) {
     + `<div class="x-risu-pkbp-hpic">${helpers.img({ spriteId: hero.spriteId, shiny: hero.shiny })}<span class="x-risu-pkbp-dex">No.${String(hero.dex).padStart(4, '0')}</span></div>`
     + '<div class="x-risu-pkbp-hinfo">'
     + `<div class="x-risu-pkbp-hname"><b>${esc(hero.name)}</b>${hero.shiny ? '<span class="x-risu-pkbp-shiny">★</span>' : ''}`
-    + `<button type="button" class="x-risu-pkbp-quill ${hit({ t: 'scRename' })}" aria-label="${esc(hero.rename)}" title="${esc(hero.rename)}">${QUILL}</button>${helpers.gender(hero.gender, hero.name)}</div>`
+    + `<button type="button" class="x-risu-pkbp-quill ${hit({ t: 'scRename' })}" aria-label="${esc(hero.rename)}" title="${esc(hero.rename)}">${QUILL}</button>`
+    + (hero.lock ? `<button type="button" class="x-risu-pkbp-quill x-risu-pkbp-lock${hero.lock.locked ? ' x-risu-pkbp-lockon' : ''} ${hit({ t: 'scLock' })}" aria-pressed="${hero.lock.locked}"`
+      + ` aria-label="${esc(hero.lock.label)}" title="${esc(hero.lock.label)}">${hero.lock.locked ? LOCKED : UNLOCKED}</button>` : '')
+    + `${helpers.gender(hero.gender, hero.name)}</div>`
     + `<div class="x-risu-pkbp-hsub">${esc(hero.species)} · Lv${hero.level}</div>`
     + `<div class="x-risu-pkbp-htypes">${hero.types.map(type => typeBadge(type, lang)).join('')}</div>`
     + `<div class="x-risu-pkbp-hhp"><span class="x-risu-pkbp-hpbar"><span class="x-risu-pkbp-hpfill x-risu-pkbp-hp${hero.hpClass}" style="width:${width}%"></span></span>`
@@ -216,7 +221,8 @@ function profileHtml(profile, lang) {
   return `<div class="x-risu-pkbp-sec">${rows}</div>`
     + sec(profile.ability.label, `<div class="x-risu-pkbp-abn">${esc(profile.ability.name)}</div>${profile.ability.description ? `<div class="x-risu-pkbp-abd">${esc(profile.ability.description)}</div>` : ''}`)
 
-    + (profile.friendship ? bondHtml(profile.friendship) : '');
+    + (profile.friendship ? bondHtml(profile.friendship) : '')
+    + (profile.traits ? `<div class="x-risu-pkbp-sec"><div class="x-risu-pkbp-bond">${esc(profile.traits)}</div></div>` : '');
 }
 
 function statsHtml(stats, hit) {

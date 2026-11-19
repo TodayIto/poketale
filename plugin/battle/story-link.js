@@ -6,6 +6,7 @@ import { withItemTags } from '../../story/custom-items.mjs';
 import { WHAT, failed, refused, failureNote, failureText, ruleText } from '../../story/failure.mjs';
 import { LOCK_FREE, namesFor } from '../../story/panel.mjs';
 import { spriteIdOf, displayName } from '../../engine/mon.mjs';
+import { withTraitsOf } from '../../engine/input.mjs';
 import { personaName, userName } from './persona.js';
 import { renderBattleCard, renderCardTail, renderCollapsed, renderDiscarded, wrapRecent, renderStoryChip, battleTitle, blockBalls, SEND_MS } from '../../story/card.mjs';
 import { MARK, surveyBattles, battlePhase, cardResult, setMark, setFollow, setOpenedAt, hasFollowMarks, findBlockMessage, removeResult, placeResult, resultPlace,
@@ -1130,9 +1131,10 @@ async function prepareBattle(press, mode, retryOf, owner) {
   }
   const persona = await personaLook();
   let spec, startBalls = mode === 'resume' ? save.attempt.balls ?? undefined : undefined;
+  const retryBase = mode === 'retry' ? encounterBase(structuredClone(pass.chat), key, ctx, pass.table).state : null;
   if (!from) {
 
-    const { state } = mode === 'retry' ? encounterBase(structuredClone(pass.chat), key, ctx, pass.table) : acts.pendingState(pass.chat, ctx);
+    const { state } = mode === 'retry' ? { state: retryBase } : acts.pendingState(pass.chat, ctx);
 
     const fighters = hatchedParty(state);
     if (!fighters.length) throw failed('emptyParty');
@@ -1149,6 +1151,10 @@ async function prepareBattle(press, mode, retryOf, owner) {
   const { difficulty } = settings;
   if (spec) spec = { ...spec, difficulty };
   if (from?.spec) from = { ...from, spec: { ...from.spec, difficulty } };
+  if (retryBase) {
+    if (spec) spec = withTraitsOf(retryBase, spec);
+    if (from?.spec) from = { ...from, spec: withTraitsOf(retryBase, from.spec) };
+  }
 
   const { myPicture } = persona.look;
   const me = entryMe(myPicture, myPicture === 'image' ? await loadPicture(risuai.pluginStorage, persona.name) : null);

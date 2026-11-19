@@ -11,7 +11,7 @@ import { enjoymentOf, fullnessOf, gameCandidates } from '../story/amie.mjs';
 import { GAMES, LEVELS } from '../story/amie-games.mjs';
 import { FIND_ORDER, BAG_IDS, BAG_SIZES, EFFECT_BAGS, SOOTHING_BAG, bagOf, traineeOf, hungBagOf, ENERGY_MAX, effortOn } from '../story/training.mjs';
 import { foodList, puffFood } from '../story/panel.mjs';
-import { canSpin, evolutionChoices, evolutionFlips } from '../engine/evolution.mjs';
+import { canSpin, evolutionChoices, evolutionFlips, evolveLocked, evolveTraits } from '../engine/evolution.mjs';
 import { friendshipOf, friendshipLine, isEgg } from '../story/state.mjs';
 import { sayer } from '../story/screen-text.mjs';
 import { withParticle } from '../story/diary.mjs';
@@ -71,11 +71,23 @@ export function outsideSummarySlot(ctx, mon) {
 
     const bond = friendshipLine(mon, ctx, langOf(ctx));
     if (bond) summary.bond = bond;
+    if (!isEgg(mon)) summary.traits = traitsView(ctx, mon.set.species, mon.evolveLocked === true, mon.set.gigantamax === true);
     return { ...monViewOf(ctx, made, mon), active: false, fainted, summary };
   });
 }
 
-export async function showOutsideSummary({ view, ctx, mon, onRename }) {
+// The memo line for a Pokémon's traits; the Gigantamax factor shows only for a kind that can Gigantamax. `held`: the
+// factor itself keeps the form (a Gigantamax Pikachu), so there is no lock to switch
+export function traitsView(ctx, species, locked, gigantamax) {
+  const dex = ctx.sim.Dex;
+  const held = evolveLocked(dex, { species, gigantamax });
+  const gmax = gigantamax && !!dex.species.get(species).canGigantamax;
+  const stops = locked || held;
+  const key = stops && gmax ? 'traitsBoth' : stops ? 'evolveLocked' : gmax ? 'gigantamax' : null;
+  return { locked: stops, ...(held ? { held: true } : {}), ...(key ? { text: sayer(langOf(ctx))(`panel.sc.${key}`) } : {}) };
+}
+
+export async function showOutsideSummary({ view, ctx, mon, onRename, onEvolveLock }) {
   await loadExpText(langOf(ctx));
   const slot = outsideSummarySlot(ctx, mon);
   await view.prepareOutside({ mons: [slot] });
@@ -90,7 +102,14 @@ export async function showOutsideSummary({ view, ctx, mon, onRename }) {
     current = { nickname: value, shown: value || ctx.names.species(slot.speciesId) };
     return current.shown;
   });
-  await view.showSummary(slot, rename ? { rename } : {});
+  let locked = mon.evolveLocked === true;
+  const lock = onEvolveLock && !isEgg(mon) && !slot.summary?.traits?.held && (async () => {
+    const accepted = await onEvolveLock(!locked);
+    if (accepted === false) return null;
+    locked = !locked;
+    return traitsView(ctx, mon.set.species, locked, mon.set.gigantamax === true);
+  });
+  await view.showSummary(slot, { ...(rename ? { rename } : {}), ...(lock ? { lock } : {}) });
   return { nickname };
 }
 
@@ -249,7 +268,7 @@ export async function amieOutside({ view, ctx, mon, state = null, party = [], de
   try {
     const { spent, gains, friends, done, spin, train } = await view.startAmie({
       mon: plan.shown, num: plan.num, scene: scene ?? undefined, species: plan.ids, enjoy: enjoymentOf(mon), full: fullnessOf(mon), friendship: friendshipOf(ctx, mon),
-      party: others, foods, puffFood: id => food(puffFood(id, lang)), words, debug, records: state?.amieRecords ?? {}, spins: canSpin(ctx.sim.Dex, { species: mon.set.species, item: mon.set.item }),
+      party: others, foods, puffFood: id => food(puffFood(id, lang)), words, debug, records: state?.amieRecords ?? {}, spins: canSpin(ctx.sim.Dex, { species: mon.set.species, item: mon.set.item, ...evolveTraits(mon) }),
       awake, trainWhy: trainWhy ? say(`panel.trainWhy.${trainWhy}`) : null, lock: debug && lock ? { on: friendshipLocked(mon), set: lock } : null,
       onChange: now => Object.assign(result, { spent: now.spent, gains: now.gains, friends: now.friends ?? [], done: now.done }),
     });

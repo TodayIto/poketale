@@ -39,6 +39,7 @@ function applyInitialState(sim, side, team, sets) {
 		if (member.ot) pokemon.m.ot = member.ot;
 		if (member.heldCustom) pokemon.m.heldCustom = member.heldCustom;
 		if (member.noTera) pokemon.m.noTera = true;
+		if (member.evolveLocked === true) pokemon.m.evolveLocked = true;
 
 		applyPpUps(side.battle, pokemon, member.ppUps);
 

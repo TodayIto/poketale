@@ -259,6 +259,7 @@ export function eventOf({ op, before, after }, ctx) {
     case 'release': case 'deposit': return { kind: op.op, who: refWho(op.ref) };
     case 'withdraw': return { kind: 'withdraw', who: refWho(op.ref, { boxFirst: true }) };
     case 'nickname': return { kind: 'nickname', who: refWho(op.ref), name: String(op.name ?? '').trim() };
+    case 'evolvelock': return { kind: 'evolvelock', who: refWho(op.ref), locked: op.locked === true };
     case 'hold': {
       const w = refWho(op.ref); const [b] = pair(w);
       const item = op.item ? itemId(op.item) : '', prev = b?.set.item || '';

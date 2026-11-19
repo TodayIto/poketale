@@ -1,7 +1,7 @@
 import { findBlocks, findTags, parseChange, parseBattle, battlesIn, hashKey, speciesName, sharedForms, pickForm, messageId, norm, stripBlocksRead } from './blocks.mjs';
 import { expForLevel, calcExpGain, growthOf as growthOfSpecies, DEFAULT_EXP_RATE, storyExpRate, STORY_EXP_PACE } from '../engine/exp.mjs';
 import { STATS, STATUS_IDS, completeSet, toID } from '../engine/mon.mjs';
-import { levelEvolution, usesHeldItem, extraEvolutions, countOf, ABSENT_TRADE_EVOLUTION, EVOLVE_FRIENDSHIP } from '../engine/evolution.mjs';
+import { levelEvolution, usesHeldItem, extraEvolutions, countOf, evolveLocked, evolveTraits, ABSENT_TRADE_EVOLUTION, EVOLVE_FRIENDSHIP } from '../engine/evolution.mjs';
 import { engineMember } from '../engine/input.mjs';
 import { escapeRe } from './norm.mjs';
 import { BAG_ITEMS, isBall, foodHeal } from '../engine/bag.mjs';
@@ -21,7 +21,7 @@ import { opponentPicture, foePartnerPicture } from './trainer-look.mjs';
 import { readStored, isRecord } from './stored.mjs';
 import { ruleError } from './failure.mjs';
 import { surveyBattles, dropOocs } from './chat.mjs';
-import { statusIn, battleScene, COMPAT_LINE_RE, FIELD_WEATHERS } from './compat.mjs';
+import { statusIn, battleScene, COMPAT_LINE_RE, FIELD_WEATHERS, compatPartnerStart, COMPAT_PARTNER_VARS } from './compat.mjs';
 import { badgeCount, earnedBadges, readLeague, leaguePlaces, leagueAt, leagueDate, keepRecords, LEAGUE_VAR, UNOVA_ERA_VAR } from './badges.mjs';
 import { changeFriendship, moveFriendship, friendshipStep, baseFriendship, friendshipLocked, FRIEND_BALL_FRIENDSHIP, FRIENDSHIP_STEPS, FOND_FRIENDSHIP } from '../engine/friendship.mjs';
 import { entry as nameEntry, koSpellings } from '../names/index.js';
@@ -121,7 +121,7 @@ export function heldChanges(chat, table = readTable(chat)) {
   return surveyBattles(chat, table).held;
 }
 
-export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR, SETTING_CHANGES_VAR, `$${LEAGUE_VAR}`, `$${UNOVA_ERA_VAR}`];
+export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR, SETTING_CHANGES_VAR, `$${LEAGUE_VAR}`, `$${UNOVA_ERA_VAR}`, ...COMPAT_PARTNER_VARS];
 
 const BOOK_FIELDS = ['badges', 'league', 'gyms'];
 
@@ -190,6 +190,37 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const ctxAt = foldCtxAt(chat, ctx);
   const settingsOf = i => foldValues(ctxAt(i));
 
+  // The partner Pikachu a compatible bot's story starts with (compatPartnerStart): the first Pikachu ever to join
+  // before the chat's first battle will not evolve, and in Pokémon Journeys takes the Gigantamax factor. Checked after
+  // each change block and each import, so an edit made at the same message as the joining stays
+  const partner = compatPartnerStart(chat);
+  const first = [...survey.battles.values()].filter(b => !b.discarded).sort((a, b) => a.at - b.at)[0] ?? null;
+  const firstStart = first ? battlesIn(messages[first.index], first.index, ctxAt(first.index)).find(b => b.key === first.key)?.start ?? 0 : 0;
+  const beforeBattle = (i, start) => !first || i < first.index || (i === first.index && start < firstStart);
+  const partnerAt = (i, start, time) => (partner && beforeBattle(i, start) && ruleValues(ctxAt(i, time)).partnerTraits ? partner : null);
+  const partnerKey = i => (partner ? JSON.stringify([partner, !first || i < first.index ? 'before' : i === first.index ? firstStart : 'after']) : '');
+  // `order`: what the step added, in the order it added them ({ base uid, species }: a change block's add lines, an
+  // import's new entries). The partner is the first Pikachu among them while it is still a Pikachu; without an order,
+  // the first new Pikachu found
+  const markPartner = (before, after, traits, order = null) => {
+    const dex = ctx?.sim?.Dex;
+    if (!traits || !dex || before === after) return after;
+    const pikachu = species => !!species && dex.species.get(species).baseSpecies === 'Pikachu';
+    const had = [...before.party, ...before.box];
+    if (had.some(m => !isEgg(m) && pikachu(m.set.species)) || (before.dex?.caught ?? []).some(pikachu)) return after;
+    const known = new Set(had.map(m => m.uid));
+    const fresh = [...after.party, ...after.box].filter(m => !known.has(m.uid) && !isEgg(m) && pikachu(m.set.species));
+    const first = order?.find(entry => pikachu(entry.species));
+    const joined = order ? first && fresh.find(m => m.uid === first.base || m.uid.startsWith(`${first.base}-`)) : fresh[0];
+    if (!joined) return after;
+    const next = structuredClone(after);
+    const mon = [...next.party, ...next.box].find(m => m.uid === joined.uid);
+    mon.evolveLocked = true;
+    if (traits.gigantamax && dex.species.get(mon.set.species).canGigantamax) mon.set.gigantamax = true;
+    dropHeldEvolution(dex, mon);
+    return next;
+  };
+
   const applyImportsAt = (i, start, at, reflected, seen) => importsAt(i).reduce((cur, imp) => {
     const here = { ...at, ...ruleValues(ctxAt(i, imp.time)) };
     let next = cur;
@@ -197,7 +228,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       if (!isReflected(action, reflected, seen)) next = runAction(next, action, here).state;
       reflected.add(action.id);
     }
-    return applyImport(next, imp, here);
+    return markPartner(next, applyImport(next, imp, here), partnerAt(i, Infinity, imp.time), importOrder(imp));
   }, start);
   const importKeysAt = i => importsAt(i).map(imp => `${hashKey(JSON.stringify(imp))}:${Object.values(ruleValues(ctxAt(i, imp.time))).join(':')}`);
   const importKey = i => [...(i === 0 ? importKeysAt(-1) : []), ...importKeysAt(i)].join(',');
@@ -233,7 +264,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
     return { index: i, date: status?.date ?? null, party: hatchedParty(now).map(mon => ({ species: mon.set.species, ...(mon.set.name ? { name: mon.set.name } : {}) })),
       opponents: [spec.name, spec.foePartner?.name].filter(Boolean) };
   };
-  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}`;
+  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}\u0001${partnerKey(i)}`;
   let from = 0;
   while (from <= last && from < folds.length && folds[from].key === keyOf(from)) from++;
   if (from <= last) folds.length = from;
@@ -293,7 +324,9 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       if (held.has(changeAt(i, event.n))) continue;
       const { ops } = parseChange(event.body, here);
       const before = Object.keys(table.fills).length;
-      state = applyOps(state, ops, at, `${name}:${event.key}`, table).state;
+      const was = state, prefix = `${name}:${event.key}`;
+      state = applyOps(state, ops, at, prefix, table).state;
+      state = markPartner(was, state, partnerAt(i, event.start), ops.flatMap((op, j) => (op.op === 'add' ? [{ base: addedUid(prefix, j), species: op.set?.species }] : [])));
       if (Object.keys(table.fills).length !== before) changed = true;
       ops.forEach((_, j) => { const key = `${name}:${event.key}:${j}`; if (Object.hasOwn(table.fills, key)) fills[key] = table.fills[key]; });
     }
@@ -306,6 +339,14 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   return { state: keep && after === state ? clone(state) : after, table, changed, counted, reflected: new Set([...counted].flatMap(key => reflectedBy(table, key))),
     imported: new Set(importedUpto(last)), status };
 }
+
+// The uid an add line gets before uniqueUid makes it unique (applyOp 'add')
+const addedUid = (prefix, j) => `m${hashKey(`${prefix ?? 'local'}:${j}`)}`;
+const importOrder = imp => {
+  if (!Array.isArray(imp?.mons)) return null;
+  const added = imp.mons.filter(entry => entry?.action === 'add');
+  return added.every(entry => typeof entry.uid === 'string') ? added.map(entry => ({ base: entry.uid, species: entry.set?.species })) : null;
+};
 
 const heldActions = imp => (Array.isArray(imp.held) ? imp.held.filter(action => isRecord(action) && typeof action.id === 'string' && Array.isArray(action.ops)) : []);
 
@@ -453,7 +494,7 @@ export function evolutionCheck(ctx, mon, party = [], badges = 0) {
   const status = ctx.status ?? null;
   return {
     mon: { species: species.name, gender: mon.set.gender, item: mon.set.item, uid: mon.uid, moves: mon.set.moves, nature: mon.natureOrig ?? mon.set.nature,
-      ability: mon.set.ability, stats: { atk: stat('atk'), def: stat('def') }, counts: mon.counts },
+      ability: mon.set.ability, stats: { atk: stat('atk'), def: stat('def') }, counts: mon.counts, ...evolveTraits(mon) },
     now: { level: mon.set.level, friendship: friendshipOf(ctx, mon), timeOfDay: status?.timeOfDay ?? 'day', ...duskClock(ctx, status?.hour), weather: FIELD_WEATHERS[status?.weather] ?? null,
       region: status?.region ?? null, money: status?.money ?? null, badges, trade: ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION,
       party: hatched(party).filter(m => m.uid !== mon.uid).map(m => m.set.species) },
@@ -592,6 +633,12 @@ function applyOp(state, op, ctx, fillKey, fill) {
       if (list !== state.box) fail('inParty', { mon: monLabel(mon) });
       if (state.party.length >= PARTY_MAX) fail('partyFull', { max: PARTY_MAX, mon: monLabel(mon) });
       state.party.push(...list.splice(index, 1));
+      return;
+    }
+    case 'evolvelock': {
+      const { mon } = findMon(state, op.ref, ctx);
+      if (op.locked === true) mon.evolveLocked = true; else delete mon.evolveLocked;
+      dropHeldEvolution(ctx.sim.Dex, mon);
       return;
     }
     case 'nickname': {
@@ -885,6 +932,13 @@ function keepHpGain(sim, mon, oldMax, formatid) {
 
 function settlePending(mon) {
   if (!mon.pending.moves.length && !mon.pending.evolve) mon.pending.levels = 0;
+}
+
+// A Pokémon that will not evolve lets go of an evolution still waiting for it
+export function dropHeldEvolution(dex, mon) {
+  if (!mon.pending?.evolve || !evolveLocked(dex, { species: mon.set.species, ...evolveTraits(mon) })) return;
+  mon.pending.evolve = null;
+  settlePending(mon);
 }
 
 export function maxPp(sim, moveId, ppUps = 0, formatid) {
@@ -1188,6 +1242,7 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
       mon.pending.moves = mon.pending.moves.filter(id => !mon.set.moves.includes(id));
     } else if (evolution && evolution.evolved === undefined) {
       mon.pending.evolve = evolution.to;
+      dropHeldEvolution(sim.Dex, mon);
     }
   }
   for (const { uid, move } of result.learnQueue ?? []) {

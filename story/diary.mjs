@@ -133,6 +133,7 @@ export function diaryLine(event, lang, names) {
     case 'deposit': return t('diary.deposit', { who: p(who, '을/를') });
     case 'withdraw': return t('diary.withdraw', { who: p(who, '을/를') });
     case 'nickname': return t('diary.nickname', { species: k.sp(event.who?.species) || who, name: quoted(lang, event.name, ['이라는', '라는']) });
+    case 'evolvelock': return t(event.locked ? 'diary.evolveLock' : 'diary.evolveUnlock', { who: p(who, '이/가') });
     case 'hold':
       if (event.item) return t('diary.give', { who, item: p(item(event.item, event), '을/를') });
       return event.prev ? t('diary.take', { who, item: p(item(event.prev, event), '을/를') }) : t('diary.takeAny', { who });

@@ -21,7 +21,7 @@ const FOLD_SETTINGS = Object.freeze(Object.keys(FOLDED));
 const FROM_NOW = Object.freeze({ old: false, now: true });
 
 export const RULES = Object.freeze({ startFull: FROM_NOW, officialKo: FROM_NOW, aiFormNames: FROM_NOW, ...(ITEM_EFFECTS_READY ? { itemTags: FROM_NOW } : {}),
-  boxHeal: FROM_NOW, foeLooks: FROM_NOW, trainerColors: FROM_NOW, mobStyles: FROM_NOW, duskLycanroc: FROM_NOW, blockEdges: FROM_NOW });
+  boxHeal: FROM_NOW, foeLooks: FROM_NOW, trainerColors: FROM_NOW, mobStyles: FROM_NOW, duskLycanroc: FROM_NOW, blockEdges: FROM_NOW, partnerTraits: FROM_NOW });
 const RULE_NAMES = Object.freeze(Object.keys(RULES));
 
 export const ruleValues = ctx => Object.fromEntries(RULE_NAMES.map(name => [name, ctx?.[name] ?? RULES[name].now]));
