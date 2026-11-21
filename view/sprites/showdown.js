@@ -177,7 +177,8 @@ function sheetSprite(assets, mon, back, key, url, grid, failures, cached, entry 
 
 function installSheet(assets, mon, back, key, url, sheet, failures, cached) {
   const { canvas, cuts, width: w, height: h, bounds, medianOpaquePixels, durations } = sheet;
-  const texture = assets.scene.textures.addCanvas(key, canvas);
+  // The finished sheet is read-only. Register it without a CanvasTexture pixel copy.
+  const texture = assets.scene.textures.addImage(key, canvas);
   cuts.forEach((c, i) => texture.add(i, 0, c.x, c.y, c.w, c.h).setTrim(w, h, 0, 0, c.w, c.h));
 
   assets.scene.anims.create({ key, frameRate: 1000, repeat: -1,
