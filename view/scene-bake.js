@@ -35,8 +35,20 @@ export function parseSvg(svg) {
 }
 
 export function pathBox(d) {
-  let x = 0, y = 0, sx = 0, sy = 0, box = null;
-  const see = () => { box = box ? { x0: Math.min(box.x0, x), y0: Math.min(box.y0, y), x1: Math.max(box.x1, x), y1: Math.max(box.y1, y) } : { x0: x, y0: y, x1: x, y1: y }; };
+  let x = 0, y = 0, sx = 0, sy = 0;
+  let seen = false, minX = 0, minY = 0, maxX = 0, maxY = 0;
+  const see = () => {
+    if (!seen) {
+      seen = true;
+      minX = maxX = x;
+      minY = maxY = y;
+      return;
+    }
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  };
   for (const [, cmd, args] of String(d).matchAll(/([MmHhVvZzLl])([^MmHhVvZzLl]*)/g)) {
     const n = args.trim() ? args.trim().split(/[\s,]+/).map(Number) : [];
     switch (cmd) {
@@ -49,7 +61,7 @@ export function pathBox(d) {
       default: x = sx; y = sy; break;
     }
   }
-  return box;
+  return seen ? { x0: minX, y0: minY, x1: maxX, y1: maxY } : null;
 }
 
 function nodesBox(nodes, tx = 0, ty = 0) {
