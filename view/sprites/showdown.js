@@ -127,14 +127,8 @@ const textureLimit = assets => {
   return Math.min(gl ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : 4096, 4096);
 };
 
-function copyCanvas(source) {
-  const canvas = document.createElement('canvas');
-  canvas.width = source.width; canvas.height = source.height;
-  canvas.getContext('2d').drawImage(source, 0, 0);
-  return canvas;
-}
-
-const copySheet = sheet => ({ ...sheet, canvas: copyCanvas(sheet.canvas), cuts: sheet.cuts.map(c => ({ ...c })),
+// The finished canvas is immutable; only the per-battle metadata needs a copy.
+const copySheetMetadata = sheet => ({ ...sheet, cuts: sheet.cuts.map(c => ({ ...c })),
   bounds: { ...sheet.bounds }, durations: [...sheet.durations] });
 
 export async function showdownSprite(assets, mon, back, key, url, bytes, failures, cached, entry = null) {
@@ -145,7 +139,7 @@ export async function showdownSprite(assets, mon, back, key, url, bytes, failure
     const stored = entry?.sheet;
     if (stored && stored.url === url && stored.limit === textureLimit(assets)) {
       assets.life.check();
-      return installSheet(assets, mon, back, key, url, copySheet(stored), failures, cached);
+      return installSheet(assets, mon, back, key, url, copySheetMetadata(stored), failures, cached);
     }
   }
   let grid;
@@ -171,7 +165,7 @@ function sheetSprite(assets, mon, back, key, url, grid, failures, cached, entry 
   const { canvas, cuts } = packFrames(grid, metrics.map(f => f.bounds), limit);
   grid.canvas.width = 0;
   const sheet = { canvas, cuts, width, height, bounds, medianOpaquePixels, durations };
-  if (entry) entry.sheet = { ...copySheet(sheet), url, limit, size: canvas.width * canvas.height * 4 };
+  if (entry) entry.sheet = { ...copySheetMetadata(sheet), url, limit, size: canvas.width * canvas.height * 4 };
   return installSheet(assets, mon, back, key, url, sheet, failures, cached);
 }
 

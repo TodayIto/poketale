@@ -34,8 +34,7 @@ const cache = new Map();
 const orderKey = sources => sources.map(source => source.url ?? source.kind).join(' ');
 
 function dropSheet(entry) {
-  if (!entry.sheet) return;
-  entry.sheet.canvas.width = 0;
+  // Drop the cache reference without clearing a canvas still used by a live texture.
   delete entry.sheet;
 }
 
