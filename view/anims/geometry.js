@@ -32,6 +32,10 @@ export function copyPosition(pos, mon) {
 
 const SCREEN = Object.freeze({ left: -64, right: 192, top: -112, bottom: 64 });
 const STRETCH = 320 / 256, NEAR = 4;
+const SAMPLE_STEP = 4, SAMPLE_OFFSET = SAMPLE_STEP / 2;
+const SAMPLE_COLUMNS = Math.ceil((SCREEN.right - SCREEN.left - SAMPLE_OFFSET) / SAMPLE_STEP);
+const SAMPLE_ROWS = Math.ceil((SCREEN.bottom - SCREEN.top - SAMPLE_OFFSET) / SAMPLE_STEP);
+const WORD_BITS = 32, WORDS_PER_ROW = Math.ceil(SAMPLE_COLUMNS / WORD_BITS);
 const covers = new WeakMap();
 
 export function screenCover(frame) {
@@ -86,12 +90,44 @@ export function screenCover(frame) {
 }
 
 function painted(tiles, w, h) {
+  if (tiles.length > 1) return paintedGrouped(tiles, w, h);
   let inside = 0, all = 0;
   for (let y = SCREEN.top + 2; y < SCREEN.bottom; y += 4) for (let x = SCREEN.left + 2; x < SCREEN.right; x += 4) {
     all++;
     if (tiles.some(s => Math.abs(x - (s.x ?? 0)) <= w / 2 && Math.abs(y - (s.y ?? 0)) <= h / 2)) inside++;
   }
   return inside / all;
+}
+
+function paintedGrouped(tiles, w, h) {
+  const coverage = new Uint32Array(SAMPLE_ROWS * WORDS_PER_ROW);
+  const columns = new Uint32Array(WORDS_PER_ROW);
+  for (const tile of tiles) {
+    const x = tile.x ?? 0, y = tile.y ?? 0;
+    columns.fill(0);
+    for (let col = 0; col < SAMPLE_COLUMNS; col++) {
+      const sample = SCREEN.left + SAMPLE_OFFSET + col * SAMPLE_STEP;
+      if (Math.abs(sample - x) <= w / 2) columns[Math.floor(col / WORD_BITS)] |= 1 << (col % WORD_BITS);
+    }
+    for (let row = 0; row < SAMPLE_ROWS; row++) {
+      const sample = SCREEN.top + SAMPLE_OFFSET + row * SAMPLE_STEP;
+      if (Math.abs(sample - y) <= h / 2) {
+        const offset = row * WORDS_PER_ROW;
+        // A set bit already covered by another tile still counts just once.
+        for (let word = 0; word < WORDS_PER_ROW; word++) coverage[offset + word] |= columns[word];
+      }
+    }
+  }
+  let inside = 0;
+  for (const word of coverage) inside += countBits(word);
+  return inside / (SAMPLE_COLUMNS * SAMPLE_ROWS);
+}
+
+function countBits(word) {
+  // Sum bit counts in pairs, nibbles, then bytes.
+  word -= (word >>> 1) & 0x55555555;
+  word = (word & 0x33333333) + ((word >>> 2) & 0x33333333);
+  return (((word + (word >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24;
 }
 
 export function backgroundPhase(h, bgY = 0) {
