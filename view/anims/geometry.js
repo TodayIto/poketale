@@ -48,6 +48,15 @@ export function screenCover(frame) {
   for (const same of sizes.values()) {
     const w = 96 * Math.abs(same[0].zoomX ?? 0) / 100, h = 96 * Math.abs(same[0].zoomY ?? 0) / 100;
     if (!w || !h) continue;
+    if (same.length === 1) {
+      const tile = same[0];
+      const x = +(tile.x ?? 0), y = +(tile.y ?? 0);
+      if (x - w / 2 <= SCREEN.left + NEAR && x + w / 2 >= SCREEN.right - NEAR
+        && y - h / 2 <= SCREEN.top + NEAR && y + h / 2 >= SCREEN.bottom - NEAR && painted(same, w, h) >= 0.75) {
+        found.add(tile);
+      }
+      continue;
+    }
     const dx = (a, b) => Math.abs((a.x ?? 0) - (b.x ?? 0)), dy = (a, b) => Math.abs((a.y ?? 0) - (b.y ?? 0));
     const overlaps = (a, b) => dx(a, b) < w - NEAR && dy(a, b) < h - NEAR;
 
