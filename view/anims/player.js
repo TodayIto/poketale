@@ -171,8 +171,9 @@ export class AnimationPlayer {
     const setPriority = (sprite, frame) => {
       const front = (firstOnSide(scene, 'enemy') ?? firstOnSide(scene, 'player')).container;
       const [move, anchor] = PRIORITY[frame.priority]?.({ bg, front, focus: actors[FOCUS[frame.focus]] }) ?? [];
-      if (anchor && scene.field.exists(anchor)) scene.field[move](sprite, anchor);
-      else scene.field.bringToTop(sprite);
+      const field = scene.field;
+      if (anchor && (field.exclusive ? anchor.parentContainer === field : field.exists(anchor))) field[move](sprite, anchor);
+      else field.bringToTop(sprite);
     };
     const eventAt = event => {
       if (event.eventType === 'AnimTimedSoundEvent') {
