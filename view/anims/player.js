@@ -271,7 +271,10 @@ export class AnimationPlayer {
             cache[k].splice(i, 1); if (k === 2) priorities.splice(i, 1);
           }
         }
-        for (const event of anim.frameTimedEvents?.[f] ?? []) eventAt(event);
+        const events = anim.frameTimedEvents?.[f];
+        if (events != null) {
+          for (const event of events) eventAt(event);
+        }
         if (anim.bgFrames) showOriginal(anim.bgFrames[f]);
         if (frameMs) await delay(scene, frameMs);
       }
