@@ -44,7 +44,7 @@ function decodeFrame(row, prev) {
   return o;
 }
 
-function mapFrames(frames, code) {
+function encodeFrames(frames) {
   let previous = [];
   return frames.map(frame => {
 
@@ -52,16 +52,37 @@ function mapFrames(frames, code) {
     for (const o of previous) { if (!prevByTarget.has(o.target)) prevByTarget.set(o.target, []); prevByTarget.get(o.target).push(o); }
     const counts = new Map();
     const out = frame.map(item => {
-      const target = code === 'encode' ? item.target : (item[0] ?? 2);
+      const target = item.target;
       const n = counts.get(target) ?? 0; counts.set(target, n + 1);
       const prev = prevByTarget.get(target)?.[n];
-      return code === 'encode' ? encodeFrame(item, prev) : decodeFrame(item, prev);
+      return encodeFrame(item, prev);
     });
-    previous = code === 'encode' ? frame : out;
+    previous = frame;
     return out;
   });
 }
 
-const variant = (v, code) => v && v.frames ? { ...v, frames: mapFrames(v.frames, code) } : v;
-export const encodeAnim = anim => Array.isArray(anim) ? anim.map(v => variant(v, 'encode')) : variant(anim, 'encode');
-export const decodeAnim = anim => Array.isArray(anim) ? anim.map(v => variant(v, 'decode')) : variant(anim, 'decode');
+function decodeFrames(frames) {
+  let previous;
+  return frames.map(frame => {
+    if (!frame.length) {
+      previous = undefined;
+      return [];
+    }
+    const current = new Map();
+    const out = frame.map(item => {
+      const target = item[0] ?? 2;
+      let group = current.get(target);
+      if (!group) current.set(target, group = []);
+      const decoded = decodeFrame(item, previous?.get(target)?.[group.length]);
+      group.push(decoded);
+      return decoded;
+    });
+    previous = current;
+    return out;
+  });
+}
+
+const variant = (v, mapFrames) => v && v.frames ? { ...v, frames: mapFrames(v.frames) } : v;
+export const encodeAnim = anim => Array.isArray(anim) ? anim.map(v => variant(v, encodeFrames)) : variant(anim, encodeFrames);
+export const decodeAnim = anim => Array.isArray(anim) ? anim.map(v => variant(v, decodeFrames)) : variant(anim, decodeFrames);
