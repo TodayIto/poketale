@@ -227,8 +227,9 @@ export class AnimationPlayer {
 
               scene.field.bringToTop(sprite);
             } else {
-              sprite = kind === 2 ? scene.add.sprite(0, 0, `anim:${anim.graphic}`, frame.graphicFrame)
-                : scene.add.sprite(0, 0, sourceSprite.texture.key, sourceSprite.frame.name);
+              // This player sets every frame explicitly, so these objects need no AnimationState.
+              sprite = kind === 2 ? scene.add.image(0, 0, `anim:${anim.graphic}`, frame.graphicFrame)
+                : scene.add.image(0, 0, sourceSprite.texture.key, sourceSprite.frame.name);
 
               sprite.setOrigin(0.5); scene.field.add(sprite);
             }
