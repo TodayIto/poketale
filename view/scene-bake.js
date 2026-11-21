@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { DOT } from './amie-scenes.js';
 
 const attrsOf = text => Object.fromEntries([...String(text).matchAll(/([\w:-]+)="([^"]*)"/g)].map(m => [m[1], m[2]]));
@@ -157,14 +158,21 @@ let seq = 0;
 
 function bake(scene, prefix, piece) {
   const key = `${prefix}-${++seq}`;
-  const canvas = scene.textures.createCanvas(key, piece.px.w, piece.px.h);
-  const ctx = canvas.getContext();
-  ctx.imageSmoothingEnabled = false;
-  ctx.setTransform(1 / DOT, 0, 0, 1 / DOT, -piece.x / DOT, -piece.y / DOT);
-  ctx.translate(piece.tx, piece.ty);
-  drawNodes(ctx, piece.nodes);
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  canvas.refresh();
+  const { CanvasPool } = Phaser.Display.Canvas;
+  const canvas = CanvasPool.create(scene.textures, piece.px.w, piece.px.h, Phaser.CANVAS, true);
+  try {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = false;
+    ctx.setTransform(1 / DOT, 0, 0, 1 / DOT, -piece.x / DOT, -piece.y / DOT);
+    ctx.translate(piece.tx, piece.ty);
+    drawNodes(ctx, piece.nodes);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (!scene.textures.addImage(key, canvas)) throw new Error(`Cannot register backdrop texture: ${key}`);
+  } catch (error) {
+    if (scene.textures.exists(key) && scene.textures.get(key).getSourceImage() === canvas) scene.textures.remove(key);
+    else CanvasPool.remove(canvas);
+    throw error;
+  }
   return key;
 }
 
