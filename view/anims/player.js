@@ -84,9 +84,16 @@ export class AnimationPlayer {
       }
     }
 
-    for (const name of new Set((anim.bgFrames ?? []).map(state => state?.pic).filter(Boolean))) {
-      textures.push(`anim-bg:${name}`);
-      work.push(assets.image(`anim-bg:${name}`, `images/battle_anims/${encodeURIComponent(name)}.png`, null));
+    if (anim.bgFrames?.length) {
+      const names = new Set();
+      for (const state of anim.bgFrames) {
+        const name = state?.pic;
+        if (name) names.add(name);
+      }
+      for (const name of names) {
+        textures.push(`anim-bg:${name}`);
+        work.push(assets.image(`anim-bg:${name}`, `images/battle_anims/${encodeURIComponent(name)}.png`, null));
+      }
     }
     for (const event of Object.values(anim.frameTimedEvents ?? {}).flat()) {
       if (event.eventType === 'AnimTimedAddBgEvent' && event.resourceName) {
