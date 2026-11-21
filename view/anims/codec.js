@@ -2,6 +2,9 @@ const FIELDS = [['target', 2], ['graphicFrame', 0], ['x', 0], ['y', 0], ['opacit
   ['focus', 1], ['priority', 1], ['locked'], ['visible', true], ['blendType'], ['tone'], ['mirror'], ['color'], ['flash']];
 const NUMERIC = new Set(['graphicFrame', 'x', 'y', 'opacity', 'zoomX', 'zoomY', 'angle']);
 const BOOLEAN = new Set(['locked', 'visible', 'mirror']);
+const NUMERIC_FIELD = 1;
+const BOOLEAN_FIELD = 2;
+const DECODE_KINDS = FIELDS.map(([key]) => (NUMERIC.has(key) ? NUMERIC_FIELD : 0) | (BOOLEAN.has(key) ? BOOLEAN_FIELD : 0));
 const KNOWN = new Set(FIELDS.map(([k]) => k));
 const same = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
@@ -37,9 +40,9 @@ function decodeFrame(row, prev) {
     if (e === '-') continue;
     if (prev) {
       if (e === null) { if (Object.hasOwn(prev, k)) o[k] = prev[k]; continue; }
-      if (NUMERIC.has(k) && typeof prev[k] === 'number') { o[k] = typeof e === 'number' ? prev[k] + e : e[0]; continue; }
+      if ((DECODE_KINDS[i] & NUMERIC_FIELD) && typeof prev[k] === 'number') { o[k] = typeof e === 'number' ? prev[k] + e : e[0]; continue; }
     } else if (e === null) { if (base !== undefined) o[k] = base; continue; }
-    o[k] = BOOLEAN.has(k) ? e === 1 : e;
+    o[k] = (DECODE_KINDS[i] & BOOLEAN_FIELD) ? e === 1 : e;
   }
   return o;
 }
