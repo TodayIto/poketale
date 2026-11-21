@@ -16,9 +16,10 @@ export class PokemonSprite {
     this.container = scene.add.container(this.placement.x, this.placement.y).setDepth(player ? 2 : 1).setVisible(false);
     scene.field.add(this.container);
     if (scene.double) this.keepDrawOrder();
-    const makeSprite = () => scene.add.sprite(0, 0, asset.key, asset.frame)
+    this.sprite = scene.add.sprite(0, 0, asset.key, asset.frame)
       .setOrigin(this.placement.originX, this.placement.originY);
-    this.sprite = makeSprite(); this.tintSprite = makeSprite().setVisible(false);
+    this.tintSprite = scene.add.image(0, 0, asset.key, asset.frame)
+      .setOrigin(this.placement.originX, this.placement.originY).setVisible(false);
     this.container.add([this.sprite, this.tintSprite]);
     this.container.setScale(this.getSpriteScale());
     scene.tera?.applySprite(this);
@@ -42,10 +43,19 @@ export class PokemonSprite {
     this.placement = shifted(this.placement, bx - ax, by - ay);
     return [bx - ax, by - ay];
   }
-  playAnim() { this.sprite.play(this.asset.key); this.tintSprite.play(this.asset.key); }
-  tint(color, alpha = 1) { this.tintSprite.setTintFill(color).setVisible(true).setAlpha(alpha); }
+  playAnim() {
+    this.sprite.play(this.asset.key);
+    if (this.tintSprite.visible) this.syncTintFrame();
+  }
+  syncTintFrame() { this.tintSprite.setFrame(this.sprite.frame); }
+  tint(color, alpha = 1) {
+    this.syncTintFrame();
+    if (!this.tintSprite.visible) this.sprite.on('animationupdate', this.syncTintFrame, this);
+    this.tintSprite.setTintFill(color).setVisible(true).setAlpha(alpha);
+  }
   async untint(duration, ease = 'Linear') {
     await tween(this.scene, { targets: this.tintSprite, alpha: 0, duration, ease });
+    this.sprite.off('animationupdate', this.syncTintFrame, this);
     this.tintSprite.setVisible(false).setAlpha(1);
   }
   async tintIn(color, duration) {
