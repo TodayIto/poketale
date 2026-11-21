@@ -219,7 +219,8 @@ export class AnimationPlayer {
           if (kind === 0 && user === target) continue;
           const i = counts[kind]++;
           let sprite = cache[kind][i];
-          const mon = kind === 0 ? user : target, sourceSprite = mon.getSprite();
+          const mon = kind === 0 ? user : target;
+          const sourceSprite = kind === 2 ? null : mon.getSprite();
           if (!sprite) {
             sprite = kind === 2 ? spareEffects.pop() : null;
             if (sprite) {
