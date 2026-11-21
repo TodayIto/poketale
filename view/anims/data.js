@@ -25,7 +25,9 @@ const decoder = new TextDecoder();
 let all;
 
 function inflate(chunk) {
-  const packed = Uint8Array.from(atob(ANIMS_GZ_B64[chunk]), c => c.charCodeAt(0));
+  const binary = atob(ANIMS_GZ_B64[chunk]);
+  const packed = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) packed[index] = binary.charCodeAt(index);
   return new Response(new Blob([packed]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer().then(buffer => new Uint8Array(buffer));
 }
 
