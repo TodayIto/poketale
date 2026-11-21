@@ -26,9 +26,10 @@ export class BattleInfo {
     this.level = scene.add.container(p.levelX, p.levelY);
     this.hp = scene.add.image(p.hpX, p.hpY, 'overlay_hp', 'high').setOrigin(0);
     const hpLabel = scene.add.image(p.hpX - 1, p.hpY - 3, 'overlay_hp_label').setOrigin(1, 0);
-    this.numbers = scene.add.container(-15, 10).setVisible(player && !mini);
+    this.numbers = player && !mini ? scene.add.container(-15, 10) : null;
     this.gender = null;
-    c.add([this.box, this.nameText, this.status, this.level, this.hp, hpLabel, this.numbers]);
+    c.add([this.box, this.nameText, this.status, this.level, this.hp, hpLabel]);
+    if (this.numbers) c.add(this.numbers);
     if (player) this.exp = new ExpBar(scene, this);
     if (mini) { this.exp.label.setVisible(false); this.exp.bar.setVisible(false); }
 
@@ -58,14 +59,16 @@ export class BattleInfo {
   }
 
   setHpNumbers(hp, maxhp) {
-    const text = `${hp}/${maxhp}`, list = this.numbers.list;
+    const numbers = this.numbers;
+    if (!numbers) return;
+    const text = `${hp}/${maxhp}`, list = numbers.list;
     for (let i = 0; i < text.length; i++) {
       const char = text[text.length - 1 - i], digit = list[i];
-      if (!digit) { this.numbers.add(this.scene.add.image(-i * 8, 0, 'numbers', char)); continue; }
+      if (!digit) { numbers.add(this.scene.add.image(-i * 8, 0, 'numbers', char)); continue; }
       if (digit.texture.key !== 'numbers' || digit.frame.name !== char) digit.setTexture('numbers', char);
       if (digit.x !== -i * 8 || digit.y !== 0) digit.setPosition(-i * 8, 0);
     }
-    while (list.length > text.length) this.numbers.remove(list[list.length - 1], true);
+    while (list.length > text.length) numbers.remove(list[list.length - 1], true);
   }
   updateHpFrame() {
     const frame = this.hp.scaleX > 0.5 ? 'high' : this.hp.scaleX > 0.25 ? 'medium' : 'low';
@@ -74,7 +77,7 @@ export class BattleInfo {
   async hpChange(hp, maxhp) {
     const duration = Math.max(250, Math.min(5000, Math.abs(this.mon.hp - hp) * 5));
     await tween(this.scene, { targets: this.hp, scaleX: Math.max(0, Math.min(1, hp / maxhp)), duration, ease: 'Sine.easeOut',
-      onUpdate: () => { this.updateHpFrame(); if (this.player) this.setHpNumbers(Math.ceil(this.hp.scaleX * maxhp), maxhp); } });
+      onUpdate: () => { this.updateHpFrame(); if (this.numbers) this.setHpNumbers(Math.ceil(this.hp.scaleX * maxhp), maxhp); } });
     this.mon.hp = hp; this.mon.maxhp = maxhp;
     this.setHpNumbers(hp, maxhp); this.updateHpFrame();
   }
