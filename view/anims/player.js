@@ -247,7 +247,7 @@ export class AnimationPlayer {
           }
           const pos = framePosition(frame, user, target, cover.has(frame));
           const scale = kind === 2 ? 1 : mon.getSpriteScale();
-          const { x, y } = kind === 2 ? pos : copyPosition(pos, mon);
+          const { x, y } = kind === 2 ? pos : copyPosition(pos, mon, sourceSprite);
           const scaleX = pos.scaleX * scale, scaleY = pos.scaleY * scale, alpha = (frame.opacity ?? 0) / 255;
           const visible = !!frame.visible && (kind === 2 || shown[kind]);
           const blend = frame.blendType === 1 ? Phaser.BlendModes.ADD : frame.blendType === 2 ? Phaser.BlendModes.DIFFERENCE : Phaser.BlendModes.NORMAL;
