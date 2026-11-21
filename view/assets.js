@@ -117,7 +117,8 @@ export class Assets {
       const promise = this.loadImage(this.url(path)).then(loaded => {
         this.life.check();
         const img = palette ? recolored(loaded, palette) : loaded;
-        if (atlas) this.scene.textures.addAtlas(key, img, atlas);
+        const atlasData = typeof atlas === 'function' ? atlas() : atlas;
+        if (atlasData) this.scene.textures.addAtlas(key, img, atlasData);
         else this.scene.textures.addImage(key, img);
       }).catch(e => { this.pending.delete(key); throw e; });
       this.pending.set(key, promise);
@@ -155,8 +156,9 @@ export class Assets {
 
   async icon(mon) {
     const frame = iconFrame(mon, POKEMON_ICONS);
-    const key = `pokemon_icons_${POKEMON_ICONS[frame][0]}`;
-    await this.image(key, `images/${key}.png`, iconAtlas(POKEMON_ICONS[frame][0], POKEMON_ICONS));
+    const sheet = POKEMON_ICONS[frame][0];
+    const key = `pokemon_icons_${sheet}`;
+    await this.image(key, `images/${key}.png`, () => iconAtlas(sheet, POKEMON_ICONS));
     return { key, frame };
   }
 
