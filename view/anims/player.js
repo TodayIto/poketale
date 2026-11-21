@@ -88,12 +88,16 @@ export class AnimationPlayer {
       textures.push(`anim-bg:${name}`);
       work.push(assets.image(`anim-bg:${name}`, `images/battle_anims/${encodeURIComponent(name)}.png`, null));
     }
-    for (const event of Object.values(anim.frameTimedEvents ?? {}).flat()) {
-      if (event.eventType === 'AnimTimedAddBgEvent' && event.resourceName) {
-        textures.push(`anim-bg:${event.resourceName}`);
-        work.push(assets.image(`anim-bg:${event.resourceName}`, `images/battle_anims/${encodeURIComponent(event.resourceName)}.png`, null));
+    if (anim.frameTimedEvents) {
+      for (const events of Object.values(anim.frameTimedEvents)) {
+        for (const event of events) {
+          if (event.eventType === 'AnimTimedAddBgEvent' && event.resourceName) {
+            textures.push(`anim-bg:${event.resourceName}`);
+            work.push(assets.image(`anim-bg:${event.resourceName}`, `images/battle_anims/${encodeURIComponent(event.resourceName)}.png`, null));
+          }
+          if (event.eventType === 'AnimTimedSoundEvent' && event.resourceName) work.push(audio.load(`battle_anims/${event.resourceName}`).ready);
+        }
       }
-      if (event.eventType === 'AnimTimedSoundEvent' && event.resourceName) work.push(audio.load(`battle_anims/${event.resourceName}`).ready);
     }
     await Promise.all(work);
     this.resourcesReady.set(anim, textures);
