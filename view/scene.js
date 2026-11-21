@@ -226,10 +226,10 @@ export class BattleScene extends Phaser.Scene {
   async faint(side) {
     const p = this.requireMon(side);
 
-    const anims = [p.sprite?.anims, p.tintSprite?.anims].filter(Boolean);
-    anims.forEach(a => { a.timeScale = 0.85; });
+    const anims = p.sprite.anims;
+    anims.timeScale = 0.85;
     try { await this.audio.faintCry(p.mon); }
-    finally { anims.forEach(a => { a.timeScale = 1; }); }
+    finally { anims.timeScale = 1; }
 
     const y0 = p.container.y, box = p.placement?.box;
     const foot = box?.bottom ?? y0, sink = box ? Math.ceil(box.bottom - box.top) + 1 : 150;
