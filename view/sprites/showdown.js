@@ -81,18 +81,25 @@ function packFrames(grid, frameBounds, limit) {
   const tall = [...cuts].sort((a, b) => b.h - a.h);
   const shelve = (width, place) => {
     let x = 0, y = 0, rowHeight = 0, used = 0;
+    let nextWidth = Infinity;
     for (const c of tall) {
-      if (x + c.w > width) { x = 0; y += rowHeight; rowHeight = 0; }
+      const right = x + c.w;
+      if (right > width) {
+        nextWidth = Math.min(nextWidth, right);
+        x = 0; y += rowHeight; rowHeight = 0;
+      }
       if (place) { c.x = x; c.y = y; }
       x += c.w; used = Math.max(used, x); rowHeight = Math.max(rowHeight, c.h);
     }
-    return [used, y + rowHeight];
+    return [used, y + rowHeight, nextWidth];
   };
   let best;
-  for (let width = Math.max(...cuts.map(c => c.w)); width <= limit; width++) {
-    const [w, h] = shelve(width);
+  for (let width = Math.max(...cuts.map(c => c.w)); width <= limit;) {
+    const [w, h, nextWidth] = shelve(width);
     if (h <= limit && !(best?.area <= w * h)) best = { width, area: w * h };
     if (h === tall[0].h) break;
+    // Until a wrapped frame fits, every row keeps the same layout.
+    width = nextWidth;
   }
   if (!best) throw new Error('GIF atlas exceeds GPU texture size');
   const canvas = document.createElement('canvas');
