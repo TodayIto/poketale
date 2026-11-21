@@ -141,7 +141,42 @@ function teraPipelineClass() {
   const Base = Phaser?.Renderer?.WebGL?.Pipelines?.PostFXPipeline;
   if (!Base) return null;
   return TeraFX ??= class extends Base {
-    constructor(game) { super({ game, fragShader: FRAG }); this.teraColor = [0, 0, 0]; }
+    constructor(game) {
+      super({ game, fragShader: FRAG });
+      this.teraColor = [0, 0, 0];
+      this.screenMatrix = new Phaser.GameObjects.Components.TransformMatrix();
+    }
+
+    drawSpriteArea(renderTarget, object, world) {
+      const { renderer, gl } = this;
+      const camera = object.scene.cameras.main;
+      const clip = renderer.currentScissor;
+      if (!clip || object.scene.cameras.cameras.length !== 1 || renderer.fboStack.length !== 1 ||
+          renderTarget.width !== renderer.width || renderTarget.height !== renderer.height ||
+          object.blendMode !== Phaser.BlendModes.NORMAL || object.flipX || object.flipY || object.isCropped ||
+          (camera.roundPixels && (!Number.isInteger(object.x) || !Number.isInteger(object.y)))) {
+        this.bindAndDraw(renderTarget);
+        return;
+      }
+
+      const matrix = this.screenMatrix.copyFrom(camera.matrix).multiplyWithOffset(
+        world, -camera.scrollX * object.scrollFactorX, -camera.scrollY * object.scrollFactorY);
+      const x = -object.displayOriginX, y = -object.displayOriginY;
+      const [x0, y0, x1, y1, x2, y2, x3, y3] = matrix.setQuad(
+        x, y, x + object.frame.realWidth, y + object.frame.realHeight);
+      // Leave room for Phaser's quad rounding and texture filtering. Keep the full-size target and UVs.
+      const left = Phaser.Math.Clamp(Math.floor(Math.min(x0, x1, x2, x3)) - 1, clip[0], clip[0] + clip[2]);
+      const top = Phaser.Math.Clamp(Math.floor(Math.min(y0, y1, y2, y3)) - 1, clip[1], clip[1] + clip[3]);
+      const right = Phaser.Math.Clamp(Math.ceil(Math.max(x0, x1, x2, x3)) + 1, left, clip[0] + clip[2]);
+      const bottom = Phaser.Math.Clamp(Math.ceil(Math.max(y0, y1, y2, y3)) + 1, top, clip[1] + clip[3]);
+      gl.scissor(left, renderer.drawingBufferHeight - bottom, right - left, bottom - top);
+      try {
+        this.bindAndDraw(renderTarget);
+      } finally {
+        renderer.resetScissor();
+      }
+    }
+
     onDraw(renderTarget) {
       const object = this.gameObject, texture = this.game.textures.get('tera');
       if (!object || !texture?.source?.[0]?.glTexture) { this.bindAndDraw(renderTarget); return; }
@@ -160,7 +195,7 @@ function teraPipelineClass() {
       this.set1f('teraTime', (this.game.getTime() % 500000) / 500000);
       this.set3f('teraColor', ...this.teraColor.map(c => c / 255));
       this.bindTexture(texture.source[0].glTexture, 1);
-      this.bindAndDraw(renderTarget);
+      this.drawSpriteArea(renderTarget, object, m);
     }
   };
 }
