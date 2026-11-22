@@ -135,13 +135,40 @@ void main() {
 }`;
 
 const PIPELINE = 'TeraFX';
+const teraRenderTargets = new WeakMap();
 let TeraFX;
 
 function teraPipelineClass() {
   const Base = Phaser?.Renderer?.WebGL?.Pipelines?.PostFXPipeline;
   if (!Base) return null;
   return TeraFX ??= class extends Base {
-    constructor(game) { super({ game, fragShader: FRAG }); this.teraColor = [0, 0, 0]; }
+    constructor(game) { super({ game, fragShader: FRAG, renderTarget: false }); this.teraColor = [0, 0, 0]; }
+
+    bootFX() {
+      super.bootFX();
+      const { renderer } = this;
+      let shared = teraRenderTargets.get(renderer);
+      if (!shared) {
+        const target = new Phaser.Renderer.WebGL.RenderTarget(renderer, renderer.width, renderer.height, 1, 0, true, true);
+        shared = { target, users: 0 };
+        teraRenderTargets.set(renderer, shared);
+      }
+      shared.users++;
+      this.currentRenderTarget = shared.target;
+    }
+
+    destroy() {
+      if (this.currentRenderTarget) {
+        const { renderer } = this;
+        const shared = teraRenderTargets.get(renderer);
+        if (--shared.users === 0) {
+          shared.target.destroy();
+          teraRenderTargets.delete(renderer);
+        }
+      }
+      super.destroy();
+    }
+
     onDraw(renderTarget) {
       const object = this.gameObject, texture = this.game.textures.get('tera');
       if (!object || !texture?.source?.[0]?.glTexture) { this.bindAndDraw(renderTarget); return; }
