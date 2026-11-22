@@ -208,6 +208,7 @@ export class AnimationPlayer {
       }
       scene.life.check();
       if (!anim.frames.length) return;
+      const userPoint = {}, targetPoint = {};
       framesAt = globalThis.performance?.now?.() ?? null;
       originals.forEach(s => s.setVisible(false));
       for (let f = 0; f < anim.frames.length; f++) {
@@ -245,9 +246,9 @@ export class AnimationPlayer {
             const name = exists ? frame.graphicFrame : 0;
             if (sprite.frame.name !== name) sprite.setFrame(name);
           }
-          const pos = framePosition(frame, user, target, cover.has(frame));
+          const pos = framePosition(frame, user, target, cover.has(frame), userPoint, targetPoint);
           const scale = kind === 2 ? 1 : mon.getSpriteScale();
-          const { x, y } = kind === 2 ? pos : copyPosition(pos, mon);
+          const { x, y } = kind === 2 ? pos : copyPosition(pos, mon, userPoint);
           const scaleX = pos.scaleX * scale, scaleY = pos.scaleY * scale, alpha = (frame.opacity ?? 0) / 255;
           const visible = !!frame.visible && (kind === 2 || shown[kind]);
           const blend = frame.blendType === 1 ? Phaser.BlendModes.ADD : frame.blendType === 2 ? Phaser.BlendModes.DIFFERENCE : Phaser.BlendModes.NORMAL;

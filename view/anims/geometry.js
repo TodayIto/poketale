@@ -1,13 +1,20 @@
 // from pokerogue src/data/battle-anims.ts @ 7d7da4a8 (AGPL-3.0-only)
 // Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
 
-export function focusPoint(mon) {
+export function focusPoint(mon, result = {}) {
   const { x, y } = mon.container, anchor = mon.placement?.anchor;
-  return anchor ? { x: x + anchor[0], y: y + anchor[1] } : { x, y: y - mon.getSprite().displayHeight / 2 };
+  if (anchor) {
+    result.x = x + anchor[0];
+    result.y = y + anchor[1];
+  } else {
+    result.x = x;
+    result.y = y - mon.getSprite().displayHeight / 2;
+  }
+  return result;
 }
 
-export function framePosition(frame, user, target, stretch = false) {
-  const u = focusPoint(user), t = focusPoint(target);
+export function framePosition(frame, user, target, stretch = false, userPoint, targetPoint) {
+  const u = focusPoint(user, userPoint), t = focusPoint(target, targetPoint);
   let x = (frame.x ?? 0) + 106, y = (frame.y ?? 0) + 116;
   let scaleX = (frame.zoomX ?? 0) / 100 * (frame.mirror ? -1 : 1);
   const focus = frame.focus || 1;
@@ -22,8 +29,8 @@ export function framePosition(frame, user, target, stretch = false) {
   return { x, y, scaleX, scaleY: (frame.zoomY ?? 0) / 100, angle: -(frame.angle ?? 0) };
 }
 
-export function copyPosition(pos, mon) {
-  const sprite = mon.getSprite(), scale = mon.getSpriteScale(), focus = focusPoint(mon), { x, y } = mon.container;
+export function copyPosition(pos, mon, resultPoint) {
+  const sprite = mon.getSprite(), scale = mon.getSpriteScale(), focus = focusPoint(mon, resultPoint), { x, y } = mon.container;
   return {
     x: pos.x + x + (0.5 - sprite.originX) * sprite.width * scale - focus.x,
     y: pos.y + y + (0.5 - sprite.originY) * sprite.height * scale - focus.y,
