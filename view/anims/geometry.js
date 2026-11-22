@@ -6,7 +6,7 @@ export function focusPoint(mon) {
   return anchor ? { x: x + anchor[0], y: y + anchor[1] } : { x, y: y - mon.getSprite().displayHeight / 2 };
 }
 
-export function framePosition(frame, user, target, stretch = false) {
+export function framePosition(frame, user, target, stretch = false, result = {}) {
   const u = focusPoint(user), t = focusPoint(target);
   let x = (frame.x ?? 0) + 106, y = (frame.y ?? 0) + 116;
   let scaleX = (frame.zoomX ?? 0) / 100 * (frame.mirror ? -1 : 1);
@@ -19,15 +19,19 @@ export function framePosition(frame, user, target, stretch = false) {
     y = u.y + (y - src[1]) / (src[3] - src[1]) * (t.y - u.y);
     if (frame.target === 2 && ((src[0] < src[2]) !== (u.x < t.x))) scaleX *= -1;
   } else if (stretch) { x = ((frame.x ?? 0) - SCREEN.left) * STRETCH; scaleX *= STRETCH; }
-  return { x, y, scaleX, scaleY: (frame.zoomY ?? 0) / 100, angle: -(frame.angle ?? 0) };
+  result.x = x;
+  result.y = y;
+  result.scaleX = scaleX;
+  result.scaleY = (frame.zoomY ?? 0) / 100;
+  result.angle = -(frame.angle ?? 0);
+  return result;
 }
 
-export function copyPosition(pos, mon) {
+export function copyPosition(pos, mon, result = {}) {
   const sprite = mon.getSprite(), scale = mon.getSpriteScale(), focus = focusPoint(mon), { x, y } = mon.container;
-  return {
-    x: pos.x + x + (0.5 - sprite.originX) * sprite.width * scale - focus.x,
-    y: pos.y + y + (0.5 - sprite.originY) * sprite.height * scale - focus.y,
-  };
+  result.x = pos.x + x + (0.5 - sprite.originX) * sprite.width * scale - focus.x;
+  result.y = pos.y + y + (0.5 - sprite.originY) * sprite.height * scale - focus.y;
+  return result;
 }
 
 const SCREEN = Object.freeze({ left: -64, right: 192, top: -112, bottom: 64 });
