@@ -68,12 +68,13 @@ export function scenePieces(parsed, { front = [] } = {}) {
   const flush = () => { if (still?.nodes.length) out.push(still); still = null; };
   const walk = (nodes, layer, isFront, chain, tx, ty, alpha) => {
     for (const n of nodes) {
-      if (moves(n) && (n.anim || n.kids.some(moves))) {
+      if (moves(n)) {
         if (n.anim) {
           flush();
           const motion = [...chain, { ...n.anim, vars: n.vars, base: n.opacity }];
 
-          const own = n.kids.filter(k => !moves(k)), deeper = n.kids.filter(moves);
+          const own = [], deeper = [];
+          for (const child of n.kids) (moves(child) ? deeper : own).push(child);
           if (own.length) out.push({ layer, front: isFront, motion, nodes: own, tx: tx + n.tx, ty: ty + n.ty, alpha });
           walk(deeper, layer, isFront, motion, tx + n.tx, ty + n.ty, alpha);
         } else walk(n.kids, layer, isFront, chain, tx + n.tx, ty + n.ty, alpha * n.opacity);
