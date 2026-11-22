@@ -14,10 +14,9 @@ export function framePosition(frame, user, target, stretch = false) {
   if (focus === 1) { x += t.x - 234; y += t.y - 52; }
   else if (focus === 2) { x += u.x - 106; y += u.y - 116; }
   else if (focus === 3) {
-    const src = [106, 116, 234, 52];
-    x = u.x + (x - src[0]) / (src[2] - src[0]) * (t.x - u.x);
-    y = u.y + (y - src[1]) / (src[3] - src[1]) * (t.y - u.y);
-    if (frame.target === 2 && ((src[0] < src[2]) !== (u.x < t.x))) scaleX *= -1;
+    x = u.x + (x - 106) / (234 - 106) * (t.x - u.x);
+    y = u.y + (y - 116) / (52 - 116) * (t.y - u.y);
+    if (frame.target === 2 && !(u.x < t.x)) scaleX *= -1;
   } else if (stretch) { x = ((frame.x ?? 0) - SCREEN.left) * STRETCH; scaleX *= STRETCH; }
   return { x, y, scaleX, scaleY: (frame.zoomY ?? 0) / 100, angle: -(frame.angle ?? 0) };
 }
