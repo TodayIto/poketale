@@ -239,7 +239,7 @@ export class AnimationPlayer {
           if (kind !== 2) {
             const key = sourceSprite.texture.key, name = sourceSprite.frame.name;
             if (sprite.texture.key !== key || sprite.frame.name !== name) sprite.setTexture(key, name);
-          } else {
+          } else if (sprite.frame.name !== frame.graphicFrame) {
             const exists = sprite.texture.has(frame.graphicFrame);
             if (!exists) this.diagnostics.add(`Missing graphic frame ${frame.graphicFrame}: ${file} (using frame 0, as Phaser's missing-frame default)`);
             const name = exists ? frame.graphicFrame : 0;
