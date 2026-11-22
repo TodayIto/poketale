@@ -1,6 +1,7 @@
 import table from '../data/dex-entries.json' with { type: 'json' };
 import { names, baseKo } from './index.js';
 
+/** Highest national dex number in the table */
 export const DEX_LAST = table.species.length;
 
 let byId = null;
@@ -15,6 +16,7 @@ function decode(num, row, first) {
   });
 }
 
+/** All rows of one dex number (the first is the base look), or [] */
 export function dexEntries(num) {
   const list = Number.isInteger(num) ? table.species[num - 1] : undefined;
   return list ? list.map(row => decode(num, row, list[0])) : [];

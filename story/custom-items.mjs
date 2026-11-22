@@ -1,8 +1,9 @@
 import { toID } from '../engine/mon.mjs';
 import { ITEM_EFFECTS_READY } from './item-effects.mjs';
+import { isMachineId } from './machine-standards.mjs';
 
 export const CUSTOM_PREFIX = 'custom:';
-
+/** Picture of a custom item written without an emoji */
 export const DEFAULT_EMOJI = '📦';
 
 export const CUSTOM_EFFECTS = Object.freeze(['cheer', 'distract', 'taunt', 'food']);
@@ -10,7 +11,7 @@ export const CUSTOM_EFFECTS = Object.freeze(['cheer', 'distract', 'taunt', 'food
 const EFFECT_ORDER = ITEM_EFFECTS_READY ? CUSTOM_EFFECTS : Object.freeze(['food', ...CUSTOM_EFFECTS.filter(effect => effect !== 'food')]);
 
 export const topEffect = (...effects) => EFFECT_ORDER.find(effect => effects.flat().includes(effect)) ?? null;
-
+/** An owner as stored: the text as written, trimmed ('' = none) */
 const ownerText = owner => (typeof owner === 'string' ? owner.trim() : '');
 
 export const isCustomItem = id => typeof id === 'string' && id.startsWith(CUSTOM_PREFIX);
@@ -19,6 +20,14 @@ export function customItemId(name) {
   const text = String(name ?? '').normalize('NFKC').toLowerCase();
   return CUSTOM_PREFIX + (text.replace(/[^\p{L}\p{N}]/gu, '') || text.replace(/\s+/g, ''));
 }
+
+export function storyDisc(holder, id) {
+  if (!isCustomItem(id)) return null;
+  const disc = holder?.customItems?.[id]?.disc;
+  return typeof disc === 'string' && isMachineId(disc) ? disc : null;
+}
+
+export const itemAs = (holder, id) => storyDisc(holder, id) ?? id;
 
 export const itemId = id => (isCustomItem(id) ? id : toID(id));
 
@@ -48,6 +57,7 @@ export const itemsWithTags = items => (items && typeof items === 'object' ? Obje
 
 export const withItemTags = state => (state?.customItems ? { ...state, customItems: itemsWithTags(state.customItems) } : state);
 
+/** Whether a custom item has effect (CUSTOM_EFFECTS) */
 export const hasEffect = (holder, id, effect) => customInfo(holder, id)?.effect === effect;
 
 export function customText(holder, id) {
@@ -82,6 +92,8 @@ export function addCustomItem(state, id, info, { story = false } = {}) {
   const { name, emoji, effect, owner, ownerMon, tags } = info ?? {};
   const old = customInfo(state, id);
   const entry = old ? { ...old } : { name: String(name).trim(), emoji: emoji || DEFAULT_EMOJI };
+  const disc = storyDisc(state, id); // the disc noted where it was first had stays (storyDiscs)
+  if (disc) entry.disc = disc;
   const given = key => Object.hasOwn(info ?? {}, key);
   const next = story ? topEffect(entry.effect ?? [], effect ?? []) : given('effect') ? topEffect(effect ?? []) : tags !== undefined ? topEffect([].concat(tags ?? [])) : entry.effect;
   if (next) entry.effect = next; else delete entry.effect;

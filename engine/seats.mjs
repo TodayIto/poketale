@@ -6,8 +6,10 @@ export function twinSeat(side) {
 	return side === first ? second : side === second ? first : null;
 }
 
+/** Whether a side holds two trainers' Pokemon */
 const shared = side => side.pokemon.some(pokemon => pokemon.m.trainer);
 
+/** One trainer's Pokemon on the bench that can come in */
 export const benchOf = (side, trainer) => side.pokemon.slice(side.active.length).filter(pokemon => !pokemon.fainted && trainerOf(pokemon) === trainer);
 
 export function installSeats(battle) {

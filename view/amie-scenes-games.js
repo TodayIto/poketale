@@ -5,6 +5,7 @@ export const GAME_LAYOUT = Object.freeze({
   tile: { mons: [[0.2, 0.55], [0.8, 0.55], [0.5, 0.8]], feet: 3, side: 12, grids: { easy: { cols: 5, rows: 4 }, normal: { cols: 6, rows: 5 }, hard: { cols: 8, rows: 6 } } },
 });
 
+/** The berry yard's colours */
 const BERRY = { light: '#a6dc78', mid: '#86c862', dark: '#68ac50', front: '#4ea04e', back: '#3a8644', rim: '#78c060', gap: '#e6f4b4', gapRim: '#c8e690',
   twig: '#7a5434', bark: '#a8784c', grass: '#5e9e48', hedge: '#6aa860', fleck: '#d6ec9a' };
 
@@ -31,7 +32,7 @@ export function berryScene(options = {}) {
   });
   L1 += drift(c, P(T.shade, shade) + P(T.cloud, cloud), w + 64, 3);
   if (c.time === 'night') for (const f of [0.06, 0.3, 0.72, 0.94]) L1 += P(T.star, run(q(w * f), q(cb + 6 + (f * 37 % 1) * (gy - hh - cb - 16)), 2));
-
+  // L2: a low hedge of round bumps, lower in the middle 40%
   const hedge = (k, ph) => x => gy - hh * k * (0.55 + 0.45 * Math.abs(Math.sin(x / 7 + ph + Math.sin(x / 17) * 2))) * (0.6 + 0.4 * Math.min(1, edge(c, x) * 6));
   const L2 = P(tint(B.hedge), ridge(c, hedge(1, 0), gy + 2)) + P(tint(mix(B.hedge, B.back, 0.4)), ridge(c, hedge(0.6, 2), gy + 2));
 
@@ -104,6 +105,7 @@ function prop(c, x, base, s) {
   }
 }
 
+/** A cloud of n round lumps about cs wide each, its shade a dot under it */
 function cloudAt(c, x, y, cs, n) {
   const o = [];
   for (let i = 0; i < n; i++) o.push([x + (i - (n - 1) / 2) * cs * 0.6, y - (i % 2) * cs * 0.14, cs * (0.42 + c.rnd() * 0.2), cs * (0.28 + c.rnd() * 0.14)]);
@@ -144,13 +146,13 @@ function clumps(c, g0) {
 function roomPhoto(c, A) {
   const { w, hz, top, tall, rnd } = c, fy = q(hz + 0.35 * (c.feet - hz)), lowY = q(fy - Math.max(10, 0.22 * (fy - top))), H = lowY - top, wd = A.wall;
   const line = t => mix(wd, A.dark, t), wood = A.fur || mix(A.dark, '#6a4630', 0.35), rail = q(top + 0.3 * H), low = q(top + 0.66 * H);
-  const own = !A.hazard && !A.pillar;
+  const own = !A.hazard && !A.pillar; // (the factory's panels and the temple's blocks are their own pattern)
   let wall = P(line(0.12), own ? run(-4, top, w + 8, q(0.12 * H)) + run(-4, low, w + 8, lowY - low) : '') + P(line(0.35), run(-4, rail, w + 8, 2)) + P(mix(wd, '#ffffff', 0.5), run(-4, rail + 2, w + 8, 2));
-
+  // the wainscot's panels, 22 u wide (no tile width is a multiple of it)
   let panel = '';
   for (let x = q(rnd() * 22) - 22; x < w; x += 22) panel += run(x, lowY + 4, 2, fy - lowY - 8);
   wall += P(mix(A.low, A.dark, 0.3), panel);
-
+  // the factory: a big pipe along the wall's lower part
   if (A.hazard) wall += P(A.fur, run(-4, low, w + 8, 6)) + P(mix(A.fur, '#ffffff', 0.4), run(-4, low, w + 8, 2)) + P(mix(A.fur, A.dark, 0.5), run(-4, low + 6, w + 8, 2));
   let up = '';
   if (own) for (let x = q(4 + rnd() * 8); x < w; x = q(x + (A.stripe || A.seams ? 12 : 18) + rnd() * 14)) up += A.stripe ? run(x, rail + 4, 2, lowY - rail - 4) : A.seams ? run(x, top, 2, lowY - top) : run(x, rail + 4, 6 + 2 * (rnd() * 4 | 0), lowY - rail - 4);
@@ -219,17 +221,17 @@ export function tilePicture({ place, time, w = 168, h = 344 } = {}) {
   const c = context({ place, time, w, h, px: 1 }), A0 = c.A, roof = ROOFED.has(A0.kind), g = hardCell(w, h);
   Object.assign(c, { photo: true, top: q(h * 0.04), hz: q(h * 0.58), feet: q(h - 3), wave: A0.kind === 'indoor' ? 0 : 8 });
   if (c.time === 'night' && A0.kind === 'water') c.A = { ...A0, far: '#4f7192', near: '#6188b2' };
-  if (A0.seams) c.A = { ...A0, seams: 0 };
+  if (A0.seams) c.A = { ...A0, seams: 0 }; // (the dojo's planks come at uneven spacing below)
   const { A, tint, hz, rnd } = c, S = c.T.sky, [w1, w2] = A.kind === 'cave' ? A.wall : [], back = A.stars ? w1 : w1 && mix(w1, A.ray || A.light, 0.55);
 
   const cave = A.kind === 'cave' && bands(c, [...[0.25, 0.5, 0.75].map(t => mix(w2, back, t)), back, mix(back, A.light, 0.5), A.light], -4, hz + 8, [0.16, 0.36, 0.56, 0.74, 0.88]);
   const k = KINDS[A.kind](c), room = A.kind === 'indoor' && roomPhoto(c, A0);
   const L0 = room ? k.L0 + room.wall : cave || bands(c, [S[0], mix(S[0], S[1], 0.5), S[1], S[2], mix(S[2], S[3], 0.5), S[3]], -4, hz + 8, [0.17, 0.34, 0.5, 0.66, 0.82]);
-
+  // middle things across outdoors, a half-cut big one at each end
   const base = A.kind === 'water' ? q(hz + 0.42 * (c.feet - hz)) : hz + 6, count = w > h ? 6 : 4;
   let mid = '';
   if (!roof) for (let i = 0; i <= count + 1; i++) { const end = i === 0 || i === count + 1, x = q(end ? (i ? w + 2 : -2) : (i - 0.5 + rnd() * 0.6) * w / count); mid += prop(c, x, q(base + (end ? 8 : rnd() * 10)), end ? 1.6 : 0.6 + rnd() * 0.6); }
-
+  // flowers bottom left, stones bottom right
   const fy = h - 2, fh = q(0.15 * h * 0.6);
   let L5 = P(tint(mix(A.dark, '#3a6a3a', 0.4)), run(4, fy - fh, 2, fh) + run(12, fy - fh + 4, 2, fh - 4) + run(20, fy - fh + 2, 2, fh - 2));
   L5 += P('#f7a8c8', run(2, fy - fh - 2, 6, 4) + run(18, fy - fh, 6, 4)) + P('#ffe27a', run(10, fy - fh + 2, 6, 4));

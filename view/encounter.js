@@ -1,5 +1,5 @@
 // from pokerogue src/phases/encounter-phase.ts (doEncounter, doEncounterCommon) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/phases/battle-phase.ts (hideEnemyTrainer) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/summon-phase.ts (preSummon's player ball throw) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/field/trainer.ts (sprites, tint/untint, playAnim) @ 7d7da4a8 (AGPL-3.0-only)
@@ -24,7 +24,7 @@ const BLACK_SHADOW = Object.freeze({ enemy: Object.freeze({ x: -1, y: 1 }), play
 
 export { SHOWDOWN_TRAINER };
 export const SHOWDOWN_TRAINER_URL = id => `https://play.pokemonshowdown.com/sprites/trainers/${id}.png`;
-
+/** `showdown:<sprite name>` -> sprite name | null */
 export const showdownTrainerId = name => (typeof name === 'string' && name.startsWith(SHOWDOWN_TRAINER) && /^[a-z0-9-]+$/.test(name.slice(SHOWDOWN_TRAINER.length))
   ? name.slice(SHOWDOWN_TRAINER.length) : null);
 
@@ -36,7 +36,7 @@ export class BattleEncounter {
   constructor(scene) {
     this.scene = scene; this.diagnostics = [];
     this.enemyKey = DEFAULT_TRAINER; this.playerKey = PLAYER_TRAINERS[0]; this.enemyBlack = false; this.playerBlack = false;
-    this.enemyKey2 = null; this.enemyBlack2 = false;
+    this.enemyKey2 = null; this.enemyBlack2 = false; // a second opposing trainer (drawn beside the first - makeEnemyTrainer)
     this.enemyTrainer = null; this.playerTrainer = null;
   }
 
@@ -63,7 +63,7 @@ export class BattleEncounter {
     const enemy = enemyTrainer != null || this.scene.options.wild === false;
     await Promise.all([this.load(this.playerKey), this.load(`${this.playerKey}_pb`), enemy ? this.loadEnemy() : null]);
   }
-
+  /** Enemy sprites (both with two opposing trainers) */
   async loadEnemy() {
     await Promise.all([this.loadEnemyKey('enemyKey'), this.enemyKey2 ? this.loadEnemyKey('enemyKey2') : null]);
   }
@@ -93,7 +93,7 @@ export class BattleEncounter {
       const img = await s.assets.loadImage(objectUrl);
       s.assets.life.check();
       const canvas = document.createElement('canvas');
-      canvas.width = 80; canvas.height = 80;
+      canvas.width = 80; canvas.height = 80; // same as the PokeRogue trainer sprite cell (Showdown sprites are 80x80 too)
       canvas.getContext('2d').drawImage(img, Math.round((80 - img.width) / 2), 80 - img.height);
       if (!s.textures.exists(key)) s.textures.addCanvas(key, canvas);
     } finally { URL.revokeObjectURL(objectUrl); }
@@ -171,7 +171,7 @@ export class BattleEncounter {
     if (kind === 'trainer') {
       const trainer = this.enemyTrainer = this.makeEnemyTrainer();
       s.field.addAt(trainer.container, s.field.getIndex(player.container) + 1);
-      for (const tint of [trainer.tintSprite, trainer.partner?.tintSprite].filter(Boolean)) tint.setTintFill(0).setVisible(true).setAlpha(0.5);
+      for (const tint of [trainer.tintSprite, trainer.partner?.tintSprite].filter(Boolean)) tint.setTintFill(0).setVisible(true).setAlpha(0.5); // tint(0, 0.5)
       enemyTargets.push(trainer.container);
     } else {
 
@@ -184,7 +184,7 @@ export class BattleEncounter {
         enemyTargets.push(pokemon.container);
       });
     }
-    s.audio.startBattleMusic();
+    s.audio.startBattleMusic(); // doEncounter: audioManager.playBgm
     await Promise.all([
       tween(s, { targets: enemyTargets, x: `+=${ENTER_DISTANCE}`, duration: 2000 }),
       tween(s, { targets: [arenaPlayer, player.container], x: `-=${ENTER_DISTANCE}`, duration: 2000 }),
@@ -218,7 +218,7 @@ export class BattleEncounter {
     s.life.check();
     this.enemyTrainer?.container.destroy();
     const trainer = this.enemyTrainer = this.makeEnemyTrainer();
-
+    // an anim played once with repeat 0 stops on its last frame
     for (const [key, targets] of [[this.enemyKey, trainer.figures], ...(trainer.partner ? [[trainer.partner.key, trainer.partner.figures]] : [])]) {
       const last = s.anims.get(key)?.frames.at(-1)?.textureFrame;
       if (last !== undefined) for (const target of targets) target.setFrame(last);
@@ -226,7 +226,7 @@ export class BattleEncounter {
     trainer.tintSprite.setVisible(false); trainer.partner?.tintSprite.setVisible(false);
     const { container } = trainer;
     container.setPosition(container.x + ENTER_DISTANCE + TRAINER_STEP, container.y - TRAINER_STEP).setAlpha(0).setVisible(false);
-    s.field.addAt(container, s.field.getIndex(s.biomeObjects[2]) + 1);
+    s.field.addAt(container, s.field.getIndex(s.biomeObjects[2]) + 1); // right above the enemy base (behind mons, as in encounter)
   }
 
   async throwFromPlayer() {

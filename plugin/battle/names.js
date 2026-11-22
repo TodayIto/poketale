@@ -1,10 +1,11 @@
 import { namesIn, shownSpecies } from '../../names/index.js';
 import { DEFAULT_LANG } from '../../director/lang.js';
 
+// director key -> name table kind (also the engine Dex table)
 const KINDS = [['species', 'species'], ['move', 'moves'], ['ability', 'abilities'], ['item', 'items']];
 
 export function battleNamesIn(lang = DEFAULT_LANG, dex) {
-  const names = namesIn(lang);
+  const names = namesIn(lang); // throws for a language without names
   if (lang === 'en' && !dex?.species) throw new TypeError('English battle names need the engine Dex');
   const english = kind => value => {
     const found = typeof value === 'string' && value ? dex[kind].get(value) : null;

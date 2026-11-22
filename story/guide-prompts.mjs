@@ -1,7 +1,9 @@
 export const GUIDE_AT = 'inside';
 
+/** First line of the guide */
 export const GUIDE_HEAD = 'Narration guide:';
 
+/** key and log formats: always */
 export const GUIDE_CORE = [
   'Write one continuous battle scene, not a turn-by-turn list of moves.',
   'Make a few decisive moments, picked from across the whole battle, the most vivid. Keep the rest shorter.',
@@ -19,11 +21,13 @@ export const GUIDE_SUMMARY = [
   "Pokémon don't speak in words, only in their cries.",
 ];
 
+/** Sent after the battle ended */
 export const GUIDE_ENDED = [
   'Even if you skip over parts, always show any capture, any evolution and the outcome of the battle.',
   'If it fits, an evolution can happen mid-battle instead, as an awakening at a knockout the evolving Pokémon landed. Only the timing changes: the moves, damage, knockouts and outcome stay the same. If the evolving Pokémon knocked out no one, show the evolution after the battle as a dramatic moment of its own, with the Pokémon glowing as it changes.',
 ];
 
+/** Sent while the battle is still going on */
 export const GUIDE_ONGOING = [
   'Leave the tension hanging, without pushing toward a finish.',
 ];

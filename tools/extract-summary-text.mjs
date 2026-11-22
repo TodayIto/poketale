@@ -1,5 +1,5 @@
 // from pokerogue locales/{ko,en}/*.json @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { toID } from './sources.mjs';
@@ -36,7 +36,7 @@ for (const lang of LANGS) {
   for (const [id, keys] of names) if (keys.length === 1) add(id, keys[0]);
   for (const key of shared) add(toID(key), key);
 
-  const { table, replaced } = withKoTerms(lang, result);
+  const { table, replaced } = withKoTerms(lang, result); // our Korean terms (tools/ko-terms.mjs)
   await writeFile(new URL(`../director/text-summary-${lang}.json`, import.meta.url), JSON.stringify(table, null, 1) + '\n');
   if (replaced.length) console.log(`  ko-terms (tools/ko-terms.mjs): ${replaced.join(', ')}`);
   console.log(`Extracted 25 natures + ${count} ability descriptions -> director/text-summary-${lang}.json (같은 영어 이름이라 키로 넣은 것 ${shared.length}개)`);

@@ -1,5 +1,5 @@
 // from pokerogue src/main.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/scene-base.ts @ 7d7da4a8 (AGPL-3.0-only)
 import Phaser from 'phaser';
 import { BattleScene } from './scene.js';
@@ -9,15 +9,15 @@ import { runAway } from './run-away.js';
 import { keyAction } from './ui/keys.js';
 import { showTrainer, hideInfo, pause } from './flow-extras.js';
 import { checkTheme } from './ui/theme.js';
-import { checkLang, DEFAULT_LANG } from '../director/lang.js';
+import { checkLang, DEFAULT_LANG } from '../director/lang.js'; // the frame's words and text images (view/words.js, view/assets.js langPath)
 import { prepareOutside, showSummary, startPartyScene, endPartyScene, chooseRememberMove, startAmie, startTraining } from './outside.js';
 import { refitScale } from './refit.js';
-import { screenButtons } from './ui/tap-back.js';
-import { GAME_SPEEDS, DEFAULT_SPEED } from './game-speed.js';
-import { QUALITIES, DEFAULT_QUALITY, CANVAS_SIZE } from './quality.js';
-import { SPRITE_STYLES, DEFAULT_SPRITE_STYLE } from './sprites/styles.js';
+import { screenButtons } from './ui/tap-back.js'; // what the window's back button and page arrows can do now
+import { GAME_SPEEDS, DEFAULT_SPEED } from './game-speed.js'; // game speed
+import { QUALITIES, DEFAULT_QUALITY, CANVAS_SIZE } from './quality.js'; // render quality
+import { SPRITE_STYLES, DEFAULT_SPRITE_STYLE } from './sprites/styles.js'; // which Pokemon pictures are tried first
 import { POSITIONS } from './positions.js';
-import { rendererConfig } from './color-matrix.js';
+import { rendererConfig } from './color-matrix.js'; // no preFX, our sprite color matrix pipeline
 
 export const PAD_KEYS = Object.freeze({ up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', a: 'z', b: 'x' });
 
@@ -28,13 +28,13 @@ function checkSpeed(speed) {
 
 export async function createBattleView(options) {
   if (!options?.parent || typeof options.fetchBytes !== 'function') throw new Error('parent and fetchBytes are required');
-  options = { ...options, theme: checkTheme(options.theme) };
+  options = { ...options, theme: checkTheme(options.theme) }; // 'plugin'(default) | 'legacy' | 'default' (view/ui/theme.js)
   options.lang = checkLang(options.lang ?? DEFAULT_LANG);
 
   options.speed = checkSpeed(options.speed ?? DEFAULT_SPEED);
   options.quality ??= DEFAULT_QUALITY;
   if (!QUALITIES.includes(options.quality)) throw new TypeError(`Unknown quality: ${options.quality} (${QUALITIES.join(' | ')})`);
-  const [width, height] = CANVAS_SIZE[options.quality];
+  const [width, height] = CANVAS_SIZE[options.quality]; // view/quality.js
   options.spriteStyle ??= DEFAULT_SPRITE_STYLE;
   if (!SPRITE_STYLES.includes(options.spriteStyle)) throw new TypeError(`Unknown spriteStyle: ${options.spriteStyle} (${SPRITE_STYLES.join(' | ')})`);
   const life = new Lifetime();
@@ -92,14 +92,24 @@ export async function createBattleView(options) {
     });
   }
 
+  view.zCutIn = (side, moveId) => life.run(() => {
+    if (!POSITIONS.includes(side)) throw new Error(`Invalid side: ${side}`);
+    return scene.zCutIn(side, moveId);
+  });
+
+  view.prefetchCutIn = side => { if (!life.signal.aborted) scene.animations?.prefetchCutIn(side); };
+
   view.warmUp = () => life.run(() => scene.warmUp());
 
-  for (const api of ['showAbility', 'hideAbility', 'setStatStages', 'changeForm', 'substitute', 'playCharge', 'setHidden']) {
+  for (const api of ['showAbility', 'hideAbility', 'setStatStages', 'changeForm', 'ultraBurst', 'substitute', 'playCharge', 'setHidden']) {
     view[api] = (...args) => life.run(() => scene.effects[api](...args));
   }
 
   view.terastallize = (...args) => life.run(() => scene.tera.terastallize(...args));
 
+  view.dynamax = (side, options) => life.run(() => { if (!POSITIONS.includes(side)) throw new Error(`Invalid side: ${side}`); return scene.dynamax.dynamax(side, options); });
+  view.undynamax = (side, options) => life.run(() => { if (!POSITIONS.includes(side)) throw new Error(`Invalid side: ${side}`); return scene.dynamax.undynamax(side, options); });
+  // Ball throw (view-api.md). The bag menu opens via chooseAction's bag
   view.throwBall = (...args) => life.run(() => throwBall(scene, ...args));
 
   view.runAway = () => life.run(() => runAway(scene));
@@ -175,7 +185,7 @@ export async function createBattleView(options) {
     scene.resume();
   };
   Object.defineProperty(view, 'suspended', { get: () => suspended, enumerable: false });
-
+  // Closed (destroy): from then on every pending and new call above rejects
   Object.defineProperty(view, 'closed', { get: () => destroyed, enumerable: false });
 
   view.destroy = () => {

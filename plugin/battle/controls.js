@@ -1,5 +1,5 @@
 import { A1, PART_ICON } from '../../view/frame-parts.js';
-import { pixelSvg } from '../../view/amie-art.js';
+import { pixelSvg } from '../../view/amie-art.js'; // pixels as an SVG (the bar's bigger triangles)
 
 const PREV = PART_ICON.prev, NEXT = PART_ICON.next;
 
@@ -90,7 +90,7 @@ export function stepperControl({ list, value, label, change, words, typed = null
   el.setAttribute('aria-live', 'polite');
   el.append(prev, shown, edit, next);
   let now = value, off = false;
-  const place = v => list.findIndex(([id]) => id === v);
+  const place = v => list.findIndex(([id]) => id === v); // -1 = the typed place (after the list)
   const last = typed ? list.length : list.length - 1;
   const at = () => { const i = place(now); return i < 0 ? list.length : i; };
   const set = v => {
@@ -122,7 +122,7 @@ function steer(target, { min, max, step, pressed, dragged, control }) {
     e.preventDefault();
     control.pick(to);
   });
-
+  /** x on the target's box: 0..1, or null off it (then the end it is past) */
   const at = (x, read) => {
     const box = target.getBoundingClientRect();
     if (x < box.left) return min;
@@ -132,7 +132,7 @@ function steer(target, { min, max, step, pressed, dragged, control }) {
   target.addEventListener('pointerdown', e => {
     if (control.off() || e.button !== 0) return;
     drag = e.pointerId;
-    try { target.setPointerCapture?.(e.pointerId); } catch {                           }
+    try { target.setPointerCapture?.(e.pointerId); } catch { /* the pointer is gone */ }
     control.show(at(e.clientX, pressed));
   });
   target.addEventListener('pointermove', e => { if (drag !== null && e.pointerId === drag) control.show(at(e.clientX, dragged)); });
@@ -140,7 +140,7 @@ function steer(target, { min, max, step, pressed, dragged, control }) {
   target.addEventListener('pointercancel', () => { if (drag === null) return; drag = null; control.show(control.now()); });
   return { stop: () => { drag = null; } };
 }
-
+/** A value brought within min..max at the nearest step from min */
 const stepWithin = (min, max, step) => v => Math.min(max, Math.max(min, min + Math.round((v - min) / step) * step));
 
 export function stepBarControl({ min, max, step, value, label, change, words }) {
@@ -149,7 +149,7 @@ export function stepBarControl({ min, max, step, value, label, change, words }) 
   el.setAttribute('role', 'group'); el.setAttribute('aria-label', label);
   const prev = make('button', 'arr', { type: 'button', innerHTML: BIG_PREV }), next = make('button', 'arr', { type: 'button', innerHTML: BIG_NEXT });
   name(prev, words.prev); name(next, words.next);
-  prev.setAttribute('tabindex', '-1'); next.setAttribute('tabindex', '-1');
+  prev.setAttribute('tabindex', '-1'); next.setAttribute('tabindex', '-1'); // the keyboard steps the bar itself
   const bar = make('span', 'cells');
   bar.setAttribute('role', 'slider'); bar.setAttribute('aria-label', label); bar.setAttribute('aria-orientation', 'horizontal');
   bar.setAttribute('aria-valuemin', String(min)); bar.setAttribute('aria-valuemax', String(max));
@@ -183,5 +183,65 @@ export function stepBarControl({ min, max, step, value, label, change, words }) 
     show(now);
   };
   disable(false);
+  return { el, set, disable };
+}
+
+const GEN_UP_ROWS = ['...o...', '..ooo..', '.ooooo.', 'ooooooo'];
+const GEN_UP = pixelSvg(GEN_UP_ROWS, { o: 'currentColor' }), GEN_DOWN = pixelSvg([...GEN_UP_ROWS].reverse(), { o: 'currentColor' });
+
+export const genSegmentCss = scope => `
+  ${scope} .seg.gen-seg { align-items:center; }
+  ${scope} .seg.gen-seg > button { padding:0 7px; }
+  ${scope} .seg .gen { position:relative; flex:none; display:flex; flex-direction:column; align-items:stretch; min-width:48px; border-radius:7px; color:var(--navy-dark); }
+  ${scope} .seg .gen .num { display:block; padding:0 6px; font-size:13px; line-height:15px; text-align:center; white-space:nowrap; pointer-events:none; }
+  ${scope} .seg .gen .ga { position:relative; display:flex; align-items:center; justify-content:center; height:13px; min-height:0; padding:0; border:0; border-radius:0;
+    background:transparent; color:inherit; cursor:pointer; }
+  ${scope} .seg .gen .ga svg { display:block; width:10.5px; height:6px; }
+  /* Wide spots to press: each arrow takes its half of the cell and more round it (the number between them is no button) */
+  ${scope} .seg .gen .ga::after { content:""; position:absolute; left:-6px; right:-6px; top:-8px; bottom:-8px; height:auto; transform:none; }
+  ${scope} .seg .gen[aria-checked="false"] .num, ${scope} .seg .gen[aria-checked="false"] .ga { opacity:.38; }
+  ${scope} .seg .gen[aria-checked="false"]:not(.off):hover { background:#eef4f9; }
+  ${scope} .seg .gen[aria-checked="false"]:not(.off):hover .ga { opacity:.7; }
+  ${scope} .seg .gen[aria-checked="true"] { background:linear-gradient(#ec5a64,#d8434d); color:#fff; box-shadow:0 1.5px 0 var(--red-dark); }
+  ${scope} .seg .gen[aria-checked="true"].off { background:#c3cfd8; box-shadow:none; }
+  ${scope} .seg .gen .ga:not(:disabled):active svg { transform:translateY(1px); }
+  ${scope} .seg .gen.off { color:#a9b5be; }
+  ${scope} .seg .gen[aria-checked="true"].off { color:#fff; }
+  ${scope} .seg .gen .ga:disabled { cursor:default; }`;
+
+export function genSegmentControl({ list, gens, value, label, change, words }) {
+  const el = make('span', 'seg gen-seg');
+  el.setAttribute('role', 'radiogroup'); el.setAttribute('aria-label', label);
+  const isGen = v => gens.includes(v);
+  let now = value, number = isGen(value) ? value : gens[0], off = false;
+  const buttons = list.map(([v, text]) => {
+    const b = make('button', '', { type: 'button', textContent: text });
+    b.setAttribute('role', 'radio'); b.dataset.id = String(v);
+    b.onclick = () => { if (now !== v) { set(v); change(v); } };
+    el.append(b);
+    return [v, b];
+  });
+  const cell = make('span', 'gen');
+  cell.setAttribute('role', 'radio'); cell.dataset.id = 'gen';
+  const up = make('button', 'ga up', { type: 'button', innerHTML: GEN_UP }), down = make('button', 'ga down', { type: 'button', innerHTML: GEN_DOWN });
+  const num = make('span', 'num');
+  name(up, words.up); name(down, words.down);
+  cell.append(up, num, down);
+  el.append(cell);
+  const step = by => gens[(gens.indexOf(number) + by + gens.length) % gens.length];
+
+  const press = by => { if (off) return; set(isGen(now) ? step(by) : number); change(now); };
+  up.onclick = () => press(1);
+  down.onclick = () => press(-1);
+  function set(v) {
+    now = v;
+    if (isGen(v)) number = v;
+    for (const [id, b] of buttons) b.setAttribute('aria-checked', String(id === v));
+    cell.setAttribute('aria-checked', String(isGen(v)));
+    num.textContent = words.gen(number);
+    cell.setAttribute('aria-label', `${label}: ${words.gen(number)}`);
+  }
+  const disable = on => { off = on; for (const [, b] of buttons) b.disabled = on; up.disabled = down.disabled = on; cell.classList.toggle('off', on); };
+  set(value);
   return { el, set, disable };
 }

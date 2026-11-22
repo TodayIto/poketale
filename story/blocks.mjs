@@ -6,7 +6,7 @@ import storyNames from '../data/story-names.json' with { type: 'json' };
 import aiForms from '../data/names/ai-forms.json' with { type: 'json' };
 import { PARTY_MAX, PAIR_TEAM_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, OT_NAME_MAX } from './rules.mjs';
 import { STATS } from '../engine/mon.mjs';
-import { toID, koSpellings, readsOfficial } from '../names/index.js';
+import { toID, koSpellings, readsOfficial } from '../names/index.js'; // English name -> Showdown id (same as the name tables)
 import { DEFAULT_EMOJI, CUSTOM_EFFECTS, customItemId, splitEmoji, topEffect } from './custom-items.mjs';
 import { ruleNote } from './failure.mjs';
 import { readTime, clockHourOf, readRegion } from './compat.mjs';
@@ -15,9 +15,14 @@ import { readHair, readOutfit } from './trainer-colors.mjs';
 import { readStyles } from './trainer-pool.mjs';
 import { ITEM_EFFECTS_READY } from './item-effects.mjs';
 import { readFormWords, readsNamesSince } from './form-words.mjs';
-import { ITEM_NAMES_SINCE } from './items.mjs';
+import { ITEM_NAMES_SINCE, Z_RING_NAMES, DYNAMAX_BAND_NAMES } from './items.mjs';
+import { DEFAULT_STANDARD, MACHINE_STANDARDS, MACHINE_KINDS, LATEST_GEN, regionStandard, regionGames, parseMachineId, isMachineId, isRegionDisc, lookupStandards,
+  nearestStandards, standardsByGen, unknownRegionFrom } from './machine-standards.mjs';
+import { machineByMove, machineByNumber, tmMove } from './item-info.mjs';
 
 export { norm };
+
+// -- Name lookup ----------------------------------------------
 
 const TABLES = { species: speciesTable, moves: movesTable, abilities: abilitiesTable, items: itemsTable };
 const reverse = {};
@@ -29,11 +34,19 @@ const ITEM_ALIASES = Object.freeze({
 
   healthfeather: ['Health Wing', '체력날개'], musclefeather: ['Muscle Wing', '근력날개'], resistfeather: ['Resist Wing', '저항력날개'],
   geniusfeather: ['Genius Wing', '지력날개'], cleverfeather: ['Clever Wing', '정신력날개'], swiftfeather: ['Swift Wing', '순발력날개'],
+
+  keystone: ['Mega Ring', '메가링', 'Mega Bracelet', '메가팔찌', '메가뱅글', 'Mega Cuff', 'Mega Charm', 'Mega Glove'],
+
+  zring: Z_RING_NAMES.filter(name => !['Z링', 'Z-Ring'].includes(name)),
+
+  dynamaxband: DYNAMAX_BAND_NAMES.filter(name => !['다이맥스 밴드', 'Dynamax Band'].includes(name)),
 });
 
 const ITEM_RULE = new Map(Object.entries(ITEM_NAMES_SINCE).flatMap(([rule, ids]) => ids.map(id => [id, rule])));
 
-export const readsItem = (id, reading) => !ITEM_RULE.has(id) || reading?.[ITEM_RULE.get(id)] !== false;
+export const readsItem = (id, reading) => (!isMachineId(id) || (!readsRegionMachines(reading) && !isRegionDisc(id))) && (!ITEM_RULE.has(id) || reading?.[ITEM_RULE.get(id)] !== false);
+
+const numberName = name => String(name ?? '').split(' ')[0];
 
 const itemRulesOff = reading => Object.keys(ITEM_NAMES_SINCE).filter(rule => reading?.[rule] === false);
 
@@ -41,13 +54,14 @@ const SPECIES_RULES = Object.freeze([...new Set(Object.values(speciesTable).map(
 
 const speciesRulesOff = reading => SPECIES_RULES.filter(rule => reading?.[rule] === false);
 
-function buildReverse(kind, official, off = []) {
+function buildReverse(kind, official, off = [], discs = null) {
   const names = new Map(), aliases = new Map();
   const add = (k, id) => { if (!k) return; const old = names.get(k); if (old === undefined || id.length < old.length) names.set(k, id); };
   const alias = (k, id) => { if (!k) return; aliases.set(k, aliases.has(k) && aliases.get(k) !== id ? null : id); };
   for (const [id, r] of Object.entries(TABLES[kind])) {
-    if (kind === 'items' && off.includes(ITEM_RULE.get(id))) continue;
+    if (kind === 'items' && (off.includes(ITEM_RULE.get(id)) || (isMachineId(id) && !readsItem(id, discs)))) continue; // by machineRef
     if (r.since && off.includes(r.since)) continue;
+    if (kind === 'items' && isMachineId(id)) { add(toID(numberName(r.en)), id), add(norm(numberName(r.en)), id), add(norm(numberName(r.ko)), id); continue; }
     if (r.en) add(toID(r.en), id), add(norm(r.en), id);
     if (kind === 'items') for (const other of ITEM_ALIASES[id] ?? []) alias(norm(other), id);
     const [ko, ...before] = koSpellings(r, { officialKo: official });
@@ -63,23 +77,33 @@ function buildReverse(kind, official, off = []) {
     const region = /^(.+)의 ?모습$/.exec(m[2].trim());
     if (region) alias(norm(region[1]) + base, id), alias(base + norm(region[1]), id);
   }
-  return reverse[`${kind}:${official}:${off}`] = { names, aliases };
+  return reverse[`${kind}:${official}:${off}:${!!discs}`] = { names, aliases };
 }
 
+/** Whether a reading reads the AI form names */
 export const readsFormNames = reading => reading?.aiFormNames !== false;
 
+/** Whether a reading reads item effects and owners */
 export const readsItemTags = reading => ITEM_EFFECTS_READY && reading?.itemTags !== false;
 
 export const readsFoeLooks = reading => reading?.foeLooks !== false;
 
+/** Whether a reading reads the opponents' hair and outfit colour fields */
 export const readsTrainerColors = reading => reading?.trainerColors !== false;
 const COLOR_KEYS = new Set(['hair', 'outfit', 'foePartnerHair', 'foePartnerOutfit']);
 
 export const readsMobStyles = reading => reading?.mobStyles !== false;
 const STYLE_KEYS = new Set(['outfitStyle', 'foePartnerStyle']);
 
+/** Whether a reading reads the battle block's region field */
 export const readsBattleRegion = reading => reading?.battleRegion !== false;
 
+/** Whether a reading reads a trainer's name with the newer title words */
+const readsNamedTitles = reading => reading?.namedTitles !== false;
+
+/** Whether a reading reads a trainer's name with the Japanese names */
+const readsNamedJapanese = reading => reading?.namedJapanese !== false;
+/** Whether a reading reads the level spellings above */
 export const readsLevelSpellings = reading => reading?.levelSpellings !== false;
 const FIELD_RE = /^\s*(effect|for)(?:\s*[:：]\s*|\s+)(\S.*?)\s*$/iu;
 
@@ -151,7 +175,7 @@ function buildFormReverse() {
       if (ko) add(norm(`${name}(${ko})`), id);
     }
   }
-
+  // a name only shared forms share: all of them (an array - pickForm)
   for (const [k, id] of keys) if (id === null && named.get(k).every(f => Object.hasOwn(SHARED_FORMS, f))) keys.set(k, named.get(k));
   return formReverse = keys;
 }
@@ -175,11 +199,17 @@ function readId(kind, raw, allLetters, reading) {
   const id = allLetters && NON_LATIN.test(String(raw ?? '')) ? '' : toID(raw);
   if (id && Object.hasOwn(table, id) && (kind !== 'items' || readsItem(id, reading)) && readsNamesSince(table[id].since, reading)) return id;
   const official = readsOfficial(reading), off = kind === 'items' ? itemRulesOff(reading) : kind === 'species' ? speciesRulesOff(reading) : [];
-  const { names, aliases } = reverse[`${kind}:${official}:${off}`] ?? buildReverse(kind, official, off);
+  const discs = kind === 'items' && !readsRegionMachines(reading) ? OLD_DISCS : null;
+  const { names, aliases } = reverse[`${kind}:${official}:${off}:${!!discs}`] ?? buildReverse(kind, official, off, discs);
   const k = norm(raw);
-  return names.get(id) ?? names.get(k) ?? aliases.get(k) ?? (kind === 'items' ? tmId(raw, reading) : null)
-    ?? (kind === 'species' && readsFormNames(reading) ? formId(id, k) ?? formWords(raw, reading) : null);
+  const named = names.get(id) ?? names.get(k) ?? aliases.get(k);
+  if (named || kind !== 'items') return named ?? (kind === 'species' && readsFormNames(reading) ? formId(id, k) ?? formWords(raw, reading) : null);
+
+  if (readsRegionMachines(reading)) return machineRef(raw, reading)?.item ?? null;
+  return tmId(raw, reading);
 }
+
+const discAlts = (raw, reading) => (readsRegionMachines(reading) ? machineRef(raw, reading)?.alts ?? [] : []);
 
 const formWords = (raw, reading) => readFormWords(raw, { readHalf: half => readId('species', half, false, reading), shared: id => Object.hasOwn(SHARED_FORMS, id), reading });
 
@@ -191,9 +221,159 @@ function tmId(raw, reading) {
     const id = `tm${m[1].padStart(3, '0')}`;
     return Object.hasOwn(itemsTable, id) ? id : null;
   }
-  tmByMove ??= new Map(Object.entries(itemsTable).filter(([, r]) => r.move).map(([id, r]) => [r.move, id]));
+  tmByMove ??= new Map(Object.entries(itemsTable).filter(([id, r]) => r.move && !isRegionDisc(id)).map(([id, r]) => [r.move, id]));
   const move = lookupId('moves', m[1], { reading });
   return (move && tmByMove.get(move)) ?? null;
+}
+
+export const readsRegionMachines = reading => reading?.regionMachines !== false;
+
+const OLD_DISCS = Object.freeze({ regionMachines: false });
+
+const MACHINE_KIND_WORDS = Object.freeze({ tm: ['tm', '기술머신'], hm: ['hm', '비전머신'], tr: ['tr', '기술레코드'] });
+const KIND_WORD = '(tm|hm|tr|기술\\s*머신|비전\\s*머신|기술\\s*레코드)';
+const MACHINE_HEAD = new RegExp(`^\\s*${KIND_WORD}(.*)$`, 'i');
+const MACHINE_TAIL = new RegExp(`^(.*?)([\\s\\-:.]*)${KIND_WORD}\\s*$`, 'i');
+const MACHINE_AFTER = new RegExp(`^(.*?\\S)(\\s*)${KIND_WORD}\\s*[-:.#]?\\s*(\\d{1,3})\\s*$`, 'i');
+const LATIN_KIND = /^[a-z]+$/i;
+
+const [WIDE_OPEN, WIDE_CLOSE] = [0xff08, 0xff09].map(c => String.fromCharCode(c));
+const PAREN = new RegExp(`[(${WIDE_OPEN}]([^()${WIDE_OPEN}${WIDE_CLOSE}]*)[)${WIDE_CLOSE}]`, 'g');
+const OUTER_PAREN = new RegExp(`^[(${WIDE_OPEN}](.*)[)${WIDE_CLOSE}]$`);
+
+const DISC_NUMBER_END = new RegExp(`^(.*?)(\\s*)${KIND_WORD}(\\s*[-:.#]?\\s*)\\d{1,3}\\s*$`, 'i');
+const SIGNED_COUNT = /\s[+-]\s*\d[\d,]*$/;
+
+const LEGACY_TM_NUMBER = /^\s*(?:tm|기술\s*머신)\s*[-:.#]?\s*\d{1,3}\s*$/i;
+
+const apartBefore = (kind, gap, before) => !LATIN_KIND.test(kind) || !!gap || !/[\p{L}\p{N}]$/u.test(before);
+const apartAfter = (kind, after) => !LATIN_KIND.test(kind) || !/^\p{L}/u.test(after);
+
+function discNumberEnds(rest, reading) {
+  if (!readsRegionMachines(reading)) return LEGACY_TM_NUMBER.test(rest);
+  const raw = rest.trim();
+  if (SIGNED_COUNT.test(raw)) return false;
+  const text = raw.replace(PAREN, (all, inner) => (readRegion(inner) ? ' ' : all)).trim();
+  const m = DISC_NUMBER_END.exec(text);
+  if (!m || !apartBefore(m[3], m[2], m[1])) return false;
+  if (!m[1].replace(/[\s\-:.#]+/g, '')) return true;
+  return !m[4] && !!moveNamed(m[1], reading);
+}
+
+const kindOf = word => {
+  const w = word.toLowerCase().replace(/\s+/g, '');
+  return Object.keys(MACHINE_KIND_WORDS).find(kind => MACHINE_KIND_WORDS[kind].includes(w));
+};
+
+function machineParts(raw, isMove) {
+  const text = String(raw ?? '');
+  const head = MACHINE_HEAD.exec(text);
+  if (head && head[2].trim() && apartAfter(head[1], head[2])) return { kind: kindOf(head[1]), rest: head[2] };
+  const after = MACHINE_AFTER.exec(text);
+  if (after && apartBefore(after[3], after[2], after[1]) && isMove(after[1])) return { kind: kindOf(after[3]), rest: `${after[4]} ${after[1]}` };
+  const tail = MACHINE_TAIL.exec(text);
+  if (tail && tail[1].trim() && apartBefore(tail[3], tail[2], tail[1])) return { kind: kindOf(tail[3]), rest: tail[1] };
+  return null;
+}
+
+const opensParen = c => c === '(' || c === WIDE_OPEN, closesParen = c => c === ')' || c === WIDE_CLOSE;
+/** Where the parenthesized group that ends the text opens, or -1 */
+function trailingGroup(text) {
+  if (!closesParen(text.at(-1))) return -1;
+  let depth = 0;
+  for (let i = text.length - 1; i >= 0; i--) {
+    if (closesParen(text[i])) depth++;
+    else if (opensParen(text[i]) && --depth === 0) return i;
+  }
+  return -1;
+}
+
+function dropGloss(raw) {
+  const text = String(raw ?? '').trim();
+  const at = trailingGroup(text);
+  if (at < 0) return text;
+  const before = text.slice(0, at);
+  return /[가-힣]/.test(text.slice(at)) && /[a-z]/i.test(before) ? before.trim() : text;
+}
+
+function moveNamed(raw, reading) {
+  const text = String(raw ?? '').trim().replace(/[\s\-:.#]+$/, '');
+  const bare = t => { const at = trailingGroup(t); return at > 0 ? t.slice(0, at).trim() : t; };
+  const inner = OUTER_PAREN.exec(text)?.[1]?.trim();
+  for (const t of new Set([text, bare(text), inner, inner && bare(inner)])) {
+    const move = t && lookupId('moves', t, { reading });
+    if (move) return move;
+  }
+  return null;
+}
+
+const tagStandard = (region, gen) => regionStandard(region, gen ? { gen } : null) ?? DEFAULT_STANDARD;
+
+const tagGen = text => Number(/(\d)\s*세대|\bgen\.?\s*(\d)/i.exec(String(text ?? ''))?.slice(1).find(Boolean)) || null;
+
+function machineRef(raw, reading) {
+  const own = [...new Set([raw, dropGloss(raw)])].map(toID).find(id => isRegionDisc(id) && Object.hasOwn(itemsTable, id));
+  if (own) return { item: own, alts: [] };
+  let tagged = null, tagRegion = null;
+  const text = String(raw ?? '').replace(PAREN, (all, inner) => {
+    const region = readRegion(inner);
+    if (!region) return all;
+    if (!tagged) { tagged = tagStandard(region, tagGen(inner)); tagRegion = region; }
+    return ' ';
+  });
+
+  const isMove = t => !!moveNamed(t, reading);
+  const parts = machineParts(text.trim(), isMove) ?? machineParts(dropGloss(text), isMove);
+  if (!parts) return undefined;
+  const rest = parts.rest.replace(/^[\s\-:.#]+/, '').trim();
+
+  const whole = moveNamed(rest, reading);
+  const m = /^(\d{1,3})(?!\d)\s*[-:.]?\s*(.*)$/.exec(rest);
+  const number = !whole && m ? Number(m[1]) : null;
+  const move = whole ?? (m?.[2] ? moveNamed(m[2], reading) : null);
+
+  const gen = reading?.machineGen ?? null;
+  if (move && number !== null && !tagged) return numberAndMove({ kind: parts.kind, number, digits: m[1], move, reading });
+  const home = reading?.machineStd ?? DEFAULT_STANDARD, printed = number === null ? null : machineByNumber(home, parts.kind, number);
+  const svNumber = !tagged && number !== null && m[1].length === 3 && (gen ?? MACHINE_STANDARDS[DEFAULT_STANDARD].gen) >= MACHINE_STANDARDS[DEFAULT_STANDARD].gen
+    && (m[1][0] === '0' || !printed || (!!move && tmMove(printed) !== move));
+  const std = tagged ?? (svNumber ? DEFAULT_STANDARD : home);
+  const order = lookupStandards(std, tagged ? tagRegion : svNumber ? null : reading?.machineRegion ?? null, gen);
+  const found = list => { const ids = [...new Set(list.filter(Boolean))]; return ids.length ? { item: ids[0], alts: ids.slice(1) } : null; };
+  if (move) {
+    const exact = parts.kind !== 'tm';
+    const byMove = order.map(s => machineByMove(s, move, parts.kind, { exact })).filter(Boolean);
+    const both = number === null ? [] : byMove.filter(id => parseMachineId(id).number === number);
+    return byMove.length ? found([byMove[0], ...both, ...byMove]) : null;
+  }
+  if (number === null) return null;
+  return found(order.map(s => machineByNumber(s, parts.kind, number)));
+}
+
+function numberAndMove({ kind, number, digits, move, reading }) {
+  const gen = reading?.machineGen ?? null;
+  const allowed = s => !gen || MACHINE_STANDARDS[s].gen <= gen;
+  const exact = kind !== 'tm', kinds = exact ? [kind] : [kind, ...MACHINE_KINDS.filter(k => k !== kind)];
+  const svOnly = digits.length === 3 && digits[0] === '0' && (gen ?? LATEST_GEN) >= LATEST_GEN;
+  const byNumber = s => (svOnly && s !== DEFAULT_STANDARD ? null : kinds.map(k => machineByNumber(s, k, number)).find(id => id && tmMove(id) === move) ?? null);
+  const byMove = s => machineByMove(s, move, kind, { exact });
+  const std = reading?.machineStd ?? DEFAULT_STANDARD, region = reading?.machineRegion ?? null;
+  const homeGames = regionGames(region).length ? regionGames(region) : std !== DEFAULT_STANDARD ? [std] : [];
+  const steps = homeGames.length ? regionSteps(std, homeGames, allowed, byNumber, byMove) : unknownRegion(gen, allowed, byNumber, byMove);
+  const ids = [...new Set(steps.flat().filter(Boolean))];
+  return ids.length ? { item: ids[0], alts: ids.slice(1) } : null;
+}
+/** numberAndMove's steps 1-5 for a known region: lists of discs, in order */
+function regionSteps(std, homeGames, allowed, byNumber, byMove) {
+  const home = nearestStandards(std).filter(s => homeGames.includes(s));
+  const others = standardsByGen(MACHINE_STANDARDS[std].gen).filter(s => !homeGames.includes(s));
+  const homeIn = home.filter(allowed), othersIn = others.filter(allowed), past = [...home, ...others].filter(s => !allowed(s));
+  return [homeIn.map(byNumber), othersIn.map(byNumber), homeIn.map(byMove), othersIn.map(byMove), [byMove(DEFAULT_STANDARD)], past.map(byMove)];
+}
+
+function unknownRegion(gen, allowed, byNumber, byMove) {
+  const order = standardsByGen(unknownRegionFrom(gen));
+  return [order.filter(allowed).map(byNumber), [byMove(DEFAULT_STANDARD)], order.map(byMove)];
 }
 
 export function speciesName(raw, reading, form) {
@@ -247,6 +427,8 @@ const readLook = (value, styleFields) => {
   return l === 'toddler' && !styleFields ? undefined : l;
 };
 
+// -- Finding blocks ---------------------------------------------
+
 export const seededIndex = (seed, n) => parseInt(hashKey(seed), 36) % n;
 
 export function hashKey(str) {
@@ -266,9 +448,9 @@ export function hashKey(str) {
 const BLOCK_KINDS = 'battle|change|end|act|shop';
 
 const BLOCK_RE = new RegExp(String.raw`<\s*pkb-(${BLOCK_KINDS})\s*>([\s\S]*?)<\s*\/\s*pkb-\1\s*>`, 'gi');
-const TAG_RE = /<pkb#([a-z0-9]+)>/g;
+export const TAG_RE = /<pkb#([a-z0-9]+)>/g;
 
-const MARK_RE = /<pkb!([a-z]):([a-z0-9]+)>/g;
+export const MARK_RE = /<pkb!([a-z]):([a-z0-9]+)>/g;
 
 export const MARK = { open: 'p', discarded: 'x', here: 'h', moved: 'm', openedAt: 'w' };
 
@@ -357,7 +539,7 @@ function spanCuts(text, cuts) {
     if (text.slice(last.end, end).search(REASONING_TAG_RE) < 0) last.end = end;
   }
 }
-
+/** The text without the cuts of our blocks (blockCuts) */
 const withoutBlocks = (text, reading) => blockCuts(text, reading).reduceRight((out, cut) => out.slice(0, cut.start) + out.slice(cut.end), String(text ?? ''));
 
 export const hasBlocks = text => String(text ?? '').search(BLOCK_RE) >= 0;
@@ -408,6 +590,8 @@ export const stripForPrompt = (text, reading) => tidy(withoutBlocks(text, readin
 
 export const stripBlocksRead = (text, reading) => (readsBlockEdges(reading) ? stripForPrompt(text, reading) : tidy(String(text ?? '').replace(BLOCK_RE, '')));
 
+// -- Reading lines -----------------------------------------------
+
 function lines(body, errors) {
   const out = [];
   for (const raw of String(body ?? '').split(/\r?\n/)) {
@@ -424,7 +608,7 @@ const BATTLE_KEYS = words({
   opponent: ['opponent', 'type', 'battle', 'vs', '상대', '종류', '배틀'], name: ['name', 'trainer', 'trainername', '이름', '트레이너이름'],
   gender: ['gender', 'sex', '성별'], look: ['look', 'looks', 'appearance', '모습', '외모', '겉모습'], class: ['class', 'trainerclass', 'job', '직업'], rank: ['rank', 'tier', '등급'],
   place: ['place', 'biome', 'location', 'area', '장소', '바이옴', '지형'], time: ['time', '시간', '시간대'], pokemon: ['pokemon', 'mon', '포켓몬'],
-
+  // the battle's region (read only with readsBattleRegion)
   region: ['region', '지방', '지역'],
   format: ['format', 'battleformat', 'battlestyle', 'style', '형식', '배틀형식', '방식'],
   partner: ['partner', 'ally', 'partnername', 'allyname', '동료', '파트너', '동료이름'],
@@ -447,7 +631,7 @@ const BATTLE_KEYS = words({
   foePartnerStyle: ['foepartnerstyle', 'foepartneroutfitstyle', 'opponent2style', 'trainer2style', 'style2', '상대동료스타일', '상대2스타일', '둘째상대스타일', '스타일2'],
 });
 const FORMAT = words({ single: ['single', 'singles', 'singlebattle', '1v1', '싱글', '싱글배틀'], double: ['double', 'doubles', 'doublebattle', '2v2', '더블', '더블배틀'] });
-
+// Most wild Pokemon one double battle block may hold (two appear together)
 const WILD_DOUBLE_MAX = 2;
 const SET_KEYS = words({
   ability: ['ability', '특성'], moves: ['moves', 'move', '기술', '기술들'], item: ['item', 'helditem', 'hold', '도구', '지닌도구', '지닌물건'],
@@ -507,7 +691,7 @@ function splitSeg(seg, map) {
     if (n === 2 && !(m[2] && /[\p{L}\p{N}]/u.test(m[2]))) continue;
     if (map.has(k)) return [map.get(k), seg.split(/\s+/).slice(n).join(' ').replace(/^[:：]\s*/, '').trim()];
   }
-
+  // written without a space, like "moves:Tackle"
   const c = /^([^:：]+)[:：]\s*(.*)$/.exec(seg);
   if (c && map.has(norm(c[1]))) return [map.get(norm(c[1])), c[2].trim()];
   return null;
@@ -537,7 +721,7 @@ function parseSet(value, errors, dest, warnings = errors, reading, tags = false)
   let { level } = takeLevel(segs[0]);
   const set = {};
   let to = 'party', ot = null, custom = null, fields = { effect: null, owner: '' };
-
+  // the later IV field wins (6V / six numbers / nV are one field)
   const ivField = (v, seg) => {
     const r = readIvs(v);
     if (!r) { errors.push(note('badIvs', { max: MAX_IV, seg })); return; }
@@ -550,15 +734,15 @@ function parseSet(value, errors, dest, warnings = errors, reading, tags = false)
     if (field) { fields = joinField(fields, field); continue; }
     const kv = splitSeg(seg, SET_KEYS);
     if (!kv) {
-
+      // a field with only a value and no key: level, HP%, gender symbol, shiny
       const lv = takeLevel(seg);
       if (level == null && lv.level != null && !lv.rest) { level = lv.level; continue; }
       const more = level == null && readsLevelSpellings(reading) ? fieldLevel(seg, false) : null;
       if (more) { level = more.level; if (more.gender) set.gender = more.gender; continue; }
       if (/^\d+(?:\.\d+)?\s*%$/.test(seg)) { set.hpPercent = percent(seg, warn); continue; }
       if (GENDER.has(norm(seg)) && /^[♂♀]$/.test(seg)) { set.gender = GENDER.get(norm(seg)); continue; }
-      if (NOT_SHINY.has(norm(seg))) continue;
-      if (/^\d+\s*v$/i.test(seg)) { ivField(seg, seg); continue; }
+      if (NOT_SHINY.has(norm(seg))) continue; // "not shiny" written as one field
+      if (/^\d+\s*v$/i.test(seg)) { ivField(seg, seg); continue; } // "6V" written without the key
       errors.push(note('unknownExtra', { seg }));
       continue;
     }
@@ -618,7 +802,16 @@ function parseSet(value, errors, dest, warnings = errors, reading, tags = false)
     }
   }
 
-  const head = readHead(segs[0], reading, { gender: set.gender, seed: String(value).trim() }, level);
+  const form = { gender: set.gender, seed: String(value).trim() };
+  let head = readHead(segs[0], reading, form, level);
+
+  if (readsGmaxFactor(reading)) {
+    const word = GMAX_WORD.exec(segs[0]);
+    const named = word && readHead(segs[0].slice(word[0].length), reading, form, level);
+    if (named?.species && gmaxFormOf(named.species)) head = { ...named, species: gmaxFormOf(named.species) };
+    const base = head.species && gmaxBaseOf(head.species);
+    if (base) { head = { ...head, species: base }; set.gigantamax = true; }
+  }
   const { rest, species } = head;
   if (!rest) { errors.push(note('noMonName', { seg: segs[0] })); return null; }
   if (!species) { errors.push(note('unknown.species', { name: rest })); return null; }
@@ -630,11 +823,30 @@ function parseSet(value, errors, dest, warnings = errors, reading, tags = false)
   return { set: { species, level, ...set }, to, ...(ot ? { ot } : {}), ...(custom ? { custom } : {}) };
 }
 
+export const readsGmaxFactor = reading => reading?.gmaxFactor !== false;
+const GMAX_WORD = /^\s*(?:gigantamax|g-?max|거다이맥스|거다이|キョダイマックス|キョダイ)\s+/i;
+
+const gmaxBaseOf = name => (/-Gmax$/.test(name) && Object.hasOwn(speciesTable, toID(name.slice(0, -5))) ? speciesTable[toID(name.slice(0, -5))].en : null);
+/** A species' name -> its Gigantamax form's name, or null when it has none */
+const gmaxFormOf = name => speciesTable[`${toID(name)}gmax`]?.en ?? null;
+
+function gmaxSpecies(raw, reading, form) {
+  const species = speciesName(raw, reading, form);
+  if (!readsGmaxFactor(reading)) return { species, gigantamax: false };
+  const word = GMAX_WORD.exec(raw);
+  const named = word && speciesName(raw.slice(word[0].length), reading, form);
+  const written = named && gmaxFormOf(named) ? gmaxFormOf(named) : species;
+  const base = written && gmaxBaseOf(written);
+  return base ? { species: base, gigantamax: true } : { species, gigantamax: false };
+}
+
 export function parseMonLine(value) {
   const errors = [];
   const r = parseSet(value, errors, true);
   return r ? { set: r.set, to: r.to, errors } : { errors };
 }
+
+// -- Battle block ---------------------------------------------
 
 export function parseBattle(body, reading) {
   const errors = [];
@@ -728,9 +940,9 @@ export function parseBattle(body, reading) {
     if (partnerTeam.length) spec.partner = { name: partnerName, team: partnerTeam };
     if (foePartner) {
       spec.foePartner = { name: foePartnerName, team: foePartnerTeam };
-
+      // the look implies the gender, as the first opponent's below
       if (foePartnerLook) spec.foePartner.look = foePartnerLook;
-      const partnerGender = LOOK_GENDER[foePartnerLook] ?? foePartnerGender;
+      const partnerGender = LOOK_GENDER[foePartnerLook] ?? foePartnerGender; // a toddler implies none: its gender field
       if (partnerGender) spec.foePartner.gender = partnerGender;
       if (Object.keys(foePartnerColors).length) spec.foePartner.colors = foePartnerColors;
       if (foePartnerStyle) spec.foePartner.style = foePartnerStyle;
@@ -752,8 +964,14 @@ export function parseBattle(body, reading) {
   if (spec.wild === false && Object.keys(colors).length) spec.colors = colors;
 
   if (spec.wild === false && styleFields) spec.style = style;
+
+  if (!readsNamedTitles(reading)) spec.oldTitles = true;
+
+  if (!readsNamedJapanese(reading)) spec.oldJapanese = true;
   return { spec: fatal ? null : spec, errors };
 }
+
+// -- Change blocks ---------------------------------------------
 
 function ref(str, errors) {
   const s = String(str ?? '').trim();
@@ -860,8 +1078,10 @@ function parseOp(op, value, errors, warnings, reading) {
     case 'egg': {
 
       const m = /^(.*?)(?:\s*[,/|]?\s*(box|박스))?$/i.exec(value.trim());
-      const species = need('species', m[1], errors, reading);
-      return species && { op, species: speciesTable[species].en, ...(m[2] ? { to: 'box' } : {}) };
+
+      const { species } = gmaxSpecies(m[1], reading);
+      if (!species) { errors.push(note('unknown.species', { name: m[1].trim() })); return null; }
+      return { op, species, ...(m[2] ? { to: 'box' } : {}) };
     }
     case 'level': {
       const m = /^(.*?)\s*(?:([+-])\s*(\d{1,3})|=\s*(?:lv\.?\s*)?(\d{1,3})|(?:lv\.?\s*|레벨\s*)?(\d{1,3}))\s*(?:레벨)?$/i.exec(value);
@@ -898,12 +1118,14 @@ function parseOp(op, value, errors, warnings, reading) {
       const { emoji, rest: written } = splitEmoji(fields.text);
       const { name: rest, tag } = takeTag(written, readsItemTags(reading));
 
-      const { name, n } = /^\s*(?:tm|기술\s*머신)\s*[-:.#]?\s*\d{1,3}\s*$/i.test(rest) ? { name: rest, n: 1 } : tailCount(rest, 1);
+      const { name, n } = discNumberEnds(rest, reading) ? { name: rest, n: 1 } : tailCount(rest, 1);
       const item = n > 0 ? itemOf(name, emoji, value, errors, reading, topEffect(fields.effect ?? [], tag ?? []), fields.owner) : itemOf(name, emoji, value, errors, reading);
       if (!item) return null;
       if (!Number.isSafeInteger(n)) { errors.push(note('itemCountBig', { value })); return null; }
       if (!n) { errors.push(note('itemCountZero', { value })); return null; }
-      return { op, ...item, delta: n };
+
+      const alts = n < 0 && parseMachineId(item.item) ? discAlts(name, reading) : [];
+      return { op, ...item, delta: n, ...(alts.length ? { alts } : {}) };
     }
     case 'release': case 'deposit': case 'withdraw': {
       const who = ref(value, errors);
@@ -932,10 +1154,10 @@ function parseOp(op, value, errors, warnings, reading) {
       const who = ref(h, errors);
       if (!who) return null;
 
-      const species = speciesName(rest, reading, { seed: value.trim() });
+      const { species, gigantamax } = gmaxSpecies(rest, reading, { seed: value.trim() });
       if (!species) { errors.push(note('unknown.species', { name: rest })); return null; }
       const forms = sharedForms(rest, reading);
-      return { op, ref: who, species, ...(forms ? { forms } : {}) };
+      return { op, ref: who, species, ...(forms ? { forms } : {}), ...(gigantamax ? { gigantamax } : {}) };
     }
     case 'teach': {
       const [h, rest] = headRef(value, true, reading);
@@ -957,7 +1179,7 @@ function parseOp(op, value, errors, warnings, reading) {
       const m = /^([+-])?\s*[₩$]?\s*(\d[\d,]*)\s*(?:원|₩|p|pokedollars?)?$/i.exec(value.trim());
       if (!m) { errors.push(note('badMoney', { value })); return null; }
       const delta = Number((m[1] ?? '+') + m[2].replace(/,/g, ''));
-
+      // a very long number (Infinity, lost precision) drops the line
       if (!Number.isSafeInteger(delta)) { errors.push(note('moneyBig', { value })); return null; }
       if (!delta) { errors.push(note('moneyZero', { value })); return null; }
       return { op, delta };
@@ -976,7 +1198,7 @@ const END_RESULT = words({
 export function parseEnd(body) {
   const errors = [];
   const bare = String(body ?? '').trim();
-
+  // only a value with no key (e.g. the Korean "win")
   if (bare && !/[:：]/.test(bare)) {
     const r = END_RESULT.get(norm(bare));
     if (r) return { outcome: r, errors };
@@ -1017,6 +1239,20 @@ const ACT_VERBS = words({ switch: ['switch', 'swap', 'change', 'go', 'send', '�
   run: ['run', 'flee', 'escape', 'forfeit', '도망', '도주', '항복'], move: ['move', 'attack', '기술', '공격'] });
 const GIMMICKS = words({ tera: ['tera', 'terastallize', 'terastal', '테라', '테라스탈'], mega: ['mega', 'megaevolve', '메가', '메가진화'] });
 
+const Z_WORDS = words({ z: ['z', 'zmove', 'Z-Move', 'Z기술', 'Z무브'] });
+
+export const readsZMoveWord = reading => reading?.zMoveWord !== false;
+
+const ULTRA_WORDS = words({ ultra: ['ultra', 'ultraburst', 'Ultra-Burst', '울트라', '울트라버스트', 'ウルトラバースト'] });
+
+export const readsUltraBurstWord = reading => reading?.ultraBurstWord !== false;
+
+const DYNAMAX_WORDS = words({ dynamax: ['dynamax', 'dmax', 'gigantamax', 'gmax', 'G-Max', '다이맥스', '거다이맥스', 'ダイマックス', 'キョダイマックス'] });
+
+export const readsDynamaxWord = reading => reading?.dynamaxWord !== false;
+const gimmickOf = (word, reading) => GIMMICKS.get(norm(word)) ?? (readsZMoveWord(reading) ? Z_WORDS.get(norm(word)) : undefined)
+  ?? (readsUltraBurstWord(reading) ? ULTRA_WORDS.get(norm(word)) : undefined) ?? (readsDynamaxWord(reading) ? DYNAMAX_WORDS.get(norm(word)) : undefined);
+
 const ACT_SLOTS = words({ '': ['left', '1', '왼쪽', '왼', '첫째'], 2: ['right', '2', '오른쪽', '오른', '둘째'] });
 const ACT_ALLY = words({ ally: ['ally', 'partner', '아군', '동료', '짝', '옆'], self: ['self', 'itself', 'myself', '자신', '자기', '자기자신'] });
 const TARGET_RE = /\s*(?:>|→|->|@)\s*/;
@@ -1049,6 +1285,7 @@ function sideOf(text) {
   return { side, key: `${side}${slot ?? ''}`, slotted: slot != null, rest: toks.slice(used).join(' ') };
 }
 
+/** Other position of the same side: me <-> me2, foe <-> foe2 */
 const otherOf = key => (key.endsWith('2') ? key.slice(0, -1) : `${key}2`);
 
 function targetOf(text, side, user, errors, reading) {
@@ -1081,10 +1318,10 @@ function actPart(rest, side, errors, key = side, { allLetters = false, reading }
     const target = actTarget(m?.[2] ?? m?.[3], reading);
     return { kind: 'item', item: item?.item ?? null, ...(item?.custom ? { raw } : {}), ...(target ? { target } : {}) };
   }
-
+  // A move, with tera / mega after it, and in a double battle its target
   const [what, aim] = after.split(TARGET_RE, 2);
   const words = what.split(/\s+/).filter(Boolean);
-  const gimmick = words.length > 1 ? GIMMICKS.get(norm(words.at(-1))) : undefined;
+  const gimmick = words.length > 1 ? gimmickOf(words.at(-1), reading) : undefined;
   const name = (gimmick ? words.slice(0, -1) : words).join(' ');
   const move = lookupId('moves', name, { allLetters, reading });
   if (!move) errors.push(note('unknown.moves', { name }));
@@ -1111,7 +1348,7 @@ export const sideParts = (turn, side) => [[side, turn[side]], [`${side}2`, turn[
 export function parseAct(body, reading) {
   const errors = [], turns = [];
   for (const { key, value, line } of lines(body, errors)) {
-    if (key === 'id') continue;
+    if (key === 'id') continue; // the plugin's own id line (actBlock)
     if (ACT_KEYS.get(key.replace(/\d+$/, '')) !== 'turn') { errors.push(note('unknownKey', { line })); continue; }
     const turn = { me: null, foe: null };
     for (const part of value.split('|').map(p => p.trim()).filter(Boolean)) {

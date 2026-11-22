@@ -22,6 +22,7 @@ export const rowButtonsCss = row => `
     background:var(--red-fill); color:#fff; box-shadow:0 3px 0 var(--red-dark); cursor:pointer; text-shadow:0 1px 0 #0004; }
   ${row} button.sec { border-color:var(--navy); background:#fff; color:var(--navy); box-shadow:0 3px 0 var(--navy-dark); text-shadow:none; }`;
 
+/** X icon (exit, close, remove name - only the stroke width differs) */
 export const crossIcon = (width = 2.6) =>
   `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="${width}" stroke-linecap="round"/></svg>`;
 

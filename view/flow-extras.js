@@ -1,11 +1,13 @@
 // from pokerogue src/phases/battle-phase.ts (showEnemyTrainer) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/phases/attempt-capture-phase.ts (hideInfo after the catch is confirmed) @ 7d7da4a8 (AGPL-3.0-only)
 
 import { tween, delay } from './lifetime.js';
 import { checkPosition } from './positions.js';
 
-export async function showTrainer(scene, { slot } = {}) {
+export async function showTrainer(scene, { slot, ending = false } = {}) {
+
+  if (ending) await scene.dynamax?.leave?.();
   const trainer = scene.encounter?.enemyTrainer;
   if (!trainer || trainer.container.visible) return;
   const { container, partner } = trainer;

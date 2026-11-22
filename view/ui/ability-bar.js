@@ -1,5 +1,5 @@
 // from pokerogue src/ui/containers/ability-bar.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/phases/show-ability-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/hide-ability-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 
@@ -26,7 +26,7 @@ export class AbilityBar {
     c.add([...this.bars, this.text, ...(this.abilityText ? [this.abilityText] : [])]);
     scene.fieldUI.add(c);
     this.setVisible(false);
-    c.setX(-BAR_WIDTH);
+    c.setX(-BAR_WIDTH); // start hidden (right edge of bar at x=0)
   }
   setVisible(value) {
     this.bars[+this.player].setVisible(value);
@@ -36,7 +36,7 @@ export class AbilityBar {
   isVisible() { return this.shown; }
 
   async show(player, pokemonName, abilityName) {
-    if (this.shown) await this.hide();
+    if (this.shown) await this.hide(); // ShowAbilityPhase: hide the old bar first
     if (player !== this.player) {
       this.bars[+this.player].setVisible(false);
       this.container.setX(player ? -BAR_WIDTH : SCREEN_RIGHT);

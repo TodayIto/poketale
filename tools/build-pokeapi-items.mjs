@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { csv, toID } from './sources.mjs';
 import { POKEAPI_ROOT } from '../view/sprites/sources.js';
+import { isMachineId } from '../story/machine-standards.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const json = path => JSON.parse(readFileSync(resolve(root, path), 'utf8'));
@@ -12,11 +13,11 @@ const BASE = `${POKEAPI_ROOT}items/`;
 
 export function itemsWithoutFrame() {
   const frames = new Set(json('data/bag-icons.json').items.textures[0].frames.map(f => f.filename));
-  return Object.keys(json('data/names/items.json')).filter(id => !/^t[mr]\d/.test(id) && !frames.has(id)).sort();
+  return Object.keys(json('data/names/items.json')).filter(id => !isMachineId(id) && !frames.has(id)).sort();
 }
 
 export function candidates(ids) {
-  const english = new Map();
+  const english = new Map(); // toID(English name) -> [identifier]
   const identifier = new Map(csv('items.csv').map(row => [row.id, row.identifier]));
   for (const row of csv('item_names.csv')) {
     if (row.local_language_id !== '9' || !identifier.has(row.item_id)) continue;

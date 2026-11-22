@@ -1,5 +1,5 @@
 // from pokerogue locales/{ko,en}/*.json @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { withKoTerms } from './ko-terms.mjs';
@@ -10,7 +10,7 @@ const keys = {
     'hitResultNotVeryEffective', 'hitResultImmune', 'attackFailed', 'attackMissed',
     'regainHealth', 'statRose_one', 'statSharplyRose_one', 'statRoseDrastically_one',
     'statFell_one', 'statHarshlyFell_one', 'statSeverelyFell_one',
-
+    // Switching: summon-phase.ts / switch-summon-phase.ts / command-phase.ts
     'playerComeBack', 'trainerComeBack', 'playerGo', 'trainerGo', 'trainerSendOut', 'pokemonDraggedOut', 'noEscapeSwitch',
 
     'trainerAppeared', 'multiWildAppeared',
@@ -42,6 +42,6 @@ for (const lang of LANGS) {
       result[`${file}.${key}`] = value;
     }
   }
-  await writeFile(new URL(`../director/text-${lang}.json`, import.meta.url), JSON.stringify(withKoTerms(lang, result).table, null, 2) + '\n');
+  await writeFile(new URL(`../director/text-${lang}.json`, import.meta.url), JSON.stringify(withKoTerms(lang, result).table, null, 2) + '\n'); // our Korean terms (tools/ko-terms.mjs)
   console.log(`Extracted ${Object.keys(result).length - 1} ${lang} phrases -> director/text-${lang}.json`);
 }

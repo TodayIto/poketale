@@ -1,15 +1,15 @@
-// Modified for PokeTale on 2026-11-19. See THIRD-PARTY-NOTICES.md.
-// Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
+// Adapted from PlayNav (MIT). See THIRD-PARTY-NOTICES.md.
 // Ported from PlayNav (https://github.com/poooooby/PlayNav): data/amie_rules.lua (PET, HIT, HIGH_FIVE, IDLE numbers),
-// src/amie/session.lua (petTouch, hit, highFive, feedStart / feedHold: bites), src/amie/play.lua (handlePress, update: wake, petting, high five, dozing),
-// src/amie/rules.lua (the Poke Puff catalogue), data/amie_rules.lua PUFF (bites per species, the pace of a nearly full Pokemon, species that do not eat).
-// PlayNav is MIT License, Copyright (c) 2026 poooooby - THIRD-PARTY-NOTICES.md.
+
+// Copyright (c) 2026 poooooby, MIT License. See THIRD-PARTY-NOTICES.md.
 
 import SPOT_TABLE from '../data/amie-spots.json' with { type: 'json' };
 import { FRIENDSHIP_MAX } from '../engine/friendship.mjs';
 import { toID } from '../engine/mon.mjs';
 import { OUTSIDE_ITEMS, FOOD_BERRY } from './items.mjs';
 import { isCustomItem, hasEffect } from './custom-items.mjs';
+
+// -- Enjoyment -----------------------------------------------
 
 export const ENJOY_MAX = 100;
 
@@ -35,10 +35,11 @@ export const gameCandidates = (party, mon) => party.filter(other => other.uid !=
 const NO_STROKE = new Set([218, 378]);
 export const strokable = num => !NO_STROKE.has(num);
 
+/** A Pokemon's enjoyment (no value stored = full) */
 export const enjoymentOf = mon => mon?.enjoy ?? ENJOY_MAX;
 
 export const spendable = (enjoy, most) => Math.max(0, Math.min(most, Math.floor(enjoy / ENJOY_STEP) * ENJOY_STEP));
-
+/** Friendship that spending this much enjoyment gives */
 export const friendshipFor = spent => Math.floor(spent / ENJOY_STEP) * FRIENDSHIP_PER_STEP;
 
 export function setEnjoyment(mon, value) {
@@ -46,14 +47,17 @@ export function setEnjoyment(mon, value) {
   else mon.enjoy = Math.max(0, value);
 }
 
+// -- Fullness and food ------------------------------------------------
+
 export const FULL_MAX = 100;
 
 const FULL_PER_MESSAGE = 10;
-
+/** Any one food fills this much */
 export const FULL_PER_FOOD = 30;
 
+/** A Pokemon's fullness (no value stored = empty) */
 export const fullnessOf = mon => mon?.full ?? 0;
-
+/** Whether it takes food now: not full */
 export const canEat = mon => fullnessOf(mon) < FULL_MAX;
 
 export function setFullness(mon, value) {
@@ -72,6 +76,7 @@ export function afterMessage(state) {
   }) };
 }
 
+/** Friendship a custom item with the food tag gives */
 const FOOD_CUSTOM = 1;
 
 export function foodFriendship(id, sim, holder) {
@@ -83,7 +88,7 @@ export function foodFriendship(id, sim, holder) {
 export const PUFF_FLAVORS = Object.freeze(['sweet', 'mint', 'citrus', 'mocha', 'spice']);
 export const PUFF_GRADES = Object.freeze(['basic', 'frosted', 'fancy', 'deluxe']);
 export const FREE_GRADE = 'basic';
-
+/** Friendship a puff gives: the free grade +1, prizes +2 */
 export const puffFriendship = grade => (grade === FREE_GRADE ? 1 : 2);
 
 export const feedHeals = fed => parsePuff(fed.puff)?.grade !== FREE_GRADE;
@@ -94,7 +99,7 @@ export function parsePuff(id) {
   const [flavor, grade, ...rest] = String(id ?? '').split('_');
   return !rest.length && PUFF_FLAVORS.includes(flavor) && PUFF_GRADES.includes(grade) ? { flavor, grade } : null;
 }
-
+/** Prize puffs in the store: count of one (puff id) */
 export const puffCount = (state, id) => state?.puffs?.[id] ?? 0;
 
 export function addPuffs(state, id, delta) {
@@ -117,6 +122,8 @@ export const eatsFood = num => !NON_EATERS.has(num);
 
 export const BITE = Object.freeze({ QUICK: 0.45, SLOW: 1.1, SLOW_AT: 90 });
 export const biteSeconds = (fullness, bites) => (bites >= 2 && fullness >= BITE.SLOW_AT ? BITE.SLOW : BITE.QUICK);
+
+// -- Spots ---------------------------------------------------------
 
 const KINDS = Object.freeze({ L: 'liked', N: 'normal', D: 'disliked', X: 'none' });
 export const GRID = 6;
@@ -153,28 +160,32 @@ export function cellAt(fx, fy) {
   return Math.floor(fy * GRID) * GRID + Math.floor(fx * GRID);
 }
 
+// -- One visit -------------------------------------------------------
+
+/** Counts in ticks (TICK_HZ a second) */
 export const TICK_HZ = 30;
 export const PET = Object.freeze({
   MOVE: 4,
   SPOT_TICKS: 36,
-  NORMAL_TICKS: 96,
-  BODY_TICKS: 96,
-  DISLIKED_TICKS: 30,
-  SWITCH_TICKS: 4,
-  OFF_BODY_TICKS: 30,
-  LOCK_TICKS: 24,
+  NORMAL_TICKS: 96,     // ... a normal spot (one about every 4 s)
+  BODY_TICKS: 96,       // stroking anywhere but a disliked spot this long gives a normal reward
+  DISLIKED_TICKS: 30,   // stroking a disliked spot this long makes it flinch
+  SWITCH_TICKS: 4,      // another spot class takes over once it lasts this long
+  OFF_BODY_TICKS: 30,   // this long off the body starts the counts again
+  LOCK_TICKS: 24,       // after a reward: its happy motion plays and petting waits
   DISLIKE_LOCK_TICKS: 24,
-  SPEND: 5,
+  SPEND: 5,             // enjoyment a reward spends (none when less is left)
 });
 
-export const HIT = Object.freeze({ TICKS: 8, COOL_TICKS: 90, SPEND: 5 });
+export const HIT = Object.freeze({ TICKS: 8, COOL_TICKS: 90, SPEND: 5 }); // TICKS 8 (~0.27 s): an ordinary phone double tap counts
 
 export const HIGH_FIVE = Object.freeze({ MIN_FRIENDSHIP: 5, POSE_TICKS: 10, STEP: 50, PER_STEP: 30, RAND: 30, SPEND: 5, LEAP_TICKS: 21 });
-
+/** Left alone this long, it dozes off */
 export const IDLE_TICKS = 900;
-
+/** The "!" after the first tap, before it turns round */
 export const WAKE_TICKS = 21;
 
+/** Ticks until a held-out hand is reached */
 export function highFiveTicks(friendship, random = Math.random) {
   const f = Math.max(0, Math.min(FRIENDSHIP_MAX, friendship));
   return (Math.floor((FRIENDSHIP_MAX - f) / HIGH_FIVE.STEP) + 1) * HIGH_FIVE.PER_STEP + Math.floor(random() * HIGH_FIVE.RAND);
@@ -291,7 +302,7 @@ export function createPetting({ spots, enjoy = ENJOY_MAX, friendship, back = tru
     const onBody = kind !== 'disliked' && touch.anyT >= PET.BODY_TICKS;
     if (!onSpot && !onBody) return events;
     touch = freshTouch();
-
+    // the body-wide count pays as a normal spot
     const paid = onSpot ? kind : 'normal';
     if (paid === 'disliked') {
       lock = PET.DISLIKE_LOCK_TICKS;

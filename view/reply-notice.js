@@ -46,6 +46,7 @@ export function closePress({ round = () => false, ask, stop = () => {}, close })
   };
 }
 
+/** The badge's CSS under root (the frame's class) */
 export const badgeCss = R => `
   ${R} .exit.close .badge{position:absolute;top:${-BADGE_OUT}px;right:${-BADGE_OUT}px;width:24px;height:24px;filter:drop-shadow(0 1.5px 0 #1a3247);
     animation:pkb-badge-pop .42s cubic-bezier(.3,1.6,.5,1);}

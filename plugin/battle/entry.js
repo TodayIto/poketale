@@ -2,6 +2,7 @@ import { isNamedSprite } from '../../story/named.mjs';
 import { isWild } from '../../director/index.js';
 import { waitingTrainer } from '../../engine/core.mjs';
 import { loadFont } from '../../view/fonts.js';
+import { crossIcon } from './ui-css.js'; // the X of the window's strip
 
 const ENTRY_FONT = 'PkbPixel';
 
@@ -14,23 +15,24 @@ export function entryFoes(spec) {
   return second ? [first, { name: second.name ?? '', sprite: second.trainerSprite ?? first.sprite, black: !!second.trainerSilhouette }] : [first];
 }
 
+/** Animation timings (ms, press = 0). Change them only here */
 export const ENTRY_MS = Object.freeze({
-  plateAt: 30, plate: 320,
-  hit: 330, flash: 300,
-  shake: 350,
-  vsIn: 420, slide: 350,
-  stamp: 720, stampIn: 90,
+  plateAt: 30, plate: 320,     // plates crash 30-350
+  hit: 330, flash: 300,        // flash on contact (0.9 -> 0)
+  shake: 350,                  // boss and named: shake on contact
+  vsIn: 420, slide: 350,       // VS screen: the two trainers slide in from the sides
+  stamp: 720, stampIn: 90,     // VS lands from 1.5x -> faint flash (0.45) + thud
   thud: 180,
-  vsEnd: 1400,
+  vsEnd: 1400,                 // end of the VS screen (cleared here if everything is loaded)
   namedImg: 300, namedRibbon: 560, namedShake: 300,
-  namedEnd: 2620,
-  away: 200,
-  turnAt: 100, turn: 380,
-  spreadAt: 550, spread: 320,
-  flicker: 700,
-  barsAt: 700, bars: 450, barStagger: 80,
-  wildEnd: 1300, wildReveal: 350,
-  ballAfter: 1000, ballOut: 150,
+  namedEnd: 2620,              // end of named (720 + 1.9s)
+  away: 200,                   // VS and trainers (big picture) clear away
+  turnAt: 100, turn: 380,      // from clear + 0.1s the plates turn to a horizontal seam
+  spreadAt: 550, spread: 320,  // from clear + 0.55s they split up and down
+  flicker: 700,                // wild: two white flickers
+  barsAt: 700, bars: 450, barStagger: 80, // wild: 8 black bars (even and odd staggered)
+  wildEnd: 1300, wildReveal: 350, // wild: the battle view appears with the bars closed
+  ballAfter: 1000, ballOut: 150, // small ball at the bottom centre when holding more than 1s past the end time
   exit: 500,
   between: 400,
 });
@@ -44,8 +46,8 @@ const MOTION = Object.freeze({ slide: 50 * PX, thud: 5 * PX });
 const SHAKE = Object.freeze([[0, 0], [-7, 3], [6, -4], [-5, -2], [4, 3], [0, 0]].map(([x, y]) => [x * PX, y * PX]));
 
 const PLATE = Object.freeze({ angle: -64, side: 2, edge: 0.012, edgeMin: 5 });
-const PLATE_OUT = 115;
-const PLATE_OPEN = 102;
+const PLATE_OUT = 115;   // position before the plates come in (% of half a plate's height)
+const PLATE_OPEN = 102;  // position after opening
 
 export function namedPlace({ w, h }, { width: W, height: H }) {
   const scale = H / 80, width = Math.round(w * scale), height = Math.round(h * scale);
@@ -108,8 +110,16 @@ export const ENTRY_CSS = `
   /* Before the panels have fully closed and while brightening after the battle: the window is transparent (the chat shows through). The battle window frame is hidden */
   .poke-battle.pkb-clear { background:transparent; }
   .poke-battle.pkb-clear > :not(.pkb-entry):not(.pkb-veil) { visibility:hidden; }
-  /* Staying more than 1 second longer brings the strip's X above the panels (so preparing can be cancelled) */
-  .poke-battle.pkb-entry-slow .band, .poke-battle.pkb-entry-slow .side.left { position:relative; z-index:7; } /* phone landscape: the X is in the left column */
+  /* Staying more than 1 second longer: the entry's own X at the window's top-right corner (with the small ball - so preparing can be quit), inside the safe area.
+     The strip's X look (ui-css.js BAND_CSS), the phone buttons' size on a phone (--tap, phone.js). Hidden until then (visibility - not pressable) */
+  .poke-battle .pkb-entry .quit { position:absolute; z-index:1; top:calc(env(safe-area-inset-top, 0px) + 10px); right:calc(env(safe-area-inset-right, 0px) + 10px);
+    width:32px; height:30px; padding:0; display:flex; align-items:center; justify-content:center; pointer-events:auto; visibility:hidden; opacity:0;
+    border:2px solid var(--navy, #315a77); border-radius:7px; background:#fff; color:var(--red, #d8434d); box-shadow:0 2.5px 0 var(--navy-dark, #23435f); cursor:pointer; }
+  .poke-battle .pkb-entry .quit:active { transform:translateY(2px); box-shadow:0 .5px 0 var(--navy-dark, #23435f); }
+  .poke-battle .pkb-entry .quit:focus-visible { outline:2px solid #ffd35c; outline-offset:2px; }
+  .poke-battle .pkb-entry .quit svg { width:14px; height:14px; display:block; }
+  .poke-battle.pkb-portrait .pkb-entry .quit, .poke-battle.pkb-landscape .pkb-entry .quit { width:var(--tap); height:calc(var(--tap) - 6px); border-radius:9px; }
+  .poke-battle.pkb-portrait .pkb-entry .quit svg, .poke-battle.pkb-landscape .pkb-entry .quit svg { width:calc(var(--tap) * .34); height:calc(var(--tap) * .34); }
   /* Between battles back to back (fadeScreen): the loading ball over the black, without its own background */
   .poke-battle .pkb-loading.pkb-veiled { background:transparent; }
 `;
@@ -121,27 +131,42 @@ const VS_SVG = `<svg class="vs" viewBox="0 0 200 110" aria-hidden="true"><g tran
 
 export const STAMP_SOUND = 'se/hit_strong.wav';
 
+export const CLOSE_SOUNDS = Object.freeze({
+  trainer: Object.freeze({ path: 'battle_anims/PRSFX- Clamp2.wav', peak: 160, moment: ENTRY_MS.hit }),
+  wild: Object.freeze({ path: 'battle_anims/PRSFX- Leafage 1.wav', peak: 230, moment: ENTRY_MS.barsAt + ENTRY_MS.bars }),
+});
+/** When the closing sound starts (ms after the press) */
+export const closeSoundAt = kind => Math.max(0, CLOSE_SOUNDS[kind === 'wild' ? 'wild' : 'trainer'].moment - CLOSE_SOUNDS[kind === 'wild' ? 'wild' : 'trainer'].peak);
+
+export const CLOSE_LATE_MS = 350;
+
+export const entrySoundFiles = kind => (kind === 'wild' ? [CLOSE_SOUNDS.wild.path] : [CLOSE_SOUNDS.trainer.path, STAMP_SOUND]);
+
 export function mountEntry(root, { kind = 'trainer', boss = false, named = null, names = {}, foeBlack = false, foe2Black = false, meBlack = true, reduced = false, start = performance.now(),
-  pictures = Promise.resolve({}), sound = null } = {}) {
+  pictures = Promise.resolve({}), sound = null, quit = null } = {}) {
   const wild = kind === 'wild';
   const element = document.createElement('div');
   element.className = `pkb-entry ${wild ? 'wild' : 'trainer'}`;
   element.innerHTML = `<div class="shake">${wild ? '<div class="bars"></div>'
     : `<div class="cov"><div class="half up"></div><div class="half down"></div></div>
       <div class="layer vs-layer"><div class="who me"><b></b></div><div class="who foe"><b></b></div>${VS_SVG}</div>
-      <div class="layer named"><p></p></div>`}</div><div class="flash"></div><div class="ball"></div>`;
+      <div class="layer named"><p></p></div>`}</div><div class="flash"></div><div class="ball"></div>${quit ? `<button class="quit" type="button">${crossIcon(2.6)}</button>` : ''}`;
   clearPage();
   root.classList.add('pkb-clear');
   root.append(element);
   const $ = selector => element.querySelector(selector);
-  const shakeBox = $('.shake'), flash = $('.flash'), ball = $('.ball');
+  const shakeBox = $('.shake'), flash = $('.flash'), ball = $('.ball'), quitButton = $('.quit');
+  if (quitButton) {
+    quitButton.setAttribute('aria-label', quit.label ?? ''); quitButton.title = quit.label ?? '';
+    quitButton.addEventListener('click', () => quit.press?.());
+  }
 
   const tween = (target, frames, at, duration, easing = 'ease', fill = 'both') => {
     const animation = target.animate(frames, { delay: at, duration, easing, fill });
     animation.startTime = start;
     return animation;
   };
-
+  /** That time on the timeline (when an empty animation finishes) */
   const moment = at => tween(element, [], at, 0, 'linear', 'none').finished;
   const shake = (at, ms) => { if (!reduced) tween(shakeBox, SHAKE.map(([x, y]) => ({ transform: `translate(${x}cqmin,${y}cqmin)` })), at, ms, 'ease', 'none'); };
   const flashAt = (at, from) => { if (!reduced) tween(flash, [{ opacity: from }, { opacity: 0 }], at, ENTRY_MS.flash, 'ease', 'none'); };
@@ -150,23 +175,29 @@ export function mountEntry(root, { kind = 'trainer', boss = false, named = null,
   const visible = new Promise(resolve => { showWindow = resolve; });
   const loaded = new Promise(resolve => { openCalled = resolve; });
 
-  let ballAt = Infinity, ballIn = null;
+  let ballAt = Infinity, ballIn = null, quitIn = null;
   const ballFrom = end => {
-    if (now() >= ballAt) return;
-    ballIn?.cancel();
+    if (now() >= ballAt) return; // already shown (still waiting)
+    ballIn?.cancel(); quitIn?.cancel();
     ballAt = end + ENTRY_MS.ballAfter;
     ballIn = tween(ball, [{ opacity: 0 }, { opacity: 1 }], ballAt, 200);
-    ballIn.finished.then(() => root.classList.add('pkb-entry-slow'), () => {});
+    if (quitButton) quitIn = tween(quitButton, [{ opacity: 0, visibility: 'hidden' }, { opacity: 1, visibility: 'visible' }], ballAt, 200);
   };
 
   const ballAway = at => {
-    if (at > ballAt) tween(ball, [{ opacity: 1 }, { opacity: 0 }], at, ENTRY_MS.ballOut, 'ease', 'forwards');
-    else ballIn?.cancel();
+    if (at > ballAt) {
+      tween(ball, [{ opacity: 1 }, { opacity: 0 }], at, ENTRY_MS.ballOut, 'ease', 'forwards');
+      if (quitButton) tween(quitButton, [{ opacity: 1, visibility: 'visible' }, { opacity: 0, visibility: 'hidden' }], at, ENTRY_MS.ballOut, 'ease', 'forwards');
+    } else { ballIn?.cancel(); quitIn?.cancel(); }
   };
-  const settle = done => done.finally(() => root.classList.remove('pkb-entry-slow'));
-  const api = { element, shown: () => showWindow(), remove() { element.remove(); root.classList.remove('pkb-entry-slow', 'pkb-clear'); } };
+  const api = { element, shown: () => showWindow(), remove() { element.remove(); root.classList.remove('pkb-clear'); } };
 
   api.covered = moment(closedAt(kind)).then(() => root.classList.remove('pkb-clear'), () => {});
+
+  if (sound) {
+    const at = closeSoundAt(kind);
+    moment(at).then(() => { if (element.isConnected && now() - at <= CLOSE_LATE_MS) sound(CLOSE_SOUNDS[wild ? 'wild' : 'trainer'].path); }, () => {});
+  }
 
   if (wild) {
 
@@ -184,13 +215,13 @@ export function mountEntry(root, { kind = 'trainer', boss = false, named = null,
       const at = Math.max(ENTRY_MS.wildEnd, now());
       ballAway(at);
       const reveal = tween(element, [{ opacity: 1 }, { opacity: 0 }], at, ENTRY_MS.wildReveal, 'ease', 'forwards');
-      return (opened = { revealed: moment(at).then(() => {}), done: settle(reveal.finished.then(() => element.remove())) });
+      return (opened = { revealed: moment(at).then(() => {}), done: reveal.finished.then(() => element.remove()) });
     };
     return api;
   }
 
   const font = loadFont(ENTRY_FONT).catch(error => console.warn('[poke-battle] 진입 연출 글꼴을 올리지 못함 — 대체 글꼴로', error));
-
+  // Trainer: plates crash in from both sides -> flash (boss and named shake)
   const cov = $('.cov'), up = $('.half.up'), down = $('.half.down');
   cov.style.transform = `rotate(${PLATE.angle}deg)`;
   tween(up, [{ transform: `translateY(-${PLATE_OUT}%)` }, { transform: 'none' }], ENTRY_MS.plateAt, ENTRY_MS.plate, EASE.plate);
@@ -210,7 +241,7 @@ export function mountEntry(root, { kind = 'trainer', boss = false, named = null,
   else foeTag.textContent = names.foe ?? '';
   me.classList.toggle('black', meBlack);
   ribbon.textContent = named?.name ?? '';
-
+  // State before coming in (hidden until then, even if the VS starts late)
   for (const el of [me, foe, mark, namedLayer]) el.style.opacity = '0';
 
   ballFrom(named ? ENTRY_MS.namedEnd : ENTRY_MS.vsEnd);
@@ -264,7 +295,7 @@ export function mountEntry(root, { kind = 'trainer', boss = false, named = null,
     openCalled();
     const timeline = scene.then(end => {
       if (end === null) return null;
-
+      // Clear: the later of the end time and everything being loaded
       const away = Math.max(end, now());
       ballAway(away);
       tween(named ? namedLayer : vsLayer, [{ opacity: 1 }, { opacity: 0 }], away, ENTRY_MS.away, 'ease', 'forwards');
@@ -276,7 +307,7 @@ export function mountEntry(root, { kind = 'trainer', boss = false, named = null,
     });
     const revealed = timeline.then(t => t?.turning.finished).then(() => {});
     const done = timeline.then(t => t?.spreading.finished).then(() => element.remove());
-    return (opened = { revealed, done: settle(done) });
+    return (opened = { revealed, done });
   };
   return api;
 }
@@ -287,13 +318,14 @@ function clearPage() {
   Object.assign(document.body.style, { margin: '0', background: 'transparent' });
 }
 
-export async function backToChat(root) {
+export async function backToChat(root, { dark = () => {} } = {}) {
   clearPage();
   const veil = document.createElement('div');
   veil.className = 'pkb-veil';
   veil.style.cssText = 'position:absolute;inset:0;z-index:10;background:#000;pointer-events:none';
   root.append(veil);
   await veil.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ENTRY_MS.exit, easing: 'ease-in', fill: 'forwards' }).finished;
+  dark();
   root.classList.add('pkb-clear');
   await veil.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ENTRY_MS.exit, easing: 'ease-out', fill: 'forwards' }).finished;
 }

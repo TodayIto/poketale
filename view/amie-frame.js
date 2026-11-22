@@ -15,7 +15,7 @@ const GAME_BAR = Object.freeze({
 });
 
 export const BAND = Object.freeze({ tall: { h: 60, text: 24 }, wide: { h: 76, w: 520, text: 36 }, gap: 20, in: 220, out: 200 });
-
+/** A band's size on a screen width CSS px wide (wide = a PC's frame) */
 const bandSize = (width, wide) => (wide ? { w: Math.min(BAND.wide.w, width - BAND.gap), h: BAND.wide.h } : { w: width - BAND.gap, h: BAND.tall.h });
 
 const puff = cream => `<svg viewBox="0 0 14 14" aria-hidden="true" shape-rendering="crispEdges"><g fill="${NAVY}">`
@@ -130,6 +130,7 @@ export function mountAmieFrame(stage, { size, f, words, mon, picture, games, lev
   let foods = [], page = 0, sayTimer = null, answer = null;
   const counts = new Map();
 
+  /** A press: nothing while it is eating */
   const pressed = act => () => {
     if (busy()) return;
     select();
@@ -153,7 +154,7 @@ export function mountAmieFrame(stage, { size, f, words, mon, picture, games, lev
         button.append(Object.assign(doc.createElement('span'), { className: before !== undefined && food.count < before ? 'n bump' : 'n', textContent: countText(food.count) }));
       }
       counts.set(food.name, food.count);
-
+      // a tap feeds it, a long press only says its name (a phone has no hover)
       bindLongPress(button, { tap: pressed(() => on.food(food, button)), long: () => on.name?.(food) });
       return button;
     }));
@@ -182,7 +183,7 @@ export function mountAmieFrame(stage, { size, f, words, mon, picture, games, lev
     press(button, () => { picked = button.getAttribute('data-value'); pickSeg(seg, picked); on.level?.(picked); });
   }
   for (const button of menu.querySelectorAll('.row')) press(button, () => { openMenu(false); on.game(button.getAttribute('data-game'), picked); });
-
+  // the lock and the exits are not petting actions: they work while it eats too
   lockButton.addEventListener('click', () => { select(); on.lock?.(); });
   $('.exit.back').addEventListener('click', () => { select(); on.back?.(); });
   $('.exit.close').addEventListener('click', () => { select(); on.close?.(); });
@@ -234,7 +235,7 @@ export function mountAmieFrame(stage, { size, f, words, mon, picture, games, lev
 
   return {
     root,
-
+    /** The rings: enjoyment and fullness, each a share of its most (0 - 1) */
     gauges({ enjoy, full }) {
       for (const [kind, share] of [['enjoy', enjoy], ['full', full]]) {
         const arc = root.querySelector(`.ring.${kind} .arc`);
@@ -248,14 +249,14 @@ export function mountAmieFrame(stage, { size, f, words, mon, picture, games, lev
     },
     get plateOpen() { return !plate.hidden; },
     get menuOpen() { return !menu.hidden; },
-
+    /** B: closes the picker or the plate -> whether one was open */
     back() {
       if (!menu.hidden) { openMenu(false); return true; }
       if (!plate.hidden) { openPlate(false); return true; }
       return false;
     },
     closeMenu() { openMenu(false); },
-
+    /** A short line under the top row for secs */
     talk(text, secs = 1.4) {
       say.textContent = text;
       say.hidden = false;
@@ -337,7 +338,7 @@ export function mountAmieFrame(stage, { size, f, words, mon, picture, games, lev
       return new Promise(resolve => { asked = resolve; });
     },
     get asking() { return !!asked; },
-
+    /** B while asking: no -> whether the sheet was up */
     answer(yes) { const was = !!asked; settleAsk(yes); return was; },
     remove() { clearTimeout(sayTimer); clearTimeout(pictureTimer); clearTimeout(bannerTimer); unbadge(); settleAsk(false); root.remove(); },
   };

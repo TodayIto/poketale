@@ -13,11 +13,16 @@ export function installInitialState(sim, battle, seats, sets) {
 	});
 }
 
-export function recordStartForms(battle, sets) {
+export function recordStartForms(battle, sets, whole = {}) {
 	for (const side of battle.sides) {
 		for (const pokemon of side.pokemon) {
-			const set = sets[side.id][side.team.indexOf(pokemon.set)];
-			pokemon.m.start = { species: battle.dex.species.get(set.species).name, ability: set.ability };
+			const at = side.team.indexOf(pokemon.set);
+			const set = sets[side.id][at], before = whole[side.id]?.[at];
+			pokemon.m.start = { species: battle.dex.species.get(set.species).name, ability: set.ability,
+
+				...(set.gigantamax === true ? { gigantamax: true } : {}), ...(Number.isInteger(set.dynamaxLevel) ? { dynamaxLevel: set.dynamaxLevel } : {}),
+
+				...(before ? { whole: { item: before.item, nature: before.nature, gender: before.gender, ivs: { ...before.ivs } } } : {}) };
 		}
 	}
 }
@@ -32,13 +37,14 @@ function applyInitialState(sim, side, team, sets) {
 
 		restoreSpread(side.battle, pokemon, sets[i]);
 		if (member.partner) pokemon.m.partner = member.partner;
-		if (member.trainer) pokemon.m.trainer = member.trainer;
-		if (member.split) pokemon.m.split = true;
-		if (member.teamSlot !== undefined) pokemon.m.teamSlot = member.teamSlot;
+		if (member.trainer) pokemon.m.trainer = member.trainer; // a second opposing trainer's Pokemon on p2 (battleShape)
+		if (member.split) pokemon.m.split = true; // a lone opposing trainer's Pokemon at its second seat (battleShape)
+		if (member.teamSlot !== undefined) pokemon.m.teamSlot = member.teamSlot; // its place in that trainer's own team (battleShape)
 		if (member.natureOrig) pokemon.m.natureOrig = member.natureOrig;
 		if (member.ot) pokemon.m.ot = member.ot;
 		if (member.heldCustom) pokemon.m.heldCustom = member.heldCustom;
 		if (member.noTera) pokemon.m.noTera = true;
+		if (member.dynamaxAce) pokemon.m.dynamaxAce = true;
 		if (member.evolveLocked === true) pokemon.m.evolveLocked = true;
 
 		applyPpUps(side.battle, pokemon, member.ppUps);
@@ -51,11 +57,15 @@ function applyInitialState(sim, side, team, sets) {
 			const given = Object.entries(member.pp || {}).find(([id]) => sim.Dex.toID(id) === 'ironhead')?.[1];
 			Object.assign(crowned, { ppUps: ups, maxpp, pp: given === undefined ? maxpp : Math.max(0, Math.min(maxpp, given)) });
 		}
-
+		// remaining PP is kept as-is for fainted Pokemon too
 		for (const [moveid, pp] of Object.entries(member.pp || {})) {
 			if (crowned && sim.Dex.toID(moveid) === 'ironhead') continue;
 			const slot = pokemon.moveSlots.find(s => s.id === sim.Dex.toID(moveid));
-			if (!slot) throw new Error(`${member.uid}: 기술 "${moveid}" 이 없습니다`);
+			if (!slot) {
+
+				if (side.battle.gen < 9 && (member.set?.moves ?? []).some(m => sim.Dex.toID(m) === sim.Dex.toID(moveid))) continue;
+				throw new Error(`${member.uid}: 기술 "${moveid}" 이 없습니다`);
+			}
 			slot.pp = Math.max(0, Math.min(slot.maxpp, pp));
 		}
 

@@ -1,9 +1,6 @@
-// Modified for PokeTale on 2026-11-19. See THIRD-PARTY-NOTICES.md.
-// Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
-// Motions ported from PlayNav (https://github.com/poooooby/PlayNav) src/amie/play.lua - lifeMotion / stepLife (breathing, sway, hops, the wriggle while stroked,
-// the flinch, dozing), reward (a double hop with notes), the wake ("!", a white flash, it turns round), the high five leap, feeding (a flash with stars, then
+// Adapted from PlayNav (MIT). See THIRD-PARTY-NOTICES.md.
 // the food held at its mouth shrinking bite by bite, crumbs, the hearts; a full Pokemon turns the food away).
-// PlayNav is MIT License, Copyright (c) 2026 poooooby - THIRD-PARTY-NOTICES.md.
+// Copyright (c) 2026 poooooby, MIT License. See THIRD-PARTY-NOTICES.md.
 
 import { createPetting, cellAt, bodyPixel, spotsFor, strokable, spinOf, MIDDLE_CELL, TICK_HZ, ENJOY_MAX, FULL_MAX, FULL_PER_FOOD, bitesOf, biteSeconds, eatsFood } from '../story/amie.mjs';
 import { GAME_SPEND, GAMES, LEVELS, DEFAULT_LEVEL, recordOf, recordScore, beatsRecord } from '../story/amie-games.mjs';
@@ -42,7 +39,7 @@ function frameAlpha(frame) {
   const trim = frame.data?.spriteSourceSize ?? { x: 0, y: 0 };
   ctx.drawImage(frame.source.image, frame.cutX, frame.cutY, frame.cutWidth, frame.cutHeight, frame.trimmed ? trim.x : 0, frame.trimmed ? trim.y : 0, frame.cutWidth, frame.cutHeight);
   const { data } = ctx.getImageData(0, 0, width, height);
-  canvas.width = 0;
+  canvas.width = 0; // phones (iOS) hold canvas memory until GC
   return { data, width, height };
 }
 
@@ -128,14 +125,14 @@ export class AmieScreen {
       },
     });
     s.life.signal.addEventListener('abort', () => this.hud.remove(), { once: true });
-
+    // the minigames start under the frame's top bar (field units)
     this.top = Math.ceil(gameBarFor(f) / this.unit);
     this.hud.setFoods(this.foods);
     this.showValues();
     this.finger = null;
     this.fingers = new Set();
     this.hover = null;
-    this.eating = null;
+    this.eating = null; // a food on its way or being eaten
     this.playing = null;
     this.acc = 0; this.strokeT = 0; this.zT = 0; this.cryAt = -Infinity; this.tiredAt = -Infinity;
 
@@ -156,17 +153,21 @@ export class AmieScreen {
     const before = fitCanvas(this.scene, { w, h });
     this.restoreSize ??= before;
   }
-
+  /** CSS px in the screen -> field units, and back */
   toField(x, y) { return { x: (x - this.at.x) / this.unit, y: (y - this.at.y) / this.unit }; }
   toScreen(x, y) { return { x: this.at.x + x * this.unit, y: this.at.y + y * this.unit }; }
 
+  /** Back to the canvas the other screens use */
   unshape() {
     restoreCanvas(this.scene, this.restoreSize);
     this.restoreSize = null;
   }
 
+  /** Values of the visit as the caller keeps them */
   result() { return { spent: this.petting.spent, gains: [...this.petting.gains], friends: this.petting.friendsSpent(), done: [...this.done], friendship: this.gained }; }
   changed() { this.onChange(this.result()); this.showValues(); }
+
+  // -- the parts -----------------------------------------------------
 
   toTraining() {
     if (this.trainWhy) { this.talk(this.trainWhy, 1.8); playError(this.scene); return; }
@@ -174,6 +175,7 @@ export class AmieScreen {
     this.close();
   }
 
+  /** A short line under the top row for secs */
   talk(text, secs = 1.4) { this.hud.talk(text, secs); }
 
   emote(kind) {
@@ -181,6 +183,7 @@ export class AmieScreen {
     emote(this.scene, this.fx, kind, h.x + 14, h.y - 2);
   }
 
+  /** The minigames' top bar and result card (view/amie-frame.js game) */
   get gameBar() { return this.hud.game; }
 
   recordOf(game, lv) { return recordOf(this.records, game, lv); }
@@ -191,7 +194,7 @@ export class AmieScreen {
     this.records = { ...this.records, [game]: { ...this.records[game], [lv]: score } };
     this.done.push({ record: { game, level: lv, score } });
   }
-
+  /** A prize puff's name and picture (the result card) */
   puffName(id) { return this.puffFood(id).name; }
   puffPicture(id) { return foodElement(this.scene, { puff: id }, this.scene.options.parent.ownerDocument); }
 
@@ -225,6 +228,8 @@ export class AmieScreen {
     this.back?.setVisible(back);
   }
 
+  // -- where things are ------------------------------------------------------
+
   onBody(x, y) {
     const back = this.back?.visible, sprite = back ? this.back : this.front;
     const m = sprite.getWorldTransformMatrix();
@@ -244,16 +249,18 @@ export class AmieScreen {
     const { pixel: p, bounds: b } = body;
     return cellAt((p.x + 0.5 - b.left) / (b.right - b.left), (p.y + 0.5 - b.top) / (b.bottom - b.top));
   }
-
+  /** Its head (field units): the top middle of the body as drawn */
   head() {
     const b = this.asset.bounds, h = (b.bottom - b.top) * this.scale;
     return { x: this.holder.x, y: this.holder.y - h * 0.85 };
   }
-
+  /** Where food is held: in front of its face */
   mouth() {
     const b = this.asset.bounds, h = (b.bottom - b.top) * this.scale;
     return { x: this.holder.x, y: this.holder.y - h * 0.55 };
   }
+
+  // -- input ---------------------------------------------------------------
 
   listen() {
     const s = this.scene, input = s.input;
@@ -271,7 +278,7 @@ export class AmieScreen {
       if (this.finger) return;
 
       if (this.playing) { this.finger = { id: p.id, ...at, moved: 0 }; this.playing.down({ ...at, t: p.event?.timeStamp }); return; }
-
+      // a tap beside the open game picker closes it
       if (this.hud.menuOpen) { this.hud.back(); return; }
       if (this.eating) return;
       this.finger = { id: p.id, ...at, moved: 0 };
@@ -322,8 +329,8 @@ export class AmieScreen {
 
   goBack() {
     if (!this.isOpen) return;
-    if (this.hud.answer(false)) return;
-    if (this.playing) { if (!this.hud.game.back()) this.playing.stop(); }
+    if (this.hud.answer(false)) return; // the yes / no sheet up: no
+    if (this.playing) { if (!this.hud.game.back()) this.playing.stop(); } // looking at the Tile Puzzle's picture: back to its card
     else if (!this.hud.back() && !this.eating) this.close();
   }
 
@@ -332,6 +339,7 @@ export class AmieScreen {
     if (this.isOpen && this.hud.root.isConnected && !closeWindow(this.hud.root)) this.close();
   }
 
+  /** Leaves the screen: resolves open with what was spent and done */
   close() {
     if (!this.isOpen) return;
     this.isOpen = false;
@@ -346,11 +354,13 @@ export class AmieScreen {
     this.resolve({ ...this.result(), spin: this.spun, train: this.train });
   }
 
+  // -- each frame ------------------------------------------------------------
+
   frame(delta) {
     if (!this.isOpen) return;
     const dt = Math.min(250, delta) / 1000;
     if (!this.playing) this.backdrop.update();
-    if (this.playing) { if (!this.hud.asking) this.playing.frame(dt); return; }
+    if (this.playing) { if (!this.hud.asking) this.playing.frame(dt); return; } // asked whether to quit: the round waits
     this.acc += dt * 1000;
 
     const ticks = Math.floor(this.acc / TICK_MS);
@@ -369,6 +379,7 @@ export class AmieScreen {
     this.scene.game.canvas.style.cursor = over ? 'pointer' : '';
   }
 
+  /** Plays the events of one press or tick. at = the finger (field units) */
   play(events, at) {
     const life = this.life;
     for (const e of events) {
@@ -394,11 +405,11 @@ export class AmieScreen {
           this.bump(0.1);
           this.sound.play('tap');
           this.burst('spark', 1, at.x, at.y, { rise: 0, scale: 1.3 });
-          if (e.angry) this.mark('anger');
+          if (e.angry) this.mark('anger'); // a tap that pays nothing
           break;
         case 'pose': this.reach = { x: at.x, y: at.y }; this.burst('spark', 1, at.x, at.y, { rise: 0 }); break;
         case 'highFive': this.highFive(e, at); break;
-
+        // dozing: its picture moves slower
         case 'doze': this.zT = 0; this.front.anims.timeScale = 0.35; break;
         case 'wakeUp': this.front.anims.timeScale = 1; this.burst('note', 2, this.head().x, this.head().y); break;
         default: break;
@@ -442,6 +453,7 @@ export class AmieScreen {
     this.burst('note', 2, h.x + 22, h.y);
   }
 
+  /** "It has played enough" (an emote) at most once every 4 s */
   tired() {
     if (this.scene.time.now - this.tiredAt <= 4000) return;
     this.tiredAt = this.scene.time.now;
@@ -457,6 +469,7 @@ export class AmieScreen {
     if (e.spent > 0) this.burst('heart', HEARTS, this.head().x, this.head().y - 6);
   }
 
+  /** Its cry, at most once every 4 s unless now */
   cry(now = false) {
     const s = this.scene;
     if (!now && s.time.now - this.cryAt < 4000) return;
@@ -466,6 +479,7 @@ export class AmieScreen {
 
   bump(squash) { this.life.squash = squash; this.life.squashT = 0.35; }
 
+  /** A mark over its head (anger) */
   mark(name) {
     const h = this.head();
     const icon = this.scene.add.image(h.x + 18, h.y - 4, `amie-${name}`).setScale(1.3);
@@ -486,9 +500,11 @@ export class AmieScreen {
     }
   }
 
+  // -- food ----------------------------------------------------------------
+
   offer(food, element) {
     const s = this.scene;
-
+    // its name in the line at the top (a refusal's line replaces it)
     this.talk(food.name);
 
     if (this.petting.stage === 'back' || this.petting.stage === 'dozing') { this.play(this.petting.press(MIDDLE_CELL), this.head()); this.petting.release(); }
@@ -500,11 +516,11 @@ export class AmieScreen {
 
     const refuse = !eatsFood(this.num) ? 'cross' : this.full >= FULL_MAX ? 'drop' : null;
     this.eating = { food, picture, stage: 'fly', t: 0, bites: bitesOf(this.num), taken: 0, refuse };
-
+    // held up to its mouth, larger
     tween(s, { targets: picture, x: m.x + (refuse ? 18 : 0), y: m.y + 6, scale: picture.scale * 1.7, duration: 420, ease: 'Sine.easeOut' }).then(() => {
       if (!this.eating) return;
       if (refuse) {
-
+        // it turns away: the picture faces aside twice, the food drops back
         this.eating.stage = 'refuse'; this.life.turn = 1;
         this.emote(refuse);
         playError(s);
@@ -517,6 +533,7 @@ export class AmieScreen {
     }, () => {});
   }
 
+  /** The bites, each frame while eating */
   eat(dt) {
     const e = this.eating;
     if (!e || (e.stage !== 'flash' && e.stage !== 'bite')) return;
@@ -532,7 +549,7 @@ export class AmieScreen {
     this.bump(0.08);
     this.sound.play(e.taken < e.bites ? 'bite' : 'eaten');
     this.burst('crumb', 3, m.x, m.y + 6, { rise: -0.4, scale: 1 });
-
+    // the food shrinks bite by bite
     e.picture.setScale(e.picture.scaleX * (1 - 1 / (e.bites - e.taken + 1)) || 0.001);
     if (e.taken < e.bites) return;
     e.picture.destroy();
@@ -549,6 +566,8 @@ export class AmieScreen {
     this.cry(true);
     this.changed();
   }
+
+  // -- minigames --------------------------------------------------------------
 
   async startGame(game, lv) {
     if (this.playing || this.eating) return;
@@ -618,7 +637,7 @@ export class AmieScreen {
     life.flinch = Math.max(0, life.flinch - dt * 2.5);
     life.turn = Math.max(0, life.turn - dt / 1.2);
     life.sink += ((stage === 'dozing' ? 1 : 0) - life.sink) * (1 - Math.exp(-3 * dt));
-
+    // toward the finger while petted
     const target = this.finger ? Math.max(-1, Math.min(1, (this.finger.x - W / 2) / 60)) : 0;
     life.lean += (target - life.lean) * (1 - Math.exp(-5 * dt));
 
@@ -642,10 +661,10 @@ export class AmieScreen {
       lift += Math.sin(f * Math.PI) * life.hop.h;
       if (f > 0.85) { sx += 0.06; sy -= 0.06; }
     }
-
+    // dozing off: it sinks a little and nods
     sy -= 0.05 * life.sink; sx += 0.03 * life.sink;
     tilt += Math.sin(t * 1.6) * 0.03 * life.sink;
-
+    // leaning into the finger while petted, wriggling with the strokes
     tilt += life.lean * 0.05 * life.calm;
     if (life.stroke > 0) {
       const k = life.stroke;
@@ -653,11 +672,11 @@ export class AmieScreen {
       sy += Math.sin(t * 9 + 1) * 0.025 * k; sx -= Math.sin(t * 9 + 1) * 0.015 * k;
       lift += (0.5 + 0.5 * Math.sin(t * 9)) * 1.5 * k;
     }
-
+    // a disliked spot (stroked or tapped): it flinches away from the finger
     if (life.flinch > 0) dx += Math.sin(t * 40) * 2.5 * life.flinch - life.lean * 4 * life.flinch;
-
+    // turning food away: it faces aside, twice
     if (life.turn > 0) sx *= Math.sin(life.turn * Math.PI * 2) > 0 ? -1 : 1;
-
+    // a squash after a bump
     if (life.squashT > 0) {
       life.squashT -= dt;
       const k = Math.max(0, life.squashT / 0.35) * life.squash;
@@ -690,7 +709,7 @@ export class AmieScreen {
     this.holder.setRotation(tilt);
     this.holder.setScale(this.scale * sx, this.scale * sy);
     this.shadow.scaleX = this.shadowScale * Math.max(0.6, 1 - (lift - jy) / 120);
-
+    // z's while dozing
     if (stage === 'dozing' && (this.zT -= dt) <= 0) {
       this.zT = 1.4;
       const h = this.head();

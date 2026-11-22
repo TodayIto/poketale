@@ -4,15 +4,15 @@ import { norm, foldNorm } from './norm.mjs';
 import { personalName, namedTrainer } from './named.mjs';
 
 export const TOOL_EFFECTS = Object.freeze(['cheer', 'distract', 'taunt']);
-
+/** Opponent's choices a taunt or distraction lasts */
 export const TOOL_TURNS = 3;
-
+/** The stats cheer may raise, and how many of them */
 export const CHEER_STATS = Object.freeze(['atk', 'def', 'spa', 'spd', 'spe']);
 export const CHEER_COUNT = 3;
 
 const monKey = foldNorm;
 
-const trainerKey = name => norm(personalName({ name })) || norm(name);
+const trainerKey = (name, reading) => norm(personalName({ name, ...reading })) || norm(name);
 
 function speciesNames(dex, species) {
   const found = dex.species.get(species);
@@ -45,13 +45,15 @@ export const cheerOwns = (tool, pokemon) => (tool?.ownerMon ? pokemon.m?.uid ===
 
 const GENERIC = new Set(['ko', 'en'].flatMap(lang => ['spec.foe', 'spec.foePartner', 'spec.wild', 'spec.partner'].map(k => norm(say(lang, k)))));
 
+/** Whether a trainer name binds: a name of its own, not a nameless side's */
 export const realTrainer = name => !!norm(name) && !GENERIC.has(norm(name));
 
-export function ownsTrainer(owner, name) {
-  if (!realTrainer(name) || !trainerKey(owner)) return false;
-  if (trainerKey(owner) === trainerKey(name)) return true;
-  const person = namedTrainer({ name });
-  return !!person && namedTrainer({ name: owner }) === person;
+export function ownsTrainer(owner, name, { titles = false, japanese = false } = {}) {
+  const reading = { oldTitles: !titles, oldJapanese: !japanese };
+  if (!realTrainer(name) || !trainerKey(owner, reading)) return false;
+  if (trainerKey(owner, reading) === trainerKey(name, reading)) return true;
+  const person = namedTrainer({ name, ...reading });
+  return !!person && namedTrainer({ name: owner, ...reading }) === person;
 }
 
 export function offToolReasons(spec, turns, results) {

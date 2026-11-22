@@ -35,7 +35,8 @@ Upstream revisions used for the build:
   random-team generation and text files left out, some fields unused by battles dropped from the
   data tables). The list of trainer sprite names in `server/chat-commands/avatars.tsx` is read
   by `tools/build-named-trainers.mjs` to build `data/named-trainers.json`. The learnsets are not
-  bundled; tables derived from them are (`data/levelup.json` by `tools/build-levelup.mjs`, and
+  bundled; tables derived from them are (`data/levelup.json` and the older generations' lists in
+  `data/levelup-past.json` by `tools/build-levelup.mjs`, and
   `data/learnable.json` - which moves each species can learn - by `tools/build-learnable.mjs`).
 
 ### 1.2 ts-chacha20 — MIT (file header: BSD-3-Clause)
@@ -122,12 +123,14 @@ Move animation data, by upstream `battle-anims/REUSE.toml`:
   (https://github.com/PokeAPI/pokeapi#contributing). Pokémon and Pokémon character names are
   trademarks of Nintendo.
 - License: BSD-3-Clause ([Appendix A](#a7-pokéapi); also `data/sources/pokeapi/LICENSE.md`).
-- What is included: Korean names, capture rates, effort values, TM numbers and Korean item
-  descriptions, as converted into `data/names/*.json`, `data/catch-rates.json`, `data/exp.json`
-  and `data/items-outside.json`; the fishing encounter tables (`encounters.csv` rows of the rod
+- What is included: Korean names, capture rates, effort values, the TM/HM/TR numbers of each region's
+  game (with the version group table that names those games) and Korean item descriptions, as converted
+  into `data/names/*.json`, `data/catch-rates.json`, `data/exp.json` and `data/items-outside.json`; the
+  fishing encounter tables (`encounters.csv` rows of the rod
   and fishing-spot methods, their slots, conditions, locations and English location names —
   stored, trimmed, in `data/sources/fishing/`), as converted into `data/fishing.json` by
-  `tools/build-fishing.mjs`.
+  `tools/build-fishing.mjs`; item prices and the first generation each shop item appears in
+  (`items.csv`, `item_game_indices.csv`), in `data/shop.json`.
 
 ### 1.7.1 PKHeX location names — game text, names only
 
@@ -192,11 +195,7 @@ Move animation data, by upstream `battle-anims/REUSE.toml`:
 ### 1.10 Gen 8 / Gen 9 Move Animation Projects (community pack)
 
 - Source: https://www.pokecommunity.com/threads/the-gen-9-move-animation-project.526189/
-  (Pokémon Essentials format `PkmnAnimations.rxdata`).
-- What is included: the background timelines (picture names, opacity, position, colour, frames —
-  the pack's own values, unchanged) of the moves whose colour was lost in PokeRogue's conversion,
-  in `anims/tints.js` and `anims/bg-names.js` (built by `tools/build-anim-tints.mjs`); see
-  `view/LICENSE-NOTE.md`. No pictures or sounds from the pack are included.
+  (Pokémon Essentials format `PkmnAnimations.rxdata`, with its pictures and sounds).
 - Credits, as the first post asks ("Please include these credits when adding these animations to your game"):
 
 > Thanks to the Reborn team for letting people use their resources. You are awesome.
@@ -207,6 +206,16 @@ Move animation data, by upstream `battle-anims/REUSE.toml`:
 >
 > Gen 9 Animation Project led by KRLW890 and Nut0066, with additional contributions by Toxillian, QuahogTheCreator, Lcorp, and Shashu-Greninja
 
+- What is included (see `view/LICENSE-NOTE.md`):
+  - the background timelines (picture names, opacity, position, colour, frames — the pack's own
+    values, unchanged) of the moves whose colour was lost in PokeRogue's conversion, in
+    `view/anims/tints.js` and `view/anims/bg-names.js` (built by `tools/build-anim-tints.mjs`);
+  - foreground timings (picture name, opacity, position, colour, frames) of 45 move animations whose
+    PokeRogue conversion dropped them, as a generated table (`view/anims/foregrounds.js`, written by
+    `tools/build-anim-fg.mjs` from the pack). The pictures themselves are PokeRogue's (downloaded at runtime);
+  - 19 pictures and 101 sounds of the pack that PokeRogue does not have (`view/anims/pack/images/`,
+    `view/anims/pack/audio/`), kept for the Z-move animations.
+
 ### 1.11 PokéPark 2 voice-line table
 
 - `data/pokepark2-voices.json` (public PR #12): which PokéPark 2 voice stream belongs to which
@@ -216,6 +225,18 @@ Move animation data, by upstream `battle-anims/REUSE.toml`:
   pull request gave it. Numbers only: no audio, names or text of the game. PokéPark 2 belongs to
   Nintendo, Creatures Inc. and GAME FREAK inc. (section 4); the voices themselves are the player's
   own files (section 2).
+
+### 1.12 Item and TM prices read from the pret disassemblies
+
+- Sources: https://github.com/pret/pokered (`data/items/prices.asm`, `data/items/tm_prices.asm`, `data/items/marts.asm`),
+  https://github.com/pret/pokecrystal (`data/items/attributes.asm`, `data/items/marts.asm`), https://github.com/pret/pokeemerald
+  (`src/data/items.h`, Lilycove Department Store 4F), https://github.com/pret/pokeruby (Lilycove Department Store 4F),
+  https://github.com/pret/pokefirered (`src/data/items.json`, Celadon Department Store 2F), https://github.com/pret/pokeplatinum
+  (`res/items/data/*.json`, `include/data/mart_items.h`) and https://github.com/pret/pokeheartgold
+  (`files/itemtool/itemdata/item_data.csv`, `src/scrcmd_mart.c`).
+- What is included: only the item and TM prices of generations 1-4 and which TMs their shops sell, written into
+  `data/sources/game-prices.json` and from there into `data/shop.json`; no code or other data from these projects
+  (public PR #14).
 
 ---
 

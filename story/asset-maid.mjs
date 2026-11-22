@@ -4,16 +4,19 @@ const DIRECTIVE = '@@dont_activate';
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 export function drawingJobs(chat) {
-  const lore = Array.isArray(chat?.localLore) ? chat.localLore : [];
-  const entries = lore.filter(e => isObject(e) && (e.id === ENTRY_ID || e.comment === ENTRY_COMMENT));
-  if (entries.length !== 1) return null;
-  const content = typeof entries[0].content === 'string' ? entries[0].content.trimStart() : '';
+  const content = entryText(chat)?.trimStart() ?? '';
   if (!content.startsWith(DIRECTIVE)) return null;
   let data;
   try { data = JSON.parse(content.slice(DIRECTIVE.length).trim()); } catch { return null; }
   if (!isObject(data) || !isObject(data.jobs)) return null;
   const ids = Object.keys(data.jobs).sort();
   return ids.length ? JSON.stringify(ids) : null;
+}
+
+export function entryText(chat) {
+  const lore = Array.isArray(chat?.localLore) ? chat.localLore : [];
+  const entries = lore.filter(e => isObject(e) && (e.id === ENTRY_ID || e.comment === ENTRY_COMMENT));
+  return entries.length === 1 && typeof entries[0].content === 'string' ? entries[0].content : null;
 }
 
 const PICTURE_RE = new RegExp([

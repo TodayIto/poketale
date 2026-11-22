@@ -1,3 +1,4 @@
+/** The texture key of a PokeAPI item picture (loadItemPicture) */
 export const itemPictureKey = url => `item-pic:${url}`;
 
 export function loadItemPicture(scene, url) {

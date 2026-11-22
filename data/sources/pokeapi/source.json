@@ -13,8 +13,11 @@
     "machines.csv",
     "item_flavor_text.ko.csv",
     "item_flavor_text.en.csv",
+    "item_flavor_text.gen2-5.csv",
     "pokemon_stats.csv",
-    "items.csv"
+    "items.csv",
+    "version_groups.csv",
+    "item_game_indices.csv"
   ],
   "sha256": {
     "item_names.csv": "c4ad0b446e395c378d8ba75d6900f051cc9ebb99431d4000adeac35f492852f0",
@@ -28,9 +31,12 @@
     "machines.csv": "f9df7faaf0a60896fa344abd2b639f83f79c2a24e1fd4bb3560ca7da76e9a6ad",
     "item_flavor_text.ko.csv": "44a6091d05b63a1904c2924aedeb475b9a92e4a48987916ac01e5e5e50042fa3",
     "item_flavor_text.en.csv": "c935f13fb6143a233c241fffb1479ffdbf0d19350e32cf9d882250f7550dad3a",
+    "item_flavor_text.gen2-5.csv": "121a5f108b40532eeebcee746b3d94596809b46b08ee49b1935f466d3b5bb3f4",
     "pokemon_stats.csv": "fa2c44263a3706468682fefc3e0b3c4f5487fe9febed7d4ebcd6939c34b16aa8",
     "items.csv": "f08cd6dc30b447cb91cbe9232c79052e8521f32f6105bb1489b5bfabf4ca3241",
-    "LICENSE.md": "1c04595dc662981c20956ae4251dfa7b62b475c345eddf98bc9b904cb2373f2c"
+    "version_groups.csv": "28da8d89d8eb4966941f81a9e62b3990510ed4d76dd774158246551a8e7707a7",
+    "LICENSE.md": "1c04595dc662981c20956ae4251dfa7b62b475c345eddf98bc9b904cb2373f2c",
+    "item_game_indices.csv": "ad7576a23dea4e136ea887f5f04b680abc4f72131812fa011bdddeb54760c653"
   },
   "derived": {
     "item_flavor_text.ko.csv": {
@@ -42,6 +48,11 @@
       "from": "item_flavor_text.csv",
       "sha256_of_source": "f85281c97e4a423fb6ae673a3d2cfab116ac2e7bb9fcdecfb43ac8b1e1fb8676",
       "rule": "language_id=9 (영어) 행 중 도구마다 version_group_id 가 가장 큰 한 줄만. 행 내용은 그대로 (도구의 영어 공식 설명 — 공개 PR #10, 사용자 2026-11-19)"
+    },
+    "item_flavor_text.gen2-5.csv": {
+      "from": "item_flavor_text.csv",
+      "sha256_of_source": "f85281c97e4a423fb6ae673a3d2cfab116ac2e7bb9fcdecfb43ac8b1e1fb8676",
+      "rule": "학습장치(item_id 193) 행 중 version_group_id 3~14 (2~5세대 게임)의 language_id=3 (한국어)·9 (영어) 행 전부. 행 내용은 그대로 (2~5세대 채팅에서 지니는 도구인 학습장치의 그 세대 공식 설명 — 사용자 2026-11-22 4-5). 한국어 행은 원본에 없음"
     }
   },
   "normalization": "UTF-8, CRLF normalized to LF before hashing"

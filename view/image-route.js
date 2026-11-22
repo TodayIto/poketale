@@ -12,7 +12,7 @@ export function audioType(url) {
 
 export function createImageRoute({ ways = DIRECT_ONLY, fetchBytes, signal } = {}) {
   const down = new Map();
-  const made = new Set();
+  const made = new Set(); // blob: addresses to revoke at the end
   signal?.addEventListener('abort', () => { for (const url of made) URL.revokeObjectURL(url); made.clear(); }, { once: true });
 
   function downEntry(url) {
@@ -20,7 +20,7 @@ export function createImageRoute({ ways = DIRECT_ONLY, fetchBytes, signal } = {}
     if (!down.has(origin)) {
       let fail;
       const promise = new Promise((_, reject) => { fail = reject; });
-      promise.catch(() => {});
+      promise.catch(() => {}); // only raced
       down.set(origin, { promise, fail, failed: false });
     }
     return down.get(origin);
@@ -32,7 +32,7 @@ export function createImageRoute({ ways = DIRECT_ONLY, fetchBytes, signal } = {}
     entry.failed = true;
     entry.fail(new LoadError(`direct failed on this origin: ${originOf(url)}`));
   }
-
+  /** The ways for url now: an origin found down goes host first */
   function order(url) {
     if (here(url)) return ['direct'];
     const list = [...(ways(url) ?? ['direct'])];
@@ -56,7 +56,7 @@ export function createImageRoute({ ways = DIRECT_ONLY, fetchBytes, signal } = {}
 
   async function run(url, { direct, host }) {
     const list = order(url), failures = [];
-    const stop = isDown(url) || here(url) ? new Promise(() => {}) : downEntry(url).promise;
+    const stop = isDown(url) || here(url) ? new Promise(() => {}) : downEntry(url).promise; // a direct try after the host failed is a real try
     for (const way of list) {
       try {
         const result = await (way === 'direct' ? direct(stop) : host());
@@ -65,7 +65,7 @@ export function createImageRoute({ ways = DIRECT_ONLY, fetchBytes, signal } = {}
       } catch (error) {
         if (signal?.aborted) throw error;
         if (list.length === 1) throw error;
-        if (way === 'direct' && !(error instanceof LoadError)) throw error;
+        if (way === 'direct' && !(error instanceof LoadError)) throw error; // a code error, not a failed load
         failures.push({ way, error });
       }
     }

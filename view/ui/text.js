@@ -1,8 +1,8 @@
 // from pokerogue src/ui/text.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (getStatKey order) @ 7d7da4a8 (AGPL-3.0-only)
 
-import { loadFont as loadEmbeddedFont } from '../fonts.js';
+import { loadFont as loadEmbeddedFont } from '../fonts.js'; // embedded font
 import { themeColors } from './theme.js';
 import { STATS } from '../../engine/mon.mjs';
 import { GENDER_MARK_BATTLE, markRuns, markSize } from '../gender-mark.js';
@@ -36,7 +36,7 @@ const STYLES = {
   SUMMARY_STATS: style('#f8f8f8', '#636363', 5, 5), SUMMARY_STATS_PINK: style(...GENDER_COLORS.F, 5, 5), SUMMARY_STATS_BLUE: style(...GENDER_COLORS.M, 5, 5),
   SUMMARY_STATS_GOLD: style('#e8e8a8', '#a0a060', 5, 5), SUMMARY_RED: style('#e70808', '#ffbd73', 3, 3), SUMMARY_DEX_NUM_GOLD: style('#e8e8a8', '#a0a060', 5, 5),
   GENDER_M: style(...GENDER_COLORS.M, 4, 5), GENDER_F: style(...GENDER_COLORS.F, 4, 5),
-
+  // move info box values (56px, window text colour - theme)
   MOVE_INFO_CONTENT: style('#f8f8f8', '#6b5a73', 3, 3, { size: 56, theme: 'WINDOW' }),
 
   PARTY: style('#f8f8f8', '#707070', 4, 5, { size: 48, padding: { top: 2, bottom: 16 }, lineSpacing: 0 }),
@@ -48,15 +48,26 @@ const STYLES = {
 export function styledText(scene, x, y, str, name, extra = {}) {
   const s = STYLES[name];
   if (!s) throw new Error(`Unknown text style: ${name}`);
-  const [color, shadow] = (s.theme !== null && themeColors(scene, s.theme ?? name)) || [s.color, s.shadow];
+  const [color, shadow] = (s.theme !== null && themeColors(scene, s.theme ?? name)) || [s.color, s.shadow]; // WINDOW and SUMMARY_ALT use legacy theme colours
   const { lineSpacing = s.lineSpacing ?? 5, ...rest } = extra;
   const text = scene.add.text(x, y, str, { fontFamily: FONT_FAMILY, fontSize: s.size ?? 96, color, padding: s.padding ?? { bottom: 6 }, ...rest })
     .setScale(1 / 6).setShadow(s.sx, s.sy, shadow);
   return lineSpacing ? text.setLineSpacing(lineSpacing) : text;
 }
 
+export function fitName(text, name, maxWidth) {
+  let shown = String(name ?? '');
+  text.setText(shown);
+  while (text.displayWidth > maxWidth && [...shown].length > 1) {
+    shown = `${[...shown].slice(0, shown.endsWith('.') ? -2 : -1).join('').trimEnd()}.`;
+    text.setText(shown);
+  }
+  return shown;
+}
+
 export const pad2 = n => (String(n).length < 2 ? `  ${n}` : String(n));
 
+/** TextStyle.WINDOW text (most menu windows) */
 export const windowText = (scene, x, y, str, extra) => styledText(scene, x, y, str, 'WINDOW', extra);
 
 export const loadFont = assetBase => loadEmbeddedFont('BattleViewEmerald', `${assetBase}fonts/pokemon-emerald-pro.ttf`);
@@ -92,9 +103,9 @@ const tintOf = color => parseInt(String(color).replace('#', ''), 16);
 export function addGenderMark(scene, x, y, gender, name, { originY = 0, color, shadow } = {}) {
   if (!GENDER_MARK_BATTLE[gender]) return null;
   const st = styleOf(scene, name);
-  const top = st.padding.top ?? 0, height = st.size * FONT_LINE + top + (st.padding.bottom ?? 0);
+  const top = st.padding.top ?? 0, height = st.size * FONT_LINE + top + (st.padding.bottom ?? 0); // the text's height (text pixels, 6 a game pixel)
   const baseline = Math.floor(y) + (top + st.size * FONT_ASCENT - originY * height) / 6;
-  const pixel = st.size / FONT_PIXELS / 6;
+  const pixel = st.size / FONT_PIXELS / 6; // game pixels a font pixel
   const { w, h } = markSize(gender, GENDER_MARK_BATTLE), key = markTexture(scene, gender);
   const layer = (dx, dy, tint) => scene.add.container(dx, dy).add(scene.add.image(0, 0, key).setOrigin(0).setScale(pixel).setTint(tintOf(tint)));
   const mark = scene.add.container(Math.floor(x), baseline - h * pixel);

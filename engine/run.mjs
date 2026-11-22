@@ -83,7 +83,7 @@ export function escapeGuarantee(pokemon) {
 
 export function escapeOdds(playerSpeed, wildSpeed, attempts) {
 	if (playerSpeed >= wildSpeed) return Infinity;
-
+	// floor(P * 32 / (W / 4)) = floor(128P / W) - W/4 is not floored
 	return Math.floor(playerSpeed * 128 / wildSpeed) + 30 * attempts;
 }
 
@@ -107,7 +107,7 @@ function attemptRun(battle, state) {
 	let escaped = true;
 	if (!guarantee && foe && !foe.fainted) {
 		const odds = escapeOdds(unmodifiedSpeed(user), unmodifiedSpeed(foe), state.attempts);
-		if (odds < 256) escaped = battle.random(256) < odds;
+		if (odds < 256) escaped = battle.random(256) < odds; // F >= 256 succeeds regardless of the roll - no random number used
 	}
 	if (!escaped) {
 		battle.add('-story-run', user, user.m.uid, 'failed', ...from);

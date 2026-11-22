@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/base-option-select-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/confirm-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (SummaryUiMode.LEARN_MOVE, Page.MOVES) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/text.ts (SUMMARY*, WINDOW*, colours) @ 7d7da4a8 (AGPL-3.0-only)
@@ -10,8 +10,8 @@ import { placeSprite } from '../sprites/placement.js';
 import { tween, delay } from '../lifetime.js';
 import { fixed } from '../game-speed.js';
 import { uiRect } from './tap-back.js';
-import { playSelect, playError } from './keys.js';
-import { openMenu } from './menu.js';
+import { playSelect, playError } from './keys.js'; // menu sounds
+import { openMenu } from './menu.js'; // menu frame (keys, closing, tapping empty space)
 import { styledText, addGenderMark, pad2, STATUS_FRAMES, GENDER_COLORS } from './text.js';
 import { nameShowsGender } from '../gender-mark.js';
 
@@ -44,12 +44,12 @@ export async function fadeSwap(scene, swap) {
 
 export class ConfirmMenu {
   constructor(scene) { this.scene = scene; }
-
+  /** yes -> true, no / cancel -> false */
   async choose() {
     const s = this.scene;
     return await this.pick([s.words(TEXT.yes), s.words(TEXT.no)]) === 0;
   }
-
+  /** The picked line's index, or null for cancel */
   pick(options) {
     if (this.finish) throw new Error('Confirm menu already open');
     const s = this.scene;
@@ -68,7 +68,7 @@ export class ConfirmMenu {
       c.add(hit);
     });
     this.left = left; this.top = top; this.count = options.length;
-    this.rect = uiRect(left, top, width, height);
+    this.rect = uiRect(left, top, width, height); // tapping empty space (view/ui/tap-back.js)
     s.ui.add(c);
     this.setCursor(0);
     const menu = openMenu(s, { input: action => this.input(action), tapWindows: () => this.windows(),
@@ -77,7 +77,7 @@ export class ConfirmMenu {
     return menu.promise;
   }
   setCursor(i) { this.cursor = i; this.cursorObj.setPosition(this.left + 10, this.top + 17 + i * 16 - 2); }
-
+  /** Tapping inside this window is not back */
   windows() { return this.rect ? [this.rect] : []; }
 
   input(action) {
@@ -86,7 +86,7 @@ export class ConfirmMenu {
     if (action === 'up') this.setCursor(this.cursor ? this.cursor - 1 : this.count - 1);
     else if (action === 'down') this.setCursor(this.cursor < this.count - 1 ? this.cursor + 1 : 0);
     else if (action === 'ok') { playSelect(this.scene); this.finish(this.cursor); }
-    else if (action === 'back') { playSelect(this.scene); this.finish(null); }
+    else if (action === 'back') { playSelect(this.scene); this.finish(null); } // cancel (yes / no: no)
     if (this.finish && this.cursor !== before) playSelect(this.scene);
   }
   destroy() { this.container?.destroy(); }
@@ -144,13 +144,13 @@ export class LearnMoveSummary {
       status.add([s.add.image(0, 0, 'summary_status').setOrigin(0), styledText(s, 3, 0, s.words(TEXT.status), 'SUMMARY').setOrigin(0),
         s.add.sprite(91, 4, 'statuses', STATUS_FRAMES[mon.status]).setOrigin(0.5, 0)]);
       c.add(status);
-      s.tweens.add({ targets: status, x: 0, duration: 250, ease: 'Sine.easeOut' });
+      s.tweens.add({ targets: status, x: 0, duration: 250, ease: 'Sine.easeOut' }); // slide, not awaited
     }
 
     const fx = buildMoveEffect(s, 6);
     c.add(fx.container);
     this.details = new MoveDetails(s, fx);
-
+    // summaryPageContainer (106, 0) + summary_moves (214x159)
     const page = s.add.container(106, 0);
     page.add(s.add.image(0, 0, 'summary_moves').setOrigin(0, 1));
     c.add(page);
@@ -159,7 +159,7 @@ export class LearnMoveSummary {
     this.details.attach(refs);
     for (let m = 0; m <= 4; m++) {
       const hit = s.add.rectangle(-2, 16 * m - 15, 211, 16, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
-      hit.on('pointerover', () => { if (!this.confirming) this.setCursor(m); });
+      hit.on('pointerover', () => { if (!this.confirming) this.setCursor(m); }); // a mouse over a row shows it (not a pick)
       hit.on('pointerdown', () => this.tapRow(m));
       this.list.add(hit);
     }
@@ -175,7 +175,7 @@ export class LearnMoveSummary {
   tapRow(m) {
     if (!this.finish) return;
     if (this.confirming) {
-      if (!this.confirmMenu?.finish) return;
+      if (!this.confirmMenu?.finish) return; // the question is still printing
       this.confirmMenu.input('back');
       this.picked = m; this.setCursor(m);
       return;
@@ -281,14 +281,14 @@ export class MoveDetails {
     }
     if (!this.cursorObj) { this.cursorObj = s.add.sprite(-2, 0, 'summary_moves_cursor', 'highlight').setOrigin(0, 1); list.add(this.cursorObj); }
     this.cursorObj.setY(16 * cursor + 1).setVisible(true);
-
+    // hidden for 100ms every 600ms
     this.blink?.remove();
     this.blink = s.time.addEvent({ loop: true, delay: fixed(600), callback: () => {
       this.cursorObj?.setVisible(false);
       s.time.delayedCall(fixed(100), () => this.cursorObj?.setVisible(true));
     } });
   }
-
+  /** hideMoveSelect: clear the description, destroyBlinkCursor, hideMoveEffect */
   hide() {
     this.refs?.description.setText('');
     this.blink?.remove(); this.blink = null;

@@ -35,8 +35,13 @@ export function parseSvg(svg) {
 }
 
 export function pathBox(d) {
-  let x = 0, y = 0, sx = 0, sy = 0, box = null;
-  const see = () => { box = box ? { x0: Math.min(box.x0, x), y0: Math.min(box.y0, y), x1: Math.max(box.x1, x), y1: Math.max(box.y1, y) } : { x0: x, y0: y, x1: x, y1: y }; };
+  let x = 0, y = 0, sx = 0, sy = 0;
+  // the box so far as four numbers (no new object per point)
+  let seen = false, minX = 0, minY = 0, maxX = 0, maxY = 0;
+  const see = () => {
+    if (!seen) { seen = true; minX = maxX = x; minY = maxY = y; return; }
+    minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+  };
   for (const [, cmd, args] of String(d).matchAll(/([MmHhVvZzLl])([^MmHhVvZzLl]*)/g)) {
     const n = args.trim() ? args.trim().split(/[\s,]+/).map(Number) : [];
     switch (cmd) {
@@ -46,10 +51,10 @@ export function pathBox(d) {
       case 'h': for (const v of n) { x += v; see(); } break;
       case 'V': for (const v of n) { y = v; see(); } break;
       case 'v': for (const v of n) { y += v; see(); } break;
-      default: x = sx; y = sy; break;
+      default: x = sx; y = sy; break; // z
     }
   }
-  return box;
+  return seen ? { x0: minX, y0: minY, x1: maxX, y1: maxY } : null;
 }
 
 function nodesBox(nodes, tx = 0, ty = 0) {
@@ -105,14 +110,14 @@ export function scenePieces(parsed, { front = [] } = {}) {
 }
 
 const KEYFRAMES = {
-  pkbX: (p, a) => ({ x: a.vars.dx * p }),
-  pkbS: (p, a) => ({ x: a.vars.dx * p }),
+  pkbX: (p, a) => ({ x: a.vars.dx * p }),                         // to translateX(--dx): the clouds' drift
+  pkbS: (p, a) => ({ x: a.vars.dx * p }),                         // to translateX(--dx): a sway (alternate)
   pkbY: (p, a) => ({ y: a.vars.a + (a.vars.b - a.vars.a) * p }),
 
   pkbA: (p, a, raw) => ({ alpha: raw < 0.5 ? a.base : 0 }),
   pkbB: (p, a, raw) => ({ alpha: raw < 0.5 ? 0 : 1 }),
   pkbT: (p, a, raw) => ({ alpha: raw < 0.5 ? a.base : 0.35 }),
-  pkbF: p => ({ alpha: 0.3 + 0.55 * p }),
+  pkbF: p => ({ alpha: 0.3 + 0.55 * p }),                         // .3 -> .85 (alternate): the fever edge breathing
 };
 export const KNOWN_MOTIONS = Object.freeze(Object.keys(KEYFRAMES));
 
@@ -131,6 +136,7 @@ export function motionAt(chain, t) {
   return { x, y, alpha };
 }
 
+/** Draws nodes on a 2D context (its transform already set to field units) */
 export function drawNodes(ctx, nodes, alpha = 1, Path = globalThis.Path2D) {
   for (const n of nodes) {
     if (n.tag === 'path') {
@@ -157,14 +163,15 @@ let seq = 0;
 
 function bake(scene, prefix, piece) {
   const key = `${prefix}-${++seq}`;
-  const canvas = scene.textures.createCanvas(key, piece.px.w, piece.px.h);
-  const ctx = canvas.getContext();
+  const canvas = document.createElement('canvas');
+  canvas.width = piece.px.w; canvas.height = piece.px.h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.imageSmoothingEnabled = false;
   ctx.setTransform(1 / DOT, 0, 0, 1 / DOT, -piece.x / DOT, -piece.y / DOT);
   ctx.translate(piece.tx, piece.ty);
   drawNodes(ctx, piece.nodes);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  canvas.refresh();
+  if (!scene.textures.addImage(key, canvas)) throw new Error(`Cannot register backdrop texture: ${key}`);
   return key;
 }
 
@@ -189,7 +196,7 @@ export function mountScene(scene, svg, { prefix = 'pkb-scene', front = ['L5', 'L
     back, front: fore, keys, bytes, pieces,
     update(t = clock()) {
       if (gone) return;
-      for (const { image, p } of movers) {
+      for (const { image, p } of movers) { // only values that changed (steps motions hold still on most frames)
         const m = motionAt(p.motion, t), x = p.x + m.x, y = p.y + m.y, alpha = p.alpha * m.alpha;
         if (image.x !== x || image.y !== y) image.setPosition(x, y);
         if (image.alpha !== alpha) image.setAlpha(alpha);

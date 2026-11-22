@@ -1,20 +1,20 @@
 // from pokerogue src/ui/handlers/party-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/utils/pokemon-icon-anim-helper.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/message-ui-handler.ts (showPrompt) @ 7d7da4a8 (AGPL-3.0-only)
 
 import { addWindow } from './window.js';
 import { uiRect } from './tap-back.js';
 import { openSummary } from './summary.js';
-import { playSelect, playError } from './keys.js';
-import { openMenu } from './menu.js';
-import { styledText, windowText, addGenderMark, STATUS_FRAMES, GENDER_COLORS } from './text.js';
+import { playSelect, playError } from './keys.js'; // menu sounds
+import { openMenu } from './menu.js'; // menu frame (keys, closing, tapping empty space)
+import { styledText, windowText, addGenderMark, fitName, STATUS_FRAMES, GENDER_COLORS } from './text.js';
 import { nameShowsGender } from '../gender-mark.js';
-import { tween, delay } from '../lifetime.js';
-import { fixed } from '../game-speed.js';
-import { fadeSwap } from './learn-move.js';
+import { tween, delay } from '../lifetime.js'; // screen transition
+import { fixed } from '../game-speed.js'; // icon bobbing ignores game speed (pokemon-icon-anim-helper.ts fixedInt(200))
+import { fadeSwap } from './learn-move.js'; // backdrop transition (ui.ts fadeOut/fadeIn)
 import { MoveInfoOverlay } from './move-info.js';
-import { setColorMatrix, hueMatrix } from '../color-matrix.js';
+import { setColorMatrix, hueMatrix } from '../color-matrix.js'; // the partner page's green
 
 export async function partyFade(scene, swap) {
   const overlay = scene.add.rectangle(0, 0, 1920, 1080, 0).setOrigin(0).setDepth(10).setAlpha(0);
@@ -27,6 +27,7 @@ export async function partyFade(scene, swap) {
   scene.tweens.add({ targets: overlay, alpha: 0, duration: 250, ease: 'Sine.easeIn', onComplete: () => overlay.destroy() });
 }
 
+// party-ui-handler.json phrases by name (view/words.js)
 const TEXT = Object.freeze(Object.fromEntries(Object.entries({ choose: 'choosePokemon', doWhat: 'doWhatWithThisPokemon', sendOut: 'sendOut', cancel: 'cancel',
   apply: 'apply', selectAMove: 'selectAMove', revive: 'revive', summary: 'summary' }).map(([name, key]) => [name, `party-ui-handler.${key}`])));
 const CANCEL = 6;
@@ -72,13 +73,8 @@ class PartySlot {
 
     this.restY = p.pb[1] - 15;
     this.icon = s.add.sprite(p.pb[0], this.restY, icon.key, icon.frame).setOrigin(0.5, 0);
-    let name = mon.name;
-    const name0 = partyText(s, p.name[0], p.name[1], name).setOrigin(0);
-    while (name0.displayWidth > p.maxName && name.length > 1) {
-      name = `${name.slice(0, name.endsWith('.') ? -2 : -1).trimEnd()}.`;
-      name0.setText(name);
-    }
-    this.name = name0;
+    this.name = partyText(s, p.name[0], p.name[1], '').setOrigin(0);
+    const name = fitName(this.name, mon.name, p.maxName); // a long name ends in "." (view/ui/text.js fitName)
     const [lx, ly] = p.lv;
     const objects = [this.bg, this.pb, this.icon, this.name,
       s.add.image(lx, ly, 'party_slot_overlay_lv').setOrigin(0),
@@ -90,7 +86,7 @@ class PartySlot {
       objects.push(addGenderMark(s, lx + p.gender[0], ly + p.gender[1], mon.gender, 'PARTY', { originY: 0.25, color, shadow }));
     }
     if (STATUS_FRAMES[mon.status]) objects.push(s.add.sprite(lx + p.status[0], ly + p.status[1], 'statuses', STATUS_FRAMES[mon.status]).setOrigin(0));
-
+    // getVariantTint(0)
     if (mon.shiny) objects.push(s.add.image(this.name.x - 9, this.name.y + 3, 'shiny_star_small').setOrigin(0).setTint(0xf8c020));
     const [hx, hy] = p.hp;
     const ratio = mon.maxhp > 0 ? Math.max(0, Math.min(1, mon.hp / mon.maxhp)) : 0;
@@ -98,7 +94,7 @@ class PartySlot {
       s.add.image(hx + 15, hy, 'party_slot_overlay_hp').setOrigin(1, 0),
       s.add.image(hx, hy, 'party_slot_hp_bar').setOrigin(0),
       s.add.sprite(hx + 16, hy + 2, 'party_slot_hp_overlay', ratio > 0.5 ? 'high' : ratio > 0.25 ? 'medium' : 'low').setOrigin(0).setScale(ratio, 1),
-
+      // (-3, -2) from the bottom right of the HP bar (100x7)
       partyText(s, hx + 100 - 3, hy + 7 - 2, `${mon.hp}/${mon.maxhp}`).setOrigin(1, 0),
     );
     this.hit = s.add.rectangle(0, 0, benched ? 175 : 110, benched ? 24 : 49, 0, 0).setOrigin(0).setInteractive({ useHandCursor: !viewOnly });
@@ -219,7 +215,7 @@ export class PartyMenu {
     this.page = page;
     const theirs = page === 'partner';
     this.partnerLayer.setVisible(theirs);
-    this.slots.forEach(slot => slot.container.setVisible(!theirs));
+    this.slots.forEach(slot => slot.container.setVisible(!theirs)); // hidden: their taps and hovers are off too
     this.cancelButton.setVisible(!theirs);
     this.shown();
     const name = this.partner.name;
@@ -237,7 +233,7 @@ export class PartyMenu {
   showPrompt(text) {
     this.mode = 'prompt'; this.shown();
     this.showText(text);
-
+    // MessageUiHandler.showPrompt: end of the last line +2, 18 per line
     const lines = text.split('\n');
     const probe = windowText(this.scene, 0, 0, lines.at(-1));
     const width = probe.displayWidth; probe.destroy();
@@ -270,7 +266,7 @@ export class PartyMenu {
   }
 
   input(action) {
-    if (this.busy()) return;
+    if (this.busy()) return; // during the transition or while the summary screen opens / is open
     if (this.mode === 'prompt') {
       if (action === 'ok' || action === 'back') { playSelect(this.scene); this.mode = 'party'; this.shown(); this.promptHit.setVisible(false); this.showText(this.scene.words(TEXT.choose)); }
       return;
@@ -309,7 +305,7 @@ export class PartyMenu {
 
   cancel() { if (!this.forced) { playSelect(this.scene); this.finish(null); } }
   showOptions() {
-    this.shown();
+    this.shown(); // the slot menu is drawn over the slot just tapped
     if (this.remember) return this.showRememberOptions();
     const s = this.scene, slot = this.party[this.cursor];
 
@@ -392,7 +388,7 @@ export class PartyMenu {
 
   scrollRemember(down) {
     this.scrollCursor += down ? 1 : -1;
-    if (this.scrollCursor === 1) this.scrollCursor += down ? 1 : -1;
+    if (this.scrollCursor === 1) this.scrollCursor += down ? 1 : -1; // setOptionsCursor: 1 is skipped (the up row takes the first row)
     const keep = this.optionCursor;
     this.showRememberOptions(0);
     const list = this.optionList;

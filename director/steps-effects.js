@@ -4,8 +4,8 @@ import { phrase, text, nameWithAffix, statusNames, commonNames, hpLog } from './
 import { DEFAULT_LANG } from './lang.js';
 import { megaFormName } from './steps-mega.js';
 import { positionOf, isIdent, uidOf, teamOf, fieldPositions } from './read.js';
-import { ownTemplate } from './own-text.js';
-import { effectOf, abilityTrigger } from './ability-trigger.js';
+import { ownTemplate } from './own-text.js'; // own text (own.*) in one place
+import { effectOf, abilityTrigger } from './ability-trigger.js'; // which lines show an ability popup
 import { toID } from '../engine/mon.mjs';
 
 const PHRASES = { ko, en };
@@ -26,7 +26,7 @@ const WEATHER = {
 };
 
 const TERRAIN = { electricterrain: 'electric', grassyterrain: 'grassy', mistyterrain: 'misty', psychicterrain: 'psychic' };
-
+// Whole-field effects (arena-tag.json). [of] is the Pokemon that set it
 const FIELD = { trickroom: 'trickRoom', gravity: 'gravity', wonderroom: 'wonderRoom', mudsport: 'mudSport', watersport: 'waterSport' };
 // Side conditions (arena-tag.json <key>OnAdd{Player,Enemy} / OnRemove{Player,Enemy})
 const SIDE = {
@@ -36,9 +36,21 @@ const SIDE = {
 };
 
 const TRAP = { bind: 'bind', wrap: 'wrap', firespin: 'fireSpin', whirlpool: 'whirlpool', clamp: 'clamp', sandtomb: 'sandTomb',
-  magmastorm: 'magmaStorm', snaptrap: 'snapTrap', thundercage: 'thunderCage', infestation: 'infestation' };
-const TRAP_ANIM = { firespin: 'fire-spin', sandtomb: 'sand-tomb', magmastorm: 'magma-storm', snaptrap: 'snap-trap', thundercage: 'thunder-cage' };
+  magmastorm: 'magmaStorm', snaptrap: 'snapTrap', thundercage: 'thunderCage', infestation: 'infestation',
+  gmaxsandblast: 'sandTomb', gmaxcentiferno: 'fireSpin' };
+const TRAP_ANIM = { firespin: 'fire-spin', sandtomb: 'sand-tomb', magmastorm: 'magma-storm', snaptrap: 'snap-trap', thundercage: 'thunder-cage',
+  gmaxsandblast: 'sand-tomb', gmaxcentiferno: 'fire-spin' };
 
+const SIDE_VOLATILE = new Set(['reflect', 'lightscreen', 'mist']), FIELD_VOLATILE = new Set(['mudsport', 'watersport']);
+
+const GMAX_SIDE = {
+  gmaxwildfire: { start: 'own.gmaxWildfire', damage: 'own.gmaxWildfireDamage' },
+  gmaxcannonade: { start: 'own.gmaxCannonade', damage: 'own.gmaxCannonadeDamage' },
+  gmaxvinelash: { start: 'own.gmaxVineLash', damage: 'own.gmaxVineLashDamage' },
+  gmaxvolcalith: { start: 'own.gmaxVolcalith', damage: 'own.gmaxVolcalithDamage' },
+  gmaxsteelsurge: { start: 'own.gmaxSteelsurge', end: 'own.gmaxSteelsurgeEnd', damage: 'own.gmaxSteelsurgeDamage' },
+};
+// battler-tags text for -start / -end [on add, on remove]
 const VOLATILE = {
   confusion: ['confusedOnAdd', 'confusedOnRemove'], healblock: ['healBlockOnAdd', 'healBlockOnRemove'],
   encore: ['encoreOnAdd', 'encoreOnRemove'], taunt: ['tauntOnAdd', 'tauntOnRemove'], leechseed: ['seededOnAdd', null],
@@ -50,19 +62,21 @@ const VOLATILE = {
   autotomize: ['autotomizeOnAdd', null], electrify: ['electrifiedOnAdd', null], noretreat: ['noRetreatOnAdd', null],
   octolock: ['octolockOnAdd', null], syrupbomb: ['syrupBombOnAdd', null], grudge: ['grudgeOnAdd', null],
   magiccoat: ['magicCoatOnAdd', null], helpinghand: ['helpingHandOnAdd', null],
-};
 
+  gmaxchistrike: ['critBoostOnAdd', null],
+};
+// Passed silently (PokeRogue has no text for them either)
 const QUIET_VOLATILE = new Set(['throatchop', 'charge', 'mustrecharge', 'roost', 'uproar', 'stockpile', 'smackdown', 'rage', 'protosynthesis',
   'quarkdrive', 'flashfire', 'bide', 'lockon', 'mindreader', 'dynamax', 'glaiverush', 'snatch', 'instruct', 'leechseed', 'yawn', 'perishsong',
   'ingrain', 'aquaring', 'octolock', 'saltcure', 'nightmare', 'curse', 'imprison', 'torment', 'powder', 'tarshot', 'electrify', 'laserfocus']);
-
+// move-trigger.json charge text (-prepare)
 const CHARGE = {
   solarbeam: 'tookInSunlight', solarblade: 'tookInSunlight', meteorbeam: 'isOverflowingWithSpacePower', skyattack: 'isGlowing',
   fly: 'flewUpHigh', dig: 'dugAHole', dive: 'hidUnderwater', bounce: 'sprangUp', skullbash: 'loweredItsHead', razorwind: 'whippedUpAWhirlwind',
   phantomforce: 'vanishedInstantly', shadowforce: 'vanishedInstantly', geomancy: 'isChargingPower', freezeshock: 'becameCloakedInFreezingLight',
   iceburn: 'becameCloakedInFreezingAir', electroshot: 'absorbedElectricity', skydrop: 'tookTargetIntoSky',
 };
-
+// -singleturn
 const SINGLE_TURN = {
   protect: 'battler-tags.protectedOnAdd', detect: 'battler-tags.protectedOnAdd', kingsshield: 'battler-tags.protectedOnAdd',
   spikyshield: 'battler-tags.protectedOnAdd', banefulbunker: 'battler-tags.protectedOnAdd', silktrap: 'battler-tags.protectedOnAdd',
@@ -86,8 +100,9 @@ const RUIN = { vesselofruin: ['postSummonVesselOfRuin', 'spatk'], swordofruin: [
 const ITEM_THEN_EFFECT = new Set(['weaknesspolicy', 'throatspray', 'absorbbulb', 'cellbattery', 'luminousmoss', 'snowball', 'electricseed',
   'grassyseed', 'mistyseed', 'psychicseed', 'roomservice', 'adrenalineorb', 'blunderpolicy', 'boosterenergy']);
 
-const SILENT = new Set(['debug', '-hint', '-mustrecharge', '-center', '-waiting', '-fieldactivate', '-cureteam']);
+const SILENT = new Set(['debug', '-hint', '-mustrecharge', '-center', '-waiting', '-fieldactivate', '-cureteam', '-candynamax']);
 
+/** Lines this module handles (steps.js dispatch table) */
 export const EFFECT_KINDS = ['-damage', '-heal', '-sethp', '-status', '-curestatus', 'cant', '-boost', '-unboost', '-setboost', '-clearallboost',
   '-clearboost', '-clearnegativeboost', '-clearpositiveboost', '-invertboost', '-copyboost', '-swapboost', '-transform', '-formechange', 'detailschange',
   '-fail', '-block', '-nothing', '-notarget', '-ability', '-endability', '-item', '-enditem', '-activate', '-start', '-end', '-singleturn',
@@ -95,10 +110,10 @@ export const EFFECT_KINDS = ['-damage', '-heal', '-sethp', '-status', '-curestat
 
 export const EFFECT_TABLES = { WEATHER, TERRAIN, FIELD, SIDE, TRAP, VOLATILE, CHARGE, SINGLE_TURN, ABILITY_LINE, RUIN };
 
-export function createEffects({ battle, view, names, warn, ledger, lang = DEFAULT_LANG, affix = nameWithAffix(lang) }) {
+export function createEffects({ battle, view, names, warn, ledger, lang = DEFAULT_LANG, affix = nameWithAffix(lang), dynamax = null }) {
   const id = value => battle.dex?.toID ? battle.dex.toID(value) : toID(value);
-  const plainName = ident => ledger.get(ident).name;
-  const label = side => affix(ledger.atField(side)?.name, side);
+  const plainName = ident => ledger.get(ident).name; // ability popup name
+  const label = side => affix(ledger.atField(side)?.name, side); // Pokemon standing at that position, as sentences name it
   const nameOf = ident => affix(plainName(ident), positionOf(ident));
   const nv = ident => ({ pokemonName: nameOf(ident), pokemonNameWithAffix: nameOf(ident) });
   const say = (key, values = {}) => view.message(effectText(key, values, lang), {});
@@ -115,6 +130,8 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
   let bar = null;
 
   const dollOut = new WeakSet();
+
+  const depleted = new WeakMap();
 
   const itemFrom = ({ kwArgs: kw, item }, { eaten } = {}) => {
     const from = kw.from ? effectOf(kw.from) : null;
@@ -139,7 +156,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     const match = /^(ability|item|move):\s*(.*)$/.exec(source);
     return match ? names[match[1]](id(match[2])) : source;
   };
-
+  /** Text for sourced HP changes that have no specific entry */
   async function sourceMessage(ident, source, heal) {
     if (statusNames[source] && !heal) {
 
@@ -151,7 +168,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     await show('battle.useMove', { ...nv(ident), moveName: sourceLabel(source) });
     if (heal) await show('battle.regainHealth', nv(ident));
   }
-
+  /** Whether this heal line raised HP (event.before = ledger before the line) */
   const heals = event => event.before?.hp === undefined || ledger.get(event.args[0]).hp > event.before.hp;
 
   async function hideBar() {
@@ -173,24 +190,25 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     }
     if (bar && !event.tag?.effects?.some(e => e.id === bar.by.id && e.uid === bar.by.uid)) await hideBar();
   }
-
+  /** order.js cues: R4 doll steps aside / returns, R3 endured text */
   async function cue({ cue: kind, move, event }) {
     if (kind === 'survive') return surviveMessage(event);
     const user = ledger.pokemon.get(uidOf(move, move.args[0])), side = positionOf(move.args[0]);
-    if (kind === 'doll-out' && user?.substitute && !move.kwArgs.still) { dollOut.add(move); await view.substitute(side, 'pre'); }
-    if (kind === 'doll-back' && dollOut.has(move) && ledger.atField(side)?.substitute) await view.substitute(side, 'post');
+    if (kind === 'doll-out' && user?.substitute && !move.kwArgs.still) { dollOut.add(move); await view.substitute(side, 'pre'); } // SubstituteTag PRE_MOVE
+    if (kind === 'doll-back' && dollOut.has(move) && ledger.atField(side)?.substitute) await view.substitute(side, 'post'); // AFTER_MOVE
   }
 
   function surviveMessage({ kind, args: a }) {
     const v = nv(a[0]);
     if (kind === '-ability') return say('battler-tags.sturdyLapse', v);
     if (kind === '-story-friendship') return say('own.friendshipEndure', v);
-    if (kind === '-enditem') return say('own.itemSurvive', { ...v, itemName: names.item(id(a[1])) });
+    if (kind === '-enditem') return say('own.itemSurvive', { ...v, itemName: names.item(id(a[1])) }); // Focus Sash
     const effect = effectOf(a[1]);
     if (effect.id === 'endure') return say('battler-tags.enduringLapse', v);
-    return say('own.itemSurvive', { ...v, itemName: names.item(effect.id) });
+    return say('own.itemSurvive', { ...v, itemName: names.item(effect.id) }); // Focus Band
   }
 
+  // ---- per line kind ----
   async function onDamage(event) {
     const { args: a, kwArgs: kw } = event;
 
@@ -217,13 +235,15 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       else if (['solarpower', 'dryskin'].includes(from.id)) await say('ability-trigger.postWeatherLapseDamage', { ...nv(a[0]), abilityName });
       return;
     }
-    if (from.prefix === 'pokemon') { await hp(a[0]); return; }
+    if (from.prefix === 'pokemon') { await hp(a[0]); return; } // Disguise broken
     if (from.prefix === 'move' && (TRAP[from.id] || kw.partiallytrapped)) {
       await common(TRAP_ANIM[from.id] ?? from.id, side);
       await hp(a[0]);
       await say('battler-tags.damagingTrapLapse', { ...nv(a[0]), moveName: names.move(from.id) });
       return;
     }
+
+    if (GMAX_SIDE[from.id]) { await hp(a[0]); await say(GMAX_SIDE[from.id].damage, nv(a[0])); return; }
     switch (from.id) {
     case 'recoil': await hp(a[0]); await say('move-trigger.hitWithRecoil', nv(a[0])); return;
     case 'stealthrock': await hp(a[0]); await say('arena-tag.stealthRockActivateTrap', nv(a[0])); return;
@@ -251,7 +271,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     case 'firepledge': await hp(a[0]); await say('arena-tag.fireGrassPledgeLapse', nv(a[0])); return;
 
     case 'spikyshield': await hp(a[0]); await say('own.spikyShield', { ...nv(a[0]), moveName: names.move(from.id) }); return;
-    default: await hp(a[0]); await sourceMessage(a[0], String(kw.from), false);
+    default: await hp(a[0]); await sourceMessage(a[0], String(kw.from), false); // poison, burn (status-effect.*.activation), otherwise the source name
     }
   }
 
@@ -268,13 +288,13 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       await view.message(effectText('move-trigger.revivalBlessing', { pokemonName: nameOf(a[0]) }, lang), { wait: true });
       return;
     }
-
+    // PokemonHealPhase: CommonAnim.HEALTH_UP -> HP -> text
     const healed = async () => { if (heals(event) && ledger.onField(a[0])) await common('health-up', side); await hp(a[0]); };
     if (from.prefix === 'item') {
       await healed();
       const itemName = names.item(from.id);
       if (from.id.endsWith('berry')) await say('battle.hpHealBerry', { ...nv(a[0]), berryName: itemName });
-      else await say('own.itemHeal', { ...nv(a[0]), itemName });
+      else await say('own.itemHeal', { ...nv(a[0]), itemName }); // Leftovers, Black Sludge, Shell Bell
       return;
     }
     if (from.prefix === 'ability') {
@@ -311,18 +331,19 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     if (kw.silent) return true;
     const side = positionOf(a[0]), effect = effectOf(a[1]), from = kw.from ? effectOf(kw.from) : null;
     const v = nv(a[0]);
+    if (effect.id === 'dynamax') { await dynamax?.start(event); return true; } // grow (steps-mega.js) - no sentence
     if (effect.id === 'substitute') {
       await view.substitute(side, 'add');
       await say(from?.id === 'shedtail' ? 'battler-tags.shedTailOnAdd' : 'battler-tags.substituteOnAdd', v);
       return true;
     }
     if (effect.id === 'confusion') {
-
+      // ConfusedTag.onAdd: CommonAnim.CONFUSION then the message
       await common('confusion', side);
       await say('battler-tags.confusedOnAdd', v);
       return true;
     }
-    if (effect.id === 'disable') {
+    if (effect.id === 'disable') { // the Disabled move is kept in the ledger (director/ledger.js disabled)
       await say('battler-tags.disabledOnAdd', { ...v, moveName: names.move(id(a[2])) });
       return true;
     }
@@ -369,6 +390,8 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     if (effect.id === 'futuresight') { await say('move-trigger.foresawAnAttack', v); return true; }
     if (effect.id === 'doomdesire') { await say('move-trigger.choseDoomDesireAsDestiny', v); return true; }
     if (effect.id === 'smackdown') { await say('move-trigger.fallDown', { targetPokemonName: v.pokemonName }); return true; }
+    if (SIDE_VOLATILE.has(effect.id)) { await say(`arena-tag.${SIDE[effect.id]}OnAdd${sideKey(side)}`); return true; }
+    if (FIELD_VOLATILE.has(effect.id)) { await say(`arena-tag.${FIELD[effect.id]}OnAdd`, v); return true; }
     if (VOLATILE[effect.id]?.[0]) { await say(`battler-tags.${VOLATILE[effect.id][0]}`, { ...v, sourcePokemonName: label(other(side)) }); return true; }
     if (QUIET_VOLATILE.has(effect.id)) return true;
     warn(`-start:${effect.id}`);
@@ -378,6 +401,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
   async function onEnd(event) {
     const { args: a, kwArgs: kw } = event;
     const side = positionOf(a[0]), effect = effectOf(a[1]);
+    if (effect.id === 'dynamax') { await dynamax?.end(event); return true; } // shrink back (steps-mega.js) - no sentence
     if (effect.id === 'substitute') {
       await view.substitute(side, 'remove');
       if (!kw.silent) await say('battler-tags.substituteOnRemove', nv(a[0]));
@@ -385,7 +409,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     }
     if (kw.silent) return true;
     const v = nv(a[0]);
-    if (effect.id === 'confusion' && itemFrom(event)) {
+    if (effect.id === 'confusion' && itemFrom(event)) { // items: Persim / Lum Berry
       await say('own.cureFromItem.confusion', { ...v, itemName: names.item(itemFrom(event)) });
       return true;
     }
@@ -399,7 +423,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     }
     if (kw.partiallytrapped || TRAP[effect.id]) { await say('battler-tags.trappedOnRemove', { ...v, moveName: names.move(effect.id) }); return true; }
     if (effect.id === 'disable') {
-      const move = event.before?.disabled;
+      const move = event.before?.disabled; // the ledger already cleared it for this line
       if (move) await say('battler-tags.disabledOnRemove', { ...v, moveName: names.move(id(move)) });
       return true;
     }
@@ -409,12 +433,12 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       return true;
     }
     if (VOLATILE[effect.id]?.[1]) { await say(`battler-tags.${VOLATILE[effect.id][1]}`, v); return true; }
-    if (VOLATILE[effect.id] || QUIET_VOLATILE.has(effect.id)) return true;
+    if (VOLATILE[effect.id] || QUIET_VOLATILE.has(effect.id) || SIDE_VOLATILE.has(effect.id) || FIELD_VOLATILE.has(effect.id)) return true;
     warn(`-end:${effect.id}`);
     return true;
   }
 
-  async function onActivate(a, kw) {
+  async function onActivate(a, kw, event) {
     const side = positionOf(a[0]), effect = effectOf(a[1]), v = nv(a[0]);
     if (effect.prefix === 'ability') {
       const abilityName = names.ability(effect.id);
@@ -425,7 +449,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       else if (effect.id === 'anticipation') await say('ability-trigger.postSummonAnticipation', v);
       // Items: Protosynthesis / Quark Drive via Booster Energy (the preceding -enditem is anim only)
       else if (kw.fromitem) await say('own.boosterEnergy', { ...v, itemName: names.item('boosterenergy'), abilityName });
-      return true;
+      return true; // other abilities: popup only
     }
     if (TRAP[effect.id]) {
       const source = typeof kw.of === 'string' ? nameOf(kw.of) : label(other(side));
@@ -434,7 +458,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     }
     switch (effect.id) {
     case 'confusion':
-
+      // ConfusedTag.lapse: message then CommonAnim.CONFUSION
       await say('battler-tags.confusedLapse', v);
       await common('confusion', side);
       return true;
@@ -443,7 +467,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       await common('attract', side);
       return true;
     case 'protect': case 'kingsshield': case 'spikyshield': case 'banefulbunker': case 'silktrap': case 'burningbulwark': case 'obstruct': case 'detect': case 'maxguard':
-
+      // ProtectedTag.lapse: CommonAnim.PROTECT then protectedLapse
       await common('protect', side);
       await say('battler-tags.protectedLapse', v);
       return true;
@@ -462,6 +486,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     case 'ficklebeam': await say('move-trigger.goingAllOutForAttack', v); return true;
     case 'stickyweb': await say('arena-tag.stickyWebActivateTrap', v); return true;
     case 'mist': await say('arena-tag.mistApply', v); return true;
+    case 'haze': await say('move-trigger.statEliminated'); return true; // generation 1's Haze (later ones: -clearallboost)
     case 'safeguard': await say('move-trigger.safeguard', { targetName: v.pokemonName }); return true;
     case 'mistyterrain': await say('terrain.mistyBlockMessage', v); return true;
     case 'psychicterrain': case 'electricterrain': case 'grassyterrain':
@@ -475,9 +500,16 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       await say('battle.ppHealBerry', { ...v, berryName: names.item(effect.id), moveName: names.move(id(a[2])) }); return true;
     case 'safetygoggles': await say('own.safetyGoggles', { ...v, itemName: names.item(effect.id), moveName: names.move(id(a[2])) }); return true;
     case 'skillswap': await say('move-trigger.swappedAbilitiesWithTarget', v); return true;
-    case 'orichalcumpulse': case 'hadronengine': return true;
+    case 'orichalcumpulse': case 'hadronengine': return true; // the popup from the preceding -weather/-fieldstart is already shown
     case 'magnitude': if (a[2]) await say('move-trigger.magnitudeMessage', { magnitude: a[2] }); return true;
     case 'spite': if (a[2]) await say('battle.ppReduced', { targetName: v.pokemonName, moveName: names.move(id(a[2])), reduction: a[3] ?? '' }); return true;
+    case 'gmaxdepletion': {
+
+      const shown = depleted.get(event.move) ?? new Set(), key = sideKey(side);
+      if (!shown.has(key)) await say(`own.gmaxDepletion${key}`);
+      if (event.move) depleted.set(event.move, shown.add(key));
+      return true;
+    }
     default:
       warn(`-activate:${effect.id}`);
       await sourceSay(a[0], effect);
@@ -486,7 +518,14 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
   }
 
   async function onItem(a, kw) {
-    const from = kw.from ? effectOf(kw.from) : null, itemName = names.item(id(a[1])), v = nv(a[0]);
+    const from = kw.from ? effectOf(kw.from) : null, itemName = names.item(id(a[1]));
+
+    if (!isIdent(a[0])) {
+      if (from?.id === 'frisk' && isIdent(kw.of)) await say('own.friskFound', { ...nv(kw.of), itemName });
+      else warn(`-item:${from?.id ?? ''}`);
+      return true;
+    }
+    const v = nv(a[0]);
     if (from?.prefix === 'ability') {
       if (from.id === 'frisk' && typeof kw.of === 'string') await say('ability-trigger.frisk', { ...nv(kw.of), opponentName: v.pokemonName, opponentAbilityName: itemName });
       else if (from.id === 'harvest') await say('ability-trigger.postTurnLootCreateEatenBerry', { ...v, berryName: itemName });
@@ -517,7 +556,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       if (item === 'micleberry') await say('own.micleBerry', { ...v, itemName });
       return true;
     }
-
+    // Resist berries: the line after [eat] (anim already shown)
     if (kw.weaken) { await say('own.itemWeaken', { ...v, itemName }); return true; }
     if (from?.id === 'stealeat' && typeof kw.of === 'string') {
       await say('battle.stealEatBerry', { pokemonName: nameOf(kw.of), targetName: v.pokemonName, berryName: itemName });
@@ -531,13 +570,13 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       else if (from.id === 'fling') await say('own.fling', { ...v, itemName });
       return true;
     }
-    if (from?.id === 'gem') {
+    if (from?.id === 'gem') { // Gems: |-enditem|X|Normal Gem|[from] gem|[move] move
       await common('use-item', side);
       await say('own.gem', { itemName, moveName: names.move(id(kw.move)) });
       return true;
     }
     switch (item) {
-    case 'focussash': return true;
+    case 'focussash': return true; // R3: text after that hit's HP (order.js survive cue)
     case 'airballoon': await say('own.airBalloonPopped', v); return true;
     case 'micleberry': return true;
     }
@@ -551,7 +590,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       await say('own.redCard', { ...v, itemName, targetName: typeof kw.of === 'string' ? nameOf(kw.of) : label(other(side)) ?? '' });
       return true;
     }
-    if (!ITEM_THEN_EFFECT.has(item)) await say('own.itemUsed', { ...v, itemName });
+    if (!ITEM_THEN_EFFECT.has(item)) await say('own.itemUsed', { ...v, itemName }); // Mental Herb etc.: the next line states the cured condition
     return true;
   }
 
@@ -592,7 +631,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       await view.message(effectText(`weather.${key}LapseMessage`, {}, lang), { hold: 0 });
       await common(anim, fieldSide());
     } else {
-
+      // Arena.trySetWeather: CommonAnimPhase (unshift) then the start message
       await common(anim, fieldSide());
       await say(`weather.${key}StartMessage`);
     }
@@ -624,6 +663,12 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       if (kind === '-sidestart') await say(`arena-tag.conditionalProtectOnAdd${sideKey(side)}`, { moveName: names.move(effect.id) });
       return true;
     }
+    const gmax = GMAX_SIDE[effect.id];
+    if (gmax) {
+      const key = kind === '-sidestart' ? gmax.start : gmax.end;
+      if (key) await say(`${key}${sideKey(side)}`);
+      return true;
+    }
     const key = SIDE[effect.id];
     if (!key) { warn(`${kind}:${effect.id}`); return true; }
     await say(`arena-tag.${key}${kind === '-sidestart' ? 'OnAdd' : 'OnRemove'}${sideKey(side)}`);
@@ -636,10 +681,14 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     if (!species?.exists) { warn(`form:${id(speciesName)}`); return; }
     const preName = affix(mon.name, side);
     const { speciesId, spriteId, shiny, gender } = mon;
-    if (ledger.onField(ident)) await view.changeForm(side, { speciesId, spriteId, shiny, gender }, { instant });
-    if (!message) return;
 
+    const burst = species.id === 'necrozmaultra' && !instant && view.ultraBurst;
+    if (ledger.onField(ident)) await (burst ? view.ultraBurst(side, { speciesId, spriteId, shiny, gender }) : view.changeForm(side, { speciesId, spriteId, shiny, gender }, { instant }));
+    if (!message) return;
+    // form-change-triggers.ts getSpeciesFormChangeMessage
     if (/^Mega/.test(species.forme)) await say('pokemon-form-battle.megaChange', { preName, pokemonName: megaFormName(names, species) });
+
+    else if (species.id === 'necrozmaultra') return;
     else if (from?.id === 'disguise' || species.id === 'mimikyubusted') await say('pokemon-form-battle.disguiseChange');
     else if (!species.forme) await say('pokemon-form-battle.revertChange', { pokemonName: preName });
     else await say('pokemon-form-battle.formChange', { preName });
@@ -674,6 +723,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     await say(`battle.${keys[Math.min(Math.abs(delta), 3) - 1]}`, { ...nv(ident), stats: statName(stat) });
   }
 
+  /** View call for one handled line (steps.js dispatch table) */
   async function present(event) {
     const { kind, args: a, kwArgs: kw } = event;
     presenting = event;
@@ -681,18 +731,19 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     case 'cant': {
       const reason = effectOf(a[1]), v = nv(a[0]);
       if (reason.prefix === 'ability' && reason.id === 'truant') { await say('battler-tags.truantLapse', v); return true; }
-      if (reason.prefix === 'ability') return true;
+      if (reason.prefix === 'ability') return true; // popup only (Damp etc.)
       const move = a[2] ? names.move(id(a[2])) : '';
       switch (reason.id) {
       case 'healblock': await say('battle.moveDisabledHealBlock', { ...v, moveName: move }); return true;
       case 'disable': await say('battle.disableInterruptedMove', { ...v, moveName: move || names.move(id(ledger.get(a[0]).disabled)) }); return true;
       case 'throatchop': await say('battle.throatChopInterruptedMove', v); return true;
       case 'imprison': await say('battle.moveDisabledImprison', { ...v, moveName: move }); return true;
-      case 'taunt': await say('own.moveDisabledTaunt', { ...v, moveName: move }); return true;
+      case 'taunt': await say('own.moveDisabledTaunt', { ...v, moveName: move }); return true; // TauntTag.interruptedText (battler-tags.ts:3550)
       case 'gravity': await say('battle.moveDisabledGravity', { ...v, moveName: move }); return true;
       case 'attract': await say('battler-tags.infatuatedLapseImmobilize', v); return true;
       case 'nopp': await say('battle.moveNoPp'); return true;
       case 'focuspunch': await say('move-trigger.lostFocus', v); return true;
+      case 'partiallytrapped': await say('own.trappedCantMove', v); return true; // generation 1: Wrap's target cannot move
       default: return cantDefault(a);
       }
     }
@@ -703,7 +754,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
     case '-endability': await say('move-trigger.suppressAbilities', nv(a[0])); return true;
     case '-item': return onItem(a, kw);
     case '-enditem': return onEndItem(a, kw);
-    case '-activate': return onActivate(a, kw);
+    case '-activate': return onActivate(a, kw, event);
 
     case '-story-friendship': if (a[1] === 'cure') await say(`own.friendshipCure.${a[2]}`, nv(a[0])); return true;
     case '-start': return onStart(event);
@@ -766,7 +817,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       }
       return showStages(positionOf(a[0]));
     }
-    case '-status': {
+    case '-status': { // items: Flame Orb, Toxic Orb
       const from = kw.from ? effectOf(kw.from) : null, key = `own.statusFromItem.${a[1]}`, side = positionOf(a[0]);
       if (from?.prefix !== 'item' || !ownTemplate(key)) return statusChange(event);
       await view.setStatus(side, a[1]);
@@ -774,7 +825,7 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
       await say(key, { ...nv(a[0]), itemName: names.item(from.id) });
       return true;
     }
-    case '-curestatus': {
+    case '-curestatus': { // items: status-curing berries (the line after eating, [msg])
       const item = itemFrom(event, { eaten: true }), key = `own.cureFromItem.${a[1] === 'tox' ? 'psn' : a[1]}`, side = positionOf(a[0]);
       if (!item || !ownTemplate(key) || !ledger.onField(a[0])) return statusChange(event);
       await view.setStatus(side, '');
@@ -851,22 +902,26 @@ export function createEffects({ battle, view, names, warn, ledger, lang = DEFAUL
         return true;
       }
       if (effect.id === 'heal') { await say('battle.hpIsFull', { pokemonName: v.pokemonName }); return true; }
-
+      // Items: Clear Amulet (|-fail|X|unboost|[from] item: Clear Amulet)
       if (from?.prefix === 'item' && effect.id === 'unboost') { await say('own.clearAmulet', { ...v, itemName: names.item(from.id) }); return true; }
       if (statusNames[effect.id] && !from) { await say(`status-effect.${statusNames[effect.id]}.overlap`, v); return true; }
+
+      if (effect.id === 'dynamax' || from?.id === 'dynamax') { await say('own.dynamaxFail', v); return true; }
       return show('battle.attackFailed');
     }
-    case '-block': {
+    case '-block': { // ability: popup only. Others (Mat Block etc.) already had the move text
       const effect = effectOf(a[1]);
-      if (effect.prefix !== 'item') return true;
 
+      if (effect.id === 'dynamax') { await say('own.dynamaxBlock'); return true; }
+      if (effect.prefix !== 'item') return true;
+      // Items: Ability Shield (blocks moves/abilities that change the ability)
       if (effect.id === 'abilityshield') await say('own.abilityShield', { ...nv(a[0]), itemName: names.item(effect.id) });
       else { warn(`-block:${effect.id}`); await sourceSay(a[0], effect); }
       return true;
     }
     case '-nothing': await say('move-trigger.splash'); return true;
     case '-notarget': await show('battle.attackFailed'); return true;
-    default:
+    default: // SILENT: lines passed with no screen
     }
   }
 

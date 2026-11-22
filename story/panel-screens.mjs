@@ -4,7 +4,7 @@ import { viewWords } from '../view/words.js';
 import { STATS } from '../engine/mon.mjs';
 import { say } from './screen-text.mjs';
 import { namesFor, slotView, statModes, SUMMARY_PAGES, screenTab, ASKING } from './panel.mjs';
-import { rememberableMoves, hatchedParty, stateFormat } from './state.mjs';
+import { rememberableMoves, stateFormat, dynamaxLevelShown, hatched } from './state.mjs';
 import { statName } from './diary.mjs';
 import { MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX } from './rules.mjs';
 
@@ -22,10 +22,17 @@ function keep(key, make) {
   return value;
 }
 
-const outsideCtx = (ctx, state, lang, trainer) => ({ sim: ctx.sim, names: namesFor(lang, ctx.sim), lang, levelUp: ctx.levelUp, exp: ctx.exp, trainer,
-  battleFormat: stateFormat(state), customItems: state.customItems });
+const outsideCtx = (ctx, state, lang, trainer, extra = {}) => ({ sim: ctx.sim, names: namesFor(lang, ctx.sim), lang, levelUp: ctx.levelUp, exp: ctx.exp, trainer,
+  battleFormat: stateFormat(state), customItems: state.customItems, ...extra });
 const inputs = (kind, mon, lang, trainer, state, extra) => JSON.stringify([kind, mon, lang, trainer ?? null, stateFormat(state), state.customItems ?? null, extra ?? null]);
-const summaryOf = (mon, env) => keep(inputs('summary', mon, env.lang, env.trainer, env.state), () => outsideSummarySlot(outsideCtx(env.ctx, env.state, env.lang, env.trainer), mon));
+
+const summaryOf = (mon, env) => {
+  const dynamaxShown = dynamaxLevelShown(env.state, env.ctx.status?.region ?? null);
+
+  const extra = { dynamaxShown, ...(Number.isInteger(env.ctx.formGen) ? { battleGen: env.ctx.formGen } : {}) };
+  return keep(inputs('summary', mon, env.lang, env.trainer, env.state, extra),
+    () => outsideSummarySlot(outsideCtx(env.ctx, env.state, env.lang, env.trainer, extra), mon));
+};
 
 const moveRow = (move, extra = {}) => ({ id: move.id, name: move.name, type: move.type, pp: move.pp, maxpp: move.maxpp, ...extra });
 const moveDetail = (move, t) => (move ? { name: move.name, type: move.type, category: move.category, power: move.power, accuracy: move.accuracy, description: move.description,
@@ -48,12 +55,14 @@ function summaryView(screen, mon, env, t) {
   const { state, ctx, lang } = env;
   const words = viewWords(lang), names = namesFor(lang, ctx.sim);
   const slot = summaryOf(mon, env), { summary } = slot;
-  const shown = slotView(mon, ctx, state, lang);
-  const party = hatchedParty(state), at = party.findIndex(m => m.uid === mon.uid);
+  const shown = slotView(mon, ctx, state, lang); // the party slot's picture, name, HP colour (the same values as the list)
+  const party = hatched(state.party), at = party.findIndex(m => m.uid === mon.uid);
   const hero = { spriteId: shown.spriteId, shiny: shown.shiny, dex: summary.dexNumber, name: shown.name, gender: shown.gender, species: names.species(slot.speciesId),
     level: shown.level, types: summary.types, hp: shown.hp, maxhp: shown.maxhp, hpClass: shown.hpClass, status: shown.status, fainted: shown.fainted, rename: t('panel.rename'),
 
-    ...(summary.lock && !summary.lock.held && !env.locked ? { lock: { locked: summary.lock.locked, label: t(summary.lock.locked ? 'panel.sc.unlockEvolution' : 'panel.sc.lockEvolution') } } : {}) };
+    ...(summary.lock && !summary.lock.held && !env.locked ? { lock: { locked: summary.lock.locked, label: t(summary.lock.locked ? 'panel.sc.unlockEvolution' : 'panel.sc.lockEvolution') } } : {}),
+
+    ...(summary.gigantamax ? { gmax: t('panel.sc.gmax') } : {}) };
   const pages = SUMMARY_PAGES.map(id => ({ id, label: t(`panel.sc.page.${id}`) }));
 
   const strip = () => party.map(m => {
@@ -73,28 +82,33 @@ function summaryView(screen, mon, env, t) {
         ...(nature ? [{ key: 'nature', label: t('panel.sc.nature'), nature: { before, name: nature.name, after, plus: nature.plus && statName(nature.plus, lang),
           minus: nature.minus && statName(nature.minus, lang), mint: nature.mint ?? null } }] : []),
       ],
-      ability: { label: t('panel.sc.ability'), name: summary.ability.name, description: summary.ability.description },
+      // none in generations 1-2 (director/summary.js)
+      ability: summary.ability ? { label: t('panel.sc.ability'), name: summary.ability.name, description: summary.ability.description } : null,
     };
 
     if (summary.bond) out.profile.friendship = summary.bond;
-
+    // the evolution lock's line (lockView), under it
     if (summary.lock?.text) out.profile.lock = summary.lock.text;
   } else if (screen.page === 'stats') {
 
     const modes = statModes(ctx).filter(mode => (mode === 'ivs' ? !!summary.ivs : mode === 'evs' ? !!summary.evs : true));
     const mode = modes.includes(screen.stat) ? screen.stat : modes[0];
-    const cells = STATS.map(stat => {
-      const cell = { stat, label: statName(stat, lang), up: mode === 'stats' && summary.nature?.plus === stat, down: mode === 'stats' && summary.nature?.minus === stat };
+
+    const cells = STATS.filter(stat => !(summary.oneSpecial && stat === 'spd')).map(stat => {
+      const label = summary.oneSpecial && stat === 'spa' ? summary.oneSpecial.label : statName(stat, lang);
+      const cell = { stat, label, up: mode === 'stats' && summary.nature?.plus === stat, down: mode === 'stats' && summary.nature?.minus === stat };
       if (mode === 'ivs') return { ...cell, value: summary.ivs[stat], of: MAX_IV, top: summary.ivs[stat] >= MAX_IV };
       if (mode === 'evs') return { ...cell, value: summary.evs[stat], of: EV_STAT_MAX, top: summary.evs[stat] >= EV_STAT_MAX };
       return { ...cell, value: stat === 'hp' ? `${summary.stats.hp}/${summary.stats.maxhp}` : summary.stats[stat] };
     });
-    const total = mode === 'evs' ? STATS.reduce((sum, stat) => sum + summary.evs[stat], 0) : 0;
+    const total = mode === 'evs' ? STATS.reduce((sum, stat) => sum + summary.evs[stat], 0) : 0; // (no total line in generations 1-2 - evsUncapped)
     const exp = summary.exp && { total: summary.exp.total.toLocaleString(lang), next: summary.exp.next.toLocaleString(lang), ratio: summary.exp.ratio,
       level: shown.level, nextLevel: summary.exp.next ? shown.level + 1 : null };
     out.stats = { title: t('panel.sc.page.stats'), modes: modes.map(id => ({ id, label: t(`panel.sc.mode.${id}`) })), mode, cells,
-      note: mode === 'evs' ? { text: t('panel.sc.evNote', { n: total, max: EV_TOTAL_MAX }) } : null,
-      exp: exp && { ...exp, title: t('panel.sc.exp'), labels: { total: words('pokemon-summary.expPoints'), next: words('pokemon-summary.nextLv') } } };
+      note: mode === 'evs' && !summary.evsUncapped ? { text: t('panel.sc.evNote', { n: total, max: EV_TOTAL_MAX }) } : null,
+      exp: exp && { ...exp, title: t('panel.sc.exp'), labels: { total: words('pokemon-summary.expPoints'), next: words('pokemon-summary.nextLv') } },
+
+      dmax: Number.isInteger(summary.dynamaxLevel) ? { label: t('panel.sc.dmaxLevel'), level: summary.dynamaxLevel, of: 10 } : null };
   } else {
     const moves = summary.moves;
     const at = Math.min(screen.move ?? 0, moves.length - 1);
@@ -106,7 +120,7 @@ function summaryView(screen, mon, env, t) {
 function rememberView(screen, mon, env, t) {
   const { ctx, lang, state } = env;
   const names = namesFor(lang, ctx.sim);
-  const moves = rememberableMoves(ctx, mon);
+  const moves = rememberableMoves(ctx, mon, state);
   const list = keep(inputs('remember', mon, lang, null, state, moves), () => rememberModel(outsideCtx(ctx, state, lang, null), mon, moves));
   const at = Math.min(screen.move ?? 0, list.length - 1);
   const chosen = list[at];
@@ -137,13 +151,13 @@ function learnView(screen, mon, env, t) {
   const who = slotView(mon, ctx, state, lang).name, moveName = names.move(screen.move);
   let list;
   if (asking) {
-
+    // the new move first, then the four known (picked on 'pick')
     const plan = keep(inputs('learn', mon, lang, null, state, screen.move), () => learnModel(outsideCtx(ctx, state, lang, null), mon, screen.move));
     const rows = [moveRow(plan.newMove, { i: 0, mark: t('panel.sc.newMove'), fresh: true }), ...plan.moves.map((move, i) => moveRow(move, { i: i + 1, pick: choosing }))];
     const at = Math.min(screen.show ?? 0, rows.length - 1);
     list = { rows, selected: at, detail: moveDetail(at ? plan.moves[at - 1] : plan.newMove, t), picking: choosing };
   } else {
-
+    // decided: the moves known now (the new one marked)
     const moves = summaryOf(mon, env).summary.moves;
     const at = Math.max(0, moves.findIndex(m => m.id === screen.move));
     list = { rows: moves.map((move, i) => moveRow(move, { i: -1, ...(move.id === screen.move ? { mark: t('panel.sc.newMove'), fresh: true } : {}) })), selected: at, detail: moveDetail(moves[at], t), still: true };

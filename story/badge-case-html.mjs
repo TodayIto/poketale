@@ -16,11 +16,11 @@ export const BADGE_CSS = [
   `${C}-grow${C}-gno{color:#8193a1;background:#f6f9fb;}`,
   `${C}-grn{flex:none;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}`,
   `${C}-gdot{flex:1;min-width:12px;height:0;border-bottom:2px dotted #a9c2d4;}`,
-
+  // A picture spot: an <img>, an item icon or our SVG, fitted in the square
   `${C}-gpic{flex:none;position:relative;display:flex;align-items:center;justify-content:center;width:${z(30)};height:${z(30)};}`,
   `${C}-gpic img,${C}-gpic svg{display:block;max-width:100%;max-height:100%;}`,
   `${C}-gpic svg{width:100%;height:100%;}`,
-
+  // not earned: the same picture as a flat grey shape
   `${C}-gsil{filter:brightness(0) invert(.72);opacity:.75;}`,
 
   `${C}-grow${C}-gchamp{border-color:#d2a72c;box-shadow:0 2px 0 #b08a1e;background:#fffbea;}`,
@@ -28,7 +28,7 @@ export const BADGE_CSS = [
   `${C}-gtro{display:block;font-size:${z(22)};line-height:1;}`,
   `${C}-gdim{filter:grayscale(1);opacity:.4;}`,
   `${C}-gbig ${C}-gtro{font-size:${z(84)};}`,
-
+  // Enlarged view
   `${C}-gview{display:flex;flex-direction:column;align-items:stretch;gap:8px;}`,
   `${C}-gvtop{display:flex;align-items:center;gap:8px;}`,
   `${C}-gvname{flex:1;min-width:0;font-size:${z(15)};color:#14304a;}`,
@@ -39,7 +39,7 @@ export const BADGE_CSS = [
   `${C}-gnav svg{display:block;width:${z(11)};height:${z(11)};}`,
   `${C}-gnav:active{transform:translateY(1.5px);box-shadow:none;}`,
   `${C}-gnavp{left:${z(7)};} ${C}-gnavn{right:${z(7)};}`,
-
+  // the stage: dark velvet like a badge case
   `${C}-gbig{position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:${z(150)};padding:0;font-size:${z(BASE_TEXT)};border:2.5px solid #23435f;border-radius:12px;overflow:hidden;`
     + `background:radial-gradient(circle at 50% 42%,#4a3460 0,#2a1d3a 58%,#1a1226 100%);box-shadow:inset 0 0 0 3px #6d5486,0 3px 0 #1a3247;cursor:pointer;perspective:400px;}`,
   `${C}-gbig${C}-gno{cursor:default;}`,
@@ -75,12 +75,12 @@ export function badgeCaseHtml(model, lang, hit, pics, { icon, swipe }) {
     const look = open.earned
       ? `<button type="button" class="x-risu-pkbp-gbig${open.shine ? ' x-risu-pkbp-gshine' : ''} ${hit({ t: 'gymShine' })}" data-shine="${open.shine}" aria-label="${esc(open.name)}">${picSpot(open, pics)}${stars}</button>`
       : `<div class="x-risu-pkbp-gbig x-risu-pkbp-gno">${picSpot(open, pics)}</div>`;
-
+    // no arrow at the region's either end (user 2026-11-08)
     const arrow = (d, to) => {
       const side = d < 0 ? 'x-risu-pkbp-gnavp' : 'x-risu-pkbp-gnavn', label = t(d < 0 ? 'badge.prev' : 'badge.next'), drawn = d < 0 ? icon.prev : icon.next;
       return to ? `<button type="button" class="x-risu-pkbp-gnav ${side} ${hit({ t: 'gymNav', d })}" aria-label="${label}" title="${label}">${drawn}</button>` : '';
     };
-
+    // the swipe goes past an end to nothing (badgePress)
     const stage = `<div class="x-risu-pkbp-gstage ${swipe({ t: 'gymNav', d: -1 }, { t: 'gymNav', d: 1 })}">${arrow(-1, open.prev)}${look}${arrow(1, open.next)}</div>`;
     const line = t(open.earned ? (open.champion ? 'badge.tapTrophy' : 'badge.tap')
       : { gym: 'badge.notYet', trial: 'badge.notYetTrial', kahuna: 'badge.notYetTrial', champion: 'badge.notYetChampion' }[open.kind]);

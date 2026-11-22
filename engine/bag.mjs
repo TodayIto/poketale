@@ -1,21 +1,22 @@
 import { BALLS, ballModifier, captureValues, rollCapture } from './capture.mjs';
 import { awardCaptureExperience } from './exp.mjs';
-import { PARTY_MAX, toID } from './mon.mjs';
+import { PARTY_MAX, toID } from './mon.mjs'; // above this, caught Pokemon go to the box
 import { itemId, customText } from '../story/custom-items.mjs';
 import { TOOL_TURNS, CHEER_STATS, CHEER_COUNT, ownsPokemon, ownsTrainer, cheerOwns } from '../story/tools.mjs';
 import { chooseEventAction, chooseParts, revive, sideLead } from './showdown-compat.mjs';
 import { trainerOf } from './seats.mjs';
 import { escapeWith } from './run.mjs';
 
+/** Bag items usable in battle. Balls are in capture.mjs BALLS. */
 export const BAG_ITEMS = {
-
+	// HP healing
 	potion: { name: 'Potion', heal: 20 },
 	superpotion: { name: 'Super Potion', heal: 60 },
 	hyperpotion: { name: 'Hyper Potion', heal: 120 },
 	maxpotion: { name: 'Max Potion', heal: 'full' },
-
+	// full HP + all status conditions + confusion
 	fullrestore: { name: 'Full Restore', heal: 'full', cure: 'all', confusion: true },
-
+	// status conditions
 	antidote: { name: 'Antidote', cure: ['psn', 'tox'] },
 	burnheal: { name: 'Burn Heal', cure: ['brn'] },
 	iceheal: { name: 'Ice Heal', cure: ['frz'] },
@@ -30,7 +31,7 @@ export const BAG_ITEMS = {
 	maxether: { name: 'Max Ether', pp: 'full', oneMove: true },
 	elixir: { name: 'Elixir', pp: 10 },
 	maxelixir: { name: 'Max Elixir', pp: 'full' },
-
+	// X items: active Pokemon only, +2 stages
 	xattack: { name: 'X Attack', boost: 'atk' },
 	xdefense: { name: 'X Defense', boost: 'def' },
 	xspatk: { name: 'X Sp. Atk', boost: 'spa' },
@@ -69,6 +70,9 @@ export const BAG_ITEMS = {
 	shaloursable: { name: 'Shalour Sable', cure: 'all', confusion: true },
 	bigmalasada: { name: 'Big Malasada', cure: 'all', confusion: true },
 	pewtercrunchies: { name: 'Pewter Crunchies', cure: 'all', confusion: true },
+
+	maxhoney: { name: 'Max Honey', revive: 'full' },
+	maxmushrooms: { name: 'Max Mushrooms', boosts: { atk: 1, def: 1, spa: 1, spd: 1, spe: 1 } },
 };
 
 export const foodHeal = maxhp => Math.max(1, Math.floor(maxhp / 4));
@@ -93,10 +97,13 @@ export function isBall(id) {
 
 export const onNoPokemon = item => !!(item?.mist || item?.escape || item?.wakeAll);
 
-const mistUp = side => !!side.sideConditions['mist'];
-const putMist = (side, user, effect) => side.addSideCondition('mist', user, effect);
+const mistOnPokemon = battle => battle.gen <= 2;
+const mistUp = (battle, side, user) => (mistOnPokemon(battle) ? !!user?.volatiles['mist'] : !!side.sideConditions['mist']);
+const putMist = (battle, side, user, effect) => (mistOnPokemon(battle)
+	? user.addVolatile('mist', user, effect) // -start|p1a: <name>|Mist
+	: side.addSideCondition('mist', user, effect)); // -sidestart|p1: <name>|Mist
 
-const sleepersOut = battle => battle.getAllActive().filter(p => !p.fainted && p.status === 'slp' && !p.hasAbility('soundproof'));
+const sleepersOut = battle => battle.getAllActive().filter(p => !p.fainted && p.status === 'slp' && !(battle.gen >= 3 && p.hasAbility('soundproof')));
 
 export function installBag(sim, battle, options = {}) {
 	if (battle.storyBag) throw new Error('가방이 이미 설치됐습니다');
@@ -165,7 +172,7 @@ function effectCheck(battle, state, item, choice) {
 	const side = battle.sides[0];
 
 	if (item.escape) return state.options.wild ? { ok: true } : fail('trainer');
-	if (item.mist) return mistUp(side) ? fail('noeffect') : { ok: true };
+	if (item.mist) return mistUp(battle, side, side.pokemon.find(p => p.m.uid === choice.target) ?? side.active[choice.position ?? 0]) ? fail('noeffect') : { ok: true };
 	if (item.wakeAll) return { ok: true };
 
 	const target = side.pokemon.find(p => p.m.uid === choice.target);
@@ -174,21 +181,21 @@ function effectCheck(battle, state, item, choice) {
 }
 
 function targetCheck(target, item, move) {
-	if (target.isActive && target.volatiles['embargo']) return fail('embargo');
+	if (target.isActive && target.volatiles['embargo']) return fail('embargo'); // Embargo: bag items cannot be used on that Pokemon
 	if (item.revive) return target.fainted ? { ok: true } : fail('notfainted');
 	if (item.pp) {
-
+		// PP restoration is allowed on fainted Pokemon
 		const slots = ppSlots(target, item, move);
 		if (!slots) return fail('nomove', move);
 		return slots.some(s => s.pp < s.maxpp) ? { ok: true } : fail('noeffect');
 	}
 	if (target.fainted) return fail('fainted');
-	if (item.boost || item.crit) {
+	if (item.boost || item.boosts || item.crit) {
 		if (!target.isActive) return fail('notactive');
 		if (item.crit) return target.volatiles['focusenergy'] || target.volatiles['dragoncheer'] ? fail('noeffect') : { ok: true };
-		const stage = target.boosts[item.boost];
-		const capped = target.hasAbility('contrary') ? stage <= -6 : stage >= 6;
-		return capped ? fail('noeffect') : { ok: true };
+
+		const capped = stat => (target.hasAbility('contrary') ? target.boosts[stat] <= -6 : target.boosts[stat] >= 6);
+		return (item.boost ? [item.boost] : Object.keys(item.boosts)).every(capped) ? fail('noeffect') : { ok: true };
 	}
 	return itemHasEffect(target, item) ? { ok: true } : fail('noeffect');
 }
@@ -240,7 +247,9 @@ function toolTarget(battle, owner) {
 	const foes = foesOut(battle);
 	const pokemon = foes.find(foe => ownsPokemon(owner, foe));
 	if (pokemon) return { pokemon };
-	const trainer = [...new Set(foes.map(trainerName))].find(t => ownsTrainer(owner, t));
+	const titles = !!battle.storyBag?.options?.namedTitles;
+	const japanese = !!battle.storyBag?.options?.namedJapanese; // a battle started from the rule namedJapanese (the same)
+	const trainer = [...new Set(foes.map(trainerName))].find(t => ownsTrainer(owner, t, { titles, japanese }));
 	return trainer ? { trainer, pokemon: foes.find(foe => trainerName(foe) === trainer) } : null;
 }
 const sameTarget = (effect, bound) => (bound.trainer ? effect.trainer === bound.trainer : effect.uid === bound.pokemon.m.uid);
@@ -250,7 +259,7 @@ function checkTool(battle, state, id, item, choice) {
 	if (item.tool === 'cheer') {
 		const target = battle.sides[0].pokemon.find(p => p.m.uid === choice.target);
 		if (!target) return fail('notarget', choice.target);
-		if (!cheerOwns(state.tools[id], target)) return fail('notbound');
+		if (!cheerOwns(state.tools[id], target)) return fail('notbound'); // bound to its Pokemon (ownerMon) when it has one, else by the owner's name
 		if (target.fainted) return fail('fainted');
 		if (!target.isActive) return fail('notactive');
 		if (target.volatiles['embargo']) return fail('embargo');
@@ -263,7 +272,7 @@ function checkTool(battle, state, id, item, choice) {
 }
 
 function toolEffect(item, id) {
-	return { ...itemEffect(item, id), fullname: item.name, effectType: 'Condition', kind: 'Condition' };
+	return { ...itemEffect(item, id), fullname: item.name, effectType: 'Condition', kind: 'Condition' }; // plain -boost lines (not "[from] item")
 }
 
 function useTool(battle, state, choice) {
@@ -340,7 +349,7 @@ export function chooseBagParts(battle, parts) {
 	return { ok: true };
 }
 
-const isEnemyItem = item => !!item && !item.revive && !item.pp && !item.boost && !item.crit && !item.reusable && !onNoPokemon(item) && !!(item.heal || item.cure);
+const isEnemyItem = item => !!item && !item.revive && !item.pp && !item.boost && !item.boosts && !item.crit && !item.reusable && !onNoPokemon(item) && !!(item.heal || item.cure);
 
 export function checkEnemyItem(battle, choice) {
 	if (battle.ended) return fail('ended');
@@ -394,6 +403,7 @@ function itemEffect(item, id) {
 	return { id, name: item.name, fullname: `item: ${item.name}`, effectType: 'Item', kind: 'Item', exists: true, num: 0, gen: 9, flags: {} };
 }
 
+// HP an item heals: all of it, a food's share (foodHeal) or its amount
 const healOf = (item, target) => (item.heal === 'full' ? target.maxhp : item.heal === 'food' ? foodHeal(target.maxhp) : item.heal);
 
 function useItem(sim, battle, state, choice, side = battle.sides[0], user = null) {
@@ -429,7 +439,7 @@ function useItem(sim, battle, state, choice, side = battle.sides[0], user = null
 		battle.add('-curestatus', target, target.status, from);
 		target.clearStatus();
 	}
-	if (item.confusion && target.isActive && target.volatiles['confusion']) target.removeVolatile('confusion');
+	if (item.confusion && target.isActive && target.volatiles['confusion']) target.removeVolatile('confusion'); // -end|...|confusion
 	if (item.attract && target.isActive && target.volatiles['attract']) {
 
 		battle.add('-end', target, 'move: Attract', from);
@@ -443,8 +453,9 @@ function useItem(sim, battle, state, choice, side = battle.sides[0], user = null
 		}
 	}
 	if (item.boost) battle.boost({ [item.boost]: X_STAGES }, target, target, effect);
-	if (item.crit) target.addVolatile('focusenergy', target, effect);
-	if (item.mist) putMist(side, target, effect);
+	if (item.boosts) battle.boost({ ...item.boosts }, target, target, effect); // Max Mushrooms: -boost lines with [from] item: Max Mushrooms
+	if (item.crit) target.addVolatile('focusenergy', target, effect); // -start|...|move: Focus Energy
+	if (item.mist) putMist(battle, side, target, effect); // the engine's Mist: on the side 5 turns, or on the Pokemon (generations 1-2)
 
 	if (!item.reusable) state?.itemsUsed.push({ turn: battle.turn, item: choice.item, target: choice.target, ...(choice.move && item.oneMove ? { move: choice.move } : {}) });
 
@@ -462,7 +473,7 @@ function throwBall(sim, battle, state, choice, user) {
 	const mod = ballModifier(choice.item, ctx);
 	let roll;
 	if (mod.master) {
-		roll = { caught: true, shakes: 3, critical: false };
+		roll = { caught: true, shakes: 3, critical: false }; // skip the formula: no random roll either
 	} else {
 		const values = captureValues({
 			maxhp: foe.maxhp, hp: foe.hp, rate: catchRateOf(state, realSpecies(foe)), ballMod: mod.mod, rateAdd: mod.rateAdd,
@@ -482,7 +493,7 @@ function throwBall(sim, battle, state, choice, user) {
 	};
 
 	awardCaptureExperience(battle, foe);
-	battle.win(battle.sides[0]);
+	battle.win(battle.sides[0]); // |win|p1 - catching ends the battle
 }
 
 export function ballContext(sim, battle, state, user, foe) {

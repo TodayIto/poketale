@@ -1,5 +1,5 @@
 // from pokerogue src/audio/audio-manager.ts, src/battle.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 
 import { createRequire } from 'node:module';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -12,6 +12,7 @@ const root = new URL('../', import.meta.url);
 const PR = new URL('vendor/pokerogue/src/', root);
 const read = path => readFileSync(new URL(path, PR), 'utf8');
 
+// -- Loop points --
 const manager = read('audio/audio-manager.ts');
 const method = manager.slice(manager.indexOf('private getBgmLoopPoint('));
 const loopPoints = {};
@@ -75,7 +76,7 @@ for (const species of [...Dex.species.all()].sort((a, b) => (a.id < b.id ? -1 : 
   if (!id || !special[id]) continue;
   legendary[species.id] = FORMS[species.id] ?? bySpecies[id] ?? fallback(id);
 }
-
+// Spot checks against the source - re-check the table if these change
 assert.equal(legendary.rayquaza, 'battle_legendary_rayquaza');
 assert.equal(legendary.groudon, 'battle_legendary_rayquaza');
 assert.equal(legendary.mewtwo, 'battle_legendary_kanto');

@@ -1,5 +1,5 @@
 // from pokerogue src/phases/exp-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/phases/show-party-exp-bar-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/level-up-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 
@@ -63,7 +63,7 @@ export class BattleLevel {
   }
 
   showLevelUpStats({ prev, next }) { this.scene.requireReady(); return this.stats.show({ prev, next }); }
-
+  /** confirm-ui-handler.ts: yes -> true, no/cancel -> false */
   confirm() { this.scene.requireReady(); return this.confirmMenu.choose(); }
 
   pick(options) { this.scene.requireReady(); return this.confirmMenu.pick(options); }

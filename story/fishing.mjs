@@ -20,7 +20,7 @@ export const FISH_ITEMS = Object.freeze({
   good: Object.freeze([['bigpearl', 20], ['starpiece', 15], ['mysticwater', 15], ['waterstone', 12], ['deepseatooth', 8], ['deepseascale', 8], ['prismscale', 8],
     ['pearlstring', 6], ['bottlecap', 5], ['cometshard', 3]]),
 });
-
+/** The chain's most: AI messages in a row with a cast (about 10) */
 export const CHAIN_MAX = 10;
 
 const SHINY_ROLLS = 4;
@@ -35,6 +35,8 @@ const LEVEL_SPAN = 10;
 
 const CURVE = FISHING.evolveCurve;
 export const evolvedShare = offset => (offset < 0 ? 0 : offset >= CURVE.topFrom ? CURVE.top : CURVE.start + ((CURVE.top - CURVE.start) * offset) / CURVE.topFrom) / 100;
+
+// -- Where ---------------------------------------------------------
 
 const PLACES = Object.entries(FISHING.regions).flatMap(([region, r]) => r.places.map(place => ({
   region, place, match: [...place.ko, ...place.en].filter(name => routeOf(name) === null).map(placeMatcher), length: Math.max(0, ...[...place.ko, ...place.en].map(n => norm(n).length)),
@@ -68,7 +70,7 @@ export const levelEvolutions = species => EVOLVES.get(species) ?? [];
 const EVOLVE_INTO = new Map(Object.entries(FISHING.regions).map(([region, r]) => [region, new Set(r.evolveInto.map(i => FISHING.species[i]))]));
 
 const evolvesHere = (region, species) => !region || !EVOLVE_INTO.has(region) || EVOLVE_INTO.get(region).has(species);
-
+/** Our grade of a species 0-100 (data/fishing.json grades) */
 export const fishGrade = species => GRADES.get(species) ?? 50;
 
 export const levelFit = (min, max, level) => 1 / (1 + Math.max(0, min - level, level - max) / LEVEL_SPAN) ** 2;
@@ -82,10 +84,12 @@ export function fishWeights(rows, grade, level) {
   return [...sums].map(([species, sum]) => [species, sum * Math.exp(ROD_BIAS[grade] * (fishGrade(species) / 100 - 0.5))]).filter(([, w]) => w > 0);
 }
 
+// -- One cast ------------------------------------------------------
+
 const UNIT = 1e6;
-
+/** A number 0 <= x < 1 from a seed */
 const roll = seed => seededIndex(seed, UNIT) / UNIT;
-
+/** One of [[value, weight]] by the seed */
 function pick(list, seed) {
   const total = list.reduce((sum, [, w]) => sum + w, 0);
   let r = roll(seed) * total;
@@ -150,10 +154,12 @@ export function fishBlock({ name, level, shiny }, place) {
   return `<pkb-battle>\nopponent: wild\nplace: ${WATER.has(place) ? place : 'lake'}\npokemon: ${name} Lv${level}${shiny ? ' | shiny' : ''}\n</pkb-battle>`;
 }
 
+// -- Records: the casts and the chain ---------------------------------
+
 export const fishAction = (rod, at, item = null) => ({ type: 'fish', item: rod, ops: [
   { op: 'item', item: rod, delta: 0, fish: { at, rod } }, ...(item ? [{ op: 'item', item, delta: 1 }] : []),
 ] });
-
+/** Where an action was cast (its first op's fish.at) | null - not a cast */
 const castAt = action => (action?.type === 'fish' ? action.ops?.[0]?.fish?.at ?? null : null);
 
 export function castCounts(chat, actions, { counts = () => true } = {}) {
@@ -179,6 +185,8 @@ export function fishChain(chat, at, casts) {
   }
   return chain;
 }
+
+// -- The cast now -------------------------------------------------
 
 export function fishCast(chat, { rod, bag = {}, quiet = true, levels = [], actions = [], speciesName = id => id }) {
   if (!isRod(rod)) return { why: 'unknown' };

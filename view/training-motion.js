@@ -78,7 +78,7 @@ export function sandHit(x, y, strength, rnd, fewer = false) {
   const n = Math.ceil((strength > 1 ? 6 : 3 + Math.round(rnd())) / (fewer ? 2 : 1));
   return Array.from({ length: n }, (_, i) => ({ tex: `train-sand-${i % 2}`, x, y, vx: -(20 + rnd() * 20), vy: -(10 + rnd() * 20), g: 120, life: 0.3 + rnd() * 0.15, fade: 0.12 }));
 }
-
+/** A worn bag's seam lets two grains fall straight to the feet line */
 export const sandLeak = (x, y, feet) => [0, 0.12].map((delay, i) => ({ tex: `train-sand-${i}`, x, y, vx: 0, vy: 6, g: 120, life: 2, fade: 0, delay, floor: feet, stay: 0 }));
 
 export const feetDust = (x, feet, half, rnd) => [-1, -1, 1, 1].map((side, i) => ({ tex: 'train-dust', x: x + side * (half * 0.5 + (i % 2) * 4), y: feet - 1, vx: side * (8 + rnd() * 10), vy: -(14 + rnd() * 10), g: 160, life: 0.2, fade: 0.08 }));

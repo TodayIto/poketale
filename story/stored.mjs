@@ -1,7 +1,7 @@
 import { WHAT, failureText } from './failure.mjs';
 
 export const unreadableLine = lang => failureText(WHAT.record, 'unreadable', lang);
-
+/** Non-ok states (the original text must be preserved) */
 export const isUnreadable = status => status === 'corrupt' || status === 'unsupported';
 
 export function readStored(raw, { v = 1, shape = () => true } = {}) {
@@ -14,4 +14,5 @@ export function readStored(raw, { v = 1, shape = () => true } = {}) {
   return shape(value) ? { status: 'ok', value } : { status: 'corrupt', value: null };
 }
 
+/** Whether the value is a plain object (for shape checks) */
 export const isRecord = value => !!value && typeof value === 'object' && !Array.isArray(value);

@@ -11,7 +11,7 @@ export function abilityTrigger({ kind, args: a, kwArgs: kw }) {
   if (kind.startsWith('-story-')) return null;
   const from = kw.from ? effectOf(kw.from) : null;
   if (kind === '-ability') {
-    if (from && from.prefix !== 'ability') return null;
+    if (from && from.prefix !== 'ability') return null; // move effects such as Skill Swap
     return { ident: a[0], name: from?.name ?? a[1] };
   }
   if (from?.prefix === 'ability') {

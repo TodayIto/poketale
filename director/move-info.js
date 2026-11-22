@@ -1,10 +1,18 @@
-import { snapshot, restore } from '../ai/engine-copy.js';
+import { snapshot, restore, activeMaxMove } from '../ai/engine-copy.js';
+import { moveCategory } from '../engine/later-moves.mjs';
 
-export function moveMenuInfo(battle, moveId, user, target, { sim, abilityShown = () => false } = {}) {
-  const move = battle.dex.moves.get(moveId);
-  const type = moveType(battle, moveId, user, target);
+export function moveMenuInfo(battle, moveId, user, target, { sim, abilityShown = () => false, z = false, max = false } = {}) {
+  const base = battle.dex.moves.get(moveId);
+  const zMove = z && user ? () => battle.actions.getActiveZMove(base, user) : null;
+
+  const maxMove = max && user ? () => activeMaxMove(battle, base.id, user, target) : null;
+  const make = zMove ?? maxMove;
+  const move = make ? make() : base;
+  if (make) moveId = move.id;
+  const type = moveType(battle, moveId, user, target, make);
   const info = {
-    type, category: move.category,
+    ...(maxMove ? { id: move.id } : {}),
+    type, category: moveCategory(battle, move),
     power: move.category !== 'Status' && move.basePower > 0 ? move.basePower : null,
     accuracy: move.accuracy === true ? null : move.accuracy,
   };
@@ -28,15 +36,15 @@ function abilityStops(sim, battle, moveId, user, target) {
     const move = copy.dex.getActiveMove(moveId);
     copy.singleEvent('ModifyType', move, null, self, foe, move, move);
     copy.runEvent('ModifyType', self, foe, move, move);
-    move.ignoreImmunity ??= move.category === 'Status';
+    move.ignoreImmunity ??= move.category === 'Status'; // as hitStepTypeImmunity
     const ignored = move.ignoreImmunity === true || move.ignoreImmunity?.[move.type];
     if (move.type === 'Ground' && !ignored && foe.isGrounded(!copy.runEvent('NegateImmunity', foe, 'Ground')) === null) return true;
     return !copy.singleEvent('TryHit', foe.getAbility(), foe.abilityState, foe, self, move);
   } finally { copy.destroy(); }
 }
 
-function moveType(battle, moveId, user, target) {
-  const move = battle.dex.getActiveMove(moveId);
+function moveType(battle, moveId, user, target, make) {
+  const move = make ? make() : battle.dex.getActiveMove(moveId);
   if (!user) return move.type;
   battle.singleEvent('ModifyType', move, null, user, target, move, move);
   battle.runEvent('ModifyType', user, target, move, move);

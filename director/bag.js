@@ -3,7 +3,7 @@ import { BALLS } from '../engine/capture.mjs';
 import catchRates from '../data/catch-rates.json' with { type: 'json' };
 import ko from './text-bag-ko.json' with { type: 'json' };
 import en from './text-bag-en.json' with { type: 'json' };
-import { phrase, text as baseText } from './text.js';
+import { phrase, text as baseText } from './text.js'; // own text (own.*) first, then the bag table
 import { displayName } from '../engine/mon.mjs';
 import { DEFAULT_LANG } from './lang.js';
 import { cheerOwns } from '../story/tools.mjs';
@@ -13,13 +13,13 @@ export const bagText = (key, values = {}, lang = DEFAULT_LANG) => phrase(PHRASES
 
 export const POCKETS = [
 
-  { id: 'heal', items: ['potion', 'superpotion', 'hyperpotion', 'maxpotion', 'fullrestore', 'revive', 'maxrevive',
+  { id: 'heal', items: ['potion', 'superpotion', 'hyperpotion', 'maxpotion', 'fullrestore', 'revive', 'maxrevive', 'maxhoney',
     'freshwater', 'sodapop', 'lemonade', 'moomoomilk', 'sweetheart', 'energypowder', 'energyroot', 'revivalherb', 'ether', 'maxether', 'elixir', 'maxelixir'] },
   { id: 'status', items: ['antidote', 'burnheal', 'iceheal', 'awakening', 'paralyzeheal', 'fullheal', 'healpowder',
     'lavacookie', 'oldgateau', 'casteliacone', 'lumiosegalette', 'shaloursable', 'ragecandybar', 'bigmalasada', 'pewtercrunchies',
     'pokeflute', 'blueflute', 'redflute', 'yellowflute'] },
 
-  { id: 'battle', items: ['xattack', 'xdefense', 'xspatk', 'xspdef', 'xspeed', 'xaccuracy', 'direhit', 'guardspec', 'pokedoll', 'fluffytail', 'poketoy'] },
+  { id: 'battle', items: ['xattack', 'xdefense', 'xspatk', 'xspdef', 'xspeed', 'xaccuracy', 'direhit', 'maxmushrooms', 'guardspec', 'pokedoll', 'fluffytail', 'poketoy'] },
   { id: 'ball', items: Object.keys(BALLS) },
   { id: 'food', items: [] },
 ];
@@ -65,7 +65,7 @@ export function createBag({ sim, battle, names, spec, wild, lang = DEFAULT_LANG 
     if (isBall(id)) return 'enemy';
     const item = bagItem(battle, id);
     if (item.tool) return item.tool === 'cheer' ? 'party' : 'enemy';
-    return item.boost || item.crit || onNoPokemon(item) ? 'active' : 'party';
+    return item.boost || item.boosts || item.crit || onNoPokemon(item) ? 'active' : 'party';
   };
 
   const left = (id, taken) => {

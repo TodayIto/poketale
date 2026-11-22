@@ -1,7 +1,7 @@
 import TABLE from './pinned-assets.json' with { type: 'json' };
 
 export const PINNED_BASE = TABLE.base;
-
+/** Characters of base64 per hash (bits / 6) */
 export const PINNED_CHARS = TABLE.bits / 6;
 
 let byPath = null;
@@ -28,4 +28,5 @@ export function pinnedHash(url) {
   return byPath.get(path);
 }
 
+/** How many files the table holds (tests, report) */
 export const pinnedCount = () => (byPath ??= paths()).size;

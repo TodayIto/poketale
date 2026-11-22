@@ -2,6 +2,7 @@ import { norm } from './norm.mjs';
 import { TARGETS, recolorKey, hasHair, PALETTES, STYLE_POLICY, STYLE_SNAP } from '../view/sprites/recolor.js';
 import { POOL, NUMBER } from './trainer-pool.mjs';
 
+/** Target colour names, in number order (number = index + 1) */
 export const HAIR_COLORS = Object.freeze(TARGETS.hair.map(t => t.name));
 export const OUTFIT_COLORS = Object.freeze(TARGETS.outfit.map(t => t.name));
 
@@ -73,6 +74,7 @@ function withBit(words) {
   return out;
 }
 
+/** words table -> [[normalised word, colour name], ...] longest first */
 const byLength = table => Object.entries(table).flatMap(([name, list]) => withBit(list.map(norm)).map(w => [w, name])).sort((a, b) => b[0].length - a[0].length);
 const HAIR_LIST = byLength(HAIR_WORDS), OUTFIT_LIST = byLength(OUTFIT_WORDS);
 const BOTTOM_LIST = BOTTOM_WORDS.map(norm);
@@ -96,6 +98,7 @@ function colorIn(text, list, names) {
   return best?.name ?? null;
 }
 
+/** A hair field's value -> hair colour name | null */
 export const readHair = value => colorIn(String(value ?? ''), HAIR_LIST, HAIR_COLORS);
 
 const JOINER = /^(.*?[가-힣])(이랑|랑|와|과)$/u;
@@ -149,7 +152,7 @@ export function colorCombo(sprite, colors, styled = false) {
   const outfit = name => num(OUTFIT_COLORS, name && snap ? (snap.lightColors.includes(name) ? snap.light : snap.dark) : name);
   const top = allow.has('top') && parts.top?.length ? outfit(colors.top) : 0;
   const bottom = allow.has('bottom') && parts.bottom?.length ? outfit(colors.bottom ?? (parts.top?.length ? null : colors.top)) : 0;
-  return { hair: allow.has('head') && hasHair(sprite) ? num(HAIR_COLORS, colors.hair) : 0, top, bottom };
+  return { hair: allow.has('head') && hasHair(sprite) ? num(HAIR_COLORS, colors.hair) : 0, top, bottom }; // hair or a hat (the hat takes the hair colour)
 }
 
 export const coloredSprite = (sprite, colors, styled = false) => recolorKey(sprite, colorCombo(sprite, colors, styled));

@@ -6,10 +6,13 @@ import { newMovePp } from '../engine/pp.mjs';
 import { MAX_LEVEL, NON_HP_STATS, learnsetOf, spriteIdOf } from '../engine/mon.mjs';
 import { createLedger } from './ledger.js';
 import { identName, teamOf } from './read.js';
-import { ownTemplate } from './own-text.js';
+import { ownTemplate } from './own-text.js'; // own text (own.*) in one place
 import { evolutionChoices, evolutionFlips } from '../engine/evolution.mjs';
-import { say as screenSay } from '../story/screen-text.mjs';
+import { levelUpAt, evolutionLevelMoves } from '../engine/levelup.mjs';
+import { moveCategory } from '../engine/later-moves.mjs';
+import { say as screenSay } from '../story/screen-text.mjs'; // the evolution screen's own question and choices
 
+/** Lines this module handles (steps.js dispatch table) */
 export const EXP_KINDS = ['-story-exp', '-story-levelup', '-story-learnmove', '-story-movequeue', '-story-replacemove', '-story-skipmove'];
 // Per language: the decompressed table, and the Promise of the one decompression
 const loaded = {}, pending = {};
@@ -37,11 +40,12 @@ export function expText(key, values = {}, { keepCodes = false, lang = DEFAULT_LA
   return keepCodes ? result : result.replace(/@[ds]\{[^}]*\}/g, '');
 }
 
+/** One move slot for the learn-move screen (view-api.md LearnMoveOption) */
 export function learnMoveOption(battle, names, id, pp, maxpp, lang = DEFAULT_LANG) {
   const phrases = requireExpText(lang);
   const move = battle.dex.moves.get(id);
   return {
-    id: move.id, name: names.move(move.id), type: move.type, category: move.category, pp, maxpp,
+    id: move.id, name: names.move(move.id), type: move.type, category: moveCategory(battle, move), pp, maxpp,
 
     power: move.category !== 'Status' && move.basePower > 0 ? move.basePower : null,
     accuracy: move.accuracy === true ? null : move.accuracy,
@@ -80,7 +84,7 @@ export function createLearnSteps(view, lang = DEFAULT_LANG) {
           return slot;
         }
       }
-
+      // settings.general.levelMoveConfirmation defaults to true: confirm giving up
       await say('battle.learnMoveStopTeaching', { moveName }, false);
       if (await view.confirm()) {
         await commit(null);
@@ -147,7 +151,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
     return shown ? { exp: shown.ratio } : {};
   }
 
-  const mergedFrom = new Map();
+  const mergedFrom = new Map(); // uid -> stats before the intermediate levels
 
   async function showLevelUp(ident, uid, level, stats, prev) {
     const next = { hp: stats.maxhp, ...Object.fromEntries(NON_HP_STATS.map(s => [s, stats[s]])) };
@@ -163,6 +167,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
     return { ...iconMon(p), dexNumber: p.species.num };
   }
 
+  /** View call for one handled line (steps.js dispatch table) */
   async function present(event) {
     const { kind, args: a } = event;
 
@@ -179,8 +184,8 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
         await say('battle.expGain', { pokemonName: nameOf(uid, ident), exp: Number(gain) });
         if (target) await view.gainExp(onField(uid), target);
       } else {
-        const { tera, ...icon } = ledger.view(ledger.pokemon.get(uid));
-        await view.partyExp(icon, Number(gain));
+        const { tera, ...icon } = ledger.view(ledger.pokemon.get(uid)); // bench icons have no tera mark
+        await view.partyExp(icon, Number(gain)); // bench: icon from the ledger's look (last shown form)
       }
       record.exp = Number(total);
       if (target) record.level = target.level;
@@ -191,7 +196,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
       const stats = JSON.parse(json), next = { hp: stats.maxhp, ...Object.fromEntries(NON_HP_STATS.map(s => [s, stats[s]])) };
       const prev = mergedFrom.get(uid) ?? record?.stats ?? next;
       if (record) { record.stats = next; record.level = Number(level); }
-      if (event.merged) { mergedFrom.set(uid, prev); return; }
+      if (event.merged) { mergedFrom.set(uid, prev); return; } // intermediate level (R5)
       mergedFrom.delete(uid);
       await showLevelUp(ident, uid, Number(level), stats, prev);
       return;
@@ -220,7 +225,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
     case '-story-skipmove': {
       const key = `${kind}|${a[1]}|${a.at(-1)}`, at = expected.indexOf(key);
       if (at >= 0) { expected.splice(at, 1); return; }
-
+      // replaceMove called from elsewhere: result text only
       const pokemonName = nameOf(a[1], a[0]);
       const moveName = names.move(battle.dex.toID(a.at(-1)));
       if (kind === '-story-skipmove') await say('battle.learnMoveNotLearned', { pokemonName, moveName });
@@ -269,8 +274,9 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
     await sayTimed('menu.evolutionDone', { pokemonName: preName, evolvedPokemonName: mon(to).name }, { promptDelay: 4000 });
     const outcome = { species: to.name, baseSpecies: to.baseSpecies, name: nicknamed ? member.name : to.name, moves: member.moves.map(m => ({ ...m })) };
 
-    for (const [level, id] of learnsetOf(levelUp, to) ?? []) {
-      if (level !== 0 || outcome.moves.some(m => m.id === id)) continue;
+    const learnGen = byUid(member.uid)?.m?.learnGen;
+    for (const id of [...new Set(evolutionLevelMoves(learnsetOf(levelUpAt(levelUp, learnGen), to), member.level, learnGen))]) {
+      if (outcome.moves.some(m => m.id === id)) continue;
       const move = battle.dex.moves.get(id);
       if (!move.exists) continue;
       const pp = newMovePP(battle, move), slot = { id: move.id, pp, maxpp: pp };
@@ -285,7 +291,7 @@ export function createExpSteps({ battle, view, names, warn, ledger = createLedge
       await learnFlow({ mon: summary, moves, newMove: learnMoveOption(battle, names, move.id, pp, pp, lang), inEvolution: true,
         commit: index => { if (index !== null) outcome.moves[index] = slot; } });
     }
-    await view.endEvolution();
+    await view.endEvolution(); // EndEvolutionPhase: back to the battle screen after learning the moves
     return outcome;
   }
 

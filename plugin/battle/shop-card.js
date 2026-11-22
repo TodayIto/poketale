@@ -1,9 +1,12 @@
-import { shopsIn, shopContext, shopStock, checkout, sellList, sellCheckout, shopAction } from '../../story/shop.mjs';
-import { renderShopCard, renderShopInside, SHOP_MS, SPECIAL_TAB, cartMost } from '../../story/shop-card.mjs';
+import { shopMachinesAt, shopGameAt } from '../../story/compat-world.mjs';
+import { foldCtxAt } from '../../story/battle-rule.mjs';
+import { shopsIn, shopContext, shopStock, tradeList, tradeCheckout, sellList, shopAction, premierRule } from '../../story/shop.mjs';
+import { renderShopCard, renderShopInside, SHOP_MS, SPECIAL_TAB, cartRange, shownOf, shownSelector, fitCart } from '../../story/shop-card.mjs';
 import { itemIcon, itemLabel, bagGroup, BAG_GROUPS, namesFor } from '../../story/panel.mjs';
 import { WHAT, failureNote } from '../../story/failure.mjs';
 import { limitedBought, shopBalance } from '../../story/acts.mjs';
 import { rulesAt } from '../../story/setting-changes.mjs';
+import { oneOfsOwned } from '../../story/state.mjs';
 
 function shopUsable(chat, at, key) {
   const messages = chat?.message ?? [];
@@ -21,6 +24,8 @@ function findShop(chat, key) {
 }
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+/** An open card's cart (+ bought, - sold) */
+const cartOf = mem => mem?.cart ?? {};
 const withIndex = (html, at) => html.replaceAll('{{chat_index}}', String(at));
 
 export function createShopCards(host) {
@@ -33,17 +38,20 @@ export function createShopCards(host) {
   async function counter(pass, { at, shop }, mem) {
     const state = await pass.state();
 
-    const ctx = shopContext(state, pass.chat, at, { compat: host.compat(pass), balance: shopBalance(pass.chat, { survey: pass.survey }) });
+    const ctxAt = foldCtxAt(pass.chat, host.settings?.());
+    const genAt = i => ctxAt(i).formGen ?? null;
+    const machinesAt = (chat, i, region) => { const at = ctxAt(i); return shopMachinesAt(chat, i, region, at.formGen ?? null, at.battleRule); };
+    const gameAt = (chat, i, region) => { const at = ctxAt(i); return at.gameShopOn ? shopGameAt(chat, i, region, at.formGen ?? null, at.battleRule) : null; };
+    const ctx = shopContext(state, pass.chat, at, { compat: host.compat(pass), balance: shopBalance(pass.chat, { survey: pass.survey }), machinesAt, genAt, gameAt,
+      rulesAt: ctxAt, name: shop.name ?? null });
     const options = { compatMoney: ctx.money === null, budget: ctx.budget };
-    const cart = mem?.carts[mem.mode] ?? {};
-    if (mem?.mode === 'sell') {
-      const list = sellList(state);
-      return { state, ctx, list, paid: sellCheckout(state, cart, list, options) };
-    }
+    const cart = cartOf(mem);
 
-    const list = shopStock({ kind: shop.kind, region: ctx.region, period: ctx.period, badges: ctx.badges, town: ctx.town, bought: limitedBought(pass.chat, { survey: pass.survey }),
-      foeGimmicks: host.foeGimmicks?.(), bag: state?.bag });
-    return { state, ctx, list, paid: checkout(state, cart, list, options) };
+    const stock = shopStock({ kind: shop.kind, region: ctx.region, townId: ctx.townId ?? null, period: ctx.period, badges: ctx.badges, town: ctx.town, bought: limitedBought(pass.chat, { survey: pass.survey }),
+      foeGimmicks: host.foeGimmicks?.(), bag: state?.bag, owned: state ? oneOfsOwned(state) : [], machines: ctx.machines, gen: ctx.gen, game: ctx.game });
+    const list = tradeList(stock, state, ctx.game);
+    fitCart(cart, list);
+    return { state, ctx, list, paid: tradeCheckout(state, cart, stock, sellList(state, ctx.game), { ...options, premier: premierRule(ctx) }) };
   }
   async function viewOf(pass, found, { grow = false } = {}) {
     const { at, key, shop } = found;
@@ -53,16 +61,17 @@ export function createShopCards(host) {
     const { state, ctx, list, paid } = await counter(pass, found, mem);
     const placed = { ...base, region: ctx.region };
     if (!mem) return { ...placed, phase: 'closed' };
-    const cart = mem.carts[mem.mode];
+    const cart = cartOf(mem);
     const names = namesFor(host.lang(pass.chat), host.sim);
 
-    const all = list.map(s => ({ ...s, name: itemLabel(state, s.id, names, { bag: true }), icon: itemIcon(s.id, host.sim), count: cart[s.id] ?? 0,
-      tab: s.limited ? SPECIAL_TAB : bagGroup(s.id, host.sim) }));
+    const all = list.map(s => ({ ...s, name: `${itemLabel(state, s.id, names, { bag: true })}${s.pack > 1 ? ` ×${s.pack}` : ''}`, icon: itemIcon(s.id, host.sim), count: cart[s.id] ?? 0,
+      tab: s.limited ? SPECIAL_TAB : bagGroup(s.id, host.sim, undefined, ctx.gen) }));
     const tabs = [...BAG_GROUPS, SPECIAL_TAB].filter(tab => all.some(r => r.tab === tab)).map(tab => ({ id: tab, dot: all.some(r => r.tab === tab && r.count) }));
     const tab = tabs.some(t => t.id === mem.tab) ? mem.tab : tabs[0]?.id ?? null;
-    return { ...placed, phase: 'open', grow, money: ctx.money ?? ctx.budget, mode: mem.mode, tabs, tab, rows: all.filter(r => r.tab === tab),
-      fill: Math.max(0, ...tabs.map(t => all.filter(r => r.tab === t.id).length)), total: all.reduce((sum, r) => sum + r.price * r.count, 0),
-      bonus: paid.error ? 0 : paid.bonus ?? 0, why: paid.error ?? null, paid: !!mem.paid, ...(mem.note ? { note: mem.note } : {}) };
+    const spent = all.reduce((sum, r) => sum + (r.count > 0 ? r.price * r.count : 0), 0), got = all.reduce((sum, r) => sum + (r.count < 0 ? r.sell * -r.count : 0), 0);
+    return { ...placed, phase: 'open', grow, money: ctx.money ?? ctx.budget, tabs, tab, rows: all.filter(r => r.tab === tab),
+      fill: Math.max(0, ...tabs.map(t => all.filter(r => r.tab === t.id).length)), spent, got,
+      bonus: paid.error ? 0 : paid.bonus ?? 0, why: paid.error ?? null, paid: mem.paid ?? false, ...(mem.note ? { note: mem.note } : {}), shown: shownOf(list, cart, paid) };
   }
   const remember = (pass, view, at) => {
     const html = renderShopInside({ ...view, grow: false }, host.lang(pass.chat));
@@ -78,14 +87,16 @@ export function createShopCards(host) {
 
   async function swap(pass, shop, extra) {
     const view = await viewOf(pass, shop, extra);
-    const html = remember(pass, view, shop.at);
     const doc = host.doc();
     const element = doc && await doc.querySelector(`.x-risu-pkbsh-${view.key}`);
-    if (!element) return;
+    if (!element) return false;
+    const html = renderShopInside({ ...view, grow: false }, host.lang(pass.chat));
     await element.setInnerHTML(withIndex(extra?.grow ? renderShopInside(view, host.lang(pass.chat)) : html, shop.at));
+    drawn.set(nameOf(pass, view.key), { id: pass.id, key: view.key, at: shop.at, html }); // what the screen carries now
     await host.bindButtons();
+    return true;
   }
-
+  /** Folds the open shop part away (its animation), then the closed card */
   async function fold(pass, shop, key) {
     const doc = host.doc();
     const body = doc && await doc.querySelector(`.x-risu-pkbsb-${key}`);
@@ -95,8 +106,11 @@ export function createShopCards(host) {
   }
 
   async function pay(pass, shop, key, mem) {
-    const { paid } = await counter(pass, shop, mem);
+    const { list, paid } = await counter(pass, shop, mem);
     if (paid.error) return swap(pass, shop);
+
+    const doc = host.doc();
+    if (!(doc && await doc.querySelector(shownSelector(key, shownOf(list, cartOf(mem), paid))))) return swap(pass, shop);
     try {
       await host.queue(shopAction(paid, key), pass.target);
     } catch (error) {
@@ -104,9 +118,9 @@ export function createShopCards(host) {
       mem.note = failureNote(WHAT.action, error, host.lang(pass.chat));
       return swap(pass, shop);
     }
-    mem.carts[mem.mode] = {};
-    mem.paid = true;
-    const now = await host.actionPass() ?? pass;
+    mem.cart = {};
+    mem.paid = paid.got > paid.spent ? 'sell' : 'buy';
+    const now = await host.actionPass() ?? pass; // the queued checkout is in this read (the bag and money after it)
     await swap(now, shop);
     await sleep(SHOP_MS.paid);
     mem.paid = false;
@@ -124,8 +138,15 @@ export function createShopCards(host) {
     if (mem?.busy) return;
     if (action === 'shopin') {
       if (mem) return;
-      open.set(name, { mode: 'buy', tab: null, carts: { buy: {}, sell: {} } });
-      return swap(pass, shop, { grow: true });
+
+      const fresh = { tab: null, cart: {}, busy: true };
+      open.set(name, fresh);
+      let opened = false;
+      try { opened = await swap(pass, shop, { grow: true }); } finally {
+        fresh.busy = false;
+        if (!opened && open.get(name) === fresh) open.delete(name);
+      }
+      return;
     }
     if (!mem) return swap(pass, shop);
     mem.busy = true;
@@ -134,13 +155,12 @@ export function createShopCards(host) {
       switch (action) {
       case 'shopout': return await fold(pass, shop, key);
       case 'shoppay': return await pay(pass, shop, key, mem);
-      case 'shopbuy': case 'shopsell': mem.mode = action === 'shopbuy' ? 'buy' : 'sell'; mem.tab = null; break;
       case 'shoptab': mem.tab = item; break;
       case 'shopadd': case 'shopsub': {
-        const cart = mem.carts[mem.mode];
-        const row = mem.mode === 'sell' ? sellList(await pass.state()).find(s => s.id === item) : (await counter(pass, shop, mem)).list.find(s => s.id === item);
-        const most = cartMost(mem.mode, row);
-        const next = Math.min(most, Math.max(0, (cart[item] ?? 0) + (action === 'shopadd' ? 1 : -1)));
+        const cart = cartOf(mem);
+        const row = (await counter(pass, shop, mem)).list.find(s => s.id === item); // the one list (sell prices: this shop's)
+        const { least, most } = cartRange(row);
+        const next = Math.min(most, Math.max(least, (cart[item] ?? 0) + (action === 'shopadd' ? 1 : -1)));
         if (next) cart[item] = next; else delete cart[item];
         break;
       }
@@ -165,7 +185,10 @@ export function createShopCards(host) {
       try {
         const doc = host.doc();
         const element = doc && await doc.querySelector(`.x-risu-pkbsh-${card.key}`);
-        if (element) { await element.setInnerHTML(withIndex(html, shop.at)); swapped = true; }
+
+        if (!element || open.get(name)?.busy || drawn.get(name) !== card || (view.phase === 'open') !== open.has(name)) continue;
+        await element.setInnerHTML(withIndex(html, shop.at));
+        swapped = true;
         drawn.set(name, { ...card, at: shop.at, html });
       } catch (error) { console.warn('[poke-battle] 상점 카드를 바꿔 끼우지 못함', error); }
     }
@@ -175,4 +198,4 @@ export function createShopCards(host) {
   return { draw, press, refresh };
 }
 
-export const SHOP_ACTIONS = new Set(['shopin', 'shopout', 'shopadd', 'shopsub', 'shoppay', 'shopbuy', 'shopsell', 'shoptab']);
+export const SHOP_ACTIONS = new Set(['shopin', 'shopout', 'shopadd', 'shopsub', 'shoppay', 'shoptab', 'shopbuy', 'shopsell']);

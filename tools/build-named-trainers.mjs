@@ -11,6 +11,7 @@ const LANGS = ['ko', 'en'];
 const trainerNames = Object.fromEntries(LANGS.map(lang => [lang, json(`locales/${lang}/trainer-names.json`)]));
 const titleText = Object.fromEntries(LANGS.map(lang => [lang, json(`locales/${lang}/trainer-titles.json`)]));
 const classText = Object.fromEntries(LANGS.map(lang => [lang, json(`locales/${lang}/trainer-classes.json`)]));
+const japaneseNames = json('locales/ja/trainer-names.json');
 const sprites = new Set(readdirSync(new URL('assets/images/trainer/', PR)).filter(f => f.endsWith('.png')).map(f => f.slice(0, -4)));
 
 const camel = text => text.toLowerCase().replace(/[^a-z0-9]+(.)/g, (_, c) => c.toUpperCase()).replace(/[^a-zA-Z0-9]/g, '');
@@ -94,15 +95,24 @@ const showdownOf = sprite => (Object.hasOwn(SHOWDOWN_PICK, sprite) ? SHOWDOWN_PI
 
 const bgmFiles = new Set(readdirSync(new URL('assets/audio/bgm/', PR), { recursive: true }).map(f => f.replaceAll('\\', '/').replace(/\.mp3$/, '')));
 
-const people = {}, names = {}, showdown = {}, music = {}, gender = {}, sourceGender = {};
+const people = {}, names = {}, ja = {}, showdown = {}, music = {}, gender = {}, sourceGender = {};
 const put = (name, sprite) => {
 	const k = norm(name);
 	if (!k) return;
 	if (names[k] && names[k] !== sprite) throw new Error(`"${name}" 이 ${names[k]} 와 ${sprite} 둘에 걸림`);
 	names[k] = sprite;
 };
+
+const JAPANESE = /^[\p{Script=Katakana}\p{Script=Hiragana}\p{Script=Han}ー]+$/u;
+const putJa = (name, sprite) => {
+	const k = norm(name);
+	if (!JAPANESE.test(k)) throw new Error(`${sprite} 의 일본어 이름 "${name}" 이 일본어 글자가 아님`);
+	if (ja[k] && ja[k] !== sprite) throw new Error(`일본어 "${name}" 이 ${ja[k]} 와 ${sprite} 둘에 걸림`);
+	ja[k] = sprite;
+};
 for (const { sprite, key, music: song, gender: known } of [...byKey.values()].sort((a, b) => a.sprite.localeCompare(b.sprite))) {
 	people[sprite] = LANGS.map(lang => trainerNames[lang][key]);
+	if (typeof japaneseNames[key] === 'string' && japaneseNames[key].trim()) putJa(japaneseNames[key], sprite);
 	if (known) sourceGender[sprite] = known;
 	const face = showdownOf(sprite);
 	if (face) showdown[sprite] = face;
@@ -126,13 +136,21 @@ const HAND_PEOPLE = {
 	dawn: ['빛나', 'Dawn'], sonia: ['소니아', 'Sonia'], hop: ['호브', 'Hop'], lillie: ['릴리에', 'Lillie'], gladion: ['글라디오', 'Gladion'], 'arven-v': ['페퍼', 'Arven'],
 	silver: ['실버', 'Silver'],
 };
+
+const HAND_JA = {
+	dawn: 'ヒカリ', sonia: 'ソニア', hop: 'ホップ', lillie: 'リーリエ', gladion: 'グラジオ', 'arven-v': 'ペパー', silver: 'シルバー',
+};
 for (const [id, pair] of Object.entries(HAND_PEOPLE)) {
 	if (!avatars.has(id)) throw new Error(`손으로 적은 인물의 Showdown 그림 ${id} 이 없음`);
+	if (!HAND_JA[id]) throw new Error(`손으로 적은 인물 ${id} 의 일본어 이름이 없음 (HAND_JA)`);
 	const sprite = SHOWDOWN_TRAINER + id;
 	people[sprite] = pair;
 	showdown[sprite] = id;
 	for (const name of pair) put(name, sprite);
+	putJa(HAND_JA[id], sprite);
 }
+const noJa = Object.keys(people).filter(sprite => !Object.values(ja).includes(sprite));
+if (noJa.length) throw new Error(`일본어 이름 없는 인물: ${noJa.join(', ')}`);
 
 async function imageBounds(bytes, region = null) {
   const image = sharp(bytes);
@@ -186,6 +204,8 @@ if (!rocketBgm || !bgmFiles.has(rocketBgm)) throw new Error(`로켓단 보스 �
 // A class name equal to a character name would make stripping erase that name - stop if they overlap
 for (const k of classes) if (names[k]) throw new Error(`직업 이름 "${k}" 이 인물 ${names[k]} 이름과 같음`);
 
+for (const k of Object.keys(ja)) if (names[k] || titles.has(k) || classes.has(k)) throw new Error(`일본어 이름 "${k}" 이 다른 이름·직함·직업과 같음`);
+
 const output = new URL('../data/named-trainers.json', import.meta.url);
 const previousBounds = JSON.parse(readFileSync(output, 'utf8')).faceBounds ?? {};
 const faceBounds = {};
@@ -213,10 +233,10 @@ await Promise.all(Array.from({ length: 8 }, async () => {
   }
 }));
 const orderedBounds = Object.fromEntries(faceIds.map(id => [id, faceBounds[id]]));
-const table = { faceBounds: orderedBounds, people, names, titles: [...titles].sort(), showdown, music, sheet, gender, rocketBgm, classes: [...classes].sort() };
+const table = { faceBounds: orderedBounds, people, names, ja, titles: [...titles].sort(), showdown, music, sheet, gender, rocketBgm, classes: [...classes].sort() };
 const text = JSON.stringify(table) + '\n';
 writeFileSync(new URL('../data/named-trainers.json', import.meta.url), text);
-console.log(`data/named-trainers.json: 인물 ${Object.keys(people).length}명, 이름 ${Object.keys(names).length}, 직함 낱말 ${titles.size}, ` +
+console.log(`data/named-trainers.json: 인물 ${Object.keys(people).length}명, 이름 ${Object.keys(names).length}, 일본어 이름 ${Object.keys(ja).length}, 직함 낱말 ${titles.size}, ` +
 	`Showdown 그림 ${Object.keys(showdown).length}, 인물 곡 ${Object.keys(music).length}, 직업 이름 ${classes.size}, ${Buffer.byteLength(text)} bytes`);
 if (dropped.length) console.log(`  같은 이름이라 뺀 그림: ${dropped.join(', ')}`);
 const noFace = Object.keys(people).filter(sprite => !showdown[sprite]), noSong = Object.keys(people).filter(sprite => !music[sprite]);

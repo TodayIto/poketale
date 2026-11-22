@@ -9,8 +9,12 @@ import { installSeats } from './seats.mjs';
 import { installField } from './field.mjs';
 import { installFriendship } from './friendship.mjs';
 import { installCounts } from './counts.mjs';
-import { allowRayquazaMega, crownMoves, keepFormTypes, startedGimmicks } from './showdown-compat.mjs';
+import { installUsedMoves } from './used-moves.mjs';
+import { allowRayquazaMega, blockZMoves, blockUltraBurst, blockMegaEvo, blockTerastallize, allowDynamax, crownMoves, keepFormTypes, keepFormOnSwitch, startedGimmicks, sayQuietFailures } from './showdown-compat.mjs';
+import { installEraGimmicks, keepStoryGenders } from './era-gimmicks.mjs';
+import { runLaterMoves } from './later-moves.mjs';
 import { formItems, teraForm, toID } from './mon.mjs';
+import { genHas, ruleGen, battleRuleGen, generationOf } from './generation.mjs';
 
 export const EXTENSIONS = [
 
@@ -18,7 +22,32 @@ export const EXTENSIONS = [
 
 	{ name: 'rules', at: 'create', install: applyFormatRules, keys: [], copy: 'reapply' },
 
-	{ name: 'rayquaza-mega', at: 'create', install: (sim, battle) => allowRayquazaMega(battle), keys: [], copy: 'reapply' },
+	{ name: 'gen-gimmicks', at: 'create', install: (sim, battle, { spec }) => {
+		if (spec) {
+			const gen = ruleGen(spec);
+			if (gen != null) battle.storyRuleGen = gen;
+		}
+		const gen = battleRuleGen(battle);
+		if (gen == null) return;
+		if (!genHas(gen, 'mega')) blockMegaEvo(battle);
+		if (!genHas(gen, 'z')) blockZMoves(battle);
+		if (!genHas(gen, 'ultra')) blockUltraBurst(battle);
+		if (!genHas(gen, 'tera')) blockTerastallize(battle);
+	}, keys: ['storyRuleGen'], copy: 'reapply' },
+
+	{ name: 'rayquaza-mega', at: 'create', install: (sim, battle) => { if (battle.gen === 9 && genHas(battleRuleGen(battle), 'mega')) allowRayquazaMega(battle); }, keys: [], copy: 'reapply' },
+
+	{ name: 'dynamax', at: 'create', install: (sim, battle) => {
+		if (battle.gen >= 8 && genHas(battleRuleGen(battle), 'dynamax')) allowDynamax(battle);
+	}, keys: [], copy: 'reapply' },
+
+	{ name: 'quiet-failures', at: 'create', install: (sim, battle) => sayQuietFailures(battle), keys: [], copy: 'reapply' },
+
+	{ name: 'later-moves', at: 'create', install: (sim, battle) => runLaterMoves(battle), keys: [], copy: 'reapply' },
+
+	{ name: 'era-gimmicks', at: 'create', install: (sim, battle, { spec }) => installEraGimmicks(battle, spec), keys: ['storyEraGimmicks'], copy: 'reapply' },
+
+	{ name: 'used-moves', at: 'create', install: (sim, battle) => installUsedMoves(battle), keys: [], copy: 'keep' },
 	{ name: 'winner', at: 'create', install: (sim, battle) => installWinner(battle), keys: ['storyWinner'], copy: 'keep',
 		fields: ['outcome', 'winner'], result: winnerResult },
 
@@ -36,12 +65,17 @@ export const EXTENSIONS = [
 		if (seats ? seats.p2.team.some(member => member.trainer) : battle.sides.some(side => side?.pokemon.some(p => p.m.trainer))) installSeats(battle);
 	}, keys: [], copy: 'reapply' },
 
+	{ name: 'gen4-forms', at: 'create', install: (sim, battle, { spec }) => {
+		if (battle.gen === 4 && (!spec || spec.writtenForms)) keepFormOnSwitch(battle, pokemon => pokemon.side.n === 0 && lacksFormItem(sim, pokemon, 4));
+	}, keys: [], copy: 'reapply' },
 	{ name: 'forms-without-item', at: 'players', install: (sim, battle, { spec }) => {
-		if (spec?.writtenForms) markFormsWithoutItem(sim, battle, spec.formGen ?? null);
+		if (spec?.writtenForms) markFormsWithoutItem(sim, battle, generationOf(ruleGen(spec)));
 		keepFormTypes(battle);
 	}, keys: [], copy: 'reapply' },
 
-	{ name: 'start-form', at: 'players', install: (sim, battle, { sets }) => recordStartForms(battle, sets), keys: [], copy: 'keep' },
+	{ name: 'start-form', at: 'players', install: (sim, battle, { sets, whole }) => recordStartForms(battle, sets, whole), keys: [], copy: 'keep' },
+
+	{ name: 'era-genders', at: 'players', install: (sim, battle) => keepStoryGenders(battle), keys: [], copy: 'keep' },
 
 	{ name: 'waiting', at: 'players', install: (sim, battle, { sets }) => { if (sets.waiting) battle.storyWaiting = sets.waiting; }, keys: ['storyWaiting'], copy: 'strip' },
 
@@ -55,7 +89,7 @@ export const EXTENSIONS = [
 
 	{ name: 'bag', at: 'caller', install: installBag, keys: ['storyBag', 'storyEnemyItem', 'events'], copy: 'strip',
 		fields: ['itemsUsed', 'captured'], result: bagResult },
-
+	// running and forfeit
 	{ name: 'run', at: 'caller', install: installRun, keys: ['storyRun', 'events'], copy: 'strip',
 		fields: ['ran', 'outcome', 'winner', 'forfeited'], result: runResult },
 ];
@@ -66,22 +100,27 @@ function atBattleStart(battle, fn) {
 }
 
 function markFormsWithoutItem(sim, battle, gen) {
-	for (const pokemon of battle.sides[0]?.pokemon ?? []) {
-		const items = formItems(sim.Dex, pokemon.species, gen);
-		if (items.length && !items.some(name => toID(name) === pokemon.item)) pokemon.m.formWithoutItem = true;
-	}
+	for (const pokemon of battle.sides[0]?.pokemon ?? []) if (lacksFormItem(sim, pokemon, gen)) pokemon.m.formWithoutItem = true;
+}
+
+function lacksFormItem(sim, pokemon, gen) {
+	const items = formItems(sim.Dex, pokemon.species, gen);
+	return items.length > 0 && !items.some(name => toID(name) === pokemon.item);
 }
 
 export function installExtensions(sim, battle, at, context) {
 	for (const ext of EXTENSIONS) if (ext.at === at) ext.install(sim, battle, context);
 }
 
+/** Fields removed while serializing an AI copy */
 export const COPY_STRIP_KEYS = [...new Set(EXTENSIONS.filter(ext => ext.copy === 'strip').flatMap(ext => ext.keys))];
 
+/** Extensions re-attached to a restored AI copy */
 export function installOnCopy(sim, copy) {
 	for (const ext of EXTENSIONS) if (ext.copy === 'reapply') ext.install(sim, copy, {});
 }
 
+/** Extension results merged into extractResult (in table order) */
 export function extensionResults(battle) {
 	const result = {};
 	for (const ext of EXTENSIONS) if (ext.result) Object.assign(result, ext.result(battle));

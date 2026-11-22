@@ -20,12 +20,13 @@ export const FINGER = Object.freeze({
     '....XX......',
   ],
   colors: { X: '#23435f', W: '#ffffff', S: '#c8d6e2', C: '#4a8ef0' },
-
+  /** The fingertip (pixels from the picture's top left) */
   tip: { x: 5, y: 16 },
 });
 
+/** One tap (ms): down to the spot, a ring there, back up */
 export const FINGER_TAP = 1000;
-
+/** With several spots: taps on each before it moves to the next */
 export const FINGER_TAPS = 2;
 
 const css = `

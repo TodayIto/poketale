@@ -1,32 +1,32 @@
-import { mountLoading } from './loading.js';
-import { UI_VARS, CARD_FRAME, crossIcon, ringCss, ringOnKeys } from './ui-css.js';
+import { mountLoading } from './loading.js'; // preparing Poke Ball (same as the battle window)
+import { UI_VARS, CARD_FRAME, crossIcon, ringCss, ringOnKeys } from './ui-css.js'; // our UI look (same colours as the battle window)
 import { isRecord, isUnreadable, unreadableLine } from '../../story/stored.mjs';
-import { THEMES as THEME_IDS, DEFAULT_THEME } from '../../view/ui/theme.js';
-import { DIFFICULTIES as DIFFICULTY_IDS } from '../../ai/index.js';
-import { GAME_SPEEDS, DEFAULT_SPEED } from '../../view/game-speed.js';
-import { QUALITIES as QUALITY_IDS } from '../../view/quality.js';
-import { SPRITE_STYLES as SPRITE_STYLE_IDS, DEFAULT_SPRITE_STYLE } from '../../view/sprites/styles.js';
-import { RULE_IDS, DEFAULT_RULE } from '../../engine/rules.mjs';
-import { EXP_SHARE_MODES } from '../../story/items.mjs';
-import { EXP_RATES, RATES, DEFAULT_EXP_RATE, EXP_RATE_DIGITS, EXP_RATE_MIN, EXP_RATE_MAX, isExpRate, isExpRateSetting } from '../../engine/exp.mjs';
-import { TRADE_EVOLUTIONS as TRADE_EVOLUTION_IDS, DEFAULT_TRADE_EVOLUTION_SETTING } from '../../engine/evolution.mjs';
+import { THEMES as THEME_IDS, DEFAULT_THEME } from '../../view/ui/theme.js'; // battle view colour ids are owned by the view
+import { DIFFICULTIES as DIFFICULTY_IDS } from '../../ai/index.js'; // opponent AI difficulty ids are owned by the AI
+import { GAME_SPEEDS, DEFAULT_SPEED } from '../../view/game-speed.js'; // speed steps are owned by the view
+import { QUALITIES as QUALITY_IDS } from '../../view/quality.js'; // quality ids too
+import { SPRITE_STYLES as SPRITE_STYLE_IDS, DEFAULT_SPRITE_STYLE } from '../../view/sprites/styles.js'; // Pokemon picture styles too
+import { RULE_IDS, DEFAULT_RULE, GENS } from '../../engine/rules.mjs'; // rule ids and their engine formats are owned by the rules
+import { BATTLE_RULES, GEN_OPTIONS, genRuleOn } from '../../story/battle-rule.mjs';
+import { EXP_RATES, RATES, DEFAULT_EXP_RATE, EXP_RATE_DIGITS, EXP_RATE_MIN, EXP_RATE_MAX, isExpRate, isExpRateSetting } from '../../engine/exp.mjs'; // experience rates are owned by the experience formula
+import { TRADE_EVOLUTIONS as TRADE_EVOLUTION_IDS, DEFAULT_TRADE_EVOLUTION_SETTING } from '../../engine/evolution.mjs'; // trade evolution modes are owned by the evolution rules
 import { FOE_GIMMICK_MODES, DEFAULT_FOE_GIMMICKS } from '../../story/gimmicks.mjs';
 import { numberPadCss, openNumberPad } from './number-pad.js';
-import { pushBack } from './contextmenu.js';
-import { controlsCss, switchControl, stepperControl, segmentControl, stepBarControl } from './controls.js';
+import { pushBack } from './contextmenu.js'; // right click = Escape
+import { controlsCss, switchControl, stepperControl, segmentControl, stepBarControl, genSegmentControl, genSegmentCss } from './controls.js'; // switches, steppers, segments, bars (the import screen uses the same)
 import { PICTURE_ROUTES, DEFAULT_PICTURE_ROUTE } from './picture-route.js';
 import { shrinkPicture } from './my-picture.js';
 import { loadFont } from '../../view/fonts.js';
-import { FONT, noteRule } from '../../story/card.mjs';
-import { WHAT, failureText } from '../../story/failure.mjs';
+import { FONT, noteRule } from '../../story/card.mjs'; // same font and note line look as the card and panel
+import { WHAT, failureText } from '../../story/failure.mjs'; // failure lines: what, then the reason
 import { sayer, perLang } from '../../story/screen-text.mjs';
 import { SHEET_FONT } from '../../story/style.mjs';
-import { TAB_COLOR, ICON as PANEL_ICON, SIZE as PANEL_SIZE, panelLift } from '../../story/panel-html.mjs';
+import { TAB_COLOR, ICON as PANEL_ICON, SIZE as PANEL_SIZE, panelLift } from '../../story/panel-html.mjs'; // the panel height's range is owned by the panel
 import { SCREEN_PLACES, DEFAULT_SCREEN_PLACE, PANEL_OPENS, DEFAULT_PANEL_OPEN, panelOpenOf } from '../../story/panel.mjs';
 import { ITEM_EFFECTS_READY } from '../../story/item-effects.mjs';
-import { CRY_PACK_SOURCE } from './voice-pack-store.js';
+import { CRY_PACK_SOURCE } from './voice-pack-store.js'; // the page the cry pack row's "Copy link" copies
 import { copyText } from './copy-text.js';
-import { IMPORT_AI_RECENT, IMPORT_AI_RECENT_MIN, IMPORT_AI_RECENT_MAX, importAiRecent } from '../../story/import-ai.mjs';
+import { IMPORT_AI_RECENT, IMPORT_AI_RECENT_MIN, IMPORT_AI_RECENT_MAX, importAiRecent } from '../../story/import-ai.mjs'; // how many messages the helper model reads is owned by the import
 
 export const SETTINGS_KEY = 'pkb_settings';
 
@@ -43,7 +43,8 @@ export const langOf = tag => (/^ko\b/i.test(String(tag ?? '')) ? 'ko' : 'en');
 
 export const hostLang = () => langOf(globalThis.navigator?.language);
 export const DEFAULT_SETTINGS = Object.freeze({ iron: false, sound: false, sendFormat: 'key', theme: DEFAULT_THEME, orientation: 'portrait', lang: null, autoSend: false, commands: false, aux: false, auxRecent: 8, oocTrial: false, difficulty: 'normal',
-  rule: DEFAULT_RULE, expShare: 'always', expRate: DEFAULT_EXP_RATE, friendshipRate: DEFAULT_EXP_RATE, hatchRate: DEFAULT_EXP_RATE, tradeEvolution: DEFAULT_TRADE_EVOLUTION_SETTING, speed: DEFAULT_SPEED, typeHints: false, effectItems: false, foeGimmicks: DEFAULT_FOE_GIMMICKS, moveAnims: true, spriteStyle: DEFAULT_SPRITE_STYLE, quality: 'high', panelPicture: DEFAULT_PICTURE_ROUTE, outsideScreens: DEFAULT_SCREEN_PLACE, panelShift: PANEL_SIZE.shift.default, panelOpen: DEFAULT_PANEL_OPEN, panelStay: false, panelDrag: false, aboveOthers: true, importRecent: IMPORT_AI_RECENT,
+  rule: DEFAULT_RULE, battleRule: null, eraGimmicks: GEN_OPTIONS.eraGimmicks.none, expShare: GEN_OPTIONS.expShare.none, learnMoves: GEN_OPTIONS.learnMoves.none,
+  gameShop: GEN_OPTIONS.gameShop.none, expRate: DEFAULT_EXP_RATE, friendshipRate: DEFAULT_EXP_RATE, hatchRate: DEFAULT_EXP_RATE, tradeEvolution: DEFAULT_TRADE_EVOLUTION_SETTING, speed: DEFAULT_SPEED, typeHints: false, effectItems: false, foeGimmicks: DEFAULT_FOE_GIMMICKS, moveAnims: true, spriteStyle: DEFAULT_SPRITE_STYLE, quality: 'high', panelPicture: DEFAULT_PICTURE_ROUTE, outsideScreens: DEFAULT_SCREEN_PLACE, panelShift: PANEL_SIZE.shift.default, panelOpen: DEFAULT_PANEL_OPEN, panelStay: false, panelDrag: false, aboveOthers: true, importRecent: IMPORT_AI_RECENT,
   volume: 0, volumeBgm: VOLUME_MAX, volumeSfx: VOLUME_MAX, volumeCry: VOLUME_MAX, volumeUi: VOLUME_MAX,
   silhouette: true, looks: Object.freeze({}), oldLook: null, debug: false,
   bots: Object.freeze([]), botsOff: Object.freeze([]) });
@@ -60,13 +61,17 @@ export const SEND_FORMATS = labelled(SEND_FORMAT_IDS, 'settings.sendFormat');
 export const THEMES = labelled(THEME_IDS, 'settings.theme');
 export const DIFFICULTIES = labelled(DIFFICULTY_IDS, 'settings.difficulty');
 export const RULES = labelled(RULE_IDS, 'settings.rule');
-export const EXP_SHARES = labelled(EXP_SHARE_MODES, 'settings.expShare');
+
+const BATTLE_RULE_CHOICES = perLang((t, lang) => Object.freeze([...RULES(lang), Object.freeze(['auto', t('settings.battleRule.auto')])]));
+const ERA_GIMMICKS = labelled(GEN_OPTIONS.eraGimmicks.ids, 'settings.eraGimmicks');
+export const EXP_SHARES = labelled(GEN_OPTIONS.expShare.ids, 'settings.expShare');
+const LEARN_MOVES = labelled(GEN_OPTIONS.learnMoves.ids, 'settings.learnMoves');
 export const TRADE_EVOLUTIONS = labelled(TRADE_EVOLUTION_IDS, 'settings.tradeEvolution');
 export const FOE_GIMMICKS = labelled(FOE_GIMMICK_MODES, 'settings.foeGimmicks');
 const rateChoices = rates => perLang(t => Object.freeze(rates.map(rate => Object.freeze([rate, t('settings.expRate', { rate })]))));
 
 export const EXP_RATE_CHOICES = rateChoices(EXP_RATES);
-
+/** Friendship and hatch rate rows: x0.5 x1 x1.5 x2 x3 */
 export const RATE_CHOICES = rateChoices(RATES);
 
 export const EXP_RATE_TYPED = perLang(t => Object.freeze({
@@ -112,7 +117,7 @@ const volumeOn = settings => settings?.volume > 0;
 
 export const LOOKS = labelled(LOOK_IDS, 'settings.look');
 export const PICTURE_LOOKS = labelled(PICTURE_LOOK_IDS, 'settings.look');
-
+/** My gender = m/f of the protagonist sprites (back and front) */
 export const GENDERS = labelled(GENDER_IDS, 'settings.gender');
 
 export const pictureLocked = look => look.myPicture !== 'image';
@@ -138,7 +143,7 @@ export const IMPORT_RECENT_TYPED = perLang(t => Object.freeze({
 export const commandsOn = settings => settings?.commands === true;
 
 export const auxOn = settings => commandsOn(settings) && settings.aux === true;
-
+/** Choices of an on/off setting (values are plain true/false) */
 export const ON_OFF = perLang(t => Object.freeze([Object.freeze([true, t('settings.on')]), Object.freeze([false, t('settings.off')])]));
 
 export const SETTING_TABS = perLang((t, lang) => {
@@ -146,13 +151,18 @@ export const SETTING_TABS = perLang((t, lang) => {
   const row = (key, options, extra = {}) => ({ key, label: t(`settings.row.${key}`), ...(options ? { options, control: options === onOff ? 'switch' : 'segment' } : {}),
     ...('help' in extra ? {} : { help: t(`settings.help.${key}`) }), ...extra });
   const ordered = { control: 'stepper' };
-  const underCommands = { needs: commandsOn, needsHelp: t('settings.needsCommands') };
+  const underCommands = { needs: commandsOn };
   const helper = { group: 'aux' };
   const thisChat = { group: 'chat' };
   const level = { control: 'bar', bar: VOLUME_BAR };
-  const underMaster = { needs: volumeOn, needsHelp: t('settings.needsVolume') };
+  const underMaster = { needs: volumeOn };
+
+  const underRule = key => ({ needs: values => genRuleOn(values.battleRule), grey: GEN_OPTIONS[key].grey });
   return Object.freeze([
-    { id: 'battle', rows: [row('rule', RULES(lang)), row('expShare', EXP_SHARES(lang)), row('expRate', EXP_RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }),
+    { id: 'battle', rows: [row('battleRule', BATTLE_RULE_CHOICES(lang), { control: 'gen' }),
+      row('eraGimmicks', ERA_GIMMICKS(lang), underRule('eraGimmicks')), row('expShare', EXP_SHARES(lang), underRule('expShare')),
+      row('learnMoves', LEARN_MOVES(lang), underRule('learnMoves')), row('gameShop', onOff, underRule('gameShop')),
+      row('expRate', EXP_RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }),
       row('friendshipRate', RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }), row('hatchRate', RATE_CHOICES(lang), { ...ordered, typed: EXP_RATE_TYPED(lang) }),
       row('tradeEvolution', TRADE_EVOLUTIONS(lang)), row('iron', onOff), row('difficulty', DIFFICULTIES(lang), ordered), row('foeGimmicks', FOE_GIMMICKS(lang)), row('speed', SPEEDS(lang), ordered), row('typeHints', onOff),
 
@@ -177,7 +187,7 @@ export const SETTING_TABS = perLang((t, lang) => {
 });
 
 export const rowValue = (row, values, inUse = {}) => (row.get ? row.get(values) : values[row.key]) ?? inUse[row.key];
-
+/** Value chosen in a row -> settings patch */
 export const rowPatch = (row, id) => (row.set ? row.set(id) : { [row.key]: id });
 
 export const POKE_BALL_ICON = '<svg viewBox="-9 -9 18 18" width="100%" height="100%" aria-hidden="true">'
@@ -202,42 +212,46 @@ export function normalizeSettings(raw) {
   const s = value && typeof value === 'object' ? value : {};
   return {
     iron: s.iron === true,
-    sound: volumeOf(s.volume, s.sound === true ? VOLUME_MAX : 0) > 0,
+    sound: volumeOf(s.volume, s.sound === true ? VOLUME_MAX : 0) > 0, // not read by this version - for an older one (VOLUME_KEYS)
     sendFormat: pick(s.sendFormat, SEND_FORMAT_IDS, DEFAULT_SETTINGS.sendFormat),
     theme: pick(s.theme, THEME_IDS, DEFAULT_SETTINGS.theme),
     orientation: 'portrait',
-    lang: pick(s.lang, LANGS.map(([id]) => id), null),
-    autoSend: s.autoSend === true,
-    commands: s.commands === true,
-    aux: s.aux === true,
+    lang: pick(s.lang, LANGS.map(([id]) => id), null), // null = not chosen
+    autoSend: s.autoSend === true, // default off
+    commands: s.commands === true, // default off
+    aux: s.aux === true, // default off
     auxRecent: pick(s.auxRecent, AUX_RECENT_COUNTS, DEFAULT_SETTINGS.auxRecent),
-    oocTrial: s.oocTrial === true,
+    oocTrial: s.oocTrial === true, // default off
     difficulty: pick(s.difficulty, DIFFICULTY_IDS, DEFAULT_SETTINGS.difficulty),
-    rule: pick(s.rule, RULE_IDS, DEFAULT_SETTINGS.rule),
-    expShare: pick(s.expShare, EXP_SHARE_MODES, DEFAULT_SETTINGS.expShare),
+    rule: pick(s.rule, RULE_IDS, DEFAULT_SETTINGS.rule), // no row since 0.1.0: where a chat that has not picked a battle rule starts
+    battleRule: pick(s.battleRule, BATTLE_RULES, null),
+    eraGimmicks: pick(s.eraGimmicks, GEN_OPTIONS.eraGimmicks.ids, DEFAULT_SETTINGS.eraGimmicks),
+    expShare: pick(s.expShare, GEN_OPTIONS.expShare.ids, DEFAULT_SETTINGS.expShare), // 0.0.9's 'item' reads as always
+    learnMoves: pick(s.learnMoves, GEN_OPTIONS.learnMoves.ids, DEFAULT_SETTINGS.learnMoves),
+    gameShop: s.gameShop === true, // default off
     expRate: isExpRateSetting(s.expRate) ? s.expRate : DEFAULT_SETTINGS.expRate,
     friendshipRate: isExpRate(s.friendshipRate) ? s.friendshipRate : DEFAULT_SETTINGS.friendshipRate,
     hatchRate: isExpRate(s.hatchRate) ? s.hatchRate : DEFAULT_SETTINGS.hatchRate,
     tradeEvolution: pick(s.tradeEvolution, TRADE_EVOLUTION_IDS, DEFAULT_SETTINGS.tradeEvolution),
     speed: pick(s.speed, GAME_SPEEDS, DEFAULT_SETTINGS.speed),
-    typeHints: s.typeHints === true,
+    typeHints: s.typeHints === true, // default off
     effectItems: ITEM_EFFECTS_READY && s.effectItems === true,
-    foeGimmicks: pick(s.foeGimmicks, FOE_GIMMICK_MODES, DEFAULT_SETTINGS.foeGimmicks),
-    moveAnims: s.moveAnims !== false,
-    spriteStyle: pick(s.spriteStyle, SPRITE_STYLE_IDS, DEFAULT_SETTINGS.spriteStyle),
+    foeGimmicks: pick(s.foeGimmicks, FOE_GIMMICK_MODES, DEFAULT_SETTINGS.foeGimmicks), // settings saved before it existed read as the default (by region)
+    moveAnims: s.moveAnims !== false, // default on
+    spriteStyle: pick(s.spriteStyle, SPRITE_STYLE_IDS, DEFAULT_SETTINGS.spriteStyle), // settings saved before it existed (or with another value) read as 3d
     quality: pick(s.quality, QUALITY_IDS, DEFAULT_SETTINGS.quality),
     panelPicture: pick(s.panelPicture, PICTURE_ROUTES, DEFAULT_SETTINGS.panelPicture),
     outsideScreens: pick(s.outsideScreens, SCREEN_PLACES, DEFAULT_SETTINGS.outsideScreens),
     panelShift: panelLift(s.panelShift),
-    panelOpen: panelOpenOf(s) ?? DEFAULT_PANEL_OPEN,
-    panelStay: s.panelStay === true,
-    panelDrag: s.panelDrag === true,
-    aboveOthers: s.aboveOthers !== false,
+    panelOpen: panelOpenOf(s) ?? DEFAULT_PANEL_OPEN, // default hover
+    panelStay: s.panelStay === true, // default off
+    panelDrag: s.panelDrag === true, // default off
+    aboveOthers: s.aboveOthers !== false, // default on (settings saved before it existed read as on)
     importRecent: importAiRecent(s.importRecent),
-    volume: volumeOf(s.volume, s.sound === true ? VOLUME_MAX : 0),
+    volume: volumeOf(s.volume, s.sound === true ? VOLUME_MAX : 0), // saved before it existed: the old sound on -> VOLUME_MAX, off or none -> 0
     ...Object.fromEntries(Object.values(VOLUME_KEYS).map(key => [key, volumeOf(s[key], VOLUME_MAX)])),
-    silhouette: s.silhouette !== false,
-    debug: s.debug === true,
+    silhouette: s.silhouette !== false, // default on
+    debug: s.debug === true, // default off
     looks: lookMap(s.looks),
     oldLook: isRecord(s.oldLook) ? normalizeLook(s.oldLook) : null,
     bots: nameList(s.bots),
@@ -266,7 +280,7 @@ export const AUTO_BOT_WORDS = ['포켓몬', 'poké', 'pokemon'];
 const BOT_NAME_MAX = 200;
 
 export const botKey = name => String(name ?? '').normalize('NFC').trim().toLowerCase();
-
+/** Whether a bot is enabled automatically from its name alone */
 export const autoBot = name => { const key = botKey(name); return AUTO_BOT_WORDS.some(word => key.includes(word)); };
 
 function nameList(value) {
@@ -280,7 +294,7 @@ function nameList(value) {
   return out;
 }
 const hasName = (list, name) => list.some(other => botKey(other) === botKey(name));
-
+/** Whether the features are enabled for the bot with this name */
 export function botEnabled(settings, name) {
   if (!botKey(name)) return false;
   const s = normalizeSettings(settings);
@@ -346,11 +360,11 @@ const TAB_ICONS = {
   bot: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="4.5" width="11" height="9" rx="2" fill="#fff" stroke="#18242e" stroke-width="1.5"/>'
     + `<path d="M8 1.8v2.7" stroke="#fff" stroke-width="1.5"/><circle cx="6" cy="9" r="1.2" fill="${TAB_COLORS.bot}"/><circle cx="10" cy="9" r="1.2" fill="${TAB_COLORS.bot}"/></svg>`,
 };
-
+/** right-arrow before the selected row */
 const CURSOR = '<svg class="cur" viewBox="0 0 8 10" aria-hidden="true"><path d="M1 0h2l5 5-5 5H1z" fill="currentColor"/></svg>';
 
 const pad2 = n => String(n).padStart(2, '0');
-
+/** How many Pokemon a past import's line names (the rest are counted) */
 export const IMPORT_NAMES_SHOWN = 3;
 
 export function importSummary({ time, count, names = [] }, lang) {
@@ -361,12 +375,11 @@ export function importSummary({ time, count, names = [] }, lang) {
   return `${when} · ${what}`;
 }
 
-export function mountSettings({ parent = document.body, settings, bot = null, persona = null, notice = '', picture = null, imports = null, battlesOff = null, voicePacks = [], inUse = {}, lang,
-  onChange = () => {}, onPicture = async () => {}, onPermission = async () => false, onImport = async () => {}, onCancelImport = async () => imports,
-  onBattlesOff = async () => battlesOff, onVoicePackAdd = async () => ({ packs: voicePacks, results: [] }), onVoicePackRemove = async () => ({ packs: voicePacks, removed: true }),
+export function mountSettings({ parent = document.body, settings, bot = null, persona = null, notice = '', picture = null, imports = null, battlesOff = null, battleRule = null,
+  voicePacks = [], inUse = {}, lang, onChange = () => {}, onPicture = async () => {}, onPermission = async () => false, onImport = async () => {}, onCancelImport = async () => imports,
+  onBattlesOff = async () => battlesOff, onBattleRule = async () => battleRule, onVoicePackAdd = async () => ({ packs: voicePacks, results: [] }), onVoicePackRemove = async () => ({ packs: voicePacks, removed: true }),
   copy = copyText, onClose = () => {} }) {
   const t = sayer(lang);
-  const NEEDS_CHAT = t('settings.needsChat');
   let current = normalizeSettings(settings);
   loadFont(SHEET_FONT).catch(error => console.warn('[poke-battle] 설정 창 글꼴을 올리지 못함 — 대체 글꼴로', error));
   const root = document.createElement('section');
@@ -406,6 +419,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     .pkb-settings .row.off .lab { opacity:.55; }
     /* Choices: a switch, a stepper or a segment per row (controls.js - SETTING_TABS row.control) at the row's right */
     ${controlsCss('.pkb-settings')}
+    ${genSegmentCss('.pkb-settings')}
     .pkb-settings .row > .sw, .pkb-settings .row > .step, .pkb-settings .row > .seg, .pkb-settings .row > .stb, .pkb-settings .row > .psl { justify-self:end; }
     /* Rows under another (row.needs): indented right below it, joined to it by a line on the left, no dashes inside the group; greyed while it is off */
     .pkb-settings .row.joined { border-bottom-color:transparent; }
@@ -513,7 +527,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     <div class="msg" aria-live="polite"></div>
   </div>`;
   parent.append(root);
-  ringOnKeys(root);
+  ringOnKeys(root); // the ring on the X it opens with only once the keyboard is used
   const card = root.querySelector('.card'), tabBar = root.querySelector('.tabs'), list = root.querySelector('.list'), msg = root.querySelector('.msg');
   if (notice) {
     const line = document.createElement('p'); line.className = 'notice'; line.setAttribute('role', 'alert'); line.textContent = notice;
@@ -568,11 +582,14 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
   };
   const commit = next => { current = next; Promise.resolve(onChange(current)).catch(console.error); drawUnder(); };
 
+  const values = () => ({ ...current, battleRule: chatRule?.value ?? current.battleRule ?? current.rule });
+
   const under = [];
   function drawUnder() {
-    for (const { r, group, needs } of under) {
-      const usable = needs(current);
+    for (const { r, group, row } of under) {
+      const usable = row.needs(values());
       r.classList.toggle('off', !usable);
+      if (row.grey !== undefined) group.set(usable ? rowValue(row, current) : row.grey);
       group.disable(!usable);
     }
   }
@@ -618,22 +635,19 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
   }
 
   const enabledNow = () => !!bot?.name && botEnabled(current, bot.name);
-  const botSub = !bot ? NEEDS_CHAT
+  const botSub = !bot ? ''
     : `${bot.name || t('settings.noNameBot')}${autoBot(bot.name) ? ` · ${t('settings.autoBot')}` : ''}${bot.compat ? `\n${bot.compat}\n${t('settings.compatHint')}` : ''}`;
-  let botChoices = null, hinted = false;
-  const botHelp = text => () => (hinted ? `${text}\n${t('settings.botRedraw')}` : text);
+  let botChoices = null;
+  const botHelp = text => () => text;
   const names = document.createElement('div'); names.className = 'names';
   const form = document.createElement('div'); form.className = 'add';
   const input = document.createElement('input');
   Object.assign(input, { type: 'text', placeholder: t('settings.botName'), maxLength: BOT_NAME_MAX });
   input.setAttribute('aria-label', t('settings.botNameToAdd'));
-
+  /** Name list changed -> report it */
   const changeBots = next => {
-    const before = enabledNow();
     current = normalizeSettings(next);
     Promise.resolve(onChange(current)).catch(console.error);
-    const after = enabledNow();
-    if (bot?.name && before !== after) { hinted = true; drawHelp(); }
     drawBots();
     drawImports();
     drawBattles();
@@ -664,7 +678,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
   form.append(input, button(t('settings.add'), addName));
   input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addName(); } });
 
-  let pastImports = imports, importBusy = false, asking = null, histOpen = false;
+  let pastImports = imports, importBusy = false, asking = null, histOpen = false; // asking = the open "cancel?" box (askCancel)
   const importButton = button(t('settings.importOpen'), async () => {
     importBusy = true; importFail.hidden = true; drawImports();
     try { await onImport(); } catch (error) {
@@ -726,11 +740,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     drawHistory(histOpen ? list : []);
   }
 
-  const importHelp = row => () => {
-    if (!bot) return NEEDS_CHAT;
-    if (!enabledNow()) return t('settings.importNeedsOn');
-    return isUnreadable(pastImports?.status) ? `${row.help}\n${unreadableLine(lang)}` : row.help;
-  };
+  const importHelp = row => () => (bot && enabledNow() && isUnreadable(pastImports?.status) ? `${row.help}\n${unreadableLine(lang)}` : row.help);
   let importRow = null;
 
   let chatBattles = battlesOff, battlesBusy = false, battlesChoices = null, battlesRow = null;
@@ -749,7 +759,28 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     battlesChoices.disable(battlesBusy || !battlesUsable());
     battlesRow.classList.toggle('off', !battlesUsable());
   }
-  const battlesHelp = row => () => (!bot ? NEEDS_CHAT : isUnreadable(chatBattles?.status) ? `${row.help}\n${unreadableLine(lang)}` : row.help);
+  const battlesHelp = row => () => (bot && isUnreadable(chatBattles?.status) ? `${row.help}\n${unreadableLine(lang)}` : row.help);
+
+  let chatRule = battleRule, ruleBusy = false, ruleChoices = null, ruleRow = null;
+  const ruleFail = document.createElement('p'); ruleFail.className = 'import-fail'; ruleFail.setAttribute('role', 'alert'); ruleFail.hidden = true;
+  const ruleUsable = () => !!chatRule && !isUnreadable(chatRule.status);
+  const pickRule = async value => {
+    ruleBusy = true; ruleFail.hidden = true; drawRule();
+    try {
+      chatRule = await onBattleRule(value) ?? chatRule;
+      commit(normalizeSettings({ ...current, battleRule: value }));
+    } catch (error) {
+      console.warn('[poke-battle] 배틀 규칙을 바꾸지 못함', error);
+      ruleFail.textContent = failureText(WHAT.botSetting, error, lang); ruleFail.hidden = false;
+    } finally { ruleBusy = false; drawRule(); drawUnder(); }
+  };
+  function drawRule() {
+    if (!ruleChoices) return;
+    ruleChoices.set(values().battleRule);
+    ruleChoices.disable(ruleBusy || !ruleUsable());
+    ruleRow.classList.toggle('off', !ruleUsable());
+  }
+  const ruleHelp = row => () => (bot && isUnreadable(chatRule?.status) ? `${row.help}\n${unreadableLine(lang)}` : row.help);
 
   let packs = voicePacks ?? [], voiceBusy = false;
   const voiceInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.zip,application/zip,application/x-zip-compressed', multiple: true, hidden: true });
@@ -784,7 +815,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     voiceBusy = true; showVoiceFails([]); drawVoice();
     try { showVoiceFails(await run()); } catch (error) {
       console.warn('[poke-battle] 목소리 팩을 바꾸지 못함', error);
-      showVoiceFails([failureText(WHAT.action, error, lang)]);
+      showVoiceFails([failureText(WHAT.action, error, lang)]); // not expected: the store answers every failure itself
     } finally {
       const active = document.activeElement, lost = !active || !root.contains?.(active) || !!voiceList.contains?.(active);
       voiceBusy = false; drawVoice();
@@ -826,6 +857,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
     voiceLoad.disabled = voiceBusy;
   }
 
+  // Tabs and pages
   const pages = new Map();
   for (const tab of SETTING_TABS(lang)) {
     const tabButton = document.createElement('button'); tabButton.type = 'button'; tabButton.className = 'tab'; tabButton.setAttribute('role', 'tab'); tabButton.dataset.tab = tab.id;
@@ -852,6 +884,11 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
         battlesChoices = choices(row.control, row.options, chatBattles?.off !== true, row.label, switchBattles);
         battlesRow = line(page, row.label, battlesHelp(row), battlesChoices.el);
         battlesRow.append(battlesFail);
+      } else if (row.key === 'battleRule') {
+        ruleChoices = genSegmentControl({ list: row.options, gens: GENS, value: values().battleRule, label: row.label, change: pickRule,
+          words: { up: t('settings.battleRule.up'), down: t('settings.battleRule.down'), gen: gen => t('settings.battleRule.gen', { gen }) } });
+        ruleRow = line(page, row.label, ruleHelp(row), ruleChoices.el);
+        ruleRow.append(ruleFail);
       } else if (row.key === 'voicePack') {
         const r = line(page, row.label, () => row.help, voiceButtons);
         r.classList.add('voice');
@@ -860,7 +897,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
         importRow = line(page, row.label, importHelp(row), importButton);
         importRow.append(hist, importFail);
       } else if (row.key === 'persona') {
-        line(page, t('settings.personaOf', { label: row.label, name: persona ?? t('settings.unknown') }), () => (persona ? row.help : NEEDS_CHAT)).classList.toggle('off', !persona);
+        line(page, t('settings.personaOf', { label: row.label, name: persona ?? t('settings.unknown') }), () => row.help).classList.toggle('off', !persona);
       } else if (row.look) {
         const r = line(page, row.label, () => row.help, choices(row.control, row.options, rowValue(row, shownLook(current, persona)), row.label, id => {
           commit(setLook(current, persona, rowPatch(row, id)));
@@ -877,12 +914,12 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
           commit(normalizeSettings({ ...current, ...rowPatch(row, id) }));
         }, { typed: row.typed, bar: row.bar });
         const above = page.children[page.children.length - 1];
-        const r = line(page, row.label, () => (row.needs && !row.needs(current) ? row.needsHelp : row.help), group.el);
+        const r = line(page, row.label, () => row.help, group.el);
         if (row.needs && !row.group) {
           above?.classList.add('joined');
           r.classList.add('sub');
         }
-        if (row.needs) under.push({ r, group, needs: row.needs });
+        if (row.needs) under.push({ r, group, row });
       }
     }
   }
@@ -897,6 +934,7 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
   drawBots();
   drawImports();
   drawBattles();
+  drawRule();
   drawUnder();
   showTab(SETTING_TABS(lang)[0].id);
 
@@ -907,13 +945,13 @@ export function mountSettings({ parent = document.body, settings, bot = null, pe
   const popBack = pushBack(root, back);
   root.querySelector('.hd .x').onclick = close;
   root.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); back(); } });
-  root.addEventListener('pointerdown', e => { if (e.target === root) close(); });
+  root.addEventListener('pointerdown', e => { if (e.target === root) close(); }); // pressing outside the card closes
   root.querySelector('.hd .x').focus();
   return { close, get settings() { return current; }, setImports(next) { pastImports = next; closeAsk(); drawImports(); drawHelp(); } };
 }
 
 export function mountPreparing({ parent = document.body, lang }) {
   const preparing = mountLoading(parent, { page: true, lang });
-  preparing.element.style.zIndex = SETTINGS_Z;
+  preparing.element.style.zIndex = SETTINGS_Z; // settings window layer (visible even when opened over another screen)
   return preparing;
 }

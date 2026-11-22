@@ -1,6 +1,6 @@
 # PokéTale
 
-A RisuAI plugin for Pokémon battles inside chat. The interface and battle text are in Korean.
+A RisuAI plugin for Pokémon battles inside chat. The interface and battle text support Korean and English.
 
 ## Install
 
@@ -10,13 +10,19 @@ Version 0.0.8 requests RisuAI's request-replacement permission to refresh party 
 
 After installing this file once, future versions can be installed with RisuAI's plugin update control. Updates are downloaded from this repository's main branch.
 
-Images and sounds are loaded at runtime from PokeRogue assets and PokéAPI Pokémon, badge and item sprites on `raw.githubusercontent.com`, and from `play.pokemonshowdown.com`. The plugin has no server of its own.
+Some battle animation images and sounds are bundled with the plugin. Other images and sounds are loaded at runtime from PokeRogue assets and PokéAPI Pokémon, badge and item sprites on `raw.githubusercontent.com`, and from `play.pokemonshowdown.com`. The plugin has no server of its own.
+
+## Version 0.1.0
+
+Adds Z-Moves, Ultra Burst, Dynamax and Gigantamax, generation 1-9 battle rules, regional machine discs and game-specific shop stock and prices. Settings are per chat; some changes apply only to new records.
+
+Before reverting to 0.0.9, finish any active battle. Battles using automatic or numbered generation rules, or Dynamax on either side, cannot be resumed in 0.0.9.
 
 ## Device preferences and cry packs
 
 Panel preferences are stored on this device through RisuAI's safe local storage. Cry packs are stored on this device through RisuAI's local plugin storage; neither stores story or chat state. If device storage is unavailable, preferences use the shared settings and imported cry packs remain available for the current page only.
 
-To use a cry pack, download a ZIP from [The Sounds Resource — PokéPark 2](https://sounds.spriters-resource.com/wii/pokepark2wondersbeyond) yourself and import it under Settings > Sound. Matching scenes use the pack's voice clips instead of the normal cry. Audio files are not included with this plugin.
+To use a cry pack, download a ZIP from [The Sounds Resource — PokéPark 2](https://sounds.spriters-resource.com/wii/pokepark2wondersbeyond) yourself and import it under Settings > Sound. Matching scenes use the pack's voice clips instead of the normal cry. Cry-pack audio files are not included with this plugin.
 
 ## Build
 

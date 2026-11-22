@@ -2,20 +2,21 @@ import { esc } from './card.mjs';
 import { z } from './panel-zoom.mjs';
 import { ballFrame } from '../view/ui/bag.js';
 import { langPath } from '../view/lang-images.js';
-import { artSvg } from '../view/amie-art.js';
+import { artSvg, pixelSvg } from '../view/amie-art.js';
+import { Z_ART, dmaxLevelColor, DMAX_LEVEL_EMPTY } from '../view/ui/z-art.js';
 
 const C = '.x-risu-pkbp';
 
 export const SHEET_FRAMES = Object.freeze({
-
+  // types_<lang>.png: 32x14 frames, one per row in this order
   types: Object.freeze({ w: 32, h: 14, rows: 20, order: Object.freeze(['unknown', 'bug', 'dark', 'dragon', 'electric', 'fairy', 'fighting', 'fire', 'flying', 'ghost', 'grass', 'ground', 'ice',
     'normal', 'poison', 'psychic', 'rock', 'steel', 'water', 'stellar']) }),
-
+  // categories.png: 28x11 frames side by side
   categories: Object.freeze({ w: 28, h: 11, order: Object.freeze(['physical', 'special', 'status']) }),
 
   balls: Object.freeze({ w: 12, h: 12, sheetH: 246, y: Object.freeze({ gb: 174, lb: 186, mb: 198, pb: 210, rb: 222, ub: 234 }) }),
 });
-
+// Drawn sizes: the sheets' pixels times these (then the panel's text scale)
 const TYPE_SCALE = 1.35, CATEGORY_SCALE = 1.35, BALL_SCALE = 1.5;
 
 const SHEET_LANGS = ['ko', 'en'];
@@ -65,21 +66,21 @@ export function screenCss(base) {
     `${C}-htypes{display:flex;gap:4px;}`,
     `${C}-hhp{display:flex;align-items:center;gap:6px;font-size:${z(11)};color:#5d7486;white-space:nowrap;}`,
     `${C}-hhp ${C}-hpbar{flex:1;margin:0;height:6px;}`,
-
+    // PokeRogue picture sheets
     `${C}-ty{flex:none;display:inline-block;width:${z(T.w * TYPE_SCALE)};height:${z(T.h * TYPE_SCALE)};background-repeat:no-repeat;background-size:${z(T.w * TYPE_SCALE)} ${z(T.h * T.rows * TYPE_SCALE)};image-rendering:pixelated;vertical-align:middle;}`,
     ...SHEET_LANGS.map(lang => `${C}-ty-${lang}{background-image:url("${base}${langPath('images/types_ko.png', lang)}");}`),
     `${C}-cat{flex:none;display:inline-block;width:${z(K.w * CATEGORY_SCALE)};height:${z(K.h * CATEGORY_SCALE)};background:url("${base}images/categories.png") no-repeat;`
       + `background-size:${z(K.w * K.order.length * CATEGORY_SCALE)} ${z(K.h * CATEGORY_SCALE)};image-rendering:pixelated;vertical-align:middle;}`,
     `${C}-ball{flex:none;display:inline-block;width:${z(B.w * BALL_SCALE)};height:${z(B.h * BALL_SCALE)};margin-right:4px;background:url("${base}images/pb.png") no-repeat;`
       + `background-size:${z(B.w * BALL_SCALE)} ${z(B.sheetH * BALL_SCALE)};image-rendering:pixelated;vertical-align:middle;}`,
-
+    // pages and the stat switch
     `${C}-seg{display:flex;margin:0 0 9px;padding:2px;border:2px solid #789db7;border-radius:9px;background:#fff;box-shadow:0 2.5px 0 #466c87;}`,
     `${C}-seg button{flex:1;padding:4px 0 3px;border:0;border-radius:6px;background:transparent;color:#5d7486;font-size:${z(13)};cursor:pointer;}`,
     `${C}-seg button${C}-on{background:#d8434d;color:#fff;box-shadow:0 2px 0 #8e2835;cursor:default;}`,
     `${C}-mini{display:inline-flex;margin-left:auto;padding:1px;border:1.5px solid #789db7;border-radius:7px;background:#fff;}`,
     `${C}-mini button{padding:1px 6px;border:0;border-radius:5px;background:transparent;color:#5d7486;font-size:${z(11)};cursor:pointer;}`,
     `${C}-mini button${C}-on{background:#23435f;color:#fff;cursor:default;}`,
-
+    // sections (the travel tab's boxes) in the party colours
     `${C}-scr ${C}-sech{display:flex;align-items:center;gap:6px;color:#a32634;}`,
     `${C}-scr ${C}-rowk{flex:0 0 auto;min-width:${z(70)};white-space:nowrap;}`,
     `${C}-scr ${C}-sec > ${C}-row:first-child{border-top:0;}`,
@@ -100,12 +101,19 @@ export function screenCss(base) {
     `${C}-sec${C}-bondlow{border-color:#8fa3b3;box-shadow:0 2px 0 #cdd8e0;}`,
     `${C}-bondi{flex:none;display:block;width:${z(14)};height:${z(12)};} ${C}-bondi svg{display:block;width:100%;height:100%;}`,
     `${C}-bond{flex:1;min-width:0;font-size:${z(12.5)};color:#14304a;word-break:keep-all;overflow-wrap:anywhere;}`,
-
+    // stats
     `${C}-stg{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;}`,
     `${C}-st2{display:flex;align-items:baseline;justify-content:space-between;gap:6px;padding:4px 1px;border-top:1.5px solid #eef2f5;font-size:${z(13)};}`,
     `${C}-st2:nth-child(-n+2){border-top:0;}`,
     `${C}-st2 b{font-weight:400;color:#14304a;} ${C}-st2 small{font-size:${z(10)};color:#8193a1;}`,
     `${C}-foot{margin-top:4px;font-size:${z(11)};color:#8193a1;}`,
+
+    `${C}-dml{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:${z(13)};color:#14304a;}`,
+
+    `${C}-gmax{display:inline-block;flex:none;width:${z(18)};height:${z(14)};margin-right:4px;vertical-align:middle;} ${C}-gmax svg{display:block;width:100%;height:100%;}`,
+
+    `${C}-dmc{display:flex;flex:none;width:${z(104)};height:${z(9)};gap:${z(3)};padding:0 ${z(3)};box-sizing:border-box;}`,
+    `${C}-dmc i{display:block;flex:1;background:${DMAX_LEVEL_EMPTY};transform:skewX(-24deg);}`,
     `${C}-expl{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:${z(10.5)};color:#5d7486;}`,
     `${C}-expb{flex:1;height:6px;border-radius:3px;background:#d4dfe7;overflow:hidden;box-shadow:inset 0 0 0 1px #c3d4e1;} ${C}-expb span{display:block;height:100%;background:#4aa3e8;}`,
 
@@ -131,7 +139,7 @@ export function screenCss(base) {
     `${C}-descv b{font-weight:400;color:#14304a;}`,
     `${C}-descd{margin-top:5px;padding-top:5px;border-top:1.5px dashed #dbe5ec;font-size:${z(12.5)};color:#14304a;line-height:1.45;word-break:keep-all;overflow-wrap:anywhere;}`,
     `${C}-lab{margin:0 2px 6px;font-size:${z(11.5)};color:#5d7486;}`,
-
+    // the level-up finish band
     `${C}-flow{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:0 0 8px;padding:5px 8px;border:2px solid #ffcf4a;border-radius:9px;background:#fffbe8;font-size:${z(12)};color:#6b4a00;}`,
     `${C}-flowk{margin-right:auto;}`,
     `${C}-optred{color:#a32634;}`,
@@ -184,12 +192,14 @@ export function screenHtml(view, lang, hit, helpers) {
   return { head, strip, body: out.join('') };
 }
 
+const GMAX_SVG = pixelSvg(Z_ART.gmax_mark.rows, Z_ART.gmax_mark.colors);
+
 function heroHtml(hero, lang, hit, helpers, swiped) {
   const width = hero.maxhp ? Math.round(hero.hp / hero.maxhp * 1000) / 10 : 0;
   return `<div class="x-risu-pkbp-hero${swiped ? ` ${swiped}` : ''}">`
     + `<div class="x-risu-pkbp-hpic">${helpers.img({ spriteId: hero.spriteId, shiny: hero.shiny })}<span class="x-risu-pkbp-dex">No.${String(hero.dex).padStart(4, '0')}</span></div>`
     + '<div class="x-risu-pkbp-hinfo">'
-    + `<div class="x-risu-pkbp-hname"><b>${esc(hero.name)}</b>${hero.shiny ? '<span class="x-risu-pkbp-shiny">★</span>' : ''}`
+    + `<div class="x-risu-pkbp-hname">${hero.gmax ? `<span class="x-risu-pkbp-gmax" role="img" aria-label="${esc(hero.gmax)}" title="${esc(hero.gmax)}">${GMAX_SVG}</span>` : ''}<b>${esc(hero.name)}</b>${hero.shiny ? '<span class="x-risu-pkbp-shiny">★</span>' : ''}`
     + `<button type="button" class="x-risu-pkbp-quill ${hit({ t: 'scRename' })}" aria-label="${esc(hero.rename)}" title="${esc(hero.rename)}">${QUILL}</button>`
     + (hero.lock ? `<button type="button" class="x-risu-pkbp-quill x-risu-pkbp-lock ${hit({ t: 'scLock' })}"`
       + ` aria-pressed="${hero.lock.locked}" aria-label="${esc(hero.lock.label)}" title="${esc(hero.lock.label)}">${hero.lock.locked ? LOCK_SHUT : LOCK_OPEN}</button>` : '')
@@ -223,7 +233,7 @@ function profileHtml(profile, lang) {
     return row(r.label, r.none ? `<span class="x-risu-pkbp-muted">${esc(r.text)}</span>` : esc(r.text));
   }).join('');
   return `<div class="x-risu-pkbp-sec">${rows}</div>`
-    + sec(profile.ability.label, `<div class="x-risu-pkbp-abn">${esc(profile.ability.name)}</div>${profile.ability.description ? `<div class="x-risu-pkbp-abd">${esc(profile.ability.description)}</div>` : ''}`)
+    + (profile.ability ? sec(profile.ability.label, `<div class="x-risu-pkbp-abn">${esc(profile.ability.name)}</div>${profile.ability.description ? `<div class="x-risu-pkbp-abd">${esc(profile.ability.description)}</div>` : ''}`) : '')
 
     + (profile.friendship ? bondHtml(profile.friendship) : '')
 
@@ -240,9 +250,13 @@ function statsHtml(stats, hit) {
   }).join('');
   const note = stats.note ? `<div class="x-risu-pkbp-foot">${esc(stats.note.text)}</div>` : '';
   const exp = stats.exp;
+
+  const dmax = stats.dmax ? `<div class="x-risu-pkbp-sec x-risu-pkbp-dmsec"><div class="x-risu-pkbp-dml"><span>${esc(stats.dmax.label)}</span><span class="x-risu-pkbp-dmc" role="img" aria-label="${esc(stats.dmax.label)} ${stats.dmax.level}/${stats.dmax.of}">`
+    + Array.from({ length: stats.dmax.of }, (_, i) => `<i${i < stats.dmax.level ? ` style="background:${dmaxLevelColor(i, stats.dmax.of)}"` : ''}></i>`).join('') + '</span></div></div>' : '';
   return sec(stats.title, `<div class="x-risu-pkbp-stg">${cells}</div>${note}`, toggle)
     + (exp ? sec(exp.title, row(exp.labels.total, esc(exp.total)) + row(exp.labels.next, esc(exp.next))
-      + `<div class="x-risu-pkbp-expl"><span>Lv${exp.level}</span><span class="x-risu-pkbp-expb"><span style="width:${Math.round(exp.ratio * 1000) / 10}%"></span></span>${exp.nextLevel ? `<span>Lv${exp.nextLevel}</span>` : ''}</div>`) : '');
+      + `<div class="x-risu-pkbp-expl"><span>Lv${exp.level}</span><span class="x-risu-pkbp-expb"><span style="width:${Math.round(exp.ratio * 1000) / 10}%"></span></span>${exp.nextLevel ? `<span>Lv${exp.nextLevel}</span>` : ''}</div>`) : '')
+    + dmax;
 }
 
 function listHtml(list, lang, hit) {

@@ -2,18 +2,18 @@ import * as sim from '../../engine/browser-engine.mjs';
 import { createOutsideScreens } from '../battle/outside.js';
 import { loadLevelUp, EXP_TABLE } from '../battle/level-tables.js';
 import { PHONE_CSS, isPhone, layoutOf, mountPhoneLayout } from '../battle/phone.js';
-import { pushBack } from '../battle/contextmenu.js';
+import { pushBack } from '../battle/contextmenu.js'; // right click = the screen's B, the name dialog's cancel
 import { mountScreenButtons } from '../battle/screen-buttons.js';
 import { mountLoading } from '../battle/loading.js';
-import { UI_VARS, BAND_CSS, stripX, crossIcon, ringCss, ringOnKeys } from '../battle/ui-css.js';
+import { UI_VARS, BAND_CSS, stripX, crossIcon, ringCss, ringOnKeys } from '../battle/ui-css.js'; // our UI look (same colors and buttons as the battle window)
 import { BOX_NAME_MAX, NICKNAME_MAX, sameNickname } from '../../story/rules.mjs';
-import { viewWords } from '../../view/words.js';
+import { viewWords } from '../../view/words.js'; // the nickname box's words are PokeRogue's rename window's
 import { sayer } from '../../story/screen-text.mjs';
-import { esc, FONT } from '../../story/card.mjs';
+import { esc, FONT } from '../../story/card.mjs'; // the name dialogs: the panel's pixel font (Galmuri)
 import { SHEET_FONT } from '../../story/style.mjs';
 import { loadFont } from '../../view/fonts.js';
 import { CLOSE_EVENT } from '../../view/frame-parts.js';
-import { viewPictureWays } from '../battle/picture-route.js';
+import { viewPictureWays } from '../battle/picture-route.js'; // the picture route the screens' battle view takes (setting panelPicture)
 import { createReplyNotice } from '../../view/reply-notice.js';
 
 function whenShown(view, shown, notice = null) {
@@ -93,8 +93,8 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), volume, 
       + `<div class="frame"><div class="band">${stripX(esc(sayer(shown)('screen.close')))}<span class="grow"></span></div>`
       + '<div class="screen"><div class="stage"></div></div></div>';
     document.body.append(root);
-    const press = key => { try { host.view?.pressKey?.(key); } catch {                     } };
-    const popBack = pushBack(root, () => press('b'));
+    const press = key => { try { host.view?.pressKey?.(key); } catch { /* closed screen */ } };
+    const popBack = pushBack(root, () => press('b')); // right click = the pad's B (nothing while the ball spins - no screen yet)
     const layout = layoutOf({ phone });
     const takeDown = mountPhoneLayout(root, layout, { press, lang: shown });
     const leave = root.querySelector('.leave'), ball = mountLoading(root.querySelector('.screen'), { lang: shown });
@@ -136,9 +136,9 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), volume, 
     return createOutsideScreens({ sim, fetchBytes, levelUp: loadLevelUp, exp: EXP_TABLE, trainer, battleFormat, lang: shown,
       viewOptions: { theme: options.theme, volume, voicePacks, pictureWays: viewPictureWays(options.panelPicture) },
       createView: async viewOptions => {
-        host.loading.show();
+        host.loading.show(); // while the next screen loads (level-up finish: learn move -> evolution)
         const view = await createView(viewOptions);
-        if (host.left) { view.destroy(); throw new Error('Closed'); }
+        if (host.left) { view.destroy(); throw new Error('Closed'); } // closed with X while loading (nobody waits on this work)
         host.view = view;
         host.watch(view);
         return whenShown(view, host.loading.hide, notice);
@@ -152,7 +152,7 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), volume, 
     let host = null, unwatch = () => {};
     try {
       const shown = await lang();
-      host = mountHost(shown);
+      host = mountHost(shown); // even if this fails, the finally below releases busy
       const left = new Promise(resolve => { host.onLeave = resolve; });
 
       const notice = createReplyNotice();
@@ -164,7 +164,8 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), volume, 
       const parent = host.stage;
       const screen = (name, opening) => (...args) => { host.opening(name); return opening(...args); };
       const working = work({
-        summary: screen('summary', (mon, onRename, customItems, onEvolveLock) => screens.openSummary({ parent, mon, customItems, ...(onRename ? { onRename } : {}), ...(onEvolveLock ? { onEvolveLock } : {}) })),
+        summary: screen('summary', (mon, onRename, customItems, onEvolveLock, dynamaxShown, battleGen) => screens.openSummary({ parent, mon, customItems, dynamaxShown, battleGen,
+          ...(onRename ? { onRename } : {}), ...(onEvolveLock ? { onEvolveLock } : {}) })),
         learnMove: screen('learnMove', (mon, move, party) => screens.openLearnMove({ parent, mon, move, party })),
         evolution: screen('evolution', (mon, into, learn) => screens.openEvolution({ parent, mon, into, learn })),
         rememberMove: screen('rememberMove', (mon, moves, party) => screens.openRememberMove({ parent, mon, moves, party })),
@@ -178,7 +179,7 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), volume, 
       const settled = working.catch(error => { if (host.left) return undefined; throw error; });
       return await Promise.race([settled, left.then(viewOpen => (viewOpen ? settled : undefined))]);
     } finally {
-      try { unwatch(); } catch {                       }
+      try { unwatch(); } catch { /* nothing to stop */ }
       host?.remove();
       busy = false;
       await hide(owner);
@@ -193,7 +194,7 @@ export function createPanelScreens({ fetchBytes, settings = () => ({}), volume, 
     const owner = {};
     let answer;
     const answered = new Promise(resolve => { answer = resolve; });
-    const popBack = pushBack(root, () => answer(null));
+    const popBack = pushBack(root, () => answer(null)); // right click outside the field = cancel (in the field: its own menu - paste)
     try {
       const shown = await lang(), say = sayer(shown);
       const t = key => esc(say(key));

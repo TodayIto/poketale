@@ -4,6 +4,7 @@ import { text as baseText, ownText, nameWithAffix } from './text.js';
 import { sideOf } from './read.js';
 import { DEFAULT_LANG } from './lang.js';
 
+/** Lines this module's steps handle (director/steps.js dispatch table) */
 export const RUN_KINDS = ['-story-run', '-story-forfeit'];
 
 export function createRun({ sim, battle, names, wild, lang = DEFAULT_LANG }) {
@@ -22,11 +23,11 @@ export function createRun({ sim, battle, names, wild, lang = DEFAULT_LANG }) {
         escapeVerb: text('battle.escapeVerbFlee'),
       });
     }
-    return text('battle.noEscapeFlee');
+    return text('battle.noEscapeFlee'); // cause of trapping unknown, locked turn, etc.
   }
 
   return {
-
+    /** "Run" in this turn's command menu (view-api.md RunOption) */
     menu() {
       const check = checkRun(battle);
       if (check.ok) return {};
@@ -52,13 +53,13 @@ export function createRun({ sim, battle, names, wild, lang = DEFAULT_LANG }) {
 
     steps({ view, ledger }) {
       const say = (key, values, options = {}) => view.message(text(key, values), options);
-      const plainName = ident => ledger.get(ident).name;
+      const plainName = ident => ledger.get(ident).name; // ability popup name
       const nameOf = ident => affix(plainName(ident), sideOf(ident));
       let ran = false;
       return {
         escaped: () => ran,
         async present({ kind, args: a, kwArgs: kw }) {
-          if (kind === '-story-forfeit') return;
+          if (kind === '-story-forfeit') return; // forfeit: straight to |win| with no text (loss screen - steps.js)
           const result = a[2];
           if (result === 'escaped') {
             ran = true;

@@ -1,7 +1,7 @@
-//   Battle font - CC BY-SA 3.0 per the font's own name table (crystalwalrein, FontStruct) (view/LICENSE-NOTE.md). The subset with its two changed glyphs
-
-//   Galmuri11 - SIL Open Font License 1.1, Copyright (c) 2019-2025 Lee Minseo (data/fonts/OFL-Galmuri11.txt). Source is vendor/galmuri (pinned version fetched by tools/fetch-vendor.sh)
-
+// Battle font: CC BY-SA 3.0. See THIRD-PARTY-NOTICES.md.
+// Modified font subset. See THIRD-PARTY-NOTICES.md 1.8.
+// Galmuri11: SIL Open Font License 1.1. See data/fonts/OFL-Galmuri11.txt.
+// Modified OFL font subset, renamed PkbPixel. Notices are preserved.
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -13,6 +13,7 @@ export const SOURCE = 'vendor/pokerogue/assets/fonts/pokemon-emerald-pro.ttf';
 export const OUT = 'data/fonts/emerald-ko.woff2';
 export const MANIFEST = 'data/fonts/emerald-ko.json';
 
+// Renamed PkbPixel to respect the reserved name. Copyright and OFL notices remain.
 export const GALMURI = Object.freeze({ family: 'PkbPixel', source: 'vendor/galmuri/Galmuri11.ttf', out: 'data/fonts/galmuri11.woff2', manifest: 'data/fonts/galmuri11.json' });
 
 const NAME_JSON = [
@@ -22,7 +23,7 @@ const NAME_JSON = [
 
 const TEXT_JSON = [
 	...LANGS.flatMap(lang => ['text', 'text-bag', 'text-effects', 'text-exp', 'text-summary'].map(name => `director/${name}-${lang}.json`)),
-	...LANGS.map(lang => `view/text-${lang}.json`),
+	...LANGS.map(lang => `view/text-${lang}.json`), // the battle view frame's phrases (view/words.js)
 	...NAME_JSON,
 ];
 
@@ -46,9 +47,9 @@ function collect(json, code, extra = '') {
 	add(extra);
 	return [...cps].sort((a, b) => a - b);
 }
-
+/** Characters the battle font subset must contain (code points, ascending) */
 export const fontText = () => collect(TEXT_JSON, textCode(), phaserTestString());
-
+/** Characters the Galmuri11 subset must contain (code points, ascending) */
 export const galmuriText = () => collect(NAME_JSON, galmuriCode());
 
 function phaserTestString() {
@@ -75,12 +76,12 @@ export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 export function fontCodePoints(bytes) {
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 	const u16 = at => view.getUint16(at), u32 = at => view.getUint32(at);
-	const cmap = Array.from({ length: u16(4) }, (_, i) => 12 + 16 * i).find(at => u32(at) === 0x636d6170);
+	const cmap = Array.from({ length: u16(4) }, (_, i) => 12 + 16 * i).find(at => u32(at) === 0x636d6170); // 'cmap'
 	if (cmap === undefined) throw new Error('글꼴에 cmap 표가 없다');
 	const base = u32(cmap + 8), cps = new Set();
 	for (let i = 0; i < u16(base + 2); i++) {
 		const platform = u16(base + 4 + 8 * i), encoding = u16(base + 6 + 8 * i), at = base + u32(base + 8 + 8 * i);
-		if (!(platform === 0 || (platform === 3 && (encoding === 1 || encoding === 10)))) continue;
+		if (!(platform === 0 || (platform === 3 && (encoding === 1 || encoding === 10)))) continue; // Unicode subtables only
 		if (u16(at) === 4) {
 			const segs = u16(at + 6) / 2, ends = at + 14, starts = ends + 2 * segs + 2, deltas = starts + 2 * segs, ranges = deltas + 2 * segs;
 			for (let s = 0; s < segs; s++) {
@@ -102,10 +103,10 @@ export function fontCodePoints(bytes) {
 }
 
 export function pixelOutline(rows) {
-	const h = rows.length, key = (x, y) => `${x},${y}`, edges = new Map();
+	const h = rows.length, key = (x, y) => `${x},${y}`, edges = new Map(); // "x,y>x,y" -> [from, to]
 	const add = (a, b) => {
 		const back = `${key(...b)}>${key(...a)}`;
-		if (edges.has(back)) edges.delete(back);
+		if (edges.has(back)) edges.delete(back); // shared by two set pixels: inside
 		else edges.set(`${key(...a)}>${key(...b)}`, [a, b]);
 	};
 	rows.forEach((row, r) => [...row].forEach((c, x) => {
@@ -124,11 +125,11 @@ export function pixelOutline(rows) {
 			const [a, b] = edges.get(id);
 			edges.delete(id);
 			points.push(a);
-			const dir = [b[0] - a[0], b[1] - a[1]], turns = [[dir[1], -dir[0]], dir, [-dir[1], dir[0]]];
+			const dir = [b[0] - a[0], b[1] - a[1]], turns = [[dir[1], -dir[0]], dir, [-dir[1], dir[0]]]; // right, straight, left
 			const next = (from.get(key(...b)) ?? []).filter(e => edges.has(e));
 			id = turns.map(([dx, dy]) => next.find(e => e.endsWith(`>${key(b[0] + dx, b[1] + dy)}`))).find(Boolean);
 		}
-
+		// drop points in the middle of a straight run
 		polygons.push(points.filter((p, i) => {
 			const q = points.at(i - 1), n = points[(i + 1) % points.length];
 			return (p[0] - q[0]) * (n[1] - p[1]) !== (p[1] - q[1]) * (n[0] - p[0]);
@@ -204,6 +205,7 @@ function subset({ source, out, manifest: file, text, options, gender, about, fam
 		return;
 	}
 	mkdirSync('data/fonts', { recursive: true });
+	// The whole name table is kept for the license notices
 
 	const noMirror = python(['-c', 'from fontTools.subset import Options; print(hasattr(Options(), "bidi_closure"))']).trim() === 'True' ? ['--no-bidi-closure'] : [];
 	python(['-m', 'fontTools.subset', source, `--unicodes=${cmap}`, '--flavor=woff2', `--output-file=${out}`,

@@ -1,5 +1,5 @@
 // from pokerogue src/field/pokemon.ts (getFieldPositionOffset) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/battle-info/battle-info.ts (setOffset) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/battle-info/player-battle-info.ts (setMini) @ 7d7da4a8 (AGPL-3.0-only)
 
@@ -10,9 +10,10 @@ export const DRAW_ORDER = Object.freeze(['enemy', 'enemy2', 'player', 'player2']
 
 export const teamOf = position => (position === 'player' || position === 'player2' ? 'player' : 'enemy');
 export const isPlayerSide = position => teamOf(position) === 'player';
-
+/** The other position on the same side */
 export const allyOf = position => ({ player: 'player2', player2: 'player', enemy: 'enemy2', enemy2: 'enemy' })[position];
 
+/** Positions used by a battle */
 export const fieldPositions = double => (double ? POSITIONS : SINGLE);
 export function checkPosition(double, position) {
   if (!fieldPositions(double).includes(position)) throw new Error(`Invalid side: ${position}`);

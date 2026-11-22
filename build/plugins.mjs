@@ -1,3 +1,4 @@
+// Shared esbuild plugins, used by the plugin build and the dev server.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { createRequire } from 'node:module';
@@ -85,7 +86,7 @@ function legacyAtlases(files) {
 }
 
 export const FONT_FILES = {
-	BattleViewEmerald: 'data/fonts/emerald-ko.woff2',
+	BattleViewEmerald: 'data/fonts/emerald-ko.woff2', // subset of PokeRogue pokemon-emerald-pro.ttf (tools/build-font.mjs)
 	PkbPixel: 'data/fonts/galmuri11.woff2',
 };
 export const embeddedFonts = {
@@ -109,6 +110,7 @@ function viewPlugin({ pokemonAtlases }) {
 	name: 'embedded-view',
 	setup(b) {
 		embeddedFonts.setup(b);
+		embeddedAnimPack.setup(b);
 		b.onResolve({ filter: /^embedded:view$/ }, () => ({ path: 'view', namespace: 'embedded-view' }));
 		b.onLoad({ filter: /.*/, namespace: 'embedded-view' }, () => {
 			const files = {
@@ -116,13 +118,13 @@ function viewPlugin({ pokemonAtlases }) {
 				statuses: 'images/statuses_ko.json', bg: 'images/ui/bg.json', pb: 'images/pb.json',
 				types: 'images/types_ko.json', categories: 'images/categories.json',
 				battle_stats: 'images/effects/battle_stats.json',
-
+				// Party screen (party-ui-handler.ts)
 				party_slot_main: 'images/ui/party_slot_main.json', party_slot: 'images/ui/party_slot.json',
 				party_pb: 'images/ui/party_pb.json', party_cancel: 'images/ui/party_cancel.json',
 				party_slot_hp_overlay: 'images/ui/party_slot_hp_overlay.json', prompt: 'images/ui/prompt.json',
 				// Stat stage panel (view/ui/battle-stats.js)
 				pbinfo_stat_numbers: 'images/ui/pbinfo_stat_numbers.json', pbinfo_stat: 'images/ui/text_images/ko/battle_ui/pbinfo_stat_ko.json',
-
+				// Terastallize button (command-ui-handler.ts, view/ui/mega-tera.js)
 				button_tera: 'images/ui/button_tera.json',
 
 				numbers_red: 'images/ui/numbers_red.json', summary_moves_cursor: 'images/ui/summary_moves_cursor.json',
@@ -139,7 +141,7 @@ function viewPlugin({ pokemonAtlases }) {
 
 			return { contents: `export const VIEW_ATLASES = ${JSON.stringify(atlases)};\n${pokemonIconsModule()}`
 				+ `\nexport const VIEW_LEGACY_ATLASES = ${JSON.stringify(legacyAtlases(files))};\nexport const LEGACY_UI = ${JSON.stringify(legacyUi())};`
-				+ `\n${fieldAtlasesModule(PR_ASSETS)}`, loader: 'js' };
+				+ `\n${fieldAtlasesModule(PR_ASSETS)}`, loader: 'js' }; // biome and trainer atlases (build/field-atlases.mjs, gzip 26KB)
 		});
 	},
 	};
@@ -148,19 +150,26 @@ export const embeddedView = viewPlugin({ pokemonAtlases: true });
 const embeddedViewBattle = viewPlugin({ pokemonAtlases: false });
 
 export const ANIM_CHUNKS = 16;
+export const OWN_ANIMS = 'view/anims/z';
 let animsCache;
 function animFiles() {
 	return readdirSync(`${PR_ASSETS}/battle-anims`).filter(f => f.endsWith('.json')).sort();
 }
+/** Our anim files (view/anims/z/*.json), name order */
+export function ownAnimFiles() {
+	return existsSync(OWN_ANIMS) ? readdirSync(OWN_ANIMS).filter(f => f.endsWith('.json')).sort() : [];
+}
 export const embeddedAnims = {
 	name: 'embedded-anims',
 	setup(b) {
+		embeddedAnimPack.setup(b);
 		b.onResolve({ filter: /^embedded:anims$/ }, () => ({ path: 'anims', namespace: 'embedded-anims' }));
 		b.onLoad({ filter: /.*/, namespace: 'embedded-anims' }, async () => {
 			if (!animsCache) {
 				const { encodeAnim } = await import('../view/anims/codec.js');
-				const files = animFiles();
-				const parts = files.map(f => Buffer.from(JSON.stringify(encodeAnim(JSON.parse(readFileSync(`${PR_ASSETS}/battle-anims/${f}`, 'utf8'))))));
+				const encode = path => Buffer.from(JSON.stringify(encodeAnim(JSON.parse(readFileSync(path, 'utf8')))));
+				const files = animFiles(), own = ownAnimFiles();
+				const parts = files.map(f => encode(`${PR_ASSETS}/battle-anims/${f}`)), ownParts = own.map(f => encode(`${OWN_ANIMS}/${f}`));
 				const total = parts.reduce((n, part) => n + part.length, 0);
 				const chunks = [[]], ends = [];
 				let size = 0, end = 0;
@@ -170,11 +179,42 @@ export const embeddedAnims = {
 					size += part.length;
 					ends.push(end += part.length);
 				});
-				animsCache = `export const ANIMS_GZ_B64 = ${JSON.stringify(chunks.map(c => gzipSync(Buffer.concat(c.map(i => parts[i])), { level: 9 }).toString('base64')))};
-export const ANIM_FILES = ${JSON.stringify(chunks.map(c => c.map(i => files[i].slice(0, -5)).join(',')).join(';'))};
-export const ANIM_ENDS = ${JSON.stringify(ends)};`;
+				const ownTotal = ownParts.reduce((n, part) => n + part.length, 0), ownChunks = Math.ceil(ownTotal / (total / ANIM_CHUNKS));
+				const prChunks = chunks.length;
+				size = 0;
+				ownParts.forEach((part, i) => {
+					if (i === 0 || size >= ownTotal * (chunks.length - prChunks) / ownChunks) { chunks.push([]); end = 0; }
+					chunks.at(-1).push(files.length + i);
+					size += part.length;
+					ends.push(end += part.length);
+				});
+				const allParts = [...parts, ...ownParts], names = [...files, ...own];
+				animsCache = `export const ANIMS_GZ_B64 = ${JSON.stringify(chunks.map(c => gzipSync(Buffer.concat(c.map(i => allParts[i])), { level: 9 }).toString('base64')))};
+export const ANIM_FILES = ${JSON.stringify(chunks.map(c => c.map(i => names[i].slice(0, -5)).join(',')).join(';'))};
+export const ANIM_ENDS = ${JSON.stringify(ends)};
+export const ANIM_OWN = ${JSON.stringify(own.map(f => f.slice(0, -5)).join(','))};`;
 			}
 			return { contents: animsCache, loader: 'js' };
+		});
+	},
+};
+
+let animPackCache;
+export function animPackFiles() {
+	const out = {};
+	for (const [folder, path] of [['images', 'images/battle_anims'], ['audio', 'audio/battle_anims']]) {
+		const dir = `${OWN_ANIMS}/${folder}`;
+		if (existsSync(dir)) for (const f of readdirSync(dir).sort()) out[`${path}/${f}`] = `${dir}/${f}`;
+	}
+	return out;
+}
+export const embeddedAnimPack = {
+	name: 'embedded-anim-pack',
+	setup(b) {
+		b.onResolve({ filter: /^embedded:anim-pack$/ }, () => ({ path: 'anim-pack', namespace: 'embedded-anim-pack' }));
+		b.onLoad({ filter: /.*/, namespace: 'embedded-anim-pack' }, () => {
+			animPackCache ??= `export const ANIM_PACK_FILES = ${JSON.stringify(Object.fromEntries(Object.entries(animPackFiles()).map(([path, file]) => [path, readFileSync(file).toString('base64')])))};`;
+			return { contents: animPackCache, loader: 'js' };
 		});
 	},
 };
@@ -195,12 +235,19 @@ export const embeddedAnimsJson = {
 	},
 };
 
+export function levelUpBlob() {
+	const read = name => JSON.parse(readFileSync(new URL(`../data/${name}`, import.meta.url), 'utf8'));
+	const latest = read('levelup.json'), past = read('levelup-past.json');
+	const species = Object.fromEntries(Object.entries(latest).map(([id, list]) => [id, past[id] ? [list, past[id]] : [list]]));
+	return Buffer.from(JSON.stringify({ species }));
+}
+
 export const embeddedLevelUp = {
 	name: 'embedded-levelup',
 	setup(b) {
 		b.onResolve({ filter: /^embedded:levelup$/ }, () => ({ path: 'levelup', namespace: 'embedded-levelup' }));
 		b.onLoad({ filter: /.*/, namespace: 'embedded-levelup' }, () => ({
-			contents: `export const LEVELUP_GZ_B64 = ${JSON.stringify(gzipSync(readFileSync(new URL('../data/levelup.json', import.meta.url)), { level: 9 }).toString('base64'))};`,
+			contents: `export const LEVELUP_GZ_B64 = ${JSON.stringify(gzipSync(levelUpBlob(), { level: 9 }).toString('base64'))};`,
 			loader: 'js',
 		}));
 	},
@@ -248,7 +295,7 @@ export function slimNameTable(path) {
 	const keepEn = /species\.json$/.test(path);
 	const keepItemEn = /items\.json$/.test(path);
 	return Object.fromEntries(Object.entries(table).map(([id, r]) => [id, Object.fromEntries(Object.entries({
-		ko: r.ko || undefined, en: r.ko && !keepEn && !(keepItemEn && r.sim === false) ? undefined : r.en, type: r.type, anim: r.anim || undefined,
+		ko: r.ko || undefined, en: r.ko && !keepEn && !(keepItemEn && (r.sim === false || r.move)) ? undefined : r.en, type: r.type, anim: r.anim || undefined,
 		move: r.move, old: r.old, base: r.base, num: keepEn ? r.num : undefined, since: r.since,
 	}).filter(([, v]) => v !== undefined))]));
 }
@@ -354,11 +401,13 @@ export function battleBuildOptions(extra = {}) {
 	};
 }
 
+// Keep license notices after the plugin metadata.
 export const LICENSE_HEADER = `// SPDX-License-Identifier: AGPL-3.0-only
 // License: GNU Affero General Public License v3.0 only (LICENSE in the source)
 // Third-party notices: THIRD-PARTY-NOTICES.md in the source
 `;
 
+// Bundle license notices, Phaser and the plugin.
 export async function buildBattle(extra = {}) {
 	const [phaser, main] = await Promise.all([build(phaserBuildOptions(extra)), build(battleBuildOptions(extra))]);
 	return { code: `${LICENSE_HEADER}${phaser.outputFiles[0].text}\n${main.outputFiles[0].text}`, phaser, main };

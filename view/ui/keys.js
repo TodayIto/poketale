@@ -1,5 +1,5 @@
 // from pokerogue src/configs/inputs/cfg-keyboard-qwerty.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/ui.ts (playSelect / playError) @ 7d7da4a8 (AGPL-3.0-only)
 
 const KEYS = {
@@ -12,8 +12,9 @@ const CODES = {
   KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right', Space: 'ok', KeyZ: 'ok', KeyX: 'back',
 };
 
+/** Key event -> 'up' | 'down' | 'left' | 'right' | 'ok' | 'back' | null */
 export function keyAction(e) {
-  if (e.ctrlKey || e.metaKey || e.altKey) return null;
+  if (e.ctrlKey || e.metaKey || e.altKey) return null; // leave browser shortcuts (Ctrl+W etc.) alone
   return KEYS[e.key] ?? CODES[e.code] ?? null;
 }
 

@@ -5,8 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { BAG_ITEMS, FIELD_ITEMS } from '../engine/bag.mjs';
-import { OUTSIDE_ITEMS, tmId } from '../story/items.mjs';
-import { csv, englishID, gen9Tms, speciesWithCosmeticFormes, toID } from './sources.mjs';
+import { OUTSIDE_ITEMS } from '../story/items.mjs';
+import { DEFAULT_STANDARD, machineId } from '../story/machine-standards.mjs';
+import { csv, englishID, machineTables, speciesWithCosmeticFormes, toID } from './sources.mjs';
 import { aiFormNames, API_FORM_ALIASES } from './ai-forms.mjs';
 import { formRegions } from './form-regions.mjs';
 
@@ -106,7 +107,7 @@ function translate(kind, english) {
 }
 
 const OFFICIAL_SPECIES_KO = {
-  pignite: { ko: '차오꿀', was: '챠오꿀' },
+  pignite: { ko: '차오꿀', was: '챠오꿀' }, // #499
 };
 
 const OFFICIAL_ITEMS_KO = {
@@ -207,12 +208,21 @@ for (const kind of kinds) {
   }
 
   if (kind === 'items') {
-    const prefix = /^(\D+)01$/.exec(api.items.byEnglish.get('tm01') ?? '')?.[1];
-    if (!prefix) throw new Error('PokeAPI 에 기술머신 한국어 이름(tm01)이 없습니다');
-    for (const { number, move } of gen9Tms()) {
-      const id = tmId(number), digits = String(number).padStart(3, '0');
-      if (table[id]) throw new Error(`기술머신 id 가 Showdown 도구와 겹칩니다: ${id}`);
-      table[id] = { ko: `${prefix}${digits}`, en: `TM${digits}`, src: 'pokeapi', sim: false, bag: true, move };
+    const machines = machineTables();
+    const words = { ko: {}, en: {} };
+    for (const list of Object.values(machines)) for (const { kind: machine, item } of list) {
+      const disc = api.items.byNumber.get(item) ?? {};
+      for (const lang of ['ko', 'en']) if (disc[lang]) words[lang][machine] ??= disc[lang].replace(/\s*\d+$/, '');
+    }
+    for (const [std, list] of Object.entries(machines)) for (const { kind: machine, number, move } of list) {
+      const id = machineId(machine, number, std), before = table[id];
+      if (before && machine !== 'tr') throw new Error(`기술머신 id 가 Showdown 도구와 겹칩니다: ${id}`);
+      if (!words.ko[machine] || !words.en[machine]) throw new Error(`PokeAPI 에 ${machine} 이름이 없습니다`);
+      const moveName = tables.moves[move];
+      if (!moveName?.en) throw new Error(`기술머신 ${std} ${machine}${number}: 기술 이름표에 없는 기술 ${move}`);
+      const digits = String(number).padStart(std === DEFAULT_STANDARD ? 3 : 2, '0');
+      table[id] = { ko: `${words.ko[machine]}${digits} ${moveName.ko ?? moveName.en}`, en: `${words.en[machine]}${digits} ${moveName.en}`, src: 'pokeapi',
+        sim: before?.sim ?? false, bag: true, move };
     }
   }
   tables[kind] = table;

@@ -1,8 +1,5 @@
-// Modified for PokeTale on 2026-11-19. See THIRD-PARTY-NOTICES.md.
-// Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
-// Ported from PlayNav (https://github.com/poooooby/PlayNav): src/amie/games/common.lua (THRESHOLDS, REWARDS, rewardList), src/amie/games/berry_picker.lua
-// (rotation, patience, kinds, slots), src/amie/games/head_it.lua with data/head_it_rules.lua (stages, flights, crush / purple / giant balls, hit windows, points, combos),
-// src/amie/games/tile_puzzle.lua (grids, the swap shuffle). PlayNav is MIT License, Copyright (c) 2026 poooooby - THIRD-PARTY-NOTICES.md.
+// Adapted from PlayNav (MIT). See THIRD-PARTY-NOTICES.md.
+// Copyright (c) 2026 poooooby, MIT License. See THIRD-PARTY-NOTICES.md.
 
 import { PUFF_FLAVORS, puffId } from './amie.mjs';
 
@@ -13,6 +10,8 @@ export const DEFAULT_LEVEL = 'normal';
 
 export const GAME_SPEND = 20;
 
+// -- Ratings and prizes ---------------------------------------------------
+
 export const STARS = Object.freeze([0, 1, 2, 3, 4, 4.5, 5]);
 const BERRY = [0, 5, 10, 15, 20, 30, 40];
 
@@ -21,7 +20,7 @@ const THRESHOLDS = {
   head: { easy: [0, 20, 30, 40, 100, 200, 300], normal: [0, 20, 35, 50, 110, 220, 330], hard: [0, 30, 50, 70, 130, 240, 350] },
   tile: { easy: [60, 50, 40, 30, 20, 15], normal: [120, 90, 60, 50, 40, 30], hard: [180, 120, 100, 80, 70, 50] },
 };
-
+/** Prizes per star step: B basic, Fr frosted, Fa fancy, D deluxe */
 const STD = {
   easy: ['1B', '2B', '3B', '4B', '5B', '5B+1Fr', '4B+2Fr'],
   normal: ['1B', '2Fr', '3Fr', '4Fr', '5Fr', '5Fr+1Fa', '4Fr+2Fa'],
@@ -47,6 +46,7 @@ export function starStep(game, level, value) {
 }
 export const starsOf = (game, level, value) => STARS[starStep(game, level, value)];
 
+/** Puff ids a result wins (flavours at random) */
 export function prizesFor(game, level, value, random = Math.random) {
   const spec = REWARDS[game][level][starStep(game, level, value)];
   return spec.split('+').flatMap(part => {
@@ -56,7 +56,7 @@ export function prizesFor(game, level, value, random = Math.random) {
 }
 
 const RECORD_MOST = 99999;
-
+/** A result as its record score: what the card shows (Math.round) */
 export const recordScore = value => Math.round(Number(value) || 0);
 
 export const beatsRecord = (game, score, best) => best == null || (game === 'tile' ? score < best : score > best);
@@ -71,7 +71,7 @@ export const validRecord = ({ game, level, score } = {}) => GAMES.includes(game)
 export const BERRY_RULES = Object.freeze({
   SECONDS: 60, SLOTS: 3, PATIENCE: 3, RISE: 0.22, REST: 0.3, REST_SERVED: 0.2,
   KINDS: Object.freeze({ easy: 3, normal: 5, hard: 7 }),
-
+  // how many ask at once, and how many served before the next row
   ROTATION: Object.freeze([{ n: 1, count: 10 }, { n: 2, count: 15 }, { n: 3, count: Infinity }]),
 });
 
@@ -166,7 +166,7 @@ export const HEAD_RULES = Object.freeze({
   REWIND_MS: 120, HISTORY: 6, MISS_FRAMES: 3, TAP_TOP: 360,
   POINTS: Object.freeze({ good: 1, just: 3, fever: 2 }), CAP: 999,
   MILESTONE: Object.freeze([{ every: 100, points: 100 }, { every: 50, points: 50 }, { every: 10, points: 10 }]),
-
+  // the giant ball headed: these points on top of the score (missed: none)
   BIG_BONUS: Object.freeze({ good: 10, just: 50 }),
 
   CRUSH_MIN_FALL: 300,
@@ -199,7 +199,7 @@ export function headSlotAt(lx, ly, mons) {
   for (let i = 1; i < mons; i++) if (Math.abs(lx - HEAD_RULES.SLOT_X[i]) < Math.abs(lx - HEAD_RULES.SLOT_X[best])) best = i;
   return best;
 }
-
+/** 'just' | 'good' | null for a falling ball at y */
 export function headGrade(y, giant = false) {
   const s = headTestY(y, giant), W = HEAD_RULES.WINDOW;
   if (s >= W.just[0] && s < W.just[1]) return 'just';
@@ -215,7 +215,7 @@ export function createHeadIt(level, random = Math.random) {
   const roll = n => Math.floor(random() * n);
   const row = () => stages[g.stage];
   const flightOf = kind => pattern.flights[{ plain: g.stage, crush: 3 + g.stage, purple: 6, giant: 7 }[kind]];
-
+  // frames until a ball at y falling at v reaches the middle of the just window
   const arriveIn = (y, v, grav) => {
     for (let n = 0; n <= 900; n++) {
       if (headTestY(y) >= JUST_MID) return n;
@@ -223,7 +223,7 @@ export function createHeadIt(level, random = Math.random) {
     }
     return Infinity;
   };
-
+  // how far a ball of flight f falls in n frames
   const fallIn = (f, n) => {
     let v = f[0], y = 0;
     for (let i = 0; i < n; i++) { v += f[1]; y += v; }
@@ -239,7 +239,7 @@ export function createHeadIt(level, random = Math.random) {
     const due = arriveIn(H.SPAWN_Y, f[0], f[1]);
     return g.balls.every(b => b.slot !== slot || b.state !== 'fall' || b.missed || Math.abs(arriveIn(b.y, b.v, b.g) - due) >= H.MIN_GAP_F);
   };
-
+  // the next ball's kind: never two crush balls in a row
   const kindOf = () => {
     if (lastCrush) return 'plain';
     const r = roll(100);

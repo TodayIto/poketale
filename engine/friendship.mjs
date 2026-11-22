@@ -1,8 +1,9 @@
-// Modified for PokeTale on 2026-11-19. See THIRD-PARTY-NOTICES.md.
-// Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
+// Adapted from PlayNav (MIT). See THIRD-PARTY-NOTICES.md.
 // Copyright (c) 2026 poooooby, MIT License. See THIRD-PARTY-NOTICES.md.
-export const FRIENDSHIP_MAX = 255;
 
+/** Friendship runs 0-255 */
+export const FRIENDSHIP_MAX = 255;
+/** Base friendship of a species missing from the table */
 const DEFAULT_FRIENDSHIP = 50;
 
 export const FRIEND_BALL_FRIENDSHIP = 150;
@@ -18,9 +19,9 @@ export const FRIENDSHIP_STEPS_SV = Object.freeze({
 	energypowder: [-5, -5, -10], healpowder: [-5, -5, -10], energyroot: [-5, -5, -10], revivalherb: [-5, -5, -10],
 	expcandyxs: [1, 1, 0], expcandys: [1, 1, 0], expcandym: [2, 1, 0], expcandyl: [3, 2, 0], expcandyxl: [4, 2, 0],
 });
-
+/** Where each table's middle and high bands start: [middle, high] */
 const FRIENDSHIP_BANDS = Object.freeze({ old: Object.freeze([100, 200]), sv: Object.freeze([100, 160]) });
-
+/** Levels the foe must be above a Pokemon for its faint to be faintHigh */
 const FAINT_LEVEL_GAP = 30;
 
 export function friendshipStep(value, kind, sv = false) {
@@ -51,19 +52,27 @@ export function moveFriendship(value, carry, change) {
 	return { value: whole, carry: whole === FRIENDSHIP_MAX ? 0 : thousandths(total - whole) };
 }
 
-export const FOND_FRIENDSHIP = 220;
+// -- Battle benefits (generation 8) --
 
+export const FOND_FRIENDSHIP = 220;
+/** Endure chance (%) by friendship: [from, percent], highest first */
 const ENDURE = [[255, 20], [220, 15], [180, 10]];
 const CURE_PERCENT = 20, EVADE_POINTS = 10;
-const CRIT_ODDS = [0, 24, 8, 2, 1];
-export const enduresPercent = value => ENDURE.find(([from]) => value >= from)?.[1] ?? 0;
 
+const CRIT_ODDS = Object.freeze([0, 24, 8, 2, 1]), CRIT_ODDS_GEN6 = Object.freeze([0, 16, 8, 2, 1]);
+
+export const critOdds = gen => (gen === 6 ? CRIT_ODDS_GEN6 : CRIT_ODDS);
+
+const PERKS_FROM_GEN = 6;
+export const hasPerks = gen => !(gen < PERKS_FROM_GEN);
+export const enduresPercent = value => ENDURE.find(([from]) => value >= from)?.[1] ?? 0;
+/** Whether experience is x1.2 for this friendship */
 export const friendlyExp = value => value >= FOND_FRIENDSHIP;
 
 const states = new WeakMap();
 
 const PRIORITY = Object.freeze({ faint: -1e9 - 1, damage: -1e9 - 2, accuracy: -1e9 - 3, crit: -1e9 - 4 });
-
+/** p1's own Pokemon (not a tag partner's) */
 export const own = (battle, pokemon) => pokemon?.side === battle.sides[0] && !pokemon.m.partner;
 const friendshipOf = (battle, pokemon) => (own(battle, pokemon) ? pokemon.m.friendship : undefined);
 
@@ -89,7 +98,7 @@ export function installFriendship(sim, battle, spec, { exp: table } = {}) {
 		const member = members.get(pokemon.m.uid);
 		pokemon.m.friendship = Number.isInteger(member?.friendship) ? clamp(member.friendship) : baseFriendship(table, battle.dex.species.get(pokemon.m.start.species));
 		pokemon.m.friendshipCarry = isCarry(member?.friendshipCarry) ? member.friendshipCarry : 0;
-		if (friendshipLocked(member)) pokemon.m.friendshipLocked = true;
+		if (friendshipLocked(member)) pokemon.m.friendshipLocked = true; // stepInBattle leaves it as it is
 	}
 
 	if (spec.boss) {
@@ -113,6 +122,8 @@ export function installFriendship(sim, battle, spec, { exp: table } = {}) {
 		const foeLevel = Math.max(0, ...target.foes(true).map(foe => foe.level));
 		stepInBattle(battle, target, foeLevel - target.level >= FAINT_LEVEL_GAP ? 'faintHigh' : 'faint');
 	});
+	// the perks below only from generation 6 (hasPerks)
+	if (!hasPerks(battle.gen)) return state;
 
 	battle.onEvent('Damage', battle.format, PRIORITY.damage, function (damage, target, source, effect) {
 		const value = friendshipOf(battle, target);
@@ -148,7 +159,7 @@ export function installFriendship(sim, battle, spec, { exp: table } = {}) {
 	battle.onEvent('ModifyCritRatio', battle.format, PRIORITY.crit, function (critRatio, source, target, move) {
 		const value = friendshipOf(battle, source);
 		if (value !== FRIENDSHIP_MAX || move.willCrit !== undefined || !(critRatio >= 1 && critRatio < 4)) return;
-		const n = CRIT_ODDS[Math.trunc(critRatio)];
+		const n = critOdds(battle.gen)[Math.trunc(critRatio)];
 		if (battle.randomChance(1, n)) return 4;
 		if (!battle.randomChance(1, n - 1)) return 0;
 		battle.add('-story-friendship', source, 'crit');

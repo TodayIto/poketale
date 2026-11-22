@@ -15,12 +15,13 @@ export const BADGES = freeze(table.badges.map(badge => freeze({ ...badge, kind: 
   picture: badge.picture ? freeze({ ...badge.picture }) : null })));
 const BY_ID = new Map(BADGES.map(badge => [badge.id, badge]));
 
+/** Badge id -> its table entry | null */
 export const badgeById = id => BY_ID.get(id) ?? null;
 
 export const isTrial = badge => badge.kind === 'trial' || badge.kind === 'grand';
 
 export const isChampion = badge => badge.kind === 'champion';
-
+/** One [ko, en] pair in lang (Korean only for 'ko') */
 export const inLang = (pair, lang) => pair[lang === 'ko' ? 0 : 1];
 
 export function earnedBadges(state) {
@@ -29,7 +30,7 @@ export function earnedBadges(state) {
 }
 
 export const badgeCount = state => earnedBadges(state).filter(id => !isChampion(BY_ID.get(id))).length;
-
+/** The earned list with one entry given (earned) or taken away */
 export function withBadge(state, id, earned) {
   const own = new Set(earnedBadges(state));
   if (earned) own.add(id); else own.delete(id);
@@ -52,6 +53,7 @@ export const PRE_STORY = 'PRE-STORY';
 const ERA_ONLY = { unova: [37, 44], unova2: [39, 45] };
 const ERAS = new Map([['1', 'unova'], ['2', 'unova2']]);
 
+/** A real calendar date written YYYY-MM-DD */
 const isDate = text => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
   if (!m) return false;
@@ -151,7 +153,7 @@ function bare(word) {
 }
 
 const leadersOf = badge => (isChampion(badge) ? LEADER_NAMES.champions?.[badge.id] ?? [] : badge.leaders.map(([ko, en], i) => [ko, en, LEADER_NAMES.ja[badge.id]?.[i]]))
-  .map(names => ({ names: names.map(norm).filter(Boolean), letter: /^[a-z]$/i.test(names[1] ?? '') }));
+  .map(names => ({ names: names.map(norm).filter(Boolean), letter: /^[a-z]$/i.test(names[1] ?? '') })); // letter: a one-letter name (N) - whole words only
 
 function namesLeader(leader, written) {
   const whole = norm(written);

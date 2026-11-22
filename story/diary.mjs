@@ -8,6 +8,8 @@ import { customText } from './custom-items.mjs';
 import { sideParts } from './blocks.mjs';
 import { ruleText } from './failure.mjs';
 
+// -- Korean particles (chosen by final consonant) ---------------------
+
 const LETTER_BATCHIM = { L: 'l', R: 'l', M: true, N: true };
 function batchim(word) {
   const text = String(word ?? '').trim().replace(/[)\]"'’”」』>]+$/u, '');
@@ -38,7 +40,7 @@ const quoted = (lang, name, [a, b]) => (lang === 'ko' ? `"${name}"${batchim(name
 
 export const statName = (stat, lang) => (STAT_KEYS.has(stat) ? say(lang, `stat.${stat}`) : stat);
 const STAT_KEYS = new Set([...STATS, 'accuracy']);
-
+/** Words joined into one list in lang (A/B / A, B) */
 export const listOf = (words, lang) => words.join(say(lang, 'diary.listSep'));
 const statList = (list, lang) => (list?.length === STATS.length ? say(lang, 'diary.allStats') : listOf((list ?? []).map(s => statName(s, lang)), lang));
 
@@ -49,7 +51,7 @@ export const natureName = (nature, lang) => (checkLang(lang) === 'ko' ? NATURE_K
 const TYPE_KO = Object.fromEntries(Object.entries(storyNames.types).filter(([k]) => /[가-힣]/.test(k)).map(([ko, en]) => [en, ko]));
 
 export const typeName = (type, lang) => (checkLang(lang) === 'ko' ? TYPE_KO[type] ?? type : type);
-
+/** Money in lang */
 export const moneyText = (amount, lang) => say(lang, 'money', { n: amount });
 const count = (n, lang) => Number(n).toLocaleString(lang);
 
@@ -66,7 +68,7 @@ function nameKit(lang, names) {
     move: id => names.move(id),
     ability: id => names.ability(id),
     mon: who => (who?.egg ? say(lang, 'diary.egg') : who?.name ? who.name : who?.species ? sp(who.species) : who?.ref ?? say(lang, 'diary.mon')),
-
+    /** word + particle in Korean */
     p: (word, pair) => withParticle(lang, word, pair),
   };
 }
@@ -83,8 +85,8 @@ function effectLine(event, lang, k) {
   if (event.kind === 'level') return `Lv${event.from} → ${event.to}`;
   if (event.kind === 'evolve') return t('diary.fx.evolve', { species: k.p(k.sp(event.species), '으로/로') });
   if (event.kind === 'teach') return t('diary.fx.teach', { move: k.move(event.move) });
-
-  if (event.kind === 'evs') return t(event.to > event.from ? 'diary.fx.evs' : 'diary.fx.evsDown', { stat: statName(event.stat, lang) });
+  // Out-of-battle items
+  if (event.kind === 'evs') return t(event.to > event.from ? 'diary.fx.evs' : 'diary.fx.evsDown', { stat: statName(event.stat, lang) }); // how much is hidden (user 2026-11-08)
   if (event.kind === 'exp') return `${t('diary.fx.exp', { n: count(event.amount, lang) })}${event.to > event.from ? `, Lv${event.from} → ${event.to}` : ''}`;
   if (event.kind === 'ability') return t('diary.fx.ability', { from: k.ability(event.from), to: k.ability(event.to) });
   if (event.kind === 'nature') return t('diary.fx.nature', { nature: natureName(event.nature, lang) });
@@ -92,6 +94,8 @@ function effectLine(event, lang, k) {
   if (event.kind === 'ppup') return t('diary.fx.ppUp', { move: k.move(event.move), from: event.from ?? '?', to: event.to ?? '?' });
   if (event.kind === 'tera') return t('diary.fx.tera', { type: typeName(event.type, lang) });
   if (event.kind === 'form') return t('diary.fx.form', { species: k.form(event.species) });
+  if (event.kind === 'gmax') return t(event.on ? 'diary.fx.gmaxOn' : 'diary.fx.gmaxOff');
+  if (event.kind === 'dmaxLevel') return t('diary.fx.dmaxLevel', { from: event.from, to: event.to });
   if (event.kind === 'fuse') return t('diary.fx.fuse', { other: k.p(k.mon(event.other), '과/와'), species: k.form(event.species) });
   if (event.kind === 'unfuse') return t('diary.fx.unfuse', { other: k.mon(event.other) });
   return '';
@@ -101,7 +105,7 @@ export const boxOf = (state, position) => {
   const index = Math.floor(position / BOX_SIZE);
   return { n: index + 1, name: state?.boxNames?.[index] || '' };
 };
-
+/** Default name of box n (from 1) in lang */
 export const boxLabel = (n, lang) => say(lang, 'box.default', { n });
 const boxSent = (box, lang) => (box?.n
   ? say(lang, 'diary.toBox', { box: withParticle(lang, box.name ? `"${box.name}"` : boxLabel(box.n, lang), '으로/로') })
@@ -117,7 +121,7 @@ export function diaryLine(event, lang, names) {
   const who = k.mon(event?.who);
   switch (event?.kind) {
     case 'battle': return battleLine(event, lang, k);
-    case 'line': return event.text;
+    case 'line': return event.text; // made already (commandLines)
     case 'add': {
       const name = event.who?.name ? t('diary.nicknamed', { name: event.who.name, species: k.sp(event.who.species) }) : k.sp(event.who?.species);
       return t('diary.add', { mon: p(`${name} Lv${event.level}`, '을/를'), box: boxSent(event.box, lang) });
@@ -155,9 +159,9 @@ export function diaryLine(event, lang, names) {
     case 'evolve': return t('diary.evolve', { who: p(who, '이/가'), species: p(k.sp(event.species), '으로/로') });
     case 'teach':
       if (event.forget) return t('diary.forgetLearn', { who: p(who, '이/가'), old: p(move(event.forget), '을/를'), move: p(move(event.move), '을/를') });
-      return event.learned ? t('diary.learned', { who: p(who, '이/가'), move: p(move(event.move), '을/를') })
+      return event.learned ? t('diary.learned', { who: p(who, '이/가'), move: p(move(event.move), '을/를') }) // panel level-up wrap-up
         : t('diary.canLearn', { who: p(who, '은/는'), move: p(move(event.move), '을/를') });
-
+    // right panel
     case 'skipmove': return t('diary.skipMove', { who: p(who, '은/는'), move: p(move(event.move), '을/를') });
     case 'noevolve': return t('diary.noEvolve', { who });
     case 'pp': return t('diary.pp', { who });
@@ -173,7 +177,7 @@ export function diaryLine(event, lang, names) {
     case 'money': return event.delta > 0 ? t('diary.moneyGot', { money: p(moneyText(event.delta, lang), '을/를') })
       : t('diary.moneySpent', { money: p(moneyText(-event.delta, lang), '을/를') });
 
-    case 'evs': case 'exp': case 'ability': case 'nature': case 'hypertrain': case 'ppup': case 'tera': case 'form': return `${who}: ${effectLine(event, lang, k)}`;
+    case 'evs': case 'exp': case 'ability': case 'nature': case 'hypertrain': case 'ppup': case 'tera': case 'form': case 'gmax': case 'dmaxLevel': return `${who}: ${effectLine(event, lang, k)}`;
     case 'friendship': return null;
 
     case 'gotEgg': return t('diary.gotEgg', { box: boxSent(event.box, lang) });
@@ -185,7 +189,8 @@ export function diaryLine(event, lang, names) {
     case 'breed': return t('diary.breed', { a: p(k.mon(event.a), '과/와'), b: k.mon(event.b) });
     case 'breedStop': return t('diary.breedStop');
     case 'rest': return t('diary.rest');
-    case 'hatched': return null;
+    case 'hatched': return null; // the hatch screen shown - the hatching has its own line
+    case 'eggReady': return null;
     default: return event?.op ? `(${event.op})` : null;
   }
 }
@@ -193,7 +198,7 @@ export function diaryLine(event, lang, names) {
 export function resultEvents(meta, state = null) {
   if (!meta?.outcome) return [];
   const caught = meta.caught ?? null;
-
+  // records written before the wild flag have a Korean title
   const wild = meta.wild ?? String(meta.title ?? '').startsWith('야생');
   const events = [{ kind: 'battle', outcome: meta.outcome, title: meta.title ?? '', wild, caught, box: caught?.storage ? boxOf(state, caught.storage - 1) : null }];
   for (const e of meta.evolved ?? []) events.push({ kind: 'evolve', who: { species: e.from, name: '' }, species: e.to });
@@ -215,6 +220,8 @@ function battleLine(event, lang, k) {
     default: return null;
   }
 }
+
+// -- HTML -------------------------------------------------
 
 const ICON_BOOK = '<svg viewBox="0 0 18 18" aria-hidden="true"><rect x="4" y="1.8" width="11.5" height="14.4" rx="1.6" fill="#fdf8e8" stroke="currentColor" stroke-width="1.5"/>'
   + '<path d="M7 2v14" stroke="#d8434d" stroke-width="1.2"/><path d="M9 6h4.5M9 9h4.5M9 12h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'
@@ -318,6 +325,7 @@ export function commandLines(turns, results, lang, names, unread = []) {
   return out;
 }
 
+// Sword icon (no text): blade, red guard, grip, pommel
 const ICON_SWORD = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M15.6 2.4 14.9 5.2 7.6 12.5 5.5 10.4 12.8 3.1z" fill="#e3ebf2" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>'
   + '<path d="M4.3 9.5 8.5 13.7" stroke="#d8434d" stroke-width="2.1" stroke-linecap="round"/><path d="M6.3 11.7 3.3 14.7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
   + '<circle cx="2.7" cy="15.3" r="1.2" fill="currentColor"/></svg>';
@@ -325,7 +333,7 @@ const ICON_SWORD = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M15.6 2
 const ICON_GRASS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 21.5C4.8 17 4.6 12 2.6 7.6c4 2.2 5.8 7.4 5.4 13.9zM8 21.5c.7-6.8 2-12.6 4-18 2 5.4 3.3 11.2 4 18zM21.5 21.5c-2.3-4.5-2.1-9.5-.1-13.9-4 2.2-5.8 7.4-5.4 13.9z"'
   + ' fill="#7cc25e" stroke="#23435f" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 9v10" stroke="#3f8a5a" stroke-width="1.4" stroke-linecap="round"/></svg>';
 const FORGE_ICONS = { wild: ICON_GRASS, trainer: ICON_BALL };
-
+/** A confirm-step button's action (x-risu-pkba-) for a kind of battle */
 const forgeAction = kind => `forge${kind}`;
 
 export const forgeKindOf = action => FORGE_KINDS.find(kind => forgeAction(kind) === action);

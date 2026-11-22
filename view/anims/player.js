@@ -1,15 +1,19 @@
 // from pokerogue src/data/battle-anims.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 
 import Phaser from 'phaser';
 import { animation, moveFile } from './data.js';
 import { framePosition, copyPosition, screenCover, backgroundPhase } from './geometry.js';
+import { fitBackground, rangeForX } from './bg-seam.js';
 import { backgroundEnd, hasBackground } from './background.js';
 import { tintState, tintMatrix } from './bg-engine.js';
+import { foregroundFrames, foregroundPictures } from './foreground.js';
 import { delay } from '../lifetime.js';
-import { LoadError } from '../retry.js';
+import { LoadError, timeLimit } from '../retry.js';
 import { isPlayerSide, firstOnSide } from '../positions.js';
 import { setColorMatrix } from '../color-matrix.js';
+import { showsCutIn, playCutIn, prefetchCutIn, CUTIN_SOUND } from './cutin.js';
+import { entry } from '../../names/index.js';
 
 export function toneMatrix([r, g, b, gray]) {
   const q = gray / 255, a = 1 - q;
@@ -21,7 +25,7 @@ const PRIORITY = {
   2: ({ bg, focus }) => (bg ? ['moveAbove', bg] : ['moveBelow', focus]),
   3: ({ focus }) => ['moveAbove', focus],
 };
-const FOCUS = { 1: 'target', 2: 'user' };
+const FOCUS = { 1: 'target', 2: 'user' }; // AnimFocus TARGET/USER
 
 export const AFTER_ANIM_MS = 500;
 
@@ -55,7 +59,40 @@ export class AnimationPlayer {
   }
 
   async playMove(id, side, targetSide, { onSubstitute = false } = {}) {
-    return this.playFile(moveFile(id), side, targetSide, { onSubstitute });
+
+    if (!this.enabled) return; // move animations off: no sprite touched (playFile)
+    return this.playFile(moveFile(id, undefined, this.scene.requireMon(side)?.mon?.speciesId), side, targetSide, { onSubstitute });
+  }
+
+  async zCutIn(side, id) {
+    if (!this.enabled || !showsCutIn(id)) return;
+    await this.cutIn(entry('moves', id).type, side);
+  }
+
+  async cutIn(type, side) {
+    const scene = this.scene;
+
+    const S = scene.options?.quality === 'low' ? 3 : 6;
+
+    const sound = () => scene.audio.play(CUTIN_SOUND, 1, 1).catch(error => {
+      if (error?.name !== 'AbortError') this.diagnostics.add(`Sound failed: ${CUTIN_SOUND}: ${error?.message ?? error}`);
+    });
+    try {
+      await playCutIn(scene, side, type, isPlayerSide(side), { S, sound, delay: ms => delay(scene, ms),
+        timeLimit: (promise, ms) => timeLimit(promise, ms, `Cut-in art timeout ${ms / 1000}s`, scene.life.signal) });
+    } catch (error) {
+      if (scene.life.signal.aborted) throw error; // the battle closed
+      this.diagnostics.add(`Skipped cut-in: ${error?.message ?? error}`);
+    }
+  }
+
+  prefetchCutIn(side) {
+    if (!this.enabled) return false;
+    try {
+      if (!prefetchCutIn(this.scene, side)) return false;
+      this.scene.audio?.load?.(CUTIN_SOUND)?.ready?.catch?.(() => {});
+      return true;
+    } catch { return false; } // e.g. nobody at that position yet
   }
   playCommon(name, side, targetSide = side) {
     if (!/^[a-z0-9-]+$/.test(name)) throw new Error(`Invalid common animation: ${name}`);
@@ -84,22 +121,39 @@ export class AnimationPlayer {
       }
     }
 
-    for (const name of new Set((anim.bgFrames ?? []).map(state => state?.pic).filter(Boolean))) {
+    if (anim.bgFrames?.length) {
+      const names = new Set();
+      for (const state of anim.bgFrames) if (state?.pic) names.add(state.pic);
+      for (const name of names) {
+        textures.push(`anim-bg:${name}`);
+        work.push(assets.image(`anim-bg:${name}`, `images/battle_anims/${encodeURIComponent(name)}.png`, null));
+      }
+    }
+    if (anim.frameTimedEvents) {
+      let previousSound;
+      for (const events of Object.values(anim.frameTimedEvents)) {
+        for (const event of events) {
+          if (event.eventType === 'AnimTimedAddBgEvent' && event.resourceName) {
+            textures.push(`anim-bg:${event.resourceName}`);
+            work.push(assets.image(`anim-bg:${event.resourceName}`, `images/battle_anims/${encodeURIComponent(event.resourceName)}.png`, null));
+          }
+          if (event.eventType === 'AnimTimedSoundEvent' && event.resourceName && event.resourceName !== previousSound) {
+            previousSound = event.resourceName;
+            work.push(audio.load(`battle_anims/${event.resourceName}`).ready);
+          }
+        }
+      }
+    }
+
+    for (const name of foregroundPictures(anim.frameTimedEvents)) {
       textures.push(`anim-bg:${name}`);
       work.push(assets.image(`anim-bg:${name}`, `images/battle_anims/${encodeURIComponent(name)}.png`, null));
-    }
-    for (const event of Object.values(anim.frameTimedEvents ?? {}).flat()) {
-      if (event.eventType === 'AnimTimedAddBgEvent' && event.resourceName) {
-        textures.push(`anim-bg:${event.resourceName}`);
-        work.push(assets.image(`anim-bg:${event.resourceName}`, `images/battle_anims/${encodeURIComponent(event.resourceName)}.png`, null));
-      }
-      if (event.eventType === 'AnimTimedSoundEvent' && event.resourceName) work.push(audio.load(`battle_anims/${event.resourceName}`).ready);
     }
     await Promise.all(work);
     this.resourcesReady.set(anim, textures);
   }
   async playFile(file, side, targetSide, { variant, frameMs = 50, sound = true, onSubstitute = false } = {}) {
-    if (!this.enabled) return;
+    if (!this.enabled) return; // move animations off
     if (this.running) throw new Error('Animation already playing');
 
     const mark = (name, detail) => globalThis.performance?.mark?.(name, { detail: { file, side, ...detail } });
@@ -126,9 +180,13 @@ export class AnimationPlayer {
 
     const cache = [[], [], []], spareEffects = [], tweens = [];
 
-    let bg, bgTint, bgPlane;
+    let bg, bgTint, bgPlane, bgFit = null;
+
+    const bgEventX = Object.values(anim.frameTimedEvents ?? {}).flat().filter(e => e.eventType === 'AnimTimedUpdateBgEvent' && e.bgX !== undefined).map(e => e.bgX * 0.5);
+    const bgScroll = new Map();
+    for (const st of anim.bgFrames ?? []) if (st?.pic) { const r = bgScroll.get(st.pic) ?? [Infinity, -Infinity], v = -st.sx * 0.5; bgScroll.set(st.pic, [Math.min(r[0], v), Math.max(r[1], v)]); }
     const paint = () => {
-      if (bgPlane) bg.setFillStyle(((Math.round(bgTint.r) << 16) | (Math.round(bgTint.g) << 8) | Math.round(bgTint.b)) >>> 0);
+      if (bgPlane) bg.setFillStyle(((Math.round(bgTint.r) << 16) | (Math.round(bgTint.g) << 8) | Math.round(bgTint.b)) >>> 0); // the plane: black + hue x strength
       else setColorMatrix(bg, bgTint.s > 0 ? tintMatrix(bgTint) : null);
     };
     const putBackground = (event, plane) => {
@@ -138,6 +196,7 @@ export class AnimationPlayer {
         ? scene.add.tileSprite((event.bgX ?? 0) - 320, (event.bgY ?? 0) - 284, 896, 576, `anim-bg:${event.resourceName}`)
         : scene.add.rectangle(plane ? -320 : (event.bgX ?? 0) - 320, plane ? -284 : (event.bgY ?? 0) - 284, 896, 576, 0);
       bg.setOrigin(0).setScale(1.25).setAlpha(plane ? 0 : (event.opacity ?? 0) / 255);
+      if (!bgPlane) fitBackground(scene, bg, `anim-bg:${event.resourceName}`, ...rangeForX([event.bgX ?? 0, ...bgEventX]));
     };
 
     let bgKey;
@@ -145,12 +204,14 @@ export class AnimationPlayer {
       const key = state ? state.pic : undefined;
       if (key !== bgKey) {
         if (bg) { bg.destroy(); bg = undefined; }
+        bgFit = null;
         bgKey = key;
         if (state) {
           const [x, y] = state.at;
           bgPlane = !key;
           bg = bgPlane ? scene.add.rectangle(-320, -284, 896, 576, 0) : scene.add.tileSprite(x - 320, y - 284, 896, 576, `anim-bg:${key}`);
           bg.setOrigin(0).setScale(1.25);
+          if (!bgPlane) { const [lo, hi] = bgScroll.get(key) ?? [0, 0]; bgFit = fitBackground(scene, bg, `anim-bg:${key}`, (320 - x) / 1.25 + lo, (640 - x) / 1.25 + hi); }
           scene.field.add(bg); scene.field.moveBelow(bg, (firstOnSide(scene, 'enemy') ?? user).container);
         }
       }
@@ -160,19 +221,49 @@ export class AnimationPlayer {
       paint();
       if (!bgPlane) {
 
-        bg.tilePositionX = -state.sx * 0.5;
+        bg.tilePositionX = bgFit ? bgFit.base + (-state.sx * 0.5) / bgFit.k : -state.sx * 0.5;
         bg.tilePositionY = backgroundPhase(scene.textures.get?.(`anim-bg:${key}`)?.getSourceImage?.()?.height, state.at[1]) - state.sy * 0.5;
+      }
+    };
+
+    const fgStates = foregroundFrames(anim.frameTimedEvents, anim.frames.length);
+    let fgPicture = null, fgPlane = null, fgTint = null;
+    const fgObject = object => { object.setOrigin(0).setScale(1.25).setData('foreground', true); scene.field.add(object); return object; };
+    const clearForeground = () => { fgPicture?.destroy(); fgPlane?.destroy(); fgPicture = fgPlane = fgTint = null; };
+    const drawForeground = state => {
+      if (state.planeOpacity > 0 && !fgPlane) fgPlane = fgObject(scene.add.rectangle(-320, -284, 896, 576, 0));
+      if (fgPlane) {
+        const [r, g, b] = state.planeColor.slice(0, 3).map(v => Math.round((v * state.planeColor[3]) / 255));
+        fgPlane.setFillStyle(((r << 16) | (g << 8) | b) >>> 0).setAlpha(state.planeOpacity / 255).setVisible(state.planeOpacity > 0);
+        scene.field.bringToTop(fgPlane);
+      }
+      const key = state.picture && `anim-bg:${state.picture}`;
+      if (fgPicture && (!key || fgPicture.texture.key !== key)) { fgPicture.destroy(); fgPicture = fgTint = null; }
+      if (key) {
+        fgPicture ??= fgObject(scene.add.tileSprite(-320, -284, 896, 576, key));
+        const phase = backgroundPhase(scene.textures.get?.(key)?.getSourceImage?.()?.height, 0);
+        fgPicture.tilePositionX = state.ox / 2;
+        fgPicture.tilePositionY = phase + state.oy / 2;
+        fgPicture.setAlpha(state.opacity / 255).setVisible(state.opacity > 0);
+        const tint = state.color[3] > 0 ? state.color.join() : null;
+        if (tint !== fgTint) {
+          setColorMatrix(fgPicture, tint && tintMatrix(tintState(state.color)));
+          fgTint = tint;
+        }
+        scene.field.bringToTop(fgPicture);
       }
     };
     if (opposite) { [user, target] = [target, user]; shown.reverse(); }
     const originals = [...new Set([user.getSprite(), target.getSprite()])];
     const visible = originals.map(s => s.visible);
-    const priorities = [];
+    const priorities = []; // current priority per graphic slot (source spritePriorities)
     const setPriority = (sprite, frame) => {
       const front = (firstOnSide(scene, 'enemy') ?? firstOnSide(scene, 'player')).container;
       const [move, anchor] = PRIORITY[frame.priority]?.({ bg, front, focus: actors[FOCUS[frame.focus]] }) ?? [];
-      if (anchor && scene.field.exists(anchor)) scene.field[move](sprite, anchor);
-      else scene.field.bringToTop(sprite);
+
+      const field = scene.field;
+      if (anchor && (field.exclusive ? anchor.parentContainer === field : field.exists(anchor))) field[move](sprite, anchor);
+      else field.bringToTop(sprite);
     };
     const eventAt = event => {
       if (event.eventType === 'AnimTimedSoundEvent') {
@@ -188,7 +279,10 @@ export class AnimationPlayer {
         putBackground(event, plane);
 
         if (event.resourceName && !plane) bg.tilePositionY = backgroundPhase(scene.textures.get?.(`anim-bg:${event.resourceName}`)?.getSourceImage?.()?.height, event.bgY ?? 0);
-        scene.field.add(bg); scene.field.moveBelow(bg, (firstOnSide(scene, 'enemy') ?? user).container);
+        scene.field.add(bg);
+
+        if (anim.bgFront) scene.field.bringToTop(bg);
+        else scene.field.moveBelow(bg, (firstOnSide(scene, 'enemy') ?? user).container);
         if (plane) eventAt(event);
       } else if (event.eventType === 'AnimTimedUpdateBgEvent' && bg) {
         const config = { targets: bg, duration: (event.duration ?? 0) * frameMs };
@@ -219,7 +313,8 @@ export class AnimationPlayer {
           if (kind === 0 && user === target) continue;
           const i = counts[kind]++;
           let sprite = cache[kind][i];
-          const mon = kind === 0 ? user : target, sourceSprite = mon.getSprite();
+          const mon = kind === 0 ? user : target;
+          const sourceSprite = kind === 2 ? null : mon.getSprite(); // only Pokemon copies (0, 1) draw the mon's picture
           if (!sprite) {
             sprite = kind === 2 ? spareEffects.pop() : null;
             if (sprite) {
@@ -227,12 +322,15 @@ export class AnimationPlayer {
 
               scene.field.bringToTop(sprite);
             } else {
-              sprite = kind === 2 ? scene.add.sprite(0, 0, `anim:${anim.graphic}`, frame.graphicFrame)
-                : scene.add.sprite(0, 0, sourceSprite.texture.key, sourceSprite.frame.name);
+
+              sprite = kind === 2 ? scene.add.image(0, 0, `anim:${anim.graphic}`, frame.graphicFrame)
+                : scene.add.image(0, 0, sourceSprite.texture.key, sourceSprite.frame.name);
 
               sprite.setOrigin(0.5); scene.field.add(sprite);
             }
             cache[kind][i] = sprite;
+
+            if (kind !== 2 && i === 0) mon.animCopy = sprite;
             if (kind === 2) priorities[i] = 1;
           }
 
@@ -247,7 +345,7 @@ export class AnimationPlayer {
           }
           const pos = framePosition(frame, user, target, cover.has(frame));
           const scale = kind === 2 ? 1 : mon.getSpriteScale();
-          const { x, y } = kind === 2 ? pos : copyPosition(pos, mon);
+          const { x, y } = kind === 2 ? pos : copyPosition(pos, mon, sourceSprite);
           const scaleX = pos.scaleX * scale, scaleY = pos.scaleY * scale, alpha = (frame.opacity ?? 0) / 255;
           const visible = !!frame.visible && (kind === 2 || shown[kind]);
           const blend = frame.blendType === 1 ? Phaser.BlendModes.ADD : frame.blendType === 2 ? Phaser.BlendModes.DIFFERENCE : Phaser.BlendModes.NORMAL;
@@ -271,10 +369,14 @@ export class AnimationPlayer {
             cache[k].splice(i, 1); if (k === 2) priorities.splice(i, 1);
           }
         }
-        for (const event of anim.frameTimedEvents?.[f] ?? []) eventAt(event);
+        const events = anim.frameTimedEvents?.[f]; // most frames have none
+        if (events != null) for (const event of events) eventAt(event);
+        if (anim.bgFront && bg) scene.field.bringToTop(bg);
+        if (fgStates) drawForeground(fgStates[f]);
         if (anim.bgFrames) showOriginal(anim.bgFrames[f]);
         if (frameMs) await delay(scene, frameMs);
       }
+      clearForeground(); // the original's foreground ends with the last frame
       if (anim.bgFrames) {
 
         for (let f = anim.frames.length; f < anim.bgFrames.length; f++) {
@@ -290,9 +392,11 @@ export class AnimationPlayer {
     } finally {
       tweens.forEach(t => t.remove());
       if (bg) { scene.tweens.killTweensOf(bg); bg.destroy(); }
+      clearForeground();
       for (const sprites of cache) for (const s of sprites) s.destroy();
       for (const s of spareEffects) s.destroy();
       originals.forEach((s, i) => { if (s.scene) s.setVisible(visible[i]); });
+      user.animCopy = null; target.animCopy = null;
       this.running = false;
       mark('pb:anim-end', { framesAt });
     }

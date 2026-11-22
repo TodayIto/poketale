@@ -12,6 +12,7 @@ import { BASE_TEXT, z } from './panel-zoom.mjs';
 import { screenCss, screenHtml, screenSheets } from './panel-screens-html.mjs';
 import { ringSvg, RING_ICON, RING_COLOR } from './gauge-ring.mjs';
 import { ENJOY_MAX } from './amie.mjs';
+import { discMarkSvg } from './disc-mark.mjs';
 import { SHORTCUT_ART, shortcutArt } from './panel-art.mjs';
 import { PICKS, TALE_ROWS } from './panel.mjs';
 
@@ -25,6 +26,7 @@ const monImg = src => `<img${src === null ? '' : ` src="${esc(src)}"`} alt="" lo
 const PR_BASE = 'https://raw.githubusercontent.com/pagefaultgames/pokerogue-assets/37789817134f881da0a038af21991ccc93a66372/';
 export const PR_ITEMS = `${PR_BASE}images/items.png`;
 
+// -- Icons (hand-drawn SVG) ---------------------------------
 export const ICON = {
   // Poke Ball for the party tab; box and bag icons
   party: ICON_BALL,
@@ -35,7 +37,7 @@ export const ICON = {
     + '<path d="M4.6 9.8A3.6 3.6 0 0 1 8.2 6.2h7.6a3.6 3.6 0 0 1 3.6 3.6v9.1a2.1 2.1 0 0 1-2.1 2.1H6.7a2.1 2.1 0 0 1-2.1-2.1z" fill="#e9b24c" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
     + '<path d="M4.6 12h14.8" stroke="currentColor" stroke-width="2"/><rect x="10" y="10.2" width="4" height="4" rx="1" fill="#fff" stroke="currentColor" stroke-width="1.7"/>'
     + '<path d="M8 16.4v2.4M16 16.4v2.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
-
+  // Settings (in the place petting had): a gear with eight teeth
   settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.7 9.5L21.3 9.7L21.3 14.3L18.7 14.5L18.6 15L20.2 17L17 20.2L15 18.6L14.5 18.7L14.3 21.3L9.7 21.3L9.5 18.7L9 18.6L7 20.2'
     + 'L3.8 17L5.4 15L5.3 14.5L2.7 14.3L2.7 9.7L5.3 9.5L5.4 9L3.8 7L7 3.8L9 5.4L9.5 5.3L9.7 2.7L14.3 2.7L14.5 5.3L15 5.4L17 3.8L20.2 7L18.6 9z" fill="#fff" stroke="#23435f" stroke-width="1.8" stroke-linejoin="round"/>'
     + '<circle cx="12" cy="12" r="3.1" fill="#cfe0ec" stroke="#23435f" stroke-width="1.8"/></svg>',
@@ -45,20 +47,20 @@ export const ICON = {
   train: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12h8" stroke="#23435f" stroke-width="2.4" stroke-linecap="round"/>'
     + '<rect x="4.2" y="6.4" width="3.8" height="11.2" rx="1.3" fill="#fff" stroke="#23435f" stroke-width="2"/><rect x="16" y="6.4" width="3.8" height="11.2" rx="1.3" fill="#fff" stroke="#23435f" stroke-width="2"/>'
     + '<path d="M2.4 10v4M21.6 10v4" stroke="#23435f" stroke-width="2.2" stroke-linecap="round"/></svg>',
-
+  // Travel (every chat - its sub-tabs: journey, Pokedex, badges): a compass
   travel: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.6" fill="#fff" stroke="#23435f" stroke-width="2"/>'
     + '<path d="M12 4.6l2.7 7.4H9.3z" fill="#d8434d" stroke="#23435f" stroke-width="1.4" stroke-linejoin="round"/>'
     + '<path d="M12 19.4l-2.7-7.4h5.4z" fill="#cfe0ec" stroke="#23435f" stroke-width="1.4" stroke-linejoin="round"/><circle cx="12" cy="12" r="1.3" fill="#23435f"/></svg>',
-
+  // Back to battle (only when there is a folded battle - the fourth tab)
   resume: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>',
-
+  // Aux model switch (below the back-to-battle tab): a chat bubble with a spark
   aux: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.2A2.2 2.2 0 0 1 5.2 6h9.6A2.2 2.2 0 0 1 17 8.2v6.6a2.2 2.2 0 0 1-2.2 2.2H9.6L6 20.2V17h-.8A2.2 2.2 0 0 1 3 14.8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
     + '<circle cx="7.4" cy="11.5" r="1.1" fill="currentColor"/><circle cx="10" cy="11.5" r="1.1" fill="currentColor"/><circle cx="12.6" cy="11.5" r="1.1" fill="currentColor"/>'
     + '<path d="M19.4 1.8l.9 2.5 2.5.9-2.5.9-.9 2.5-.9-2.5-2.5-.9 2.5-.9z" fill="currentColor"/></svg>',
-
+  // Breeding pill on the party tab: an egg with spots
   egg: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8c2.8 0 4.9 3.9 4.9 7.1a4.9 4.9 0 0 1-9.8 0C3.1 5.7 5.2 1.8 8 1.8z" fill="none" stroke="currentColor" stroke-width="1.7"/>'
     + '<circle cx="6.4" cy="9.4" r="1.1" fill="currentColor"/><circle cx="9.5" cy="7.3" r=".95" fill="currentColor"/></svg>',
-
+  // Rest pill on the party tab: a campfire - a flame over two crossed logs
   rest: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.2c.5 1.9 3.1 3 3.1 5.8A3.1 3.1 0 0 1 4.9 7c0-1.4.7-2.2 1.4-2.9.1 1 .6 1.6 1.3 1.8C7.2 4.4 7.3 2.6 8 1.2z" fill="currentColor"/>'
     + '<path d="M2.6 14.4l10.8-3.3M13.4 14.4L2.6 11.1" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>',
 
@@ -76,9 +78,9 @@ export const ICON = {
   next: '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M5 2.5v11L12.5 8z"/></svg>',
 
   go: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-
+  // Debug mode "+" (make a Pokemon / put items in)
   add: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
-
+  // Debug mode heal (the whole party, like a Pokemon Center): a heart
   heal: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13.6L2.7 8.4A3.1 3.1 0 0 1 8 4.3a3.1 3.1 0 0 1 5.3 4.1z" fill="currentColor"/></svg>',
 };
 const tabLabel = (tab, lang) => esc(say(lang, `panel.tab.${tab}`));
@@ -86,6 +88,7 @@ const tabLabel = (tab, lang) => esc(say(lang, `panel.tab.${tab}`));
 export const TAB_COLOR = { party: '#d8434d', box: '#3d7196', bag: '#c98a1d', travel: '#2f9a6e', settings: '#5f7a91' };
 const PICK_COLOR = { amie: '#e0719a', train: '#e07a32' };
 
+// -- CSS --------------------------------------------------
 const C = '.x-risu-pkbp';
 
 export const REST_GLOW_MS = 700;
@@ -158,16 +161,16 @@ const CSS = [
   `${C}{position:fixed;right:0;top:${topAt(W.top)};--pkbp-max:${maxBelow('100vh', W.top)};z-index:45;display:flex;align-items:flex-start;--pkbp-z:${W.text / BASE_TEXT};`
     + `font-family:${FONT};font-weight:400;font-size:${z(BASE_TEXT)};line-height:1.35;color:#23435f;letter-spacing:0;text-align:left;`
 
-    + `${foldFit(FD.min, TB.w)}--pkbp-th:${TB.h}px;transform:translateX(calc(100% - var(--pkbp-tw) - var(--pkbp-fg)));transition:transform .2s ease-out;`
+    + `${foldFit(FD.min, TB.w)}--pkbp-th:${TB.h}px;transform:translateX(calc(100% - var(--pkbp-tw) - var(--pkbp-fg)));transition:transform .2s ease-out,z-index 0s linear .2s;`
 
     + `pointer-events:none;}`,
-
+    // Open: slid in, over the chat
   `${DVH}{${C}{--pkbp-max:${maxBelow('100dvh', W.top)};}}`,
-  `${C}${C}-open{--pkbp-tw:${TB.w}px;transform:none;z-index:1100;pointer-events:auto;}`,
-  `${C}-tab,${C}-offer{pointer-events:auto;}`,
-  `${C}${C}-gone{display:none;}`,
+  `${C}${C}-open{--pkbp-tw:${TB.w}px;transform:none;z-index:1100;pointer-events:auto;transition:transform .2s ease-out;}`, // opening: the layer rises at once
+  `${C}-tab,${C}-offer{pointer-events:auto;}`, // the menu bar: only while gathered (below)
+  `${C}${C}-gone{display:none;}`, // hidden while keeping the shell (chat where the panel is off)
   `${C} *{box-sizing:border-box;}`,
-  `:where(${C}) button{font:inherit;margin:0;color:#1d3347;}`,
+  `:where(${C}) button{font:inherit;margin:0;color:#1d3347;}`, // :where - so the per-class colours below win
   `${C} button:focus{outline:none;} ${C} button:focus-visible{outline:2px solid #ffcf4a;outline-offset:1px;}`,
 
   `${C}{-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;} ${C} input,${C} textarea{user-select:text;-webkit-user-select:text;}`,
@@ -202,7 +205,7 @@ const CSS = [
   `${C}-mbc2{z-index:0;left:0;top:-${MB.rise * 2}px;bottom:${MB.rise * 2 + 4}px;background:${TAB_COLOR.party};box-shadow:-2px 3px 0 #1a3247;}`,
   `${C}-mbar ${C}-bang{z-index:3;top:-${MB.rise * 2 + 3}px;left:-2px;}`,
   `${C}-mbar:active ${C}-mbf{transform:translateY(2px);box-shadow:-2px 1px 0 #1a3247;}`,
-
+    // pressed in its whole row up to the window's right edge (as a folded tab)
   `${C}-mbar::after{content:"";position:absolute;z-index:3;left:-${MB.reach}px;right:calc(0px - var(--pkbp-fg));top:-${MB.rise * 2 + MB.reach}px;bottom:-${TB.gap / 2 + MB.reach}px;}`,
 
   `${C}-drop{display:flex;flex-direction:column;gap:${TB.gap}px;align-items:inherit;}`,
@@ -255,7 +258,7 @@ const CSS = [
   `${C}-stpar{background:#c9a512;} ${C}-stbrn{background:#d8602b;} ${C}-stslp{background:#7d8a96;} ${C}-stfrz{background:#4aa6cf;} ${C}-stpsn,${C}-sttox{background:#9b4fb0;}`,
   `${C}-stfnt{background:#7f8b95;}`,
   `${C}-held{display:inline-block;width:8px;height:8px;border-radius:50%;background:#e9b24c;box-shadow:inset 0 0 0 1.5px #a5741c;}`,
-
+    // Emoji: a custom item's picture (held mark in a slot, bag row picture)
   `${C}-emo{font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif;font-style:normal;line-height:1;}`,
   `${C}-heldemo{font-size:${z(10)};}`,
 
@@ -266,7 +269,7 @@ const CSS = [
   `${C}-add svg{display:block;width:10px;height:10px;}`,
   `${C}-exp{display:block;height:3px;margin-top:1px;border-radius:2px;background:#d4dfe7;overflow:hidden;}`,
   `${C}-exp span{display:block;height:100%;background:#4aa3e8;}`,
-
+    // Level up up-arrow n: yellow badge, grey during battle
   `${C}-badge{position:absolute;top:-8px;right:-7px;z-index:1;padding:0 4px;border:1.5px solid #c09a2c;border-radius:6px;background:#ffd84a;color:#6b4a00;font:${z(10)}/1.4 sans-serif;cursor:pointer;}`,
   `${C}-badge${C}-off{background:#d5dbe0;color:#6b7a86;border-color:#a6b0b8;cursor:default;}`,
 
@@ -324,7 +327,7 @@ const CSS = [
   `${C}-pairx svg{display:block;width:11px;height:11px;}`,
   `${C}-pairx:active{transform:translateY(2px);box-shadow:none;}`,
   `${C}-pairx${C}-off{color:#a9b5be;border-color:#c3cfd8;box-shadow:none;cursor:default;}`,
-
+    // Box 6x5 (slot border #789db7 + shadow #466c87)
   `${C}-boxhd{display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:8px;}`,
   `${C}-nav{display:flex;align-items:center;justify-content:center;width:${z(28)};height:${z(26)};padding:0;border:2px solid #789db7;border-radius:7px;background:#fff;color:#23435f;box-shadow:0 2.5px 0 #466c87;cursor:pointer;}`,
   `${C}-nav svg{width:12px;height:12px;display:block;}`,
@@ -342,7 +345,7 @@ const CSS = [
   `${C}-lbp svg{display:block;width:12px;height:12px;}`,
   `${C}-lbp${C}-on{background:${TAB_COLOR.box};color:#fff;border-color:#23435f;}`,
   `${C}-lbp:active{transform:translateY(1px);box-shadow:none;}`,
-
+  // a fossil in research: a small yellow light on the pill
   `${C}-lbn{display:block;width:7px;height:7px;margin-left:2px;border-radius:50%;background:#ffd84a;box-shadow:0 0 0 1.5px #23435f;}`,
 
   `${C}-lbm{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:${z(84)};margin-bottom:8px;padding:10px;`
@@ -367,7 +370,7 @@ const CSS = [
 
   `${C}-bc{position:relative;}`,
   `${C}-bcn{position:absolute;top:1px;right:1px;z-index:1;padding:0 3px;border:1.5px solid #c09a2c;border-radius:6px;background:#ffd84a;color:#6b4a00;font:${z(9)}/1.3 sans-serif;pointer-events:none;}`,
-
+    // Bag
   `${C}-money{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding:6px 10px;border:2px solid #789db7;border-radius:9px;background:#fff;color:#23435f;box-shadow:0 2.5px 0 #466c87;}`,
   `${C}-money span{font-size:${z(12)};color:#5d7486;} ${C}-money b{font-size:${z(14)};color:#14304a;}`,
   `${C}-grp{margin:8px 2px 4px;font-size:${z(11)};color:#5d7486;letter-spacing:.05em;}`,
@@ -381,6 +384,9 @@ const CSS = [
 
   `${C}-icpa{position:absolute;left:0;top:0;width:32px;height:32px;transform:scale(.75);transform-origin:0 0;}`,
   `${C}-icpa img{position:absolute;left:1px;top:1px;width:30px;height:30px;max-width:none;image-rendering:pixelated;}`,
+
+  `${C}-icgen{position:absolute;right:3px;bottom:1px;display:block;width:9px;height:11px;}`,
+  `${C}-icgen svg{display:block;width:100%;height:100%;}`,
   `${C}-icdot{display:block;width:14px;height:14px;margin:5px;border-radius:50%;background:#e9b24c;box-shadow:inset 0 0 0 2px #a5741c;}`,
   `${C}-icem{display:flex;align-items:center;justify-content:center;font-size:${z(19)};}`,
   `${C}-itn{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}`,
@@ -468,6 +474,8 @@ const CSS = [
   `${C}-tall:active{transform:translateY(2px);box-shadow:0 1px 0 #466c87;}`,
 
   `${C}-go{flex:none;display:flex;gap:8px;margin:0 10px;padding:4px 0 11px;}`,
+
+  `${C}-tail{margin:10px -10px -10px;}`,
   `${C}-gob{position:relative;flex:1 1 0;min-width:0;display:flex;align-items:center;height:${z(56)};padding:0 6px 0 11px;border:2.5px solid #23435f;border-radius:11px;`
     + `overflow:hidden;color:#14304a;box-shadow:0 3px 0 #1a3247;cursor:pointer;text-align:left;}`,
   `${C}-gob:active{transform:translateY(2px);box-shadow:0 1px 0 #1a3247;}`,
@@ -506,6 +514,8 @@ const CSS = [
 ].join(' ');
 
 export const COMPAT_TABS_CSS = `${Object.values(COMPAT_TABS).map(name => `.x-risu-${name}`).join(',')}{display:none !important;}`;
+
+// -- Drawing -----------------------------------------------
 
 const TABS_CLASS = 'x-risu-pkbp-tabs', SHEET_CLASS = 'x-risu-pkbp-sheet', ART_CLASS = 'x-risu-pkbp-art';
 
@@ -595,7 +605,8 @@ export function renderPanel(model, { aux = null, picture = directPicture, shift 
     } else {
 
       out.push(`<div class="${cls('x-risu-pkbp-bd', sub === 'badge' && !model.badges.open && 'x-risu-pkbp-bdg')}">`);
-      if (model.tab === 'party') out.push(partyHtml(model, hit, picture, rested));
+
+      if (model.tab === 'party') out.push(partyHtml(model, hit, picture, rested), `<div class="x-risu-pkbp-tail">${debugRow(model, hit)}${goRow(model, hit)}</div>`);
       else if (model.tab === 'box') out.push(model.lab?.open ? labHtml(model, hit, picture) : boxHtml(model, hit, picture, hover));
       else if (model.tab === 'settings') out.push(model.setSub === 'bot' ? botSettingsHtml(model, hit) : taleHtml(model, hit, tale));
       else if (sub === 'trip') out.push(travelHtml(model, hit));
@@ -603,8 +614,7 @@ export function renderPanel(model, { aux = null, picture = directPicture, shift 
       else out.push(bagHtml(model, hit, picture));
       out.push('</div>');
     }
-    out.push(debugRow(model, hit));
-    if (model.tab === 'party') out.push(goRow(model, hit));
+    if (model.tab !== 'party') out.push(debugRow(model, hit));
 
     if (sub) out.push(`<div class="x-risu-pkbp-wslot">${SLOT.win}</div>`);
     else if (model.window) out.push(windowHtml(model.window, hit, lang));
@@ -663,6 +673,7 @@ const heldMark = (held, lang) => {
   return held.emoji ? `<span class="x-risu-pkbp-emo x-risu-pkbp-heldemo" title="${title}">${esc(held.emoji)}</span>` : `<span class="x-risu-pkbp-held" title="${title}"></span>`;
 };
 
+/** A slot's status chip: fainted, or its status condition ('' for none) */
 const statusMark = (slot, lang) => (slot.fainted ? `<span class="x-risu-pkbp-st x-risu-pkbp-stfnt">${esc(say(lang, 'panel.fainted'))}</span>`
   : slot.status ? `<span class="x-risu-pkbp-st x-risu-pkbp-st${slot.status}">${esc(statusShort(slot.status, lang))}</span>` : '');
 
@@ -678,9 +689,13 @@ function partyHtml(model, hit, picture, rested) {
     if (!slot) return `<div class="x-risu-pkbp-cell"><div class="x-risu-pkbp-empty">${t('panel.empty')}</div></div>`;
     const picked = model.picked === slot.uid;
 
+    const badge = () => (slot.badge ? (model.locked
+      ? `<span class="x-risu-pkbp-badge x-risu-pkbp-off">▲${slot.badge}</span>`
+      : `<button type="button" class="x-risu-pkbp-badge ${hit({ t: 'badge', uid: slot.uid })}" aria-label="${t('panel.levelUp')}" title="${t('panel.levelUp')}">▲${slot.badge}</button>`) : '');
+
     if (slot.egg) {
       return `<div class="x-risu-pkbp-cell"><button type="button" class="x-risu-pkbp-slot${i === 0 ? ' x-risu-pkbp-lead' : ''}${picked ? ' x-risu-pkbp-picked' : ''}${model.breedPick || model.fusePick ? ' x-risu-pkbp-off' : ''} ${hit({ t: 'slot', where: 'party', uid: slot.uid })}">`
-        + `<span class="x-risu-pkbp-pic">${monImg(picture(slot))}</span><span class="x-risu-pkbp-info"><span class="x-risu-pkbp-nm"><span class="x-risu-pkbp-nmt">${esc(slot.name)}</span></span></span></button></div>`;
+        + `<span class="x-risu-pkbp-pic">${monImg(picture(slot))}</span><span class="x-risu-pkbp-info"><span class="x-risu-pkbp-nm"><span class="x-risu-pkbp-nmt">${esc(slot.name)}</span></span></span></button>${badge()}</div>`;
     }
     const status = statusMark(slot, lang);
     const width = slot.maxhp ? Math.round(slot.hp / slot.maxhp * 1000) / 10 : 0;
@@ -698,11 +713,7 @@ function partyHtml(model, hit, picture, rested) {
       + `<span>Lv${slot.level}${slot.held ? heldMark(slot.held, lang) : ''}</span></span>`
       + (slot.exp === null ? '' : `<span class="x-risu-pkbp-exp"><span style="width:${Math.round(slot.exp * 1000) / 10}%"></span></span>`)
       + '</span></button>';
-
-    const badge = slot.badge ? (model.locked
-      ? `<span class="x-risu-pkbp-badge x-risu-pkbp-off">▲${slot.badge}</span>`
-      : `<button type="button" class="x-risu-pkbp-badge ${hit({ t: 'badge', uid: slot.uid })}" aria-label="${t('panel.levelUp')}" title="${t('panel.levelUp')}">▲${slot.badge}</button>`) : '';
-    return `<div class="x-risu-pkbp-cell">${slotHtml}${healed ? sparks() : ''}${mark}${badge}</div>`;
+    return `<div class="x-risu-pkbp-cell">${slotHtml}${healed ? sparks() : ''}${mark}${badge()}</div>`;
   });
 
   const bring = model.offer?.button ? `<button type="button" class="x-risu-pkbp-bring ${hit({ t: 'offer' })}">${t('panel.offer.button')}</button>` : '';
@@ -733,7 +744,7 @@ function pickHtml(model, hit, picture) {
       + `<span class="x-risu-pkbp-nm"><span class="x-risu-pkbp-nmt">${esc(slot.name)}</span>${genderMark(slot.gender, lang, slot.name)}</span>`
       + `<span class="x-risu-pkbp-r"><span>Lv${slot.level}${slot.fainted ? `<span class="x-risu-pkbp-st x-risu-pkbp-stfnt">${t('panel.fainted')}</span>` : ''}</span>`
       + `${amie && model.debug ? `<span class="x-risu-pkbp-enj">${t('panel.amieEnjoy', { n: slot.enjoy })}</span>` : ''}</span></span>`;
-
+    // its enjoyment: the small ring on the slot's corner (gauge only - petting)
     const ring = amie ? `<span class="x-risu-pkbp-ering" role="img" title="${t('amie.enjoy')}" aria-label="${t('amie.enjoy')}">${ringSvg('enjoy', slot.enjoy / ENJOY_MAX)}<i>${RING_ICON.enjoy}</i></span>` : '';
     return `<div class="x-risu-pkbp-cell">${ring}${slot.off
       ? `<span class="x-risu-pkbp-slot x-risu-pkbp-off" aria-disabled="true">${inner}</span>`
@@ -759,7 +770,7 @@ function switchRow(lang, label, on, press, { off = false, sub = false } = {}) {
   return off ? `<span class="${look}" role="switch" aria-disabled="true" ${state}>${inner}</span>`
     : `<button type="button" class="${look} ${press()}" role="switch" ${state}>${inner}</button>`;
 }
-
+/** A group of rows with its small heading (none - no heading) */
 const section = (lang, head, body) => `<div class="x-risu-pkbp-sec">${head ? `<div class="x-risu-pkbp-sech">${esc(say(lang, head))}</div>` : ''}${body}</div>`;
 
 function travelHtml(model, hit) {
@@ -802,7 +813,7 @@ function taleHtml(model, hit, tale) {
       return `<div class="x-risu-pkbp-tlr"><span>${label}</span><span class="x-risu-pkbp-tseg" role="radiogroup" aria-label="${label}">${choices}</span></div>`;
     }
     if (key === 'battles') {
-      if (!tale.battles) return '';
+      if (!tale.battles) return ''; // no chat to switch
       const { on, usable } = tale.battles;
       return switchRow(lang, say(lang, 'settings.row.battlesOff'), on, () => hit({ t: 'tale', key, value: !on }), { off: locked || !usable });
     }
@@ -859,11 +870,13 @@ function boxHtml(model, hit, picture, hover) {
   return `${head}<div class="x-risu-pkbp-grid">${cells.join('')}</div>`;
 }
 
+export const discMark = (icon, cls) => (icon?.mark ? `<span class="${cls}" aria-hidden="true">${discMarkSvg(icon.mark)}</span>` : '');
+
 function iconHtml(icon, picture = directPicture) {
   if (icon?.url) return `<span class="x-risu-pkbp-ic"><span class="x-risu-pkbp-icpa">${monImg(picture({ url: icon.url }))}</span></span>`;
   if (icon?.emoji) return `<span class="x-risu-pkbp-ic x-risu-pkbp-icem x-risu-pkbp-emo">${esc(icon.emoji)}</span>`;
   if (icon?.sheet === 'pokerogue') {
-    return `<span class="x-risu-pkbp-ic"><span class="x-risu-pkbp-icpr"><span style="left:${icon.ox}px;top:${icon.oy}px;width:${icon.w}px;height:${icon.h}px;background-position:-${icon.x}px -${icon.y}px"></span></span></span>`;
+    return `<span class="x-risu-pkbp-ic"><span class="x-risu-pkbp-icpr"><span style="left:${icon.ox}px;top:${icon.oy}px;width:${icon.w}px;height:${icon.h}px;background-position:-${icon.x}px -${icon.y}px"></span></span>${discMark(icon, 'x-risu-pkbp-icgen')}</span>`;
   }
   return '<span class="x-risu-pkbp-ic"><span class="x-risu-pkbp-icdot"></span></span>';
 }

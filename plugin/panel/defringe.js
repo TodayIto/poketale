@@ -1,9 +1,9 @@
 import { LoadError } from '../../view/retry.js';
 
 export const DEFRINGE = Object.freeze({
-  SOLID: 128,
-  GLOW_ALPHA: 240,
-  LIGHT: 80,
+  SOLID: 128, // a neighbour this opaque gives its colour (the outline)
+  GLOW_ALPHA: 240, // a partly transparent pixel below this alpha may be glow
+  LIGHT: 80, // a halo pixel is at least this light (luma) ...
   GREY: 48,
   DARK: 72,
   REACH: 2,
@@ -14,7 +14,7 @@ export const DEFRINGE = Object.freeze({
 const luma = (r, g, b) => (r * 299 + g * 587 + b * 114) / 1000;
 
 const ringAlpha = (pixel, outline) => Math.round(255 * Math.min(1, Math.max(0, (255 - pixel) / Math.max(1, 255 - outline))));
-
+// the 8 neighbours, the 4 straight ones first
 const STEPS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
 export function defringe(data, width, height, options = {}) {
@@ -36,7 +36,7 @@ export function defringe(data, width, height, options = {}) {
   const outside = j => j < 0 || alpha(j) === 0;
   const glowLike = i => alpha(i) > 0 && alpha(i) < GLOW_ALPHA && light(i);
 
-  const halo = new Uint8Array(size);
+  const halo = new Uint8Array(size); // 0 no, 1 glow, 2 ring
   const queue = [];
   for (let i = 0; i < size; i++) if (glowLike(i) && neighbours(i, 4).some(outside)) { halo[i] = 1; queue.push(i); }
   for (let q = 0; q < queue.length; q++) {

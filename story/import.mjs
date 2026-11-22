@@ -8,11 +8,12 @@ import { readStored, isRecord, isUnreadable } from './stored.mjs';
 import { ruleNote, ruleError, refusal, failed } from './failure.mjs';
 import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty, friendshipOf, isEgg, tidyBreeding, stateFormat, dropStoppedEvolution } from './state.mjs';
 import { FRIENDSHIP_MAX, friendshipLocked } from '../engine/friendship.mjs';
-import { STATS, STATUS_IDS } from '../engine/mon.mjs';
+import { STATS, STATUS_IDS, hasOneSpecial, autoTeraType } from '../engine/mon.mjs';
 import { evTotal } from './training.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, DEBUG_STAT_MAX } from './rules.mjs';
 import { isCustomItem, customItemId, customInfo, splitEmoji, itemId, addCustomItem, tidyCustomItems, itemsWithTags, withItemTags, DEFAULT_EMOJI, CUSTOM_EFFECTS } from './custom-items.mjs';
 import { learnableReader } from './learnable.mjs';
+import { EXP_SHARE } from './items.mjs';
 import { ownerMonOf } from './tools.mjs';
 import learnableTable from '../data/learnable.json' with { type: 'json' };
 
@@ -38,7 +39,7 @@ const SET_FIELDS = ['species', 'name', 'level', 'gender', 'shiny', 'nature', 'ab
 const MON_FIELDS = [...SET_FIELDS, 'hpPercent', 'status', 'place'];
 
 export const DEBUG_FIELDS = ['friendship', 'friendshipLocked', 'eggCycles', 'evolveLocked'];
-
+/** Egg cycles a debug edit can set */
 const EGG_CYCLES_MAX = 255;
 const ACTIONS = ['add', 'update', 'skip'];
 // Auto fields that follow the species / the level (filled again when either is edited)
@@ -47,12 +48,16 @@ const BY_LEVEL = ['moves'];
 
 const LEVEL_NEAR = 5;
 
+/** Refuses by one rule of importing (screen text rule.import.<rule>) */
 const fail = (rule, values) => { throw ruleError(`import.${rule}`, values); };
 
 const note = (rule, values) => ruleNote(`import.${rule}`, values);
 
+// -- Reading the records ------------------------------------------
+
 const READ_KINDS = Object.freeze({ party: 'party', storageAdd: 'add', storageRemove: 'remove' });
 
+/** Readers for one format: bracket lines, condition words, the box variable */
 function compatReader(format) {
   const fieldOf = new Map(Object.entries(format.fields).map(([field, name]) => [compatFold(name), field]));
   const conditions = new Map(Object.entries(format.conditions).map(([word, id]) => [compatFold(word), id]));
@@ -101,8 +106,9 @@ function nameId(kind, raw) {
 }
 const speciesOf = raw => { const id = nameId('species', raw); return id ? speciesName(id) : null; };
 
+/** Whether the fields name a Pokemon at all */
 const named = fields => !!(fields.name || fields.english);
-
+/** A record's egg: nothing about it but where it is */
 const eggFound = source => ({ egg: true, source });
 
 function speciesAndNickname(sim, name, english) {
@@ -128,6 +134,7 @@ function toFound(fields, reader, sim, source, warnings) {
   return found;
 }
 
+/** Message text without the plugin's own blocks, tags, marks and OOCs */
 const recordText = text => stripForPrompt(dropOocs(text));
 
 function lineOf(sim, name) {
@@ -159,7 +166,7 @@ export function readCompat(chat, ctx, { format = COMPAT_FORMAT } = {}) {
       for (const line of partyLines) {
         if (!line.egg && !named(line.fields)) continue;
         const found = line.egg ? eggFound(source) : toFound(line.fields, reader, sim, source, warnings);
-
+        // The same slot written again in one message replaces the earlier line
         if (line.slot && slots.has(line.slot)) list[slots.get(line.slot)] = found;
         else { if (line.slot) slots.set(line.slot, list.length); list.push(found); }
       }
@@ -182,7 +189,7 @@ export function readCompat(chat, ctx, { format = COMPAT_FORMAT } = {}) {
 
 const zeroEvs = () => Object.fromEntries(STATS.map(s => [s, 0]));
 const blankOf = { species: '', name: '', level: null, gender: null, shiny: false, nature: null, ability: null, item: '', moves: [], ivs: null, evs: null, teraType: null };
-
+/** A DraftMon with a blank set, full HP and every field 'auto', to be added */
 const blankMon = (key, place, seed) => ({ key, place, set: clone(blankOf), hpPercent: 100, status: '', from: Object.fromEntries(MON_FIELDS.map(f => [f, 'auto'])),
   match: null, action: 'add', problems: [], seed: `${seed}:${key}` });
 
@@ -240,11 +247,13 @@ function fillAuto(mon, ctx, fields) {
   delete mon.fillError;
   const species = sim.Dex.species.get(mon.set.species || '');
   const fixed = { item: '', shiny: false, evs: zeroEvs() };
-  if (species.exists) fixed.teraType = species.requiredTeraType || species.types[0];
+  if (species.exists) fixed.teraType = autoTeraType(species, `import:${mon.seed}`);
 
   const free = () => {
     const rng = rngFor(sim, `import:${mon.seed}`), natures = sim.Dex.natures.all();
-    return { nature: natures[rng.random(natures.length)].name, ivs: Object.fromEntries(STATS.map(s => [s, rng.random(MAX_IV + 1)])) };
+    const ivs = Object.fromEntries(STATS.map(s => [s, rng.random(MAX_IV + 1)]));
+    if (hasOneSpecial(ctx.formGen)) ivs.spd = ivs.spa;
+    return { nature: natures[rng.random(natures.length)].name, ivs };
   };
   const leaveBlank = () => {
     const drawn = refill.has('nature') || refill.has('ivs') ? free() : {};
@@ -319,15 +328,25 @@ const labelOf = ({ name, species, level }) => `${name ? `${name} (${species})` :
 
 function valuesOf(ctx, state, mon) {
   const hpPercent = mon.hp === null || mon.hp === undefined ? 100 : mon.hp / maxHp(ctx.sim, mon.set, stateFormat(state)) * 100;
-  return { set: Object.fromEntries(SET_FIELDS.map(f => [f, clone(mon.set[f])])), hpPercent, status: mon.status === 'fnt' ? '' : mon.status ?? '' };
+
+  return { set: Object.fromEntries(SET_FIELDS.filter(f => mon.set[f] !== undefined).map(f => [f, clone(mon.set[f])])), hpPercent,
+    status: mon.status === 'fnt' ? '' : mon.status ?? '' };
 }
+/** The set fields valuesOf left out (the stored set has no value for them) */
+const missing = set => SET_FIELDS.filter(f => !(f in set));
 const FOLLOWING = MON_FIELDS.filter(f => f !== 'place');
 const putField = (mon, field, value) => { if (field in mon.set) mon.set[field] = value; else mon[field] = value; };
 
 function followPair(mon, hit, ctx) {
   const free = FOLLOWING.filter(f => mon.from[f] === 'auto' || mon.from[f] === 'current');
   if (hit) {
-    for (const f of free) { putField(mon, f, clone(f in hit.now.set ? hit.now.set[f] : hit.now[f])); mon.from[f] = 'current'; }
+    const gaps = [];
+    for (const f of free) {
+      const value = f in hit.now.set ? hit.now.set[f] : hit.now[f];
+      if (value === undefined) { gaps.push(f); mon.from[f] = 'auto'; continue; } // the pair has no value: filled the automatic way (valuesOf's rule)
+      putField(mon, f, clone(value)); mon.from[f] = 'current';
+    }
+    if (gaps.length) fillAuto(mon, ctx, gaps);
     return;
   }
   const back = free.filter(f => mon.from[f] === 'current');
@@ -376,15 +395,19 @@ function rematch(draft, ctx) {
   }
 }
 
-export function makeDraft(chat, state, ctx, { seed = 0, format, found: given = null } = {}) {
+const poolOf = (state, ctx) => [...(state?.party ?? []).map(m => [m, 'party']), ...(state?.box ?? []).map(m => [m, 'box'])]
+  .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level, now: valuesOf(ctx, state, m), ...(isEgg(m) ? { egg: true } : {}) }));
+
+export function makeDraft(chat, state, ctx, { seed = 0, format, found: given = null, gen = null } = {}) {
+  const draftGen = genOfDraft(gen);
+  ctx = draftCtx(ctx, { gen: draftGen });
   const found = given ?? readCompat(chat, ctx, format ? { format } : {});
-  const pool = [...(state?.party ?? []).map(m => [m, 'party']), ...(state?.box ?? []).map(m => [m, 'box'])]
-    .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level, now: valuesOf(ctx, state, m), ...(isEgg(m) ? { egg: true } : {}) }));
+  const pool = poolOf(state, ctx);
   const bag = Object.fromEntries(Object.entries(state?.bag ?? {}).filter(([, n]) => n > 0).map(([id, n]) => [id, { count: n, from: 'current' }]));
 
   const customItems = Object.fromEntries(Object.keys(bag).filter(isCustomItem).map(id => [id, customInfo(state, id)]).filter(([, info]) => info));
   const draft = {
-    v: 1,
+    v: 1, ...(draftGen ? { gen: draftGen } : {}),
     mons: [...found.party.map((f, i) => draftMon(f, 'party', `p${i + 1}`, ctx, seed)), ...found.box.map((f, i) => draftMon(f, 'box', `b${i + 1}`, ctx, seed))],
     bag, warnings: found.warnings, pool, base: { bag: Object.fromEntries(Object.entries(bag).map(([id, e]) => [id, e.count])) }, customItems,
     ...(given?.source ? { source: given.source } : {}),
@@ -420,6 +443,8 @@ export function importOfferAi(chat, state, { allowed = false } = {}) {
   return said('user') && said('char');
 }
 
+// -- Handing the party back to the bot ------------------------------
+
 export const HANDBACK_KIND = 'handback';
 
 const plainValue = (value, seps) => [...String(value ?? '')].map(c => (seps.includes(c) || c === '\n' || c === '\r' ? ' ' : c)).join('').trim();
@@ -446,6 +471,7 @@ export function compatRecords(state, ctx, { lang = 'ko' } = {}) {
   return { lines, storage };
 }
 
+/** Whether a message holds our blocks, tags or marks */
 const hasOurs = text => hasBlocks(text) || findTags(text).length + findMarks(text).length > 0;
 
 export function handBack(chat, state, ctx, { lang = 'ko', now = Date.now() } = {}) {
@@ -461,14 +487,21 @@ export function handBack(chat, state, ctx, { lang = 'ko', now = Date.now() } = {
   return true;
 }
 
+// -- Debug drafts ---------------------------------------------------
+
 export const DEBUG_KIND = 'debug';
 
-export function newMonDraft(ctx, { place = 'party', seed = 0 } = {}) {
+const genOfDraft = gen => (hasOneSpecial(gen) ? gen : null);
+
+const draftCtx = (ctx, draft) => (draft?.gen ? { ...ctx, formGen: draft.gen } : ctx);
+
+export function newMonDraft(ctx, { place = 'party', seed = 0, gen = null } = {}) {
   const mon = blankMon('n1', place, seed);
+  const draftGen = genOfDraft(gen);
   for (const f of ['species', 'name', 'level', 'place']) mon.from[f] = 'user';
-  fillAuto(mon, ctx, SET_FIELDS);
+  fillAuto(mon, draftCtx(ctx, { gen: draftGen }), SET_FIELDS);
   mon.problems = monProblems(mon, ctx, DEBUG_KIND);
-  return { v: 1, kind: DEBUG_KIND, mons: [mon], bag: {}, warnings: [], pool: [], base: { bag: {} } };
+  return { v: 1, kind: DEBUG_KIND, ...(draftGen ? { gen: draftGen } : {}), mons: [mon], bag: {}, warnings: [], pool: [], base: { bag: {} } };
 }
 
 export function currentMonDraft(ctx, state, uid) {
@@ -479,6 +512,9 @@ export function currentMonDraft(ctx, state, uid) {
     : { friendship: friendshipOf(ctx, found), friendshipLocked: friendshipLocked(found), evolveLocked: found.evolveLocked === true };
   const mon = { key: 'e1', place, set, hpPercent, status, ...debug, from: Object.fromEntries([...MON_FIELDS, ...Object.keys(debug)].map(f => [f, 'current'])),
     match: { uid, place, label: labelOf(set) }, action: 'update', problems: [], seed: `0:e1` };
+  const gaps = missing(set);
+  for (const f of gaps) mon.from[f] = 'auto';
+  if (gaps.length) fillAuto(mon, ctx, gaps);
   mon.problems = monProblems(mon, ctx, DEBUG_KIND);
   return { v: 1, kind: DEBUG_KIND, mons: [mon], bag: {}, warnings: [], pool: [], base: { bag: {} } };
 }
@@ -538,8 +574,8 @@ export function editMon(draft, key, field, value, ctx) {
   mon.from[field] = 'user';
 
   const blanks = SET_FIELDS.filter(f => mon.set[f] === null || (f === 'moves' && !mon.set.moves?.length));
-  fillAuto(mon, ctx, [...(field === 'species' ? BY_SPECIES : field === 'level' ? BY_LEVEL : []), ...blanks]);
-  if (['species', 'name', 'level'].includes(field)) rematch(next, ctx);
+  fillAuto(mon, draftCtx(ctx, next), [...(field === 'species' ? BY_SPECIES : field === 'level' ? BY_LEVEL : []), ...blanks]);
+  if (['species', 'name', 'level'].includes(field)) rematch(next, draftCtx(ctx, next));
   mon.problems = monProblems(mon, ctx, next.kind);
   return next;
 }
@@ -566,14 +602,14 @@ export function refillMon(draft, key, ctx, { seed = 0 } = {}) {
   const next = clone(draft);
   const mon = monAt(next, key);
   mon.seed = `${seed}:${key}`;
-  fillAuto(mon, ctx, SET_FIELDS);
+  fillAuto(mon, draftCtx(ctx, next), SET_FIELDS);
   mon.problems = monProblems(mon, ctx, next.kind);
   return next;
 }
 
 export const draftPartyCount = draft => draft.mons.filter(mon => mon.action !== 'skip' && mon.place === 'party').length;
 
-export function draftProblems(draft, ctx) {
+export function draftProblems(draft, ctx, state = null) {
   const out = [];
   const targets = new Map();
   for (const mon of draft.mons) {
@@ -591,6 +627,19 @@ export function draftProblems(draft, ctx) {
     else if (!Number.isSafeInteger(draft.add) || draft.add < 1) out.push(note('addCount', { add: draft.add }));
   }
 
+  const updated = new Set(draft.mons.filter(mon => mon.action === 'update' && mon.match).map(mon => mon.match.uid));
+  const inBag = draft.bag?.[EXP_SHARE]?.count ?? 0;
+  const bagShares = state && inBag === (draft.base?.bag?.[EXP_SHARE] ?? 0) ? state.bag?.[EXP_SHARE] ?? 0 : inBag;
+  let holder = (bagShares > 0 ? note('inBag') : null)
+    ?? (state ? poolOf(state, ctx) : draft.pool ?? []).filter(p => !updated.has(p.uid) && p.now?.set?.item === EXP_SHARE)
+      .map(p => note(p.place === 'box' ? 'monInBox' : 'monInParty', { mon: labelOf(p) }))[0] ?? null;
+  for (const mon of draft.mons) {
+    if (mon.action === 'skip' || mon.set.item !== EXP_SHARE) continue;
+    const label = note(mon.place === 'box' ? 'monInBox' : 'monInParty', { mon: labelOf(mon.set) || note('newMon') });
+    if (holder) out.push(note('expShareTwice', { mon: label, other: holder }));
+    else holder = label;
+  }
+
   const party = draftPartyCount(draft);
   if (party > PARTY_MAX) out.push(note('partyOver', { max: PARTY_MAX, count: party }));
   for (const [id, { count }] of Object.entries(draft.bag)) {
@@ -599,6 +648,8 @@ export function draftProblems(draft, ctx) {
   }
   return out;
 }
+
+// -- Import records (chat variable) ---------------------------------
 
 const importShape = imp => isRecord(imp) && typeof imp.id === 'string' && isRecord(imp.at) && Array.isArray(imp.mons) && (imp.bag === undefined || isRecord(imp.bag))
   && (imp.canceled === undefined || typeof imp.canceled === 'number') && (imp.badges === undefined || (Array.isArray(imp.badges) && imp.badges.every(id => typeof id === 'string')));
@@ -617,8 +668,8 @@ function writeImports(chat, imports) {
 
 const locks = m => m.from.friendshipLocked === 'user' && m.friendshipLocked === true;
 
-export function commitImport(chat, draft, ctx, { now = Date.now(), held = [] } = {}) {
-  const problems = draftProblems(draft, ctx);
+export function commitImport(chat, draft, ctx, { now = Date.now(), held = [], state = null } = {}) {
+  const problems = draftProblems(draft, ctx, state);
   if (problems.length) throw refusal(problems);
   return appendImport(chat, now, JSON.stringify([draft.mons, draft.bag]), held, id => {
     const mons = draft.mons.filter(m => m.action !== 'skip').map((m, n) => ({
@@ -653,6 +704,7 @@ function appendImport(chat, now, key, held, body) {
   return imp;
 }
 
+/** Whether an Import is applied (not canceled) */
 export const inForce = imp => !imp.canceled;
 
 export function cancelImport(chat, id, { now = Date.now() } = {}) {
@@ -690,6 +742,8 @@ function updatedMon(ctx, old, set) {
   if (ppUps.length) mon.ppUps = Object.fromEntries(ppUps); else delete mon.ppUps;
   if (old.set.nature !== set.nature) delete mon.natureOrig;
   if (!STATS.every(s => old.set.ivs?.[s] === set.ivs[s])) delete mon.hyper;
+
+  if (!STATS.every(s => (old.set.evs?.[s] ?? 0) === (set.evs?.[s] ?? 0))) delete mon.statExp;
   if (toID(old.set.species) === toID(set.species) && old.set.level === set.level) mon.pending = { ...old.pending, moves: old.pending.moves.filter(id => !set.moves.includes(id)) };
   else {
     const { exp, pending } = newMon(ctx, set, old.uid);
@@ -721,7 +775,7 @@ export function applyImport(state, imp, ctx) {
     mon.hp = hpFromPercent(sim, mon.set, entry.hpPercent ?? 100, false, stateFormat(next));
     mon.status = mon.hp === 0 ? 'fnt' : entry.status || '';
 
-    if (entry.friendship !== undefined && !isEgg(mon)) { mon.friendship = entry.friendship; delete mon.friendshipCarry; }
+    if (entry.friendship !== undefined && !isEgg(mon)) { mon.friendship = entry.friendship; delete mon.friendshipCarry; } // the value as typed: no part of a point left over
     if (entry.friendshipLocked !== undefined && !isEgg(mon)) {
       if (entry.friendshipLocked === true) mon.friendshipLocked = true; else delete mon.friendshipLocked;
     }
@@ -730,8 +784,11 @@ export function applyImport(state, imp, ctx) {
     }
 
     if (!isEgg(mon)) dropStoppedEvolution(sim.Dex, mon, ctx);
-    if (entry.eggCycles !== undefined && isEgg(mon)) mon.egg.cycles = entry.eggCycles;
-    if (!isEgg(mon)) markDex(next, sim, mon.set.species, true);
+    if (entry.eggCycles !== undefined && isEgg(mon)) {
+      mon.egg.cycles = entry.eggCycles;
+      if (mon.egg.cycles > 0) delete mon.egg.ready;
+    }
+    if (!isEgg(mon)) markDex(next, sim, mon.set.species, true); // what an egg hatches as is not seen yet
     if (entry.place !== 'box') partyOrder.push(mon.uid);
   }
   if (imp.kind !== DEBUG_KIND) {

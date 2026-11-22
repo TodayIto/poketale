@@ -9,7 +9,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const require = createRequire(import.meta.url);
 export const OUT = 'data/fishing.json';
 const SRC = 'data/sources/fishing';
-
+/** The same PokeAPI commit as data/sources/pokeapi (data/sources/README.md) */
 const COMMIT = '2bf639e5572812a67d2b94903fdcb9d095f5aeb2';
 const POKEAPI = `https://raw.githubusercontent.com/PokeAPI/pokeapi/${COMMIT}/data/v2/csv`;
 
@@ -17,7 +17,7 @@ const PKHEX_COMMIT = '6c9583883c7551ac74a4b74180cead249d4277b8';
 const PKHEX = `https://raw.githubusercontent.com/kwsch/PKHeX/${PKHEX_COMMIT}/PKHeX.Core/Resources/text/locations`;
 const PKHEX_FILES = ['gen2/text_gsc', 'gen3/text_rsefrlg', 'gen4/text_hgss', 'gen5/text_bw2', 'gen6/text_xy', 'gen7/text_sm', 'gen8/text_swsh', 'gen9/text_sv']
   .flatMap(f => ['en', 'ko'].map(lang => `${f}_00000_${lang}.txt`));
-
+/** PokeAPI files stored whole */
 const WHOLE = ['encounter_slots.csv', 'location_areas.csv', 'locations.csv', 'versions.csv', 'regions.csv', 'encounter_condition_values.csv'];
 
 const METHOD_ROD = { 2: 0, 3: 1, 4: 2, 12: 3, 31: 3, 34: 3 };
@@ -27,7 +27,7 @@ const ONE_ROD_GROUPS = new Set(['11', '14', '17', '18', '20', '21', '22']);
 const NO_BUBBLES = new Set(['17', '18']);
 
 const KEPT_CONDITIONS = new Set(['2', '6', '9', '25']);
-
+/** Our region ids (data/status-words.json regions) of PokeAPI's regions */
 const REGION_IDS = { 1: 'kanto', 2: 'johto', 3: 'hoenn', 4: 'sinnoh', 5: 'unova', 6: 'kalos', 7: 'alola', 8: 'galar', 9: 'hisui', 10: 'paldea' };
 
 const NO_FISHING = {
@@ -35,7 +35,7 @@ const NO_FISHING = {
   paldea: { dexes: [['paldea', null], ['paldea', 'blueberry']], extra: ['finizen', 'wiglett', 'veluza', 'tatsugiri'] },
   kitakami: { dexes: [['paldea', 'kitakami']], extra: [] },
 };
-
+/** An EXTRA species' row: any rod, levels and share as a middle row */
 const EXTRA_ROW = { min: 20, max: 40, share: 10 };
 
 const CURVE = { startTo: 2, topFrom: 10, topTo: 30, show: [-5, 0, 5, 10, 20, 30] };
@@ -44,8 +44,8 @@ const NOT_PLAIN = new Set(['palafin']);
 const GRADE = { level: [5, 50], rod: [0, 0.5, 1, 0.5], spot: { level: 0.7, rod: 0.3 }, bst: [200, 600] };
 
 const sha = text => createHash('sha256').update(text.replace(/\r\n/g, '\n')).digest('hex');
-
-function rows(text) {
+/** Plain CSV (none of these files has quotes) -> row objects */
+export function rows(text) {
   const [head, ...lines] = text.replace(/^﻿/, '').replace(/\r\n/g, '\n').split('\n').filter(Boolean);
   const keys = head.split(',');
   return lines.map(line => { const cells = line.split(','); return Object.fromEntries(keys.map((k, i) => [k, (cells[i] ?? '').trim()])); });
@@ -91,7 +91,8 @@ async function fetchSources() {
   writeFileSync(resolve(root, SRC, 'source.json'), `${JSON.stringify(source, null, 2)}\n`);
 }
 
-function readSources() {
+/** The stored sources, each checked against source.json */
+export function readSources() {
   const source = JSON.parse(readFileSync(resolve(root, SRC, 'source.json'), 'utf8'));
   return Object.fromEntries(source.files.map(file => {
     const text = readFileSync(resolve(root, SRC, file), 'utf8');
@@ -100,7 +101,7 @@ function readSources() {
   }));
 }
 
-function koreanNames(files) {
+export function koreanNames(files) {
   const out = new Map();
   for (const file of Object.keys(files).filter(f => f.startsWith('pkhex/') && f.endsWith('_en.txt'))) {
     const en = files[file].replace(/^﻿/, '').split('\n'), ko = files[file.replace('_en.txt', '_ko.txt')].replace(/^﻿/, '').split('\n');
@@ -234,7 +235,7 @@ export function buildFishing(files, Dex, dexLists) {
     return list;
   };
   const dexOf = region => new Set(NO_FISHING[region] ? NO_FISHING[region].dexes.flatMap(([key, section]) => dexNums(key, section)) : dexNums(region));
-
+  // species index and grades
   const species = [...all].sort();
   const index = new Map(species.map((s, i) => [s, i]));
   const clamp = x => Math.min(1, Math.max(0, x));
@@ -307,6 +308,7 @@ export function buildFishing(files, Dex, dexLists) {
   };
 }
 
+/** One line per place (a short diff when the sources change) */
 export const serialize = table => `{"source":${JSON.stringify(table.source)},"note":${JSON.stringify(table.note)},\n"species":${JSON.stringify(table.species)},\n"grades":${JSON.stringify(table.grades)},\n"evolveCurve":${JSON.stringify(table.evolveCurve)},\n"evolves":${JSON.stringify(table.evolves)},\n"regions":{\n`
   + Object.entries(table.regions).map(([r, { places, fallback, evolveInto }]) => `${JSON.stringify(r)}:{"places":[\n${places.map(p => JSON.stringify(p)).join(',\n')}\n],\n"fallback":${JSON.stringify(fallback)},\n"evolveInto":${JSON.stringify(evolveInto)}}`).join(',\n')
   + `\n},\n"everywhere":${JSON.stringify(table.everywhere)},\n"unnamed":${JSON.stringify(table.unnamed)}}\n`;

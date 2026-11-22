@@ -2,8 +2,8 @@ import { createImageRoute, audioType } from '../../view/image-route.js';
 import { viewPictureWays } from '../battle/picture-route.js';
 import { soundLevels } from '../battle/settings.js';
 
-const SOUND = 'audio/battle_anims/PRSFX- Health Up.wav';
-const VOLUME = 0.6;
+const SOUND = 'audio/battle_anims/PRSFX- Health Up.wav'; // under the PokeRogue asset base
+const VOLUME = 0.6; // the battle view's sound effects (view/audio.js)
 
 const LATE_MS = 1500;
 
@@ -39,7 +39,7 @@ export function createRestSound({ assetBase, settings, fetchBytes }) {
       const level = soundLevels(settings()).sfx;
       if (!level) return;
       audio.currentTime = 0; audio.volume = VOLUME * level;
-      audio.play().catch(() => {});
+      audio.play().catch(() => {}); // autoplay blocked: no sound, the effect still shows
     });
   };
 }

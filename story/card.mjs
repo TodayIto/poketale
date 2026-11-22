@@ -10,7 +10,7 @@ const keyOf = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const PLACE = Object.fromEntries(BIOMES.map(k => [keyOf(k), k]));
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '{': '&#123;', '}': '&#125;' };
-
+/** Text safe for HTML + CBS. */
 export const esc = value => String(value ?? '').replace(/[&<>"'{}]/g, c => ESC[c]);
 
 export const safeKey = key => String(key ?? '').toLowerCase().replace(/[^a-z0-9]/g, '') || 'none';
@@ -73,7 +73,7 @@ export const NOTE_LOOK = Object.freeze({
   info: Object.freeze({ edge: '#5b768b', drop: '#23435f', fill: '#eef4f9', ink: '#23435f' }),
 });
 const noteColours = ({ edge, drop, fill, ink }) => `border-color:${edge};box-shadow:0 3px 0 ${drop};background:linear-gradient(145deg,#ffffff,${fill});color:${ink};`;
-
+/** CSS rule for a line that is always of one kind. selector = the line */
 export const noteRule = (selector, kind) => `${selector}{${NOTE_SHAPE}${noteColours(NOTE_LOOK[kind])}}`;
 
 export const noteLooks = at => [
@@ -93,7 +93,7 @@ export const CARD_CSS = [
   `.x-risu-pkb-hd{display:flex;align-items:center;gap:7px;min-height:31px;padding:5px 8px 5px 11px;color:#fff;font-size:13px;background:var(--pkb-band);border-bottom:2.5px solid var(--pkb-edge);}`,
   `.x-risu-pkb-hdt{flex:1 1 auto;min-width:0;}`,
   `.x-risu-pkb-hdr{margin-left:auto;font-size:12px;white-space:nowrap;}`,
-
+  // Double battle badge: white like the x, in the band colour, the x's height
   `.x-risu-pkb-dbl{display:flex;flex:none;align-items:center;height:21px;padding:0 6px;border:1.5px solid var(--pkb-edge);border-radius:6px;background:#fff;color:var(--pkb-band);font-size:11.5px;line-height:1;box-shadow:0 1.5px 0 var(--pkb-edge);}`,
   `.x-risu-pkb-pb{display:inline-block;flex:none;width:15px;height:15px;border-radius:50%;border:1.5px solid #18242e;box-shadow:0 0 0 1.5px rgba(255,255,255,.75);background:radial-gradient(circle closest-side,#fff 0 26%,#18242e 26% 44%,transparent 44%),linear-gradient(to bottom,#e3343f 0 43%,#18242e 43% 57%,#fff 57%);}`,
   `.x-risu-pkb-bd{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;padding:11px 12px;}`,
@@ -133,7 +133,7 @@ export const CARD_CSS = [
   `.x-risu-pkb-badgecls{color:#315a77;background:#e4edf4;box-shadow:inset 0 0 0 1px #a8bccc;}`,
   `.x-risu-pkb-sub{margin-top:2px;font-size:11px;color:#5d7486;}`,
   `.x-risu-pkb-ended{display:inline-block;margin-top:6px;padding:0 8px;border-radius:999px;font-size:11px;line-height:18px;color:#7d5310;background:#fbf0d9;box-shadow:inset 0 0 0 1.5px #e0c48a;}`,
-
+  // Poke Ball row
   `.x-risu-pkb-balls{display:flex;flex-wrap:nowrap;gap:4px;margin-top:7px;}`,
   `.x-risu-pkb-ball{display:inline-block;flex:none;width:16px;height:16px;border-radius:50%;border:1.5px solid #18242e;background:radial-gradient(circle closest-side,#fff 0 24%,#18242e 24% 42%,transparent 42%),linear-gradient(to bottom,#e3343f 0 43%,#18242e 43% 57%,#fff 57%);}`,
   `.x-risu-pkb-ballst{background:radial-gradient(circle closest-side,#fff 0 24%,#18242e 24% 42%,transparent 42%),linear-gradient(to bottom,#ecbc2c 0 43%,#18242e 43% 57%,#fff8dc 57%);box-shadow:0 0 0 2px rgba(236,188,44,.45);}`,
@@ -151,7 +151,7 @@ export const CARD_CSS = [
   `.x-risu-pkb-stlose{color:#3e5468;}`,
   `.x-risu-pkb-stgray{color:#6b7a86;border-color:#8a97a2;}`,
   `.x-risu-pkb-stcap{color:#2f7a4c;}`,
-
+  // Tag battle partner: a small round face (navy ring) + one line
   `.x-risu-pkb-ally{display:flex;align-items:center;gap:5px;min-width:0;font-size:11.5px;line-height:1.3;color:#23435f;}`,
   `.x-risu-pkb-allyface{position:relative;flex:none;width:22px;height:22px;border:1.5px solid #23435f;border-radius:50%;overflow:hidden;background:#dbe8f2;}`,
   `.x-risu-pkb-allyface > img{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 0;image-rendering:pixelated;}`,
@@ -181,7 +181,6 @@ export const CARD_CSS = [
   `.x-risu-pkb-hd .x-risu-pkb-btn.x-risu-pkb-x{flex:none;width:21px;height:21px;margin:0 0 0 auto;padding:0;border:1.5px solid var(--pkb-edge);border-radius:6px;background:#fff;color:#d8434d;box-shadow:0 1.5px 0 var(--pkb-edge);}`,
   `.x-risu-pkb-hd .x-risu-pkb-btn.x-risu-pkb-x:active{transform:translateY(1px);box-shadow:none;}`,
   `.x-risu-pkb-hd .x-risu-pkb-x svg{width:10px;height:10px;}`,
-  `.x-risu-pkb-lock{padding:6px 8px;border:1.5px dashed #9aa6b0;border-radius:8px;background:#f6f7f9;color:#67737d;font-size:11px;line-height:1.45;text-align:center;}`,
 
   `.x-risu-pkb-err,.x-risu-pkb-note{flex:1 1 100%;min-width:0;font-size:11.5px;}`,
   noteRule('.x-risu-pkb-err', 'error'),
@@ -204,7 +203,7 @@ export const CARD_CSS = [
   `@container (max-width:380px){`
     + `.x-risu-pkb-act{width:100%;flex-direction:row;flex-wrap:wrap;}`
     + ` .x-risu-pkb-act > *{flex:1 1 0;min-width:0;}`
-    + ` .x-risu-pkb-act > .x-risu-pkb-lock,.x-risu-pkb-act > .x-risu-pkb-duo{flex:1 1 100%;}`
+    + ` .x-risu-pkb-act > .x-risu-pkb-duo{flex:1 1 100%;}`
     + ` .x-risu-pkb-act > .x-risu-pkb-sec{order:-1;}`
 
     + ` .x-risu-pkb-bdally{grid-template-columns:auto 1fr auto;row-gap:0;}`
@@ -291,9 +290,9 @@ const ball = state => {
   const extra = { ok: '', status: ' x-risu-pkb-ballst', fainted: ' x-risu-pkb-ballft', empty: ' x-risu-pkb-ballnone' }[state] ?? ' x-risu-pkb-ballnone';
   return `<span class="x-risu-pkb-ball${extra}"></span>`;
 };
-
+/** n ball slots: the states from the left, the rest empty */
 const slots = (list, n) => Array.from({ length: n }, (_, i) => ball(list?.[i] ?? 'empty')).join('');
-const balls = list => slots(list, PARTY_MAX);
+const balls = list => slots(list, PARTY_MAX); // six ball slots (empty ones too)
 
 function foeBalls(spec, foes) {
   if (!spec.foePartner) return balls(foes?.theirs);
@@ -354,6 +353,7 @@ const subRow = (spec, lang) => {
 // Ball row = number of opponent Pokemon (no opponent Pokemon list). Wild battles have no ball row
 const teamBalls = spec => (spec.wild ? '' : `<div class="x-risu-pkb-balls">${foeBalls(spec, blockBalls(spec))}</div>`);
 
+/** Error box: the block's error lines, else "could not read the battle" */
 function errorBox(errors, lang) {
   const items = (errors.length ? errors : [say(lang, 'card.unreadBlock')]).map(e => `<div>· ${esc(e)}</div>`).join('');
   return `<div class="x-risu-pkb-err"><div class="x-risu-pkb-errh">${esc(say(lang, 'card.cannotOpen'))}</div>${items}</div>`;
@@ -374,7 +374,7 @@ export function renderCardTail(view, lang) {
   const errors = (view?.errors ?? []).filter(e => e != null && e !== '').map(String);
   if (!view?.spec || errors.length) return errorBox(errors, lang);
   let act = '';
-  let buttons = status !== 'done';
+  let buttons = status !== 'done'; // a card that is not finished has the x in its header (renderBattleCard)
   if (status === 'progress') {
     act = `<div class="x-risu-pkb-duo">${btn(key, 'resume', t('card.resume'))}`
       + `${btn(key, 'send', ICON_PLANE, { cls: 'x-risu-pkb-plane', label: say(lang, 'card.send') })}</div>`;
@@ -388,9 +388,10 @@ export function renderCardTail(view, lang) {
       buttons = send || retry;
     }
   } else if (status === 'locked') {
-    act = `<div class="x-risu-pkb-lock">${t('card.lockedNote')}</div>`;
+
+    act = view.leave ? btn(key, 'leave', t('card.open'), { cls: 'x-risu-pkb-sec' }) : '';
   } else if (status === 'off') {
-    buttons = false;
+    buttons = false; // battles off in this chat: nothing to press
   } else {
     act = btn(key, 'open', t('card.open'));
   }
@@ -399,6 +400,10 @@ export function renderCardTail(view, lang) {
     ? `<div class="x-risu-pkb-pop"><div class="x-risu-pkb-dlg"><div class="x-risu-pkb-ask">${t('card.discardAsk')}</div>`
       + (status === 'progress' ? `<div class="x-risu-pkb-warn">${t(view.iron ? 'card.discardIron' : 'card.discardProgress')}</div>` : '')
       + `<div class="x-risu-pkb-duo">${btn(key, 'discardno', t('card.cancel'), { cls: 'x-risu-pkb-sec' })}${btn(key, 'discardok', t('card.discard'))}</div></div></div>`
+    : view.ask === 'leave'
+      ? `<div class="x-risu-pkb-pop"><div class="x-risu-pkb-dlg"><div class="x-risu-pkb-ask">${t('card.leaveAsk')}</div>`
+        + `<div class="x-risu-pkb-warn">${t('card.discardProgress')}</div>`
+        + `<div class="x-risu-pkb-duo">${btn(key, 'leaveno', t('card.cancel'), { cls: 'x-risu-pkb-sec' })}${btn(key, 'leaveok', t('card.open'))}</div></div></div>`
     : view.ask === 'retry'
       ? `<div class="x-risu-pkb-pop"><div class="x-risu-pkb-dlg"><div class="x-risu-pkb-ask">${t('card.retryAsk')}</div>`
         + `<div class="x-risu-pkb-warn">${t('card.retryWarn')}</div>`
@@ -460,11 +465,11 @@ const ONE_LINE = `display:flex;align-items:center;gap:8px;box-sizing:border-box;
 
 export function renderDiscarded(view, lang) {
   const restoreLabel = esc(say(lang, 'card.restore'));
-
+  // a failure line (view.notice) goes under the line, on a row of its own
   const style = `${ONE_LINE}border-left:4px solid #a3adb5;background:#eef0f2;color:#87929b;${view?.notice ? 'flex-wrap:wrap;' : ''}`;
   const restore = 'flex:none;margin-left:auto;width:24px;height:22px;padding:0;border:1.5px solid #8a97a2;border-radius:6px;background:#fff;color:#5f6b75;font:700 14px/1 sans-serif;box-shadow:0 1.5px 0 #8a97a2;cursor:pointer;';
   return `\n\n<div class="x-risu-pkb-col x-risu-pkb-gone x-risu-pkbc-${safeKey(view?.key)}" style="${esc(style)}"><span>⚔︎ ${esc(battleTitle(view?.spec ?? null, lang))}</span>`
-
+    // no restore button once the battle cannot be brought back (canUndo)
     + (view?.canUndo === false ? '' : `<button type="button" class="x-risu-pkb-btn x-risu-pkbk-${safeKey(view?.key)} x-risu-pkba-restore x-risu-pkbi-{{chat_index}}" style="${esc(restore)}" aria-label="${restoreLabel}" title="${restoreLabel}">↺</button>`)
     + note(view?.notice) + '</div>\n\n';
 }

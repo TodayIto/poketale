@@ -1,9 +1,9 @@
 export const PICTURE_KEY = 'pkb_my_picture';
-
+/** Key in plugin storage holding this persona's picture (data URL) */
 export const pictureKey = name => `${PICTURE_KEY}:${name}`;
-
+/** Upper limit for the short side of an uploaded picture (px) */
 export const PICTURE_SHORT_SIDE = 512;
-
+/** Image format and quality when saving (a format that keeps transparency) */
 const PICTURE_TYPE = 'image/webp', PICTURE_QUALITY = 0.92;
 
 const CLEAR_EDGE_SHARE = 0.25;
@@ -29,7 +29,7 @@ export async function loadPicture(storage, name) {
   const value = await storage?.getItem?.(pictureKey(name));
   return typeof value === 'string' && value.startsWith('data:image/') ? value : null;
 }
-
+/** Deletes when dataUrl is empty */
 export async function savePicture(storage, name, dataUrl) {
   if (dataUrl) await storage.setItem(pictureKey(name), dataUrl);
   else await storage.removeItem(pictureKey(name));

@@ -1,7 +1,9 @@
+import { machineId, isMachineId, parseMachineId } from './machine-standards.mjs';
+
 export const VITAMIN_EVS = 10;
-
+/** Feathers (Wings before Sword/Shield): EV +1, the same caps */
 export const WING_EVS = 1;
-
+/** Hyper Training (Bottle Cap): from Lv50 */
 export const HYPER_TRAIN_LEVEL = 50;
 
 export const TERA_SHARD_COST = 50;
@@ -13,7 +15,7 @@ const evBerry = (name, stat) => ({ name, kind: 'train', evBerry: stat });
 const candy = (name, exp) => ({ name, kind: 'train', exp });
 const mint = nature => ({ name: `${nature} Mint`, kind: 'train', mint: nature });
 const field = name => ({ name, kind: 'field' });
-
+// A Tera Shard of a type (Showdown's type name)
 const shard = type => ({ name: `${type} Tera Shard`, kind: 'train', teraShard: type, cost: TERA_SHARD_COST });
 
 const both = (a, b, there = {}, back = {}) => [[a, b, there], [b, a, back]];
@@ -24,6 +26,8 @@ const keyForm = (name, ...pairs) => ({ name, kind: 'key', form: pairs.flat() });
 
 const fusion = (name, base, partners) => ({ name, kind: 'key', fuse: { base, partners } });
 const treasure = name => ({ name, kind: 'treasure' });
+/** The Exp. Share's id (the engine has its own - engine/exp.mjs) */
+export const EXP_SHARE = 'expshare';
 
 export const OUTSIDE_ITEMS = {
 
@@ -37,9 +41,11 @@ export const OUTSIDE_ITEMS = {
 	energyroot: { name: 'Energy Root', kind: 'medicine', heal: 120 },
 	healpowder: { name: 'Heal Powder', kind: 'medicine', cure: 'all' },
 	revivalherb: { name: 'Revival Herb', kind: 'medicine', revive: 'full' },
-
+	// Sacred Ash: all fainted party Pokemon to full HP (no target to pick)
 	sacredash: { name: 'Sacred Ash', kind: 'medicine', revive: 'full', all: true },
 
+	maxhoney: { name: 'Max Honey', kind: 'medicine', revive: 'full' },
+	// Regional specialties: every status condition
 	lavacookie: { name: 'Lava Cookie', kind: 'medicine', cure: 'all', food: 2 },
 	oldgateau: { name: 'Old Gateau', kind: 'medicine', cure: 'all', food: 2 },
 	casteliacone: { name: 'Casteliacone', kind: 'medicine', cure: 'all', food: 2 },
@@ -49,6 +55,7 @@ export const OUTSIDE_ITEMS = {
 	bigmalasada: { name: 'Big Malasada', kind: 'medicine', cure: 'all', food: 2 },
 	pewtercrunchies: { name: 'Pewter Crunchies', kind: 'medicine', cure: 'all', food: 2 },
 
+	// -- Training --
 	hpup: vitamin('HP Up', 'hp'), protein: vitamin('Protein', 'atk'), iron: vitamin('Iron', 'def'),
 	calcium: vitamin('Calcium', 'spa'), zinc: vitamin('Zinc', 'spd'), carbos: vitamin('Carbos', 'spe'),
 
@@ -64,7 +71,7 @@ export const OUTSIDE_ITEMS = {
 
 	ppup: { name: 'PP Up', kind: 'train', ppUp: 1 },
 	ppmax: { name: 'PP Max', kind: 'train', ppUp: 3 },
-
+	// Exp. Candy
 	expcandyxs: candy('Exp. Candy XS', 100), expcandys: candy('Exp. Candy S', 800), expcandym: candy('Exp. Candy M', 3000),
 	expcandyl: candy('Exp. Candy L', 10000), expcandyxl: candy('Exp. Candy XL', 30000),
 
@@ -87,6 +94,9 @@ export const OUTSIDE_ITEMS = {
 	rednectar: nectar('Red Nectar', 'Oricorio'), yellownectar: nectar('Yellow Nectar', 'Oricorio-Pom-Pom'),
 	pinknectar: nectar('Pink Nectar', "Oricorio-Pa'u"), purplenectar: nectar('Purple Nectar', 'Oricorio-Sensu'),
 
+	maxmushrooms: { name: 'Max Mushrooms', kind: 'train', gmax: true, cost: 3 },
+	dynamaxcandy: { name: 'Dynamax Candy', kind: 'train', dmaxLevel: 1 },
+
 	linkingcord: { name: 'Linking Cord', kind: 'evolve', trade: true },
 
 	luckyegg: { name: 'Lucky Egg', kind: 'held' },
@@ -99,6 +109,7 @@ export const OUTSIDE_ITEMS = {
 	cleansetag: { name: 'Cleanse Tag', kind: 'held' },
 	pureincense: { name: 'Pure Incense', kind: 'held' },
 
+	// -- Treasures --
 	nugget: treasure('Nugget'), bignugget: treasure('Big Nugget'), pearl: treasure('Pearl'), bigpearl: treasure('Big Pearl'),
 	pearlstring: treasure('Pearl String'), stardust: treasure('Stardust'), starpiece: treasure('Star Piece'), cometshard: treasure('Comet Shard'),
 	tinymushroom: treasure('Tiny Mushroom'), bigmushroom: treasure('Big Mushroom'), balmmushroom: treasure('Balm Mushroom'),
@@ -106,10 +117,19 @@ export const OUTSIDE_ITEMS = {
 
 	prettyfeather: treasure('Pretty Feather'),
 
+	// -- Field items (description only) --
 	repel: field('Repel'), superrepel: field('Super Repel'), maxrepel: field('Max Repel'), escaperope: field('Escape Rope'),
+
+	wishingpiece: field('Wishing Piece'),
 	honey: { ...field('Honey'), food: 1 },
 
 	teraorb: { name: 'Tera Orb', kind: 'key' },
+
+	keystone: { name: 'Key Stone', kind: 'key' },
+
+	zring: { name: 'Z-Ring', kind: 'key' },
+
+	dynamaxband: { name: 'Dynamax Band', kind: 'key' },
 
 	expshare: { name: 'Exp. Share', kind: 'key' },
 
@@ -141,7 +161,7 @@ export const OUTSIDE_ITEMS = {
 };
 
 export const isRod = id => Number.isInteger(OUTSIDE_ITEMS[id]?.rod);
-
+/** A rod's grade 0-2 | null */
 export const rodGrade = id => (isRod(id) ? OUTSIDE_ITEMS[id].rod : null);
 
 export function steedBase(species) {
@@ -175,25 +195,36 @@ export const ITEM_NAMES_SINCE = Object.freeze({
 		'groundterashard', 'flyingterashard', 'psychicterashard', 'bugterashard', 'rockterashard', 'ghostterashard', 'dragonterashard', 'darkterashard',
 		'steelterashard', 'fairyterashard', 'stellarterashard',
 		'gracidea', 'revealglass', 'prisonbottle', 'meteorite', 'rednectar', 'yellownectar', 'pinknectar', 'purplenectar',
-		'dnasplicers', 'nsolarizer', 'nlunarizer', 'reinsofunity', 'rotomcatalog', 'zygardecube',
-		'luckincense', 'cleansetag', 'pureincense',
+		'dnasplicers', 'nsolarizer', 'nlunarizer', 'reinsofunity', 'rotomcatalog', 'zygardecube', // the fusion items, Rotom Catalog, Zygarde Cube
+		'luckincense', 'cleansetag', 'pureincense', // Luck Incense, Cleanse Tag, Pure Incense
 		'oldrod', 'goodrod', 'superrod']),
+
+	itemNames010: Object.freeze(['keystone', 'zring']),
+
+	itemNames010b: Object.freeze(['dynamaxband', 'maxhoney', 'maxmushrooms', 'dynamaxcandy', 'wishingpiece']),
 });
+
+export const DYNAMAX_BAND_NAMES = Object.freeze(['Dynamax Band', '다이맥스 밴드', 'ダイマックスバンド', 'ダイマックスＢ']);
+
+export const Z_RING_NAMES = Object.freeze(['Z-Ring', 'Z링', 'Ｚリング', 'Z-Power Ring', 'Z파워링', 'Ｚパワーリング']);
+
+export const Z_CRYSTALS = Object.freeze(['normaliumz', 'firiumz', 'wateriumz', 'electriumz', 'grassiumz', 'iciumz', 'fightiniumz', 'poisoniumz', 'groundiumz',
+  'flyiniumz', 'psychiumz', 'buginiumz', 'rockiumz', 'ghostiumz', 'dragoniumz', 'darkiniumz', 'steeliumz', 'fairiumz',
+  'aloraichiumz', 'decidiumz', 'eeviumz', 'inciniumz', 'kommoniumz', 'lunaliumz', 'lycaniumz', 'marshadiumz', 'mewniumz', 'mimikiumz', 'pikaniumz',
+  'pikashuniumz', 'primariumz', 'snorliumz', 'solganiumz', 'tapuniumz', 'ultranecroziumz']);
+const Z_CRYSTAL_SET = new Set(Z_CRYSTALS);
+/** Whether an item id is a Z-Crystal (Z_CRYSTALS) */
+export const isZCrystalId = id => Z_CRYSTAL_SET.has(id);
 
 export const FOOD_BERRY = 1;
 
-export const EXP_SHARE_MODES = ['always', 'item'];
-
-export const expShareOn = (mode, bag) => mode !== 'item' || (bag?.expshare ?? 0) > 0;
-
 export const TM_COUNT = 229;
-export const tmId = number => `tm${String(number).padStart(3, '0')}`;
-export const isTm = id => /^tm\d{3}$/.test(String(id ?? ''));
-export const tmNumber = id => (isTm(id) ? Number(String(id).slice(2)) : null);
+export const tmId = number => machineId('tm', number);
 
+export const isTm = isMachineId;
+/** Whether an id is a Sword/Shield TR (tr00 ~ tr99) */
+export const isTr = id => parseMachineId(id)?.kind === 'tr';
 export const TR_COUNT = 100;
-export const trId = number => `tr${String(number).padStart(2, '0')}`;
-export const isTr = id => /^tr\d{2}$/.test(String(id ?? ''));
-export const trNumber = id => (isTr(id) ? Number(String(id).slice(2)) : null);
+const trId = number => machineId('tr', number);
 
 export const MACHINE_IDS = Object.freeze([...Array.from({ length: TM_COUNT }, (_, i) => tmId(i + 1)), ...Array.from({ length: TR_COUNT }, (_, i) => trId(i))]);

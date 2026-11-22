@@ -4,24 +4,25 @@ import { createBattleView } from '../../view/index.js';
 import { createBattleSession, isWild } from './flow.js';
 import { mark, clearBattleMarks } from './marks.js';
 import { END_CSS, END_GUARD_MS, mountEndScreen, flyAway, shake, PLANE } from './end-screen.js';
-import { UI_VARS, CARD_FRAME, BAND_CSS, rowButtonsCss, stripX } from './ui-css.js';
+import { UI_VARS, CARD_FRAME, BAND_CSS, rowButtonsCss, stripX } from './ui-css.js'; // our UI look (same colours and buttons as the settings and panel windows)
 import { PHONE_CSS, isPhone, layoutOf, mountPhoneLayout, choiceCursor } from './phone.js';
-import { pushBack } from './contextmenu.js';
-import { mountScreenButtons } from './screen-buttons.js';
-import { ENTRY_CSS, mountEntry, backToChat, entryNamed, entryFoes, fadeScreen, STAMP_SOUND } from './entry.js';
+import { pushBack } from './contextmenu.js'; // right click = the window's B
+import { mountScreenButtons } from './screen-buttons.js'; // strip back button and summary page arrows (PC)
+import { ENTRY_CSS, mountEntry, backToChat, entryNamed, entryFoes, fadeScreen, entrySoundFiles } from './entry.js';
 import { entryPictures, entrySound, entryLevel } from './entry-art.js';
 import { PLAYER_NAME } from '../../story/state.mjs';
-import { mountLoading } from './loading.js';
+import { mountLoading } from './loading.js'; // preparing Poke Ball (the same ball wherever something is loading)
 import { outcomeOf, isLoss } from '../../story/outcome.mjs';
-import { noteLooks, noteRule } from '../../story/card.mjs';
-import { WHAT, failureLines, failureText } from '../../story/failure.mjs';
-import { say } from '../../story/screen-text.mjs';
+import { noteLooks, noteRule } from '../../story/card.mjs'; // look of a note line by its kind (same as the card's line)
+import { WHAT, failureLines, failureText } from '../../story/failure.mjs'; // every failure line: what, then the reason
+import { say } from '../../story/screen-text.mjs'; // the window's words in the battle's language
 import { SHEET_FONT } from '../../story/style.mjs';
 import { loadFont } from '../../view/fonts.js';
 import { battleNamesIn } from './names.js';
 import { DEFAULT_LANG } from '../../director/lang.js';
-import { DEFAULT_SPEED, nextSpeed } from '../../view/game-speed.js';
+import { DEFAULT_SPEED, nextSpeed } from '../../view/game-speed.js'; // game speed steps
 
+// Our UI icons (icons only, no text)
 const ICON = {
   send: PLANE,
   fold: '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2.5 5h11L8 12z"/></svg>',
@@ -30,15 +31,15 @@ const ICON = {
 
 };
 
-const SEND_NOTE_MS = 4000;
+const SEND_NOTE_MS = 4000; // how long the red line over the view (showNote) stays up during a battle
 
 const humanError = (error, lang) => failureLines(WHAT.open, error, lang);
 
 export function mountBattle({ parent = document.body, fetchBytes, onClose = () => {}, spec, development = false, createView = createBattleView,
   bgm                                                                              , story,
   iron = false, onCollapse, onRetry, viewOptions: extraViewOptions = {}, onSpeed, phone = isPhone(), me = { black: true, image: null }, lang = DEFAULT_LANG }) {
-  const names = battleNamesIn(lang, sim.Dex);
-  loadFont(SHEET_FONT).catch(error => console.warn('[poke-battle] 배틀 창 글꼴을 올리지 못함, 대체 글꼴로', error));
+  const names = battleNamesIn(lang, sim.Dex); // caught Pokemon's name on the end screen (same language as the battle)
+  loadFont(SHEET_FONT).catch(error => console.warn('[poke-battle] 배틀 창 글꼴을 올리지 못함, 대체 글꼴로', error)); // font of the note lines
   const root = document.createElement('section');
   root.className = 'poke-battle';
   root.innerHTML = `<style>
@@ -133,12 +134,14 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
 
     const foes = named ? entryFoes(startSpec).slice(0, 1) : entryFoes(startSpec), second = foes[1] ?? null;
     const pictures = entryPictures(startSpec, { fetchBytes, wild: kind === 'wild', named: !!named, image: me.image, pictureWays: extraViewOptions.pictureWays,
-      second: second?.sprite ?? null });
+      second: second?.sprite ?? null }); // start downloading before the board covers the screen
     const myName = startSpec.p1?.name && startSpec.p1.name !== PLAYER_NAME ? startSpec.p1.name : say(lang, 'window.me');
 
     const level = entryLevel(extraViewOptions);
-    const stamp = level() > 0 ? entrySound(STAMP_SOUND, { fetchBytes, pictureWays: extraViewOptions.pictureWays, level }) : null;
-    return mountEntry(root, { kind, boss, named, reduced, pictures, sound: stamp, foeBlack: !!startSpec.p2?.trainerSilhouette, foe2Black: !!second?.black, meBlack: me.black,
+
+    const players = level() > 0 ? new Map(entrySoundFiles(kind).map(path => [path, entrySound(path, { fetchBytes, pictureWays: extraViewOptions.pictureWays, level })])) : null;
+
+    return mountEntry(root, { kind, boss, named, reduced, pictures, quit: { label: say(lang, 'window.leave'), press: () => leaveButton.click() }, sound: players && (path => players.get(path)?.()), foeBlack: !!startSpec.p2?.trainerSilhouette, foe2Black: !!second?.black, meBlack: me.black,
       names: { me: myName, foe: kind === 'wild' ? '' : foes.map(f => f.name).filter(Boolean) } });
   })();
 
@@ -152,7 +155,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
   function padPress(key) {
     if (closed) return;
     if (!confirmBox.hidden) return confirmCursor.press(key);
-    if (mode === 'result' && endPress?.(key)) return;
+    if (mode === 'result' && endPress?.(key)) return; // while the end screen is up, the pad drives it
     if (mode === 'running' || mode === 'result') session?.pressKey?.(key);
   }
   let endChoice = null, endPress = null, stopEnd = () => {}, saveFailed = false;
@@ -177,7 +180,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     if (closed) return;
     console.error(error);
     hideConfirm();
-    preparing.hide(); entry?.remove(); root.querySelector('.end')?.remove();
+    preparing.hide(); entry?.remove(); root.querySelector('.end')?.remove(); // removing the entry animation also makes the window opaque (entry.remove)
     [oops.querySelector('.hd').textContent, oops.querySelector('.human').textContent] = humanError(error, lang);
     oops.querySelector('.dev').textContent = String(error?.stack ?? error);
     oops.querySelector('.row').hidden = !onRetry;
@@ -189,7 +192,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
   oops.querySelector('.copy').onclick = async () => {
     const text = oops.querySelector('.dev').textContent;
     try { await navigator.clipboard.writeText(text); oops.querySelector('.copy').textContent = say(lang, 'window.copied'); }
-    catch {
+    catch { // if the sandbox blocks the clipboard, just select the text
       const range = document.createRange(); range.selectNodeContents(oops.querySelector('.dev'));
       getSelection().removeAllRanges(); getSelection().addRange(range);
     }
@@ -200,9 +203,10 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     preparing.hide();
     session?.close();
     stopEnd();
-    entry?.remove();
 
-    if ((mode === 'running' || mode === 'result') && !paused) await backToChat(root).catch(() => {});
+    const overPlates = !!entry?.element.isConnected;
+    if (((mode === 'running' || mode === 'result') || overPlates) && !paused) await backToChat(root, { dark: () => entry?.remove() }).catch(() => {});
+    entry?.remove();
     try { await onClose(); root.remove(); takeDown(); popBack(); }
     catch (error) {
       // If hiding itself fails, keep the error and a close button to retry.
@@ -213,15 +217,15 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
   const hideConfirm = () => {
     if (confirmBox.hidden) return;
     confirmBox.hidden = true;
-    stage.focus?.({ preventScroll: true });
+    stage.focus?.({ preventScroll: true }); // battle keys go back to the view (view/index.js gives stage a tabindex)
   };
   const confirmCursor = choiceCursor([confirmBox.querySelector('.keep'), confirmBox.querySelector('.quit')], hideConfirm);
   leaveButton.onclick = () => {
-    if (mode === 'result' && endChoice && !saveFailed) return endChoice('confirm');
+    if (mode === 'result' && endChoice && !saveFailed) return endChoice('confirm'); // end screen: confirm the result, then to chat (if saving failed, just leave)
     if (mode !== 'running' || forfeitFailed) return close();
     confirmBox.querySelector('.what').textContent = say(lang, iron ? 'window.quitIron' : 'window.quitVoid');
     confirmBox.hidden = false;
-    confirmCursor.select(0);
+    confirmCursor.select(0); // Continue is the default (a stray Enter/Space does not close)
   };
   confirmBox.querySelector('.keep').onclick = hideConfirm;
 
@@ -314,7 +318,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
 
     const onEndKey = event => {
       if (!['Enter', ' ', 'Escape', 'z', 'x', 'Z', 'X', 'Backspace'].includes(event.key)) return;
-      if (event.target?.closest?.('button')) return;
+      if (event.target?.closest?.('button')) return; // Enter/Space on a button belong to that button
       event.preventDefault(); event.stopPropagation();
       endChoice('confirm');
     };
@@ -332,9 +336,9 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     };
     endChoice = async kind => {
       if (busy || closed) return;
-      if (ui && Date.now() - shownAt < END_GUARD_MS) return;
+      if (ui && Date.now() - shownAt < END_GUARD_MS) return; // ignore presses right after it appears
       busy = true; ui?.busy(true);
-      let committed = null;
+      let committed = null; // set once the result write has answered
       try {
         if (kind === 'retry') { await story.onRetry(result); return; }
 
@@ -366,7 +370,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     storyDot(on) { foldButton.classList.toggle('dot', on); },
 
     progress() { return session?.progress?.() ?? null; },
-
+    /** Snapshot at the start of the last turn (checkpoint) | null */
     snapshot() { return session?.snapshot?.() ?? null; },
 
     position() { return session?.position?.() ?? null; },
@@ -376,7 +380,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
     async start() {
       if (started || closed) return;
       started = true;
-      clearBattleMarks();
+      clearBattleMarks(); // measurement marks of earlier battles (plugin/battle/marks.js)
       try {
         entry?.shown();
 
@@ -390,10 +394,10 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
               await loaded();
               preparing.hide();
               await reveal();
-              session.watchButtons(screenButtons.set);
+              session.watchButtons(screenButtons.set); // the view says when back / the page arrows have something to do
               setMode('running');
             }, development });
-          if (paused) session.pause();
+          if (paused) session.pause(); // collapsed between two battles
           return session.run().finally(() => { hideConfirm(); });
         };
 
@@ -409,7 +413,7 @@ export function mountBattle({ parent = document.body, fetchBytes, onClose = () =
           result = await runOne(next, { reveal: () => fade.in() });
         }
         if (!result || closed) return;
-        setMode('result');
+        setMode('result'); // the band shows only X and down-arrow
         showEnd(result);
         return result;
       } catch (error) {

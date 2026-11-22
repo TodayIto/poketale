@@ -1,21 +1,21 @@
-import { findBlocks, findTags, parseChange, parseBattle, battlesIn, hashKey, seededIndex, speciesName, sharedForms, pickForm, messageId, norm, stripBlocksRead } from './blocks.mjs';
+import { findBlocks, findTags, parseChange, parseBattle, battlesIn, hashKey, seededIndex, speciesName, sharedForms, pickForm, messageId, norm, stripBlocksRead, lookupId } from './blocks.mjs';
 import { expForLevel, calcExpGain, growthOf as growthOfSpecies, DEFAULT_EXP_RATE, storyExpRate, STORY_EXP_PACE } from '../engine/exp.mjs';
-import { STATS, STATUS_IDS, battleOnlyBase, completeSet, fixedTeraType, formGimmickMissing, formItemMissing, learnsetOf, toID } from '../engine/mon.mjs';
-import { levelEvolution, usesHeldItem, extraEvolutions, countOf, evolutionStops, ABSENT_TRADE_EVOLUTION, EVOLVE_FRIENDSHIP, lockMark } from '../engine/evolution.mjs';
+import { STATS, STATUS_IDS, battleOnlyBase, completeSet, fixedTeraType, autoTeraType, formGimmickMissing, formItemMissing, learnsetOf, toID, gmaxOf, takesMaxSoup, DYNAMAX_LEVEL_MAX } from '../engine/mon.mjs';
+import { levelEvolution, usesHeldItem, extraEvolutions, countOf, evolutionStops, ABSENT_TRADE_EVOLUTION, EVOLVE_FRIENDSHIP, lockMark, genMark } from '../engine/evolution.mjs';
 import { engineMember } from '../engine/input.mjs';
 import { escapeRe } from './norm.mjs';
 import { BAG_ITEMS, isBall, foodHeal } from '../engine/bag.mjs';
 import { ppUpCount } from '../engine/pp.mjs';
 import { DEFAULT_FORMAT, DEFAULT_RULE, formatRules, ruleFormat, formatRule } from '../engine/rules.mjs';
 import { waitingTrainer } from '../engine/core.mjs';
-import { HYPER_TRAIN_LEVEL, expShareOn, OUTSIDE_ITEMS, steedBase, formMoveOwners } from './items.mjs';
+import { HYPER_TRAIN_LEVEL, OUTSIDE_ITEMS, Z_RING_NAMES, DYNAMAX_BAND_NAMES, isZCrystalId, steedBase, formMoveOwners, EXP_SHARE } from './items.mjs';
 import { say } from './screen-text.mjs';
-import { isCustomItem, itemId, customInfo, addCustomItem, tidyCustomItems } from './custom-items.mjs';
+import { isCustomItem, itemId, customInfo, addCustomItem, tidyCustomItems, storyDisc, itemAs } from './custom-items.mjs';
 import { TOOL_EFFECTS, ownerMonOf } from './tools.mjs';
 import { ITEM_EFFECTS_READY } from './item-effects.mjs';
 import { PARTY_MAX, MAX_LEVEL, MAX_MOVES, MAX_IV, EV_STAT_MAX, EV_TOTAL_MAX, OT_NAME_MAX, BOX_NAME_MAX, PLAYER_NAME } from './rules.mjs';
 import { bossBgm, personalName } from './named.mjs';
-import { foeGimmicks as foeGimmicksOf } from './gimmicks.mjs';
+import { foeGimmicks as foeGimmicksOf, dynamaxHere } from './gimmicks.mjs';
 import { outcomeOf } from './outcome.mjs';
 import { opponentPicture, foePartnerPicture } from './trainer-look.mjs';
 import { readStored, isRecord } from './stored.mjs';
@@ -29,11 +29,17 @@ import { SAVE_VAR } from './save.mjs';
 import { boxOf } from './diary.mjs';
 import { QUEUE_VAR, runAction } from './acts.mjs';
 import { IMPORT_VAR, readImports, applyImport, importPlace, inForce } from './import.mjs';
-import { SETTING_CHANGES_VAR, foldCtxAt, foldValues, ruleValues, rulesAt } from './setting-changes.mjs';
+import { SETTING_CHANGES_VAR, foldValues, ruleValues, rulesAt } from './setting-changes.mjs';
+import { BATTLE_RULE_VAR, foldCtxAt, genOption, genRuleOn, evolveGenOf, oneSpecialAt } from './battle-rule.mjs';
+import { learnGenOf, metGenAt } from './learning.mjs';
+import { levelUpAt, evolutionLevelMoves } from '../engine/levelup.mjs';
+import { withMachineStandard, machineUsedUp, isMachineId } from './machine-standards.mjs';
+import { tmMove } from './item-info.mjs';
+import { worldAt, worldKey, discWorld, WORLD_VAR, COMPAT_WORLD_VARS } from './compat-world.mjs';
 import { enjoymentOf, setEnjoyment, friendshipFor, afterMessage, ENJOY_STEP, canEat, fullnessOf, setFullness, FULL_PER_FOOD, foodFriendship, parsePuff, puffFriendship,
   FREE_GRADE, puffCount, addPuffs, eatsFood, FULL_MAX } from './amie.mjs';
 import { eggChance, breedEgg, giftEgg, eggCycles, hatchSpeed, HATCH_FRIENDSHIP } from '../engine/breeding.mjs';
-import { evGain, statRoom, clearBags, bagOf, traineeOf, setTrainee, isHungBag, setHungBag, refillEnergy } from './training.mjs';
+import { evGain, clearBags, bagOf, traineeOf, setTrainee, isHungBag, setHungBag, refillEnergy, effortFollows, addStatExp, statExpVitamin } from './training.mjs';
 import { beatsRecord, recordOf, validRecord } from './amie-games.mjs';
 import { LAB_TIME, revivalOf, labOf, isLabId } from './fossil.mjs';
 
@@ -52,10 +58,12 @@ const WATER_BIOMES = new Set(['sea', 'seabed', 'lake', 'beach', 'swamp']);
 const CAVE_BIOMES = new Set(['cave', 'ice_cave']);
 
 export { toID };
-
-export const clone = value => JSON.parse(JSON.stringify(value));
+/** Deep copy of state (only JSON-stored values) */
+export const clone = value => (value === undefined ? undefined : JSON.parse(JSON.stringify(value))); // undefined stays undefined (JSON has no undefined)
 
 const fail = (rule, values) => { throw ruleError(`state.${rule}`, values); };
+
+// -- Table (chat variable) -----------------------------------------
 
 export function emptyState() {
   return { v: 1, party: [], box: [], bag: {}, money: 0, dex: { seen: [], caught: [] }, trainers: {} };
@@ -104,6 +112,8 @@ export function pruneTable(chat, keep = []) {
   return dropped;
 }
 
+// -- Current state ----------------------------------------
+
 export const createFolds = () => new Map();
 const FOLD_CHATS = 4;
 function foldList(folds, chat) {
@@ -122,7 +132,7 @@ export function heldChanges(chat, table = readTable(chat)) {
   return surveyBattles(chat, table).held;
 }
 
-export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR, SETTING_CHANGES_VAR, `$${LEAGUE_VAR}`, `$${UNOVA_ERA_VAR}`, ...COMPAT_PARTNER_VARS];
+export const stateVars = () => [TABLE_VAR, SAVE_VAR, QUEUE_VAR, IMPORT_VAR, SETTING_CHANGES_VAR, BATTLE_RULE_VAR, `$${LEAGUE_VAR}`, `$${UNOVA_ERA_VAR}`, WORLD_VAR, ...new Set([...COMPAT_PARTNER_VARS, ...Object.values(COMPAT_WORLD_VARS)])];
 
 const BOOK_FIELDS = ['badges', 'league', 'gyms'];
 
@@ -189,7 +199,12 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const importsAt = i => imports.get(i) ?? [];
 
   const ctxAt = foldCtxAt(chat, ctx);
-  const settingsOf = i => foldValues(ctxAt(i));
+
+  const settingsOf = i => { const at = ctxAt(i); return { ...foldValues(at), formGen: at.formGen ?? null, ...(at.learnFrom ? { learnFrom: at.learnFrom } : {}) }; };
+
+  const worldOf = worldAt(chat);
+
+  const discOf = i => { const at = ctxAt(i); return discWorld(worldOf(i), at.formGen, at.battleRule); };
 
   const partner = compatPartnerStart(chat);
   const firstInfo = partner ? [...survey.battles.values()].filter(b => !b.discarded).sort((a, b) => a.at - b.at)[0] ?? null : null;
@@ -243,10 +258,10 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
     return { index: i, date: status?.date ?? null, party: hatchedParty(now).map(mon => ({ species: mon.set.species, ...(mon.set.name ? { name: mon.set.name } : {}) })),
       opponents: [spec.name, spec.foePartner?.name].filter(Boolean) };
   };
-  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}\u0001${partnerKey(i)}`;
+  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}\u0001${partnerKey(i)}\u0001${worldKey(discOf(i))}`;
   let from = 0;
   while (from <= last && from < folds.length && folds[from].key === keyOf(from)) from++;
-  if (from <= last) folds.length = from;
+  if (from <= last) folds.length = from; // later ones are stale
   let changed = false;
   for (const fold of folds.slice(0, from)) {
     for (const [key, set] of Object.entries(fold.fills)) if (!Object.hasOwn(table.fills, key)) { table.fills[key] = set; changed = true; }
@@ -266,12 +281,14 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
     const here = ctxAt(i);
 
     state = inRule(ctx?.sim, state, here.rule);
+
+    state = teraKept(state, { ...here, sim: ctx?.sim });
     if (league) state = { ...state, badges: leagueAt(league, places, i) };
 
     if (messages[i]?.role === 'char') {
       status = statusIn(messages[i]) ?? status;
       state = storyMention(state, parts[i], here);
-      state = storyTick(state, name, here).state;
+      state = storyTick(state, name, { ...here, status }).state;
       state = refillEnergy(afterMessage(state));
     }
     const at = { ...here, status };
@@ -289,7 +306,8 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
         for (const action of (acted?.v === 2 ? acted.actions : storyEnd?.actions) ?? []) if (!isReflected(action, reflected, seen)) state = runAction(state, action, at).state;
         for (const id of reflectedBy(table, event.key)) reflected.add(id);
         if (acted?.v === 2) continue;
-        if (!storyEnd) state = inRule(ctx?.sim, withBook(clone(table.snaps[event.key]), state), here.rule);
+
+        if (!storyEnd) state = teraKept(inRule(ctx?.sim, keepStoryDiscs(state, keepOrigins(state, withBook(clone(table.snaps[event.key]), state), at)), here.rule), { ...at, sim: ctx?.sim }, state);
         else {
           if (storyEnd.engine) state = applyBattles(state, [...storyEnd.engine.before ?? [], storyEnd.engine], at);
           if (storyEnd.who) {
@@ -301,7 +319,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
         continue;
       }
       if (held.has(changeAt(i, event.n))) continue;
-      const { ops } = parseChange(event.body, here);
+      const { ops } = parseChange(event.body, withMachineStandard(here, status?.region, discOf(i)));
       const before = Object.keys(table.fills).length;
       const was = state, prefix = `${name}:${event.key}`;
       state = applyOps(state, ops, at, prefix, table).state;
@@ -310,10 +328,12 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       ops.forEach((_, j) => { const key = `${name}:${event.key}:${j}`; if (Object.hasOwn(table.fills, key)) fills[key] = table.fills[key]; });
     }
     state = book(applyImportsAt(i, state, at, reflected, seen), i);
+
+    state = storyDiscs(state, withMachineStandard({ ...here, ...ruleValues(null) }, status?.region, discOf(i)));
     if (keep) folds.push({ key: keyOf(i), after: state, fills, status, win });
   }
 
-  const after = inRule(ctx?.sim, state, settingsOf(last + 1).rule);
+  const after = teraKept(inRule(ctx?.sim, state, settingsOf(last + 1).rule), { ...ctxAt(last + 1), sim: ctx?.sim });
   const counted = new Set(parts.slice(0, last + 1).flatMap(text => findTags(text).map(t => t.key)).filter(used));
   return { state: keep && after === state ? clone(state) : after, table, changed, counted, reflected: new Set([...counted].flatMap(key => reflectedBy(table, key))),
     imported: new Set(importedUpto(last)), status };
@@ -359,7 +379,7 @@ export function friendshipLine(mon, ctx, lang) {
 }
 
 export function addFriendship(mon, amount, source, ctx) {
-  if (friendshipLocked(mon)) return 0;
+  if (friendshipLocked(mon)) return 0; // locked (debug mode): the number and its carry stay
   const now = friendshipOf(ctx, mon);
   const step = amount ?? friendshipStep(now, source, ruleValues(ctx).friendshipSv);
   const { value, carry } = changeFriendship(now, step, { item: mon.set.item, ball: mon.ball, rate: ctx.friendshipRate ?? 1, carry: mon.friendshipCarry ?? 0 });
@@ -404,11 +424,14 @@ export function storyMention(state, text, ctx) {
   return next;
 }
 
+/** Whether a Pokemon of the state is an egg */
 export const isEgg = mon => !!mon?.egg;
 
 export const hatched = mons => mons.filter(mon => !isEgg(mon));
 
 export const hatchedParty = state => hatched(state.party);
+
+export const hatchDue = mon => !!mon?.egg?.ready || !!mon?.pending?.hatched;
 
 export function newEgg(ctx, set, uid, ball) {
   const { full: _, ...mon } = newMon(ctx, { ...set, item: '', name: '' }, uid);
@@ -417,14 +440,39 @@ export function newEgg(ctx, set, uid, ball) {
 
 function hatch(state, ctx, mon) {
   delete mon.egg;
+  keepTera(mon, ctx);
   if (ruleValues(ctx).startFull) mon.full = FULL_MAX;
   mon.friendship = HATCH_FRIENDSHIP;
-  mon.pending.hatched = true;
   markDex(state, ctx.sim, mon.set.species, true);
 }
 
+const teraOf = (dex, mon) => (dex && !isEgg(mon) && !mon?.set?.teraType ? autoTeraType(dex.species.get(mon.set.species), mon.uid) : '');
+
+const teraHolders = state => {
+  const out = [];
+  const visit = mon => { if (!mon?.set) return; out.push(mon); visit(mon.fused); };
+  for (const mon of [...state.party ?? [], ...state.box ?? [], ...labOf(state)]) visit(mon);
+  return out;
+};
+
+function keepTera(mon, ctx, had = null) {
+  if (!ruleValues(ctx).catchTera010) return;
+  const type = had?.get(mon.uid) || teraOf(ctx.sim?.Dex, mon);
+  if (type && !mon.set.teraType) mon.set.teraType = type;
+}
+function teraKept(state, ctx, before = null) {
+  if (!ruleValues(ctx).catchTera010 || !ctx.sim) return state;
+  if (!teraHolders(state).some(mon => teraOf(ctx.sim.Dex, mon))) return state;
+  const had = before && new Map(teraHolders(before).filter(mon => mon.set.teraType && !isEgg(mon)).map(mon => [mon.uid, mon.set.teraType]));
+  const next = clone(state);
+  for (const mon of teraHolders(next)) if (!isEgg(mon)) keepTera(mon, ctx, had);
+  return next;
+}
+
+/** What eggChance reads of a Pokemon */
 const parentOf = mon => ({ species: mon.set.species, gender: mon.set.gender || '', ot: mon.ot ?? '' });
 
+/** The pair's two Pokemon in the party, or null when either is not there */
 const pairIn = (state, pair) => {
   const mons = (pair ?? []).map(uid => state.party.find(m => m.uid === uid));
   return mons.length && mons.every(Boolean) ? mons : null;
@@ -448,16 +496,22 @@ export function storyTick(state, name, ctx) {
   const next = clone(state), events = [];
   const speed = hatchSpeed(hatchedParty(next).map(m => m.set.ability)) * (ctx.hatchRate ?? 1);
   for (const [i, mon] of next.party.entries()) {
-    if (!isEgg(mon)) continue;
+    if (!isEgg(mon) || mon.egg.ready) continue;
     mon.egg.cycles = Math.max(0, Math.round((mon.egg.cycles - speed) * 1000) / 1000);
     if (mon.egg.cycles > 0) continue;
+    if (ruleValues(ctx).hatchOnScreen010) {
+      mon.egg.ready = true;
+      events.push({ kind: 'eggReady', who: { uid: mon.uid, egg: true, species: '', name: '' }, slot: i + 1 });
+      continue;
+    }
     hatch(next, ctx, mon);
+    mon.pending.hatched = true;
     events.push({ kind: 'hatch', who: { uid: mon.uid, species: mon.set.species, name: '' }, slot: i + 1 });
   }
   const rng = rngFor(sim, `${name}:egg`);
   if (breeding?.chance && rng.random(100) < breeding.chance) {
     const [a, b] = [breeding.a, breeding.b].map(m => next.party.find(p => p.uid === m.uid));
-    const { set, ball } = breedEgg(sim.Dex, a, b, rng, { levelUp: ctx.levelUp });
+    const { set, ball } = breedEgg(sim.Dex, a, b, rng, { levelUp: joiningLevelUp(ctx), oneSpecial: oneSpecialAt(ctx) }); // one Special IV in generations 1-2 (0.1.0 G4b)
     const egg = newEgg(ctx, set, uniqueUid(next, `e${hashKey(name)}`), ball);
     const list = next.party.length < PARTY_MAX ? next.party : next.box;
     list.push(egg);
@@ -504,7 +558,8 @@ export function evolutionCheck(ctx, mon, party = [], badges = 0) {
   const status = ctx.status ?? null;
   return {
     mon: { species: species.name, gender: mon.set.gender, item: mon.set.item, uid: mon.uid, moves: mon.set.moves, nature: mon.natureOrig ?? mon.set.nature,
-      ability: mon.set.ability, stats: { atk: stat('atk'), def: stat('def') }, counts: mon.counts, ...lockMark(mon.evolveLocked) },
+      ability: mon.set.ability, stats: { atk: stat('atk'), def: stat('def') }, counts: mon.counts, gigantamax: mon.set.gigantamax === true, ...lockMark(mon.evolveLocked),
+      ...genMark(evolveGenOf(ctx)) },
     now: { level: mon.set.level, friendship: friendshipOf(ctx, mon), timeOfDay: status?.timeOfDay ?? 'day', ...duskClock(ctx, status?.hour), weather: FIELD_WEATHERS[status?.weather] ?? null,
       region: status?.region ?? null, money: status?.money ?? null, badges, trade: ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION,
       party: hatched(party).filter(m => m.uid !== mon.uid).map(m => m.set.species) },
@@ -522,11 +577,15 @@ export function reflectedBy(table, key) {
 
 export const isReflected = (action, reflected, counted) => reflected.has(action.id) || (!!action.in && counted.has(action.in));
 
+// -- Operations --------------------------------------------------
+
 export function applyOps(state, ops, ctx, fillKeyPrefix, table, { trace = false } = {}) {
   let next = clone(state);
   const errors = [], notes = [];
   const steps = [];
+  const taught = taughtIn(ops, ctx);
   (ops ?? []).forEach((op, i) => {
+    if (keptDisc(next, op, taught, ctx)) return;
     const fillKey = `${fillKeyPrefix ?? 'local'}:${i}`;
     const attempt = clone(next);
     const fill = { known: table?.fills?.[fillKey] ?? null, made: null, notes: [] };
@@ -552,6 +611,46 @@ export function applyOps(state, ops, ctx, fillKeyPrefix, table, { trace = false 
   return trace ? { state: next, errors, notes, steps } : { state: next, errors, notes };
 }
 
+const taughtIn = (ops, ctx) => (ruleValues(ctx).discTeach010 ? new Set((ops ?? []).filter(op => op?.op === 'teach').map(op => toID(op.move))) : null);
+
+const takenItem = (state, op, ctx) => {
+  const read = itemId(op.item);
+  if (!read || !(op.delta < 0) || state.bag[read] > 0) return read;
+  const discs = [read, ...op.alts ?? []];
+  const alt = discs.slice(1).find(alt => state.bag[alt] > 0);
+  if (alt || op.fromBag || !isMachineId(read) || !ruleValues(ctx).discStoryItem010) return alt ?? read;
+  const story = Object.keys(state.bag).filter(id => state.bag[id] > 0 && storyDisc(state, id));
+  return discs.map(disc => story.find(id => storyDisc(state, id) === disc)).find(Boolean) ?? read;
+};
+
+const keptDisc = (state, op, taught, ctx) => {
+  if (!taught?.size || op?.op !== 'item' || !(op.delta < 0) || op.fromBag) return false;
+  const id = takenItem(state, op, ctx), disc = id && itemAs(state, id);
+  return !!disc && taught.has(tmMove(disc)) && !machineUsedUp(disc);
+};
+
+const storyDiscReads = new Map();
+
+function storyDiscs(state, reading) {
+  let items = null;
+  for (const [id, info] of Object.entries(state.customItems ?? {})) {
+    if (info?.disc || typeof info?.name !== 'string') continue;
+    const key = [info.name, reading.machineStd, reading.machineRegion, reading.machineGen].join('\u0001');
+    if (!storyDiscReads.has(key)) { const read = lookupId('items', info.name, { reading }); storyDiscReads.set(key, read && isMachineId(read) ? read : null); }
+    const disc = storyDiscReads.get(key);
+    if (disc) (items ??= { ...state.customItems })[id] = { ...info, disc };
+  }
+  return items ? { ...state, customItems: items } : state;
+}
+
+function keepStoryDiscs(before, after) {
+  for (const [id, info] of Object.entries(after.customItems ?? {})) {
+    const disc = storyDisc(before, id);
+    if (disc && info && !info.disc) after.customItems[id] = { ...info, disc };
+  }
+  return after;
+}
+
 function takeCustom(state, id, op, ctx, named = true) {
   if (op.custom) {
     const ownerMon = op.custom.owner ? ownerMonOf(state, ctx.sim.Dex, op.custom.owner) : null;
@@ -562,7 +661,7 @@ function takeCustom(state, id, op, ctx, named = true) {
 
 function applyOp(state, op, ctx, fillKey, fill) {
   const { sim } = ctx;
-  const format = stateFormat(state);
+  const format = stateFormat(state); // the rule this state's HP and PP are in
   switch (op?.op) {
     case 'add': {
 
@@ -597,7 +696,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       const species = sim.Dex.species.get(op.species);
       if (!species.exists) fail('unknownSpecies', { species: op.species });
       let set = fill.known;
-      if (!set || toID(set.species) !== species.id) set = fill.made = giftEgg(sim.Dex, species.name, rngFor(sim, fillKey), { levelUp: ctx.levelUp });
+      if (!set || toID(set.species) !== species.id) set = fill.made = giftEgg(sim.Dex, species.name, rngFor(sim, fillKey), { levelUp: joiningLevelUp(ctx), oneSpecial: oneSpecialAt(ctx) });
       const egg = newEgg(ctx, clone(set), uniqueUid(state, `e${hashKey(fillKey)}`));
       (op.to === 'box' || state.party.length >= PARTY_MAX ? state.box : state.party).push(egg);
       return;
@@ -624,16 +723,17 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'rest': return shortRest(state, sim);
     case 'swap': {
-
+            // Swap two Pokemon's places - reordering the party, party<->box swaps (panel)
       const a = findMon(state, op.a, ctx, { egg: true }), b = findMon(state, op.b, ctx, { egg: true });
       if (a.mon.uid === b.mon.uid) fail('swapSame', { mon: monLabel(a.mon) });
       a.list[a.index] = b.mon;
       b.list[b.index] = a.mon;
-      for (const { list, mon } of [a, b]) if (list === state.box) delete mon.revived;
+      for (const { list, mon } of [a, b]) if (list === state.box) delete mon.revived; // the box one goes into the party: a revived fossil is received
       return;
     }
     case 'item': {
-      const id = itemId(op.item);
+
+      const id = takenItem(state, op, ctx);
       if (!id) fail('itemNoName');
       takeCustom(state, id, op, ctx, op.delta > 0);
 
@@ -690,9 +790,11 @@ function applyOp(state, op, ctx, fillKey, fill) {
       takeCustom(state, item, op, ctx);
       if (op.fromBag) {
 
+        const shared = ruleValues(ctx).zCrystalShare ? id => isZCrystal(sim, id) : () => false;
         if (item && !(state.bag[item] > 0)) fail('itemNotInBag', { item });
-        if (item) { state.bag[item] -= 1; if (!state.bag[item]) delete state.bag[item]; }
-        if (mon.set.item) state.bag[mon.set.item] = (state.bag[mon.set.item] ?? 0) + 1;
+        if (item && !shared(item)) { state.bag[item] -= 1; if (!state.bag[item]) delete state.bag[item]; }
+        const old = mon.set.item;
+        if (old) state.bag[old] = shared(old) ? Math.max(state.bag[old] ?? 0, 1) : (state.bag[old] ?? 0) + 1;
       }
       mon.set.item = item;
       dropStoppedEvolution(sim.Dex, mon, ctx);
@@ -704,6 +806,8 @@ function applyOp(state, op, ctx, fillKey, fill) {
 
       const to = (op.forms && pickForm(op.forms, { species: toID(mon.set.species), gender: mon.set.gender })) || op.species;
       evolve(state, ctx, mon, to, { decoration: op.decoration });
+
+      if (op.gigantamax === true && takesMaxSoup(sim.Dex.species.get(mon.set.species))) mon.set.gigantamax = true;
       return;
     }
     case 'teach': {
@@ -727,7 +831,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       return;
     }
     case 'money': {
-      if (state.money === null) return;
+      if (state.money === null) return; // a chat whose money is tracked by a compatible bot
       state.money = Math.max(0, state.money + op.delta);
       return;
     }
@@ -800,6 +904,13 @@ function applyOp(state, op, ctx, fillKey, fill) {
       const { mon } = findMon(state, op.ref, ctx);
       const stat = String(op.stat ?? '');
       if (!STATS.includes(stat)) fail('unknownStat', { stat: op.stat });
+
+      if (op.statExp && oneSpecialAt(ctx)) {
+        const oldMax = maxHp(sim, mon.set, format);
+        if (!statExpVitamin(mon, stat)) fail('evsMax', { mon: monLabel(mon) });
+        keepHpGain(sim, mon, oldMax, format);
+        return;
+      }
       const evs = mon.set.evs ??= {};
       for (const s of STATS) evs[s] ??= 0;
       const amount = Math.trunc(Number(op.amount) || 0);
@@ -822,7 +933,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       const exp = Math.min(expForLevel(growth, MAX_LEVEL), Math.max(low, mon.exp ?? low) + amount);
       let to = mon.set.level;
       while (to < MAX_LEVEL && expForLevel(growth, to + 1) <= exp) to++;
-      const candied = candyFriendship(mon, expCandyOf(amount), ctx);
+      const candied = candyFriendship(mon, expCandyOf(amount), ctx); // the rule friendshipSv: the candy's own row, before its level-ups
       if (to > mon.set.level) list[index] = levelUpOutside({ ...mon, exp }, to - mon.set.level, ctx, null, outsideOf(state, { effort: false, levelFriendship: !candied }));
       else mon.exp = exp;
       return;
@@ -873,6 +984,26 @@ function applyOp(state, op, ctx, fillKey, fill) {
       mon.set.teraType = type.name;
       return;
     }
+    case 'gmax': {
+
+      const { mon } = findMon(state, op.ref, ctx);
+      if (typeof op.on !== 'boolean') fail('unknownOp', { op: 'gmax' });
+      const { species, has } = gmaxOf(sim.Dex, mon.set);
+      if (!takesMaxSoup(species)) fail('gmaxNot', { mon: monLabel(mon) });
+      if (has === op.on) fail('gmaxSame', { mon: monLabel(mon) });
+      mon.set.species = species.name;
+      if (op.on) mon.set.gigantamax = true; else delete mon.set.gigantamax;
+      return;
+    }
+    case 'dmaxLevel': {
+
+      const { mon } = findMon(state, op.ref, ctx);
+      const level = mon.set.dynamaxLevel ?? 0;
+      if (gmaxOf(sim.Dex, mon.set).species.cannotDynamax) fail('dmaxNot', { mon: monLabel(mon) });
+      if (op.delta !== 1 || level >= DYNAMAX_LEVEL_MAX) fail('dmaxLevel', { mon: monLabel(mon), max: DYNAMAX_LEVEL_MAX });
+      mon.set.dynamaxLevel = level + 1;
+      return;
+    }
     case 'form': {
 
       const { mon } = findMon(state, op.ref, ctx);
@@ -911,7 +1042,7 @@ function applyOp(state, op, ctx, fillKey, fill) {
       return;
     }
     case 'boxname': {
-
+            // Box name (tapping the "Box 1" label renames it). Empty name = default name
       const index = Number(op.box);
       if (!Number.isInteger(index) || index < 0 || index >= BOX_NAME_SLOTS) fail('boxNumber', { box: op.box });
       const names = [...(state.boxNames ?? [])];
@@ -932,7 +1063,11 @@ function applyOp(state, op, ctx, fillKey, fill) {
     }
     case 'hatched': {
 
-      const { mon } = findMon(state, op.ref, ctx);
+      const { mon } = findMon(state, op.ref, ctx, { egg: true });
+      if (isEgg(mon)) {
+        if (!mon.egg.ready) fail('isEgg');
+        hatch(state, ctx, mon);
+      }
       delete mon.pending.hatched;
       return;
     }
@@ -1020,7 +1155,7 @@ function settlePending(mon) {
 
 export function dropStoppedEvolution(dex, mon, ctx) {
   const held = ruleValues(ctx).everstoneWaiting ? mon.set.item : '';
-  if (!mon.pending?.evolve || !evolutionStops(dex, { species: mon.set.species, item: held, ...lockMark(mon.evolveLocked) }, 'level')) return;
+  if (!mon.pending?.evolve || !evolutionStops(dex, { species: mon.set.species, item: held, gigantamax: mon.set.gigantamax === true, ...lockMark(mon.evolveLocked) }, 'level')) return;
   mon.pending.evolve = null;
   settlePending(mon);
 }
@@ -1029,6 +1164,7 @@ export function maxPp(sim, moveId, ppUps = 0, formatid) {
   return formatRules(sim, formatid || DEFAULT_FORMAT).maxPp(moveId, ppUps);
 }
 
+/** PP Up count of one move of this Pokemon (0 if none) */
 export const ppUpsOf = (mon, moveId) => mon?.ppUps?.[toID(moveId)] ?? 0;
 
 export function movePp(sim, mon, moveId, formatid) {
@@ -1062,9 +1198,9 @@ function healBox(state, ctx) {
 
 export const SHORT_RESTS = 2;
 const SHORT_REST_SHARE = 0.5;
-
+/** Short rests left in this state (0 - SHORT_RESTS) */
 export const restsLeft = state => Math.max(0, SHORT_RESTS - (state?.restsUsed ?? 0));
-
+/** What a short rest gives back of a max value: whole points, at least 1 */
 const restShare = max => Math.max(1, Math.floor(max * SHORT_REST_SHARE));
 
 function shortRest(state, sim) {
@@ -1114,7 +1250,7 @@ function heal(sim, mon, { hpPercent, hpAdd, statusOnly, revive }, formatid) {
     return;
   }
   if (hpPercent !== undefined) {
-
+        // A fainted Pokemon only gets up with "revive"
     if (!fainted) mon.hp = hpFromPercent(sim, mon.set, hpPercent, true, formatid);
     return;
   }
@@ -1124,7 +1260,10 @@ function heal(sim, mon, { hpPercent, hpAdd, statusOnly, revive }, formatid) {
   mon.pp = {};
 }
 
-export function fillSet({ sim, levelUp }, teamSet, rng) {
+// -- Making Pokemon -----------------------------------------
+
+export function fillSet(ctx, teamSet, rng) {
+  const { sim } = ctx, levelUp = joiningLevelUp(ctx);
   const { hpPercent, status, ...set } = clone(teamSet);
   const species = sim.Dex.species.get(set.species);
   if (!species.exists) fail('unknownSpecies', { species: set.species });
@@ -1138,7 +1277,8 @@ export function fillSet({ sim, levelUp }, teamSet, rng) {
       return move.id;
     });
   }
-  const full = completeSet(sim.Dex, set, rng, { levelUp, label: species.name });
+
+  const full = completeSet(sim.Dex, set, rng, { levelUp, label: species.name, ...(oneSpecialAt(ctx) ? { oneSpecial: true } : {}) });
   full.item = full.item ? itemId(full.item) : '';
   full.name = full.name ?? '';
   return full;
@@ -1160,22 +1300,30 @@ export function newMon(ctx, set, uid) {
     exp: growth ? expForLevel(growth, set.level) : 0,
     pending: { levels: 0, moves: [], evolve: null },
     ...(ruleValues(ctx).startFull ? { full: FULL_MAX } : {}),
+    ...metGenField(ctx),
   };
 }
 
-export const levelUpMoves = ({ sim, levelUp }, species) => learnsetOf(levelUp, sim.Dex.species.get(species)) ?? [];
+const metGenField = ctx => { const met = metGenAt(ctx); return met === null ? {} : { metGen: met }; };
 
-export function rememberableMoves(ctx, mon) {
+// -- Level-up outside battle ----------------------------------------
+
+export const levelUpMoves = (ctx, species, mon = null, state = null) =>
+  learnsetOf(mon ? levelUpAt(ctx.levelUp, learnGenOf(ctx, mon, state)) : ctx.levelUp, ctx.sim.Dex.species.get(species)) ?? [];
+
+const joiningLevelUp = ctx => levelUpAt(ctx.levelUp, learnGenOf(ctx));
+
+export function rememberableMoves(ctx, mon, state = null) {
   const known = new Set(mon.set.moves.map(toID));
   const lowest = new Map();
-  for (const [level, move] of levelUpMoves(ctx, steedBase(ctx.sim.Dex.species.get(mon.set.species).name) ?? mon.set.species)) {
+  for (const [level, move] of levelUpMoves(ctx, steedBase(ctx.sim.Dex.species.get(mon.set.species).name) ?? mon.set.species, mon, state)) {
     if (level > mon.set.level || known.has(move)) continue;
     if (!lowest.has(move) || level < lowest.get(move)) lowest.set(move, level);
   }
   return [...lowest].map(([move, level]) => ({ move, level })).sort((a, b) => a.level - b.level);
 }
 
-const outsideOf = (state, extra) => ({ party: state.party, badges: badgeCount(state), format: stateFormat(state), ...extra });
+const outsideOf = (state, extra) => ({ party: state.party, badges: badgeCount(state), format: stateFormat(state), state, ...extra });
 
 function candyFriendship(mon, source, ctx) {
   if (!source || !ruleValues(ctx).friendshipSv) return false;
@@ -1185,7 +1333,7 @@ function candyFriendship(mon, source, ctx) {
 
 const expCandyOf = amount => Object.keys(OUTSIDE_ITEMS).find(id => OUTSIDE_ITEMS[id].exp === amount && Object.hasOwn(FRIENDSHIP_STEPS_SV, id)) ?? null;
 
-export function levelUpOutside(mon, delta, ctx, rng, { effort, party = [], badges = 0, format = DEFAULT_FORMAT, levelFriendship = true } = {}) {
+export function levelUpOutside(mon, delta, ctx, rng, { effort, party = [], badges = 0, format = DEFAULT_FORMAT, levelFriendship = true, state = null } = {}) {
   const { sim } = ctx;
   effort ??= formatRules(sim, format).effort;
   const next = clone(mon);
@@ -1210,7 +1358,7 @@ export function levelUpOutside(mon, delta, ctx, rng, { effort, party = [], badge
   if (next.hp !== null && next.hp > 0) next.hp = Math.min(newMax, next.hp + newMax - oldMax);
 
   next.pending.levels += to - from;
-  for (const [level, moveid] of levelUpMoves(ctx, set.species)) {
+  for (const [level, moveid] of levelUpMoves(ctx, set.species, next, state)) {
     if (level <= from || level > to) continue;
     if (set.moves.includes(moveid) || next.pending.moves.includes(moveid)) continue;
     next.pending.moves.push(moveid);
@@ -1219,7 +1367,7 @@ export function levelUpOutside(mon, delta, ctx, rng, { effort, party = [], badge
   if (levelFriendship) for (let level = from; level < to; level++) addFriendship(next, null, 'level', ctx);
 
   const { mon: evolving, now } = evolutionCheck(ctx, next, party, badges);
-  const evolution = levelEvolution(sim.Dex, evolving, now);
+  const evolution = levelEvolution(sim.Dex, evolving, now); // engine/evolution.mjs - the same check as in battle
   if (evolution) next.pending.evolve = evolution;
   return next;
 }
@@ -1290,7 +1438,7 @@ function sameSlotAbility(from, ability, to) {
   return to.abilities[slot] ?? to.abilities['0'];
 }
 
-function evolve(state, ctx, mon, target, { decoration } = {}) {
+function evolve(state, ctx, mon, target, { decoration, taught = false } = {}) {
   const { sim } = ctx;
   const from = sim.Dex.species.get(mon.set.species);
   const to = sim.Dex.species.get(target);
@@ -1303,8 +1451,8 @@ function evolve(state, ctx, mon, target, { decoration } = {}) {
   delete mon.counts;
   mon.pending.evolve = null;
 
-  for (const [level, moveid] of levelUpMoves(ctx, to.name)) {
-    if (level !== 0 || mon.set.moves.includes(moveid) || mon.pending.moves.includes(moveid)) continue;
+  for (const moveid of taught ? [] : evolutionLevelMoves(levelUpMoves(ctx, to.name, mon, state), mon.set.level, learnGenOf(ctx, mon, state))) {
+    if (mon.set.moves.includes(moveid) || mon.pending.moves.includes(moveid)) continue;
     mon.pending.moves.push(moveid);
   }
   settlePending(mon);
@@ -1313,13 +1461,17 @@ function evolve(state, ctx, mon, target, { decoration } = {}) {
     if (state.party.length >= PARTY_MAX || !(state.bag.pokeball > 0)) break;
     const extra = sim.Dex.species.get(name);
     const set = { ...clone(before.set), species: extra.name, ability: extra.abilities['0'], item: '', name: '', gender: extra.gender === 'N' ? '' : before.set.gender };
-    const born = { ...newMon(ctx, set, uniqueUid(state, `${mon.uid}-${extra.id}`)), ball: 'pokeball', ...(before.exp === undefined ? {} : { exp: before.exp }), ...(before.ot ? { ot: before.ot } : {}) };
+    const { metGen: _, ...made } = newMon(ctx, set, uniqueUid(state, `${mon.uid}-${extra.id}`)); // met where the Pokemon it comes from was
+    const born = { ...made, ball: 'pokeball', ...(before.exp === undefined ? {} : { exp: before.exp }), ...(before.ot ? { ot: before.ot } : {}),
+      ...(Number.isInteger(before.metGen) ? { metGen: before.metGen } : {}) };
     state.bag.pokeball -= 1;
     if (!state.bag.pokeball) delete state.bag.pokeball;
     state.party.push(born);
     markDex(state, sim, extra.name, true);
   }
 }
+
+// -- Battle result ---------------------------------------------
 
 export function applyBattleResult(before, result, ctx, { battle = null, outcome = outcomeOf(result), start = null, format = null } = {}) {
   const { sim } = ctx;
@@ -1346,7 +1498,7 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
   for (const member of mine?.team ?? []) {
     const mon = [...state.party, ...state.box].find(m => m.uid === member.uid);
     if (!mon) continue;
-    const from = started.get(member.uid) ?? { set: mon.set, exp: mon.exp, friendship: mon.friendship, friendshipCarry: mon.friendshipCarry, counts: mon.counts };
+    const from = started.get(member.uid) ?? { set: mon.set, exp: mon.exp, friendship: mon.friendship, friendshipCarry: mon.friendshipCarry, counts: mon.counts, statExp: mon.statExp };
     const sameSpecies = toID(mon.set.species) === toID(from.set.species);
     gainLevel(ctx, mon, member, from);
 
@@ -1360,7 +1512,8 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
     if (member.counts) mon.counts = addCounts(mon.counts, member.counts, from.counts);
     if (member.cloak && sameSpecies && sim.Dex.species.get(mon.set.species).baseSpecies === 'Burmy') mon.set.species = member.cloak;
 
-    if (member.evs) mon.set.evs = addEffort(mon.set.evs, member.evs, from.set.evs);
+    if (member.statExp && ruleValues(ctx).genStats010) mon.statExp = addStatExp(mon, member.statExp, from);
+    if (member.evs) mon.set.evs = effortFollows(mon.set.evs, member.evs, from.set.evs);
     learnFromBattle(mon, member.moves.map(m => m.id), (from.set.moves ?? []).map(toID));
     const slots = new Map(member.moves.map(m => [m.id, m]));
     mon.pp = Object.fromEntries(mon.set.moves.flatMap(id => {
@@ -1377,11 +1530,12 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
 
     const evolution = sameSpecies ? evolutions.get(member.uid) : null;
     if (evolution?.evolved === true) {
-      evolve(state, ctx, mon, evolution.to);
-      mon.pending.moves = mon.pending.moves.filter(id => !mon.set.moves.includes(id));
+
+      evolve(state, ctx, mon, evolution.to, ruleValues(ctx).metGen010 ? { taught: true } : {});
+      mon.pending.moves = mon.pending.moves.filter(id => !mon.set.moves.includes(id)); // if the director already taught the L0 move
     } else if (evolution && evolution.evolved === undefined) {
-      mon.pending.evolve = evolution.to;
-      dropStoppedEvolution(sim.Dex, mon, ctx);
+      mon.pending.evolve = evolution.to; // result that never showed the evolution screen (engine result only)
+      dropStoppedEvolution(sim.Dex, mon, ctx); // locked since the battle started (a battle's spec from before the lock)
     }
   }
   for (const { uid, move } of result.learnQueue ?? []) {
@@ -1405,13 +1559,17 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
       species: sim.Dex.species.get(caught.species).name, level: foe.level, ability: foe.ability, nature: foe.nature,
       ivs: { ...foe.ivs }, evs: { ...foe.evs }, gender: foe.gender || '', shiny: !!foe.shiny,
       teraType: foe.teraType, moves: foe.moves.map(m => m.id), item: foe.originalItem || '', name: '',
+
+      ...(foe.gigantamax === true ? { gigantamax: true } : {}), ...(Number.isInteger(foe.dynamaxLevel) ? { dynamaxLevel: foe.dynamaxLevel } : {}),
     };
     const uid = uniqueUid(state, `c${hashKey(JSON.stringify([set, caught.turn, result.turn]))}`);
+
+    if (!set.teraType && ruleValues(ctx).catchTera010) set.teraType = autoTeraType(sim.Dex.species.get(set.species), uid) || undefined;
     const mon = newMon(ctx, set, uid);
     mon.hp = hpIn(foe, mon.set);
     mon.status = foe.status || '';
     mon.pp = Object.fromEntries(foe.moves.filter(m => m.pp < m.maxpp).map(m => [m.id, m.pp]));
-    const ppUps = ppUpsFromSlots(foe.moves, null);
+    const ppUps = ppUpsFromSlots(foe.moves, null); // opponents without it in the spec have 0
     if (ppUps) mon.ppUps = ppUps;
     if (caught.ball) mon.ball = caught.ball;
     if (caught.ball === 'friendball') mon.friendship = FRIEND_BALL_FRIENDSHIP;
@@ -1435,12 +1593,6 @@ function gainLevel(ctx, mon, end, from) {
     mon.exp = Math.max(low, Math.min(high, (mon.exp ?? low) + gained));
   }
   mon.set.level = level;
-}
-
-function addEffort(now, end, from) {
-  const out = Object.fromEntries(STATS.map(s => [s, now?.[s] ?? 0]));
-  for (const s of STATS) out[s] += Math.min(Math.max(0, (end[s] ?? 0) - (from?.[s] ?? 0)), statRoom(out, s));
-  return out;
 }
 
 function learnFromBattle(mon, end, from) {
@@ -1469,7 +1621,7 @@ export const battleRecord = (spec, result, outcome) => ({ start: spec.p1.team.ma
   ...(outcome === undefined ? {} : { outcome }), ...(spec.formatid ? { format: spec.formatid } : {}) });
 
 export const battlesBefore = spec => spec?.before ?? [];
-
+/** Which battle of its encounter this spec makes, from 1 */
 export const stageOf = spec => battlesBefore(spec).length + 1;
 
 export const backToBack = spec => battlesBefore(spec).length > 0 || !!waitingTrainer(spec);
@@ -1481,11 +1633,25 @@ export function nextStageSpec(spec, result, state, ctx, { seed }) {
   const before = [...battlesBefore(spec), battleRecord(spec, ended)];
   const now = inRule(ctx.sim, applyBattles(state, before, ctx), formatRule(spec.formatid));
   const { foePartner, double, partner, ...same } = spec;
-  return { ...same, seed: [...seed], p1: { ...spec.p1, team: playerTeam(now) }, p2: waiting,
-    ...(spec.bag ? { bag: { ...otherBag(spec.bag), ...battleBag(now, toolsIn(spec)), caughtSpecies: [...now.dex.caught] } } : {}), teraOrb: hasTeraOrb(now), before };
+
+  const learned = new Map(spec.p1.team.map(member => [member.uid, member.learnGen]));
+  const team = playerTeam(now, ctx).map(({ learnGen: own, ...member }) => {
+    const gen = learned.has(member.uid) ? learned.get(member.uid) : own;
+    return Number.isInteger(gen) ? { ...member, learnGen: gen } : member;
+  });
+  return { ...same, seed: [...seed], p1: { ...spec.p1, team }, p2: waiting,
+    ...(spec.bag ? { bag: { ...otherBag(spec.bag), ...battleBag(now, toolsIn(spec)), caughtSpecies: [...now.dex.caught] } } : {}), teraOrb: hasTeraOrb(now),
+    ...(Object.hasOwn(spec, 'keyStone') ? { keyStone: hasKeyStone(now) } : {}), // the Key Stone field as the first battle had it (keyStoneMega)
+    ...(Object.hasOwn(spec, 'zRing') ? { zRing: hasZRing(now) } : {}),
+
+    ...(Object.hasOwn(spec, 'dynamaxBand') ? { dynamaxBand: hasDynamaxBand(now) } : {}),
+    ...(Object.hasOwn(spec, 'dynamaxShown') ? { dynamaxShown: spec.dynamaxShown || dynamaxLevelShown(now, null) } : {}), before };
 }
 
-const playerTeam = state => hatchedParty(state).map(mon => engineMember(mon, state.customItems));
+const playerTeam = (state, ctx) => hatchedParty(state).map(mon => {
+  const member = engineMember(mon, state.customItems), gen = learnGenOf(ctx, mon, state);
+  return gen === null ? member : { ...member, learnGen: gen };
+});
 
 function battleBag(state, setting = true) {
   const tools = setting && ITEM_EFFECTS_READY;
@@ -1506,7 +1672,35 @@ export const toolsIn = spec => !Array.isArray(spec?.bag?.offTools);
 const otherBag = ({ items, foods, tools, offTools, ...rest }) => rest;
 const hasTeraOrb = state => (state.bag.teraorb ?? 0) > 0;
 
-export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, player, expShare, expRate = DEFAULT_EXP_RATE, status = null, effectItems = true, foeGimmicks = 'pokerogue',
+const hasKeyStone = state => Object.entries(state.bag).some(([id, count]) => count > 0
+  && (id === 'keystone' || (isCustomItem(id) && lookupId('items', customInfo(state, id)?.name ?? '') === 'keystone')));
+
+const isZCrystal = (sim, id) => !!id && !isCustomItem(id) && !!sim.Dex.items.get(id).zMove;
+const Z_RING_KEYS = new Set(Z_RING_NAMES.map(norm));
+
+const hasZRing = state => Object.entries(state.bag).some(([id, count]) => count > 0
+  && (id === 'zring' || (isCustomItem(id) && Z_RING_KEYS.has(norm(customInfo(state, id)?.name ?? '')))));
+const DYNAMAX_BAND_KEYS = new Set(DYNAMAX_BAND_NAMES.map(norm));
+
+const hasDynamaxBand = state => Object.entries(state.bag).some(([id, count]) => count > 0
+  && (id === 'dynamaxband' || (isCustomItem(id) && DYNAMAX_BAND_KEYS.has(norm(customInfo(state, id)?.name ?? '')))));
+
+export const dynamaxLevelShown = (state, region) => region === 'galar' || hasDynamaxBand({ bag: {}, ...state })
+  || [...(state?.party ?? []), ...(state?.box ?? [])].some(mon => (mon?.set?.dynamaxLevel ?? 0) >= 1);
+
+/** The items the party and box Pokemon hold (ids, '' for none) */
+const heldIds = state => [...(state?.party ?? []), ...(state?.box ?? [])].map(mon => toID(mon?.set?.item ?? ''));
+
+export const oneOfsOwned = state => {
+  const keys = [['teraorb', hasTeraOrb], ['keystone', hasKeyStone], ['zring', hasZRing], ['dynamaxband', hasDynamaxBand]]
+    .filter(([, has]) => has({ bag: {}, ...state })).map(([id]) => id);
+  const held = heldIds(state).filter(id => isZCrystalId(id) || id === EXP_SHARE);
+  return [...new Set([...keys, ...held])];
+};
+
+export const ownsExpShare = state => (state.bag?.[EXP_SHARE] ?? 0) > 0 || heldIds(state).includes(EXP_SHARE);
+
+export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, player, expShare, eraGimmicks, expRate = DEFAULT_EXP_RATE, status = null, effectItems = true, foeGimmicks = 'pokerogue',
   earlierRegion = null, blockFirst = false } = {}) {
   if (!hatchedParty(state).length) fail('noParty');
   if (!hatchedParty(state).some(m => m.hp !== 0)) fail('allFainted');
@@ -1516,7 +1710,7 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
   const { sprite, silhouette } = opponentPicture(battle, picture);
   const bgm = bossBgm({ wild: battle.wild, boss: battle.boss, sprite, name: battle.name, trainerClass: battle.trainerClass });
 
-  const p1 = playerTeam(state);
+  const p1 = playerTeam(state, ctx);
 
   const past = pairPast(sim, battle.team, trainersOf(state)[trainerKey(battle)]?.team ?? []);
   const p2 = battle.team.map((teamSet, i) => blockMember(sim, teamSet, `foe-${i + 1}`, past[i]));
@@ -1538,7 +1732,9 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
 
   const regionRule = !!ruleValues(ctx).battleRegion;
   const region = regionRule ? battleRegion({ block: battle.region ?? null, status: status?.region ?? null, earlier: earlierRegion, blockFirst }) : status?.region ?? null;
-  const gimmicks = foeGimmicksOf(sim.Dex, foeGimmicks, { battle, region, seed, p2, partner: partner?.team, foePartner: foePartner?.team, unknownRogue: regionRule });
+
+  const gimmicks = foeGimmicksOf(sim.Dex, foeGimmicks, { battle, region, seed, levelUp: ctx.levelUp, p2, partner: partner?.team, foePartner: foePartner?.team, unknownRogue: regionRule,
+    gen: ctx.formGen ?? null });
   if (gimmicks.p2) p2.splice(0, p2.length, ...gimmicks.p2);
   if (gimmicks.partner) partner.team = gimmicks.partner;
   if (gimmicks.foePartner) foePartner.team = gimmicks.foePartner;
@@ -1555,27 +1751,44 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
     ...(bgm ? { bgm } : {}),
     bag: {
       ...battleBag(state, effectItems), wild: !!battle.wild, caughtSpecies: [...state.dex.caught],
+
+      ...(battle.oldTitles ? {} : { namedTitles: true }),
+
+      ...(battle.oldJapanese ? {} : { namedJapanese: true }),
       env: { night: time === 'night', cave: CAVE_BIOMES.has(place), water: WATER_BIOMES.has(place) },
     },
     wild: !!battle.wild,
     boss: !battle.wild && !!battle.boss,
-    ...(expShareOn(expShare, state.bag) ? {} : { expShare: false }),
+
+    ...(genOption('expShare', ctx.battleRule, expShare) === 'gen' ? { expShare: 'gen', ...(ownsExpShare(state) ? { expShareOwned: true } : {}) } : {}),
+    ...(genRuleOn(ctx.battleRule) ? { eraGimmicks: genOption('eraGimmicks', ctx.battleRule, eraGimmicks) } : {}),
     expRate: storyExpRate(expRate),
-    ...(friendshipRate === 1 ? {} : { friendshipRate }),
+    ...(friendshipRate === 1 ? {} : { friendshipRate }), // engine/friendship.mjs - the last multiplier of every friendship rise
     ...(ruleValues(ctx).friendshipSv ? { friendshipSv: true } : {}),
-    ...(timeOfDay === 'day' ? {} : { timeOfDay }),
-    ...duskClock(ctx, hour),
-    ...evolutionWorld(ctx, { ...status, region }, state),
-    ...(weather ? { weather } : {}), ...(terrain ? { terrain } : {}),
+    ...(timeOfDay === 'day' ? {} : { timeOfDay }), // engine/exp.mjs - day / night evolutions
+    ...duskClock(ctx, hour), // Dusk Form Lycanroc's hours - a battle started from the rule duskLycanroc on
+    ...evolutionWorld(ctx, { ...status, region }, state), // engine/evolution.mjs - region (the battle's), money, badges, trade setting
+    ...(evolveGenOf(ctx) ? { genEvolve: true } : {}),
+    ...(weather ? { weather } : {}), ...(terrain ? { terrain } : {}), // engine/field.mjs - the place's weather at battle start
     teraOrb: hasTeraOrb(state),
+
+    ...(ruleValues(ctx).keyStoneMega ? { keyStone: hasKeyStone(state) } : {}),
+
+    zRing: hasZRing(state),
+
+    dynamaxBand: hasDynamaxBand(state),
+    dynamaxHere: dynamaxHere(battle, region),
     writtenForms: true,
     ...(ctx.formGen ? { formGen: ctx.formGen } : {}),
-    ...(gimmicks.foeGimmick ? { foeGimmick: gimmicks.foeGimmick } : {}),
+
+    dynamaxShown: dynamaxLevelShown(state, region),
+    ...(gimmicks.foeGimmick ? { foeGimmick: gimmicks.foeGimmick } : {}), // the foes' gimmick by region (ai/index.js gimmickRules) - none: as before
     biome: place,
-    ...(battle.double ? { double: true } : {}), ...(partner ? { partner } : {}), ...(foePartner ? { foePartner } : {}),
+    ...(battle.double ? { double: true } : {}), ...(partner ? { partner } : {}), ...(foePartner ? { foePartner } : {}), // double / tag battle (engine/core.mjs)
   };
 }
 
+/** A wild Pokemon has its hidden ability one time in this many (2%) */
 export const WILD_HIDDEN_ABILITY_ODDS = 50;
 
 export function wildHiddenAbility(dex, set, seed, uid) {
@@ -1585,7 +1798,7 @@ export function wildHiddenAbility(dex, set, seed, uid) {
 }
 
 function evolutionWorld(ctx, status, state) {
-  const badges = badgeCount(state), trade = ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION;
+  const badges = badgeCount(state), trade = ctx.tradeEvolution ?? ABSENT_TRADE_EVOLUTION; // missing = cord on both sides (engine/exp.mjs)
   return { ...(status?.region ? { region: status.region } : {}), ...(Number.isInteger(status?.money) ? { money: status.money } : {}), ...(badges ? { badges } : {}),
     ...(trade === ABSENT_TRADE_EVOLUTION ? {} : { tradeEvolution: trade }) };
 }
@@ -1596,7 +1809,7 @@ function blockMember(sim, teamSet, uid, past) {
 
   if (isCustomItem(set.item)) set.item = '';
   const member = { uid, set };
-  if (ppUps) member.ppUps = ppUps;
+  if (ppUps) member.ppUps = ppUps; // block Pokemon: only what is written, otherwise 0
   if (hpPercent !== undefined) member.hpPercent = hpPercent;
   if (status) member.status = status;
   return member;
@@ -1627,6 +1840,8 @@ function continuePast(sim, set, past) {
   return out;
 }
 
+// -- Pointing at a Pokemon ---------------------------------------
+
 export function findMon(state, ref, ctx, { boxFirst = false, egg = false } = {}) {
 
   const found = (list, index) => {
@@ -1634,7 +1849,7 @@ export function findMon(state, ref, ctx, { boxFirst = false, egg = false } = {})
     return { list, index, mon: list[index] };
   };
   if (ref && typeof ref.uid === 'string') {
-
+        // Pointed at by the panel: unique id (same Pokemon even if the order changes)
     for (const list of [state.party, state.box]) {
       const index = list.findIndex(m => m.uid === ref.uid);
       if (index >= 0) return found(list, index);
@@ -1659,7 +1874,7 @@ export function findMon(state, ref, ctx, { boxFirst = false, egg = false } = {})
     const mon = list.find(m => m.set.name && m.set.name.normalize('NFKC').toLowerCase().replace(/\s+/g, '') === key);
     if (mon) return at(mon);
   }
-
+  // a name two forms share (blocks.mjs sharedForms): whichever of them we have
   const species = speciesName(name, ctx);
   const ids = sharedForms(name, ctx) ?? (species ? [toID(species)] : []);
   for (const list of lists) {
@@ -1668,6 +1883,8 @@ export function findMon(state, ref, ctx, { boxFirst = false, egg = false } = {})
   }
   fail('notFound', { name });
 }
+
+// -- Small helpers -------------------------------------------
 
 export function rngFor(sim, text) {
   const a = parseInt(hashKey(text), 36), b = parseInt(hashKey(`${text}#`), 36);
@@ -1678,24 +1895,27 @@ export function rngFor(sim, text) {
 
 export function uniqueUid(state, base) {
   const all = [...state.party, ...state.box, ...labOf(state)];
-  const used = new Set([...all, ...all.map(m => m.fused).filter(Boolean)].map(m => m.uid));
+  const used = new Set([...all, ...all.map(m => m.fused).filter(Boolean)].map(m => m.uid)); // a partner inside a fused Pokemon too
   let uid = base;
   for (let n = 2; used.has(uid); n++) uid = `${base}-${n}`;
   return uid;
 }
 
+/** Exp group (engine/exp.mjs growthOf - same table lookup as in battle) */
 const growthOf = ({ sim, exp }, species) => growthOfSpecies(exp, sim.Dex.species.get(species));
 
 export function maxHp(sim, set, formatid) {
   return formatRules(sim, formatid || DEFAULT_FORMAT).maxHp(set);
 }
 
+/** HP percentage (0-100, rounded). Full = 100, fainted = 0 */
 export function hpPercentOf(sim, mon, formatid) {
   if (mon.hp === null || mon.hp === undefined) return 100;
   if (mon.hp <= 0) return 0;
   return Math.max(1, Math.min(100, Math.round(mon.hp / maxHp(sim, mon.set, formatid) * 100)));
 }
 
+/** HP percentage -> current HP (null = full). keepAlive: never 0 */
 export function hpFromPercent(sim, set, percent, keepAlive = false, formatid) {
   if (percent >= 100) return null;
   const hp = Math.round(maxHp(sim, set, formatid) * percent / 100);
@@ -1703,13 +1923,24 @@ export function hpFromPercent(sim, set, percent, keepAlive = false, formatid) {
 }
 
 export const ruleOf = state => state?.rule ?? DEFAULT_RULE;
-
+/** The rules format a state's HP and PP are computed with */
 export const stateFormat = state => ruleFormat(ruleOf(state));
 
 function shareOf(hp, was, max) {
   if (hp >= was) return null;
   if (was === max) return hp;
   return Math.max(1, Math.min(max - 1, Math.round(hp * max / was)));
+}
+
+function keepOrigins(before, after, ctx) {
+  const had = new Map([...before.party, ...before.box].map(mon => [mon.uid, mon.metGen]));
+  const met = metGenAt(ctx);
+  for (const mon of [...after.party ?? [], ...after.box ?? []]) {
+    if (Number.isInteger(mon.metGen)) continue;
+    const gen = had.has(mon.uid) ? had.get(mon.uid) : met;
+    if (Number.isInteger(gen)) mon.metGen = gen;
+  }
+  return after;
 }
 
 export function inRule(sim, state, rule = DEFAULT_RULE) {
@@ -1725,6 +1956,7 @@ export function inRule(sim, state, rule = DEFAULT_RULE) {
   return next;
 }
 
+/** Marks a species seen (and caught) in the Pokedex (mutates state) */
 export function markDex(state, sim, species, caught) {
   const id = sim.Dex.species.get(species).id;
   if (!id) return;

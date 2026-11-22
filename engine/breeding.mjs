@@ -9,28 +9,28 @@ export const compatHearts = chance => (chance >= EGG_CHANCE.sameSpecies[0] ? 3 :
 export const HATCH_FRIENDSHIP = 100;
 
 export const EGG_SPRITE = 'egg';
-
+/** Level of a Pokemon that just hatched */
 const HATCH_LEVEL = 1;
 
 export const CYCLES_PER_MESSAGE = 2;
 
 const INCUBATORS = Object.freeze(new Set(['flamebody', 'magmaarmor', 'steamengine']));
-
+/** IVs passed down: [without, with a Destiny Knot on either parent] */
 const INHERITED_IVS = [3, 5];
 
 const HIDDEN_ABILITY_PERCENT = 60, SAME_SLOT_PERCENT = 80;
-
+/** Power items -> the stat whose IV the holder passes down */
 const POWER_ITEMS = Object.freeze({ powerweight: 'hp', powerbracer: 'atk', powerbelt: 'def', powerlens: 'spa', powerband: 'spd', poweranklet: 'spe' });
-
+/** Balls that are never passed down (the egg is in a Poke Ball) */
 const UNINHERITED_BALLS = new Set(['masterball', 'cherishball']);
 const EGG_BALL = 'pokeball';
 
 const INCENSE_NEEDED = false;
 const INCENSE = Object.freeze({ wynaut: 'laxincense', azurill: 'seaincense', munchlax: 'fullincense', happiny: 'luckincense', mimejr: 'oddincense',
 	chingling: 'pureincense', bonsly: 'rockincense', budew: 'roseincense', mantyke: 'waveincense' });
-
+/** Species whose egg is the other one of the pair half the time */
 const PAIRED = Object.freeze({ nidoranf: 'Nidoran-M', nidoranm: 'Nidoran-F', illumise: 'Volbeat', volbeat: 'Illumise' });
-
+/** Species whose egg hatches as another species */
 const HATCHES_AS = Object.freeze({ manaphy: 'Phione' });
 
 const NO_EGGS = 'Undiscovered', DITTO = 'Ditto';
@@ -92,7 +92,7 @@ function hatchling(dex, base, held, rng) {
 }
 
 const ivOf = (parent, stat) => parent.hyper?.[stat] ?? parent.set.ivs?.[stat] ?? MAX_IV;
-
+/** A parent's nature as it was born (a Mint is not passed down) */
 const natureOf = parent => parent.natureOrig ?? parent.set.nature;
 
 function inheritIvs(a, b, rng) {
@@ -102,12 +102,14 @@ function inheritIvs(a, b, rng) {
 	const open = [...STATS];
 	const take = (stat, parent) => { ivs[stat] = ivOf(parent, stat); open.splice(open.indexOf(stat), 1); left--; };
 	const powered = [a, b].filter(p => POWER_ITEMS[toID(p.set.item)]);
+	let sure = null; // the stat a Power item made sure of
 	if (powered.length) {
 		const parent = powered[rng.random(powered.length)];
-		take(POWER_ITEMS[toID(parent.set.item)], parent);
+		sure = POWER_ITEMS[toID(parent.set.item)];
+		take(sure, parent);
 	}
 	while (left > 0) take(open[rng.random(open.length)], rng.random(2) ? a : b);
-	return ivs;
+	return { ivs, sure };
 }
 
 function inheritNature(a, b, rng) {
@@ -137,6 +139,7 @@ export function eggMovesOf(dex, name) {
 	return breeding.eggMoves[s.id] ?? breeding.eggMoves[lowestStage(dex, s.name).id] ?? [];
 }
 
+/** Level-up moves of a species (the level-up table) */
 const levelMoves = (levelUp, species) => new Set((learnsetOf(levelUp, species) ?? []).map(([, move]) => move));
 
 function pushMoves(moves, more) {
@@ -148,15 +151,21 @@ function pushMoves(moves, more) {
 	return moves;
 }
 
-export function breedEgg(dex, a, b, rng, { levelUp }) {
+export function breedEgg(dex, a, b, rng, { levelUp, oneSpecial = false }) {
 	const [line, other] = roles(dex, a, b);
 	const held = [a, b].map(p => toID(p.set.item));
 	const { species, gender } = hatchling(dex, eggForm(dex, line, other), held, rng);
 	const nature = inheritNature(a, b, rng);
+	const { ivs, sure } = inheritIvs(a, b, rng);
+
+	if (oneSpecial && ivs.spa !== undefined && ivs.spd !== undefined) {
+		if (sure === 'spd') ivs.spa = ivs.spd;
+		else ivs.spd = ivs.spa;
+	}
 	const set = completeSet(dex, {
-		species: species.name, level: HATCH_LEVEL, ivs: inheritIvs(a, b, rng), ability: inheritAbility(dex, line, species, rng), shiny: rng.random(SHINY_ODDS) === 0,
+		species: species.name, level: HATCH_LEVEL, ivs, ability: inheritAbility(dex, line, species, rng), shiny: rng.random(SHINY_ODDS) === 0,
 		...(gender ? { gender } : {}), ...(nature ? { nature } : {}),
-	}, rng, { levelUp });
+	}, rng, { levelUp, ...(oneSpecial ? { oneSpecial: true } : {}) });
 	const learns = levelMoves(levelUp, species), eggMoves = new Set(eggMovesOf(dex, species.name));
 	const knows = p => (p.set.moves ?? []).map(toID);
 	const [mother, father] = line.set.gender === 'F' ? [line, other] : [other, line];
@@ -167,9 +176,9 @@ export function breedEgg(dex, a, b, rng, { levelUp }) {
 	return { set, ball: inheritBall(dex, line, other, rng) };
 }
 
-export function giftEgg(dex, name, rng, { levelUp }) {
+export function giftEgg(dex, name, rng, { levelUp, oneSpecial = false }) {
 	const species = dex.species.get(name);
-	const set = completeSet(dex, { species: species.name, level: HATCH_LEVEL }, rng, { levelUp });
+	const set = completeSet(dex, { species: species.name, level: HATCH_LEVEL }, rng, { levelUp, ...(oneSpecial ? { oneSpecial: true } : {}) });
 	const eggMoves = eggMovesOf(dex, species.name).filter(m => !set.moves.includes(m));
 	if (eggMoves.length) set.moves = pushMoves([...set.moves], [eggMoves[rng.random(eggMoves.length)]]);
 	return set;

@@ -2,6 +2,9 @@ const FIELDS = [['target', 2], ['graphicFrame', 0], ['x', 0], ['y', 0], ['opacit
   ['focus', 1], ['priority', 1], ['locked'], ['visible', true], ['blendType'], ['tone'], ['mirror'], ['color'], ['flash']];
 const NUMERIC = new Set(['graphicFrame', 'x', 'y', 'opacity', 'zoomX', 'zoomY', 'angle']);
 const BOOLEAN = new Set(['locked', 'visible', 'mirror']);
+
+const NUMERIC_FIELD = 1, BOOLEAN_FIELD = 2;
+const DECODE_KINDS = FIELDS.map(([key]) => (NUMERIC.has(key) ? NUMERIC_FIELD : 0) | (BOOLEAN.has(key) ? BOOLEAN_FIELD : 0));
 const KNOWN = new Set(FIELDS.map(([k]) => k));
 const same = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
@@ -37,14 +40,14 @@ function decodeFrame(row, prev) {
     if (e === '-') continue;
     if (prev) {
       if (e === null) { if (Object.hasOwn(prev, k)) o[k] = prev[k]; continue; }
-      if (NUMERIC.has(k) && typeof prev[k] === 'number') { o[k] = typeof e === 'number' ? prev[k] + e : e[0]; continue; }
+      if ((DECODE_KINDS[i] & NUMERIC_FIELD) && typeof prev[k] === 'number') { o[k] = typeof e === 'number' ? prev[k] + e : e[0]; continue; }
     } else if (e === null) { if (base !== undefined) o[k] = base; continue; }
-    o[k] = BOOLEAN.has(k) ? e === 1 : e;
+    o[k] = (DECODE_KINDS[i] & BOOLEAN_FIELD) ? e === 1 : e;
   }
   return o;
 }
 
-function mapFrames(frames, code) {
+function encodeFrames(frames) {
   let previous = [];
   return frames.map(frame => {
 
@@ -52,16 +55,32 @@ function mapFrames(frames, code) {
     for (const o of previous) { if (!prevByTarget.has(o.target)) prevByTarget.set(o.target, []); prevByTarget.get(o.target).push(o); }
     const counts = new Map();
     const out = frame.map(item => {
-      const target = code === 'encode' ? item.target : (item[0] ?? 2);
-      const n = counts.get(target) ?? 0; counts.set(target, n + 1);
-      const prev = prevByTarget.get(target)?.[n];
-      return code === 'encode' ? encodeFrame(item, prev) : decodeFrame(item, prev);
+      const n = counts.get(item.target) ?? 0; counts.set(item.target, n + 1);
+      return encodeFrame(item, prevByTarget.get(item.target)?.[n]);
     });
-    previous = code === 'encode' ? frame : out;
+    previous = frame;
     return out;
   });
 }
 
-const variant = (v, code) => v && v.frames ? { ...v, frames: mapFrames(v.frames, code) } : v;
-export const encodeAnim = anim => Array.isArray(anim) ? anim.map(v => variant(v, 'encode')) : variant(anim, 'encode');
-export const decodeAnim = anim => Array.isArray(anim) ? anim.map(v => variant(v, 'decode')) : variant(anim, 'decode');
+function decodeFrames(frames) {
+  let previous;
+  return frames.map(frame => {
+    if (!frame.length) { previous = undefined; return []; }
+    const current = new Map();
+    const out = frame.map(item => {
+      const target = item[0] ?? 2;
+      let group = current.get(target);
+      if (!group) current.set(target, group = []);
+      const decoded = decodeFrame(item, previous?.get(target)?.[group.length]);
+      group.push(decoded);
+      return decoded;
+    });
+    previous = current;
+    return out;
+  });
+}
+
+const variant = (v, mapFrames) => v && v.frames ? { ...v, frames: mapFrames(v.frames) } : v;
+export const encodeAnim = anim => Array.isArray(anim) ? anim.map(v => variant(v, encodeFrames)) : variant(anim, encodeFrames);
+export const decodeAnim = anim => Array.isArray(anim) ? anim.map(v => variant(v, decodeFrames)) : variant(anim, decodeFrames);

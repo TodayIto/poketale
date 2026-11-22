@@ -1,7 +1,7 @@
 import { ENJOY_STEP, FULL_MAX, FULL_PER_FOOD } from '../story/amie.mjs';
 
 export const MOODS = Object.freeze(['sick', 'sleepy', 'hungry', 'full', 'happy', 'calm']);
-
+/** Enjoyment from which it looks happy (of ENJOY_MAX 100) */
 export const HAPPY_FROM = 60;
 
 export function moodOf({ status = '', enjoy = 0, full = 0 } = {}) {
@@ -23,12 +23,12 @@ export function moodMotion(mood, t, { still = false } = {}) {
   if (still) return NONE;
   switch (mood) {
     case 'sick': {
-
+      // a 0.5 s shiver every 3 s
       const k = bump((t % 3) / 3, 0, 0.17);
       return { dx: Math.sin(t * 42) * 1.2 * k, lift: 0, tilt: Math.sin(t * 42 + 1) * 0.02 * k, sx: 0, sy: -0.015 * k };
     }
     case 'sleepy': {
-
+      // a slow sway, a little squat
       const sway = Math.sin(t * 1.3);
       return { dx: sway * 1.5, lift: 0, tilt: sway * 0.05, sx: 0.02, sy: -0.04 };
     }
@@ -38,12 +38,12 @@ export function moodMotion(mood, t, { still = false } = {}) {
       return { dx: 0, lift: 0, tilt: 0.07 * k, sx: 0.035 * k, sy: -0.08 * k };
     }
     case 'full': {
-
+      // slow, contented rocking
       const rock = Math.sin(t * 1.8);
       return { dx: 0, lift: 0, tilt: rock * 0.035, sx: 0.015 * Math.abs(rock), sy: -0.01 * Math.abs(rock) };
     }
     case 'happy': {
-
+      // a quick double bounce every 2.6 s
       const f = (t % 2.6) / 2.6, k = bump(f, 0, 0.08) + 0.7 * bump(f, 0.08, 0.07);
       return { dx: 0, lift: 5 * k, tilt: 0, sx: 0, sy: 0.02 * k };
     }

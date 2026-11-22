@@ -5,7 +5,7 @@ import { mix } from './amie-scenes.js';
 export const STAT_COLORS = Object.freeze({ hp: 0xe8505a, atk: 0xf08a30, def: 0xe8c838, spa: 0x4a8ef0, spd: 0x48b860, spe: 0xe060c8 });
 export const BAG_COLORS = Object.freeze({ reset: 0x9aa4b4, strength: 0xd84838, toughen_up: 0x8a6a48, swiftness: 0x40c0d8, big_shot: 0x6858d0, double_up: 0xf0c020, soothing: 0xf890b8 });
 export const BLANK_COLOR = 0x34343c;
-
+/** A bag's colour (null id: the blank bag's) */
 export const colorOf = id => { if (!id) return BLANK_COLOR; const bag = bagOf(id); return (bag?.kind === 'stat' ? STAT_COLORS[bag.stat] : BAG_COLORS[id]) ?? BLANK_COLOR; };
 export const css = color => `#${color.toString(16).padStart(6, '0')}`;
 
@@ -24,7 +24,7 @@ export const bagDims = id => { const d = BAG_DOTS[bagSize(id)]; return { w: d.w 
 
 export const bagIcon = id => { const b = id && bagOf(id); return !b || b.kind === 'stat' || b.kind === 'reset' ? null : b.kind === 'soothing' ? 'heart' : 'star'; };
 export const BAG_STATES = Object.freeze(['normal', 'hit', 'worn', 'wornHit']);
-
+/** The star / heart on an effect bag: this scale (a picture px = 1 u) */
 export const ICON_SCALE = 1.1;
 
 export function bagRows(size = 'm', state = 'normal', flash = false) {
@@ -68,6 +68,7 @@ export const HANG = Object.freeze({
 
 const PIECES = [['.OO.', 'OLBO', 'OBBO', 'OBO.', '.O..'], ['.OOO.', 'OLBBO', 'OBBBO', '.OBBO', 'OBBO.', '.OO..'], ['OO.', 'OBO', 'OBO', '.OO']];
 
+/** The bag as SVG (the preview kit): id (null - blank), state, flash */
 export const bagSvg = (id, state = 'normal', flash = false) => pixelSvg(bagRows(bagSize(id), state, flash), { ...bagColors(css(colorOf(id))), F: '#ffffff' });
 export const hangSvg = name => pixelSvg(name === 'link0' ? HANG.link[0] : name === 'link1' ? HANG.link[1] : name.startsWith('strap') ? strapRows(name.slice(6) || 'm') : HANG[name], CHAIN);
 export const pieceSvg = (id, i) => pixelSvg(PIECES[i], bagColors(css(colorOf(id))));

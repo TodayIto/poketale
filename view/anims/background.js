@@ -12,14 +12,14 @@ export function normalizeBackground(events) {
 
   const list = [], planes = [];
   let alive = false;
-  const pending = [];
+  const pending = []; // moves started without a background: [event, end frame]
   for (const f of frames) {
     const here = events[f].filter(isBg).sort((a, b) => (a.eventType === ADD ? 0 : 1) - (b.eventType === ADD ? 0 : 1));
     for (const e of here) {
       if (e.eventType === ADD) {
         alive = true;
         list.push({ f, e: { ...e } });
-
+        // without a picture the set is the colour plane the earlier moves were moving
         for (const [move, end] of pending.splice(0)) if (end > f && !e.resourceName) list.push({ f, e: { ...move, frameIndex: f, duration: end - f } });
       } else if (alive) list.push({ f, e: { ...e } });
       else {
@@ -31,7 +31,7 @@ export function normalizeBackground(events) {
       }
     }
   }
-
+  // 2-4 per background life (a set and the moves after it)
   for (let start = 0; start < list.length;) {
     let end = start + 1;
     while (end < list.length && list[end].e.eventType !== ADD) end++;
@@ -45,11 +45,11 @@ export function normalizeBackground(events) {
     };
     for (const m of moves) {
       if (m.e.opacity > 0) { closeRun(); continue; }
-      if (raise.has(m.f)) { m.emptyOpacity = true; continue; }
+      if (raise.has(m.f)) { m.emptyOpacity = true; continue; } // 2
       run.push(m);
     }
     closeRun();
-    let x = set.bgX - 320, y = set.bgY - 284;
+    let x = set.bgX - 320, y = set.bgY - 284; // where the picture is heading (the player's field units)
     for (const m of moves) {
       const e = m.e, original = { ...e };
       if (m.emptyOpacity) delete e.opacity;
@@ -61,7 +61,7 @@ export function normalizeBackground(events) {
     }
     start = end;
   }
-
+  // 5. back into frames, sounds where they were
   const out = {};
   for (const f of frames) {
     const sounds = events[f].filter(e => !isBg(e));

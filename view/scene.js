@@ -1,5 +1,5 @@
 // from pokerogue src/battle-scene.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/field/arena.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/field/arena-base.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/summon-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
@@ -13,27 +13,29 @@ import { PokemonSprite } from './sprites/pokemon.js';
 import { BattleInfo } from './ui/battle-info.js';
 import { BattleMessage } from './ui/message.js';
 import { loadFont } from './ui/text.js';
-import { installTapBack } from './ui/tap-back.js';
+import { installTapBack } from './ui/tap-back.js'; // tapping an empty spot = back
 import { tween, delay } from './lifetime.js';
 import { AnimationPlayer } from './anims/player.js';
+import { animPackUrls } from './anims/pack-files.js';
 import { statStage } from './anims/stat-stage.js';
 import { ActionMenu } from './ui/action-menu.js';
 import { PartyMenu } from './ui/party.js';
 import { BattleEffects } from './effects.js';
 import { TeraView } from './tera.js';
+import { DynamaxView } from './dynamax.js'; // Dynamax grow / glow / shrink
 import { BattleLevel } from './level.js';
-import { createArena, biomeKey, DEFAULT_BIOME } from './arena.js';
-import { BattleEncounter } from './encounter.js';
-import { openParticles, ballTint, loadBallThrow } from './ball-throw.js';
-import { ballFrame, loadItemIcons } from './ui/bag.js';
-import { moveFile, chargeFile, hasAnimation } from './anims/data.js';
+import { createArena, biomeKey, DEFAULT_BIOME } from './arena.js'; // biomes
+import { BattleEncounter } from './encounter.js'; // trainer entrance, player's ball throw
+import { openParticles, ballTint, loadBallThrow } from './ball-throw.js'; // ball-open particles
+import { ballFrame, loadItemIcons } from './ui/bag.js'; // the ball the mon was caught in (Poke Ball when the ball has no image)
+import { chargeFile, hasAnimation, userMoveFiles } from './anims/data.js';
 import { loadStatStage } from './anims/stat-stage.js';
 import { LoadError } from './retry.js';
-import { installGameSpeed } from './game-speed.js';
-import { fitCamera } from './quality.js';
-import { viewWords } from './words.js';
-import BAG_ICONS from '../data/bag-icons.json' with { type: 'json' };
-import { fieldPositions, checkPosition, isPlayerSide, infoLayout } from './positions.js';
+import { installGameSpeed } from './game-speed.js'; // game speed
+import { fitCamera } from './quality.js'; // render quality
+import { viewWords } from './words.js'; // the frame's words in the view's language
+import BAG_ICONS from '../data/bag-icons.json' with { type: 'json' }; // pb_particles atlas
+import { fieldPositions, checkPosition, isPlayerSide, infoLayout } from './positions.js'; // single / double field positions
 
 const COMMON_ANIMS = ['burn', 'confusion', 'frozen', 'health-up', 'paralysis', 'poison', 'sleep', 'use-item'];
 
@@ -43,10 +45,10 @@ export class BattleScene extends Phaser.Scene {
 
   constructor(options, life, ready, fail = error => { throw error; }) {
     super('BattleView'); this.options = options; this.life = life; this.ready = ready; this.fail = fail;
-    this.words = viewWords(options.lang);
+    this.words = viewWords(options.lang); // the frame's words (view/words.js)
     this.pokemon = {}; this.info = {}; this.biomeObjects = []; this.double = false; this.tag = false;
     this.summonCount = { player: 0, enemy: 0 };
-    this.prefetched = prefetchImages(options);
+    this.prefetched = prefetchImages(options); // start fetching UI and biome images while Phaser boots (preload reuses them)
   }
   create() {
     if (this.life.signal.aborted) return;
@@ -64,16 +66,18 @@ export class BattleScene extends Phaser.Scene {
     this.fieldUI = this.add.container(0, 1080).setScale(6).setDepth(1);
     this.ui = this.add.container(0, 1080).setScale(6).setDepth(2);
     this.assets = new Assets(this, this.life, this.options);
+    this.assets.localUrl = animPackUrls(this.life.signal); // pictures and sounds of our own move anims (view/anims/pack-files.js)
     this.audio = new BattleAudio(this.assets, this.options.parent, this.options);
     this.audio.speed = () => this.gameSpeed.speed;
-    this.animations = new AnimationPlayer(this, { enabled: this.options.moveAnims !== false });
+    this.animations = new AnimationPlayer(this, { enabled: this.options.moveAnims !== false }); // move animations (setting, on by default)
     this.party = new PartyMenu(this);
     this.actions = new ActionMenu(this);
-    this.effects = new BattleEffects(this);
-    this.tera = new TeraView(this);
-    this.levels = new BattleLevel(this);
-    this.encounter = new BattleEncounter(this);
-    this.stopTapBack = installTapBack(this);
+    this.effects = new BattleEffects(this); // ability popup, stat panel, form change, substitute (view/effects.js)
+    this.tera = new TeraView(this); // tera glow, info-box tera icon, mega/tera button images (view/tera.js)
+    this.dynamax = new DynamaxView(this); // Dynamax grow, glow, Gigantamax picture, shrink back (view/dynamax.js)
+    this.levels = new BattleLevel(this); // exp, level-up, move learning, evolution (view/level.js)
+    this.encounter = new BattleEncounter(this); // battle start sequence (view/encounter.js)
+    this.stopTapBack = installTapBack(this); // view/ui/tap-back.js
   }
   async prepare({ mons, moves = [], biome, biomeProps, enemyTrainer, enemyBlack, playerTrainer, playerBlack, enemyTrainer2, enemyBlack2, double = false, tag = false }) {
     this.double = !!double;
@@ -82,15 +86,15 @@ export class BattleScene extends Phaser.Scene {
 
     const arena = biomeKey(biome) ?? DEFAULT_BIOME;
     if (biome != null && !biomeKey(biome)) this.assets.diagnostics.push({ unknownBiome: String(biome) });
-    await Promise.all([this.assets.preload(mons, arena, this.double), loadFont(this.assets.base), this.audio.preload(mons), this.effects.preload(), this.tera.preload(), this.levels.preload(),
+    await Promise.all([this.assets.preload(mons, arena, this.double), loadFont(this.assets.base), this.audio.preload(mons), this.effects.preload(), this.tera.preload(), this.dynamax.preload(), this.levels.preload(),
       this.encounter.preload({ enemyTrainer, enemyBlack, playerTrainer, playerBlack, enemyTrainer2, enemyBlack2 }),
-      this.assets.image('pb_particles', 'images/effects/pb_particles.png', BAG_ICONS.pb_particles)]);
+      this.assets.image('pb_particles', 'images/effects/pb_particles.png', BAG_ICONS.pb_particles)]); // ball-open particles (loading-scene.ts also loads them up front)
     this.life.check();
     this.prefetched = null;
     this.audio.preloadMusic();
-    this.mons = mons; this.moves = moves;
+    this.mons = mons; this.moves = moves; // used by warmUp and end
     this.biomeObjects.forEach(object => object.destroy());
-    this.biomeObjects = createArena(this, arena, biomeProps);
+    this.biomeObjects = createArena(this, arena, biomeProps); // [background, player base, enemy base (+props)] - arena-base.ts
     if (!this.messages) this.messages = new BattleMessage(this, this.options.parent, this.life);
   }
 
@@ -98,7 +102,7 @@ export class BattleScene extends Phaser.Scene {
     this.requireReady();
     // With move animations off, anim files are not decoded (they never play - view/anims/player.js playFile)
     const files = !this.animations.enabled ? []
-      : [...this.moves.flatMap(id => [moveFile(id), chargeFile(id)]), ...COMMON_ANIMS.map(name => `common-${name}.json`)].filter(hasAnimation);
+      : [...this.moves.flatMap(id => [...userMoveFiles(id), chargeFile(id)]), ...COMMON_ANIMS.map(name => `common-${name}.json`)].filter(hasAnimation);
     await Promise.all([this.animations.prepare(files),
       ...[loadBallThrow(this), loadStatStage(this), loadItemIcons(this)].map(work => work.catch(later))]);
     this.life.check();
@@ -111,7 +115,11 @@ export class BattleScene extends Phaser.Scene {
 
   get positions() { return fieldPositions(this.double); }
 
-  makeInfo(side) { return new BattleInfo(this, isPlayerSide(side), infoLayout(this.double, side)); }
+  makeInfo(side) {
+    const info = new BattleInfo(this, isPlayerSide(side), infoLayout(this.double, side));
+    this.dynamax?.applyInfo(info, side);
+    return info;
+  }
   async summon(side, mon, { fromBall = true, ball, partner = false } = {}) {
     this.requireReady();
     checkPosition(this.double, side);
@@ -131,7 +139,7 @@ export class BattleScene extends Phaser.Scene {
     if (fromBall) {
       const ball = this.add.sprite(player ? 36 : 248, player ? 80 : 44, 'pb', key).setOrigin(0.5, 0.625);
       this.field.add(ball);
-      const [, fy] = pokemon.getFieldPositionOffset();
+      const [, fy] = pokemon.getFieldPositionOffset(); // summon-phase.ts:143 fpOffset
       await Promise.all([
         tween(this, { targets: ball, duration: 650, x: pokemon.placement.x }),
         (async () => {
@@ -157,9 +165,10 @@ export class BattleScene extends Phaser.Scene {
     })()]);
   }
 
-  async restore({ stages = {}, substitute = {}, hidden = {}, trainer = false, ...mons } = {}) {
+  async restore({ stages = {}, substitute = {}, hidden = {}, trainer = false, dynamax = {}, ...mons } = {}) {
     this.requireReady();
     for (const side of Object.keys(mons)) checkPosition(this.double, side);
+    for (const side of Object.keys(dynamax ?? {})) if (mons[side]) mons[side] = this.dynamax.restoreMon(mons[side], dynamax[side]);
     const sides = this.positions.map(side => [side, mons[side]]).filter(([, mon]) => mon);
     const [assets] = await Promise.all([Promise.all(sides.map(([side, mon]) => this.assets.mon(mon, isPlayerSide(side)))),
       trainer ? this.encounter.restoreTrainer() : null]);
@@ -167,7 +176,7 @@ export class BattleScene extends Phaser.Scene {
     sides.forEach(([side, mon], i) => {
       this.pokemon[side]?.destroy(); this.info[side]?.destroy();
       const pokemon = this.pokemon[side] = new PokemonSprite(this, side, mon, assets[i]);
-      this.summonCount[side] = (this.summonCount[side] ?? 0) + 1;
+      this.summonCount[side] = (this.summonCount[side] ?? 0) + 1; // move-cursor memory: counts as newly sent out
       pokemon.container.setVisible(true).setScale(pokemon.getSpriteScale());
       pokemon.playAnim();
       const info = this.info[side] = this.makeInfo(side);
@@ -176,6 +185,7 @@ export class BattleScene extends Phaser.Scene {
       if (substitute[side]) this.effects.placeSubstitute(side);
       if (hidden[side]) this.effects.setHidden(side, true);
     });
+    this.dynamax?.settleCamera(); // zoomed out only while a Pokemon on the field is Dynamaxed (view/dynamax.js)
     this.audio.startBattleMusic();
   }
 
@@ -190,12 +200,16 @@ export class BattleScene extends Phaser.Scene {
     });
     for (const map of [this.pokemon, this.info, this.summonCount]) [map[a], map[b]] = [map[b], map[a]];
     this.effects.swap(a, b);
+
+    const boxes = [];
     for (const side of [a, b]) {
       if (!this.pokemon[side]) { delete this.pokemon[side]; delete this.info[side]; continue; }
-      this.info[side]?.place(infoLayout(this.double, side));
+      const info = this.info[side];
+      if (info) boxes.push(info.slideAround(() => info.place(infoLayout(this.double, side)), 1000));
       this.pokemon[side].keepDrawOrder();
     }
-    await Promise.all(slides);
+    await Promise.all([...slides, ...boxes]);
+    await this.dynamax?.settleCamera();
   }
   async recall(side) {
     const p = this.requireMon(side);
@@ -211,7 +225,7 @@ export class BattleScene extends Phaser.Scene {
     if (!Number.isFinite(hp) || !Number.isFinite(maxhp) || maxhp <= 0 || hp < 0 || hp > maxhp) throw new Error('Invalid HP values');
     if (cause === 'move' && hp < p.mon.hp) {
       const sound = this.audio.play(`se/${effectiveness === 'super' ? 'hit_strong' : effectiveness === 'resisted' ? 'hit_weak' : 'hit'}.wav`);
-
+      // DamageAnimPhase: six visibility toggles 100ms apart, then HP tween.
       for (let i = 0; i < 6; i++) { p.sprite.setVisible(i % 2 === 1); await delay(this, 100); }
       p.sprite.setVisible(true);
       await Promise.all([sound, this.info[side].hpChange(hp, maxhp)]);
@@ -226,7 +240,7 @@ export class BattleScene extends Phaser.Scene {
   async faint(side) {
     const p = this.requireMon(side);
 
-    const anims = [p.sprite?.anims, p.tintSprite?.anims].filter(Boolean);
+    const anims = [p.sprite?.anims].filter(Boolean);
     anims.forEach(a => { a.timeScale = 0.85; });
     try { await this.audio.faintCry(p.mon); }
     finally { anims.forEach(a => { a.timeScale = 1; }); }
@@ -247,6 +261,7 @@ export class BattleScene extends Phaser.Scene {
   }
   async message(text, options) { this.requireReady(); await this.messages.message(text, options); }
   playMove(id, side, targetSide, options) { this.requireReady(); return this.animations.playMove(id, side, targetSide, options); }
+  zCutIn(side, id) { this.requireReady(); return this.animations.zCutIn(side, id); }
   playCommon(name, side, targetSide = side) { this.requireReady(); return this.animations.playCommon(name, side, targetSide); }
   statStage(side, stat, delta) { this.requireReady(); return statStage(this, side, stat, delta); }
   chooseAction(options) { this.requireReady(); return this.actions.choose(options); }
@@ -284,7 +299,7 @@ export class BattleScene extends Phaser.Scene {
     return p;
   }
 
-  suspend() { this.audio?.suspend(); this.levels?.evolution.suspend(); this.effects?.releaseStats(); }
+  suspend() { this.audio?.suspend(); this.levels?.evolution.suspend(); this.effects?.releaseStats(); } // collapsing also counts as releasing a press
   resume() { this.audio?.resume(); this.levels?.evolution.resume(); }
   cleanup() { this.stopTapBack?.(); this.levels?.destroy(); this.effects?.destroy(); this.party?.destroy(); this.actions?.destroy(); this.messages?.destroy(); this.audio?.destroy(); }
 }
@@ -292,7 +307,9 @@ export class BattleScene extends Phaser.Scene {
 export function footMask(scene, y) {
   const shape = scene.make?.graphics?.({ x: 0, y: 0, add: false });
   if (!shape) return null;
-  shape.fillStyle(0xffffff).fillRect(-1920, -1080, 1920 * 3, 1080 + y * 6);
+
+  const field = scene.field, top = (field?.y ?? 0) + y * (field?.scaleY ?? 6);
+  shape.fillStyle(0xffffff).fillRect(-1920, -1080, 1920 * 3, 1080 + top);
   const mask = shape.createGeometryMask();
   return { mask, shape, destroy() { mask.destroy(); shape.destroy(); } };
 }

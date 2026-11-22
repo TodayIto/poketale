@@ -1,3 +1,4 @@
+// Browser adapter for the pinned upstream dist. Never writes to vendor/.
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -12,18 +13,27 @@ const tables = {
   Conditions: 'conditions', TypeChart: 'typechart',
 };
 
+export const SHOWDOWN_ROOTS = Object.freeze(['champions', ...Array.from({ length: 8 }, (_, i) => `gen${i + 1}`)]);
+
 export function showdownMods() {
   const mods = new Set();
-  function visit(mod) {
+  function visit(mod, chain = []) {
     if (mod === 'base' || mod === 'gen9') return;
-    if (mods.has(mod)) throw new Error(`Circular Showdown inheritance: ${mod}`);
+    if (chain.includes(mod)) throw new Error(`Circular Showdown inheritance: ${mod}`);
+    if (mods.has(mod)) return;
     mods.add(mod);
     const { Scripts } = require(join(dist, 'data/mods', mod, 'scripts.js'));
-    visit(Scripts.inherit || 'base');
+    visit(Scripts.inherit || 'base', [...chain, mod]);
   }
-  visit('champions');
+  for (const root of SHOWDOWN_ROOTS) visit(root);
   return [...mods];
 }
+
+export const SHOWDOWN_FORMATS = Object.freeze([
+  ...Array.from({ length: 9 }, (_, i) => `[Gen ${i + 1}] Custom Game`),
+  ...Array.from({ length: 7 }, (_, i) => `[Gen ${i + 3}] Doubles Custom Game`),
+  '[Gen 9 Champions] Custom Game', '[Gen 9 Champions] Doubles Custom Game',
+]);
 
 export const DROPPED_FIELDS = {
   Pokedex: ['color', 'heightm', 'formeOrder', 'canHatch'],
@@ -106,10 +116,14 @@ export const showdownBrowser = {
       } else if (file === 'dex-formats.js') {
 
         const formats = readFileSync(join(dist, 'config/formats.js'), 'utf8');
+
+        const wanted = new Set(SHOWDOWN_FORMATS);
         const selected = [...formats.matchAll(/\n  \{\n[\s\S]*?\n  \},?/g)]
           .map(m => m[0].trim().replace(/,$/, ''))
-          .filter(s => /name: "\[Gen 9(?: Champions)?\] (?:Doubles )?Custom Game"/.test(s));
-        if (selected.length !== 4) throw new Error('Expected the upstream singles and doubles custom games (Gen 9, Gen 9 Champions)');
+          .filter(s => wanted.has(/name: "([^"]*)"/.exec(s)?.[1]));
+        const names = selected.map(s => /name: "([^"]*)"/.exec(s)[1]);
+        const missing = SHOWDOWN_FORMATS.filter(name => !names.includes(name));
+        if (missing.length || names.length !== SHOWDOWN_FORMATS.length) throw new Error(`Expected each upstream custom game once: ${missing.join(', ') || names.join(', ')}`);
         patch(/    let customFormats;[\s\S]*?    let section = "";/,
           `    const Formats = [${selected.join(',')}];\n    let section = "";`);
       } else if (file === 'dex-text.js') {

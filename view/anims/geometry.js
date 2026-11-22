@@ -1,5 +1,5 @@
 // from pokerogue src/data/battle-anims.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 
 export function focusPoint(mon) {
   const { x, y } = mon.container, anchor = mon.placement?.anchor;
@@ -22,8 +22,8 @@ export function framePosition(frame, user, target, stretch = false) {
   return { x, y, scaleX, scaleY: (frame.zoomY ?? 0) / 100, angle: -(frame.angle ?? 0) };
 }
 
-export function copyPosition(pos, mon) {
-  const sprite = mon.getSprite(), scale = mon.getSpriteScale(), focus = focusPoint(mon), { x, y } = mon.container;
+export function copyPosition(pos, mon, sprite = mon.getSprite()) { // sprite: the mon's picture when the caller has it already
+  const scale = mon.getSpriteScale(), focus = focusPoint(mon), { x, y } = mon.container;
   return {
     x: pos.x + x + (0.5 - sprite.originX) * sprite.width * scale - focus.x,
     y: pos.y + y + (0.5 - sprite.originY) * sprite.height * scale - focus.y,
@@ -32,14 +32,19 @@ export function copyPosition(pos, mon) {
 
 const SCREEN = Object.freeze({ left: -64, right: 192, top: -112, bottom: 64 });
 const STRETCH = 320 / 256, NEAR = 4;
-const covers = new WeakMap();
+
+const SAMPLE_STEP = 4, SAMPLE_OFFSET = SAMPLE_STEP / 2;
+const SAMPLE_COLUMNS = Math.ceil((SCREEN.right - SCREEN.left - SAMPLE_OFFSET) / SAMPLE_STEP);
+const SAMPLE_ROWS = Math.ceil((SCREEN.bottom - SCREEN.top - SAMPLE_OFFSET) / SAMPLE_STEP);
+const WORD_BITS = 32, WORDS_PER_ROW = Math.ceil(SAMPLE_COLUMNS / WORD_BITS);
+const covers = new WeakMap(); // frame (sprite list) -> Set of its sprites to stretch
 
 export function screenCover(frame) {
   let found = covers.get(frame);
   if (found) return found;
   found = new Set();
-  const tiles = frame.filter(s => s.target === 2 && s.focus === 4 && s.visible && (s.opacity ?? 0) > 0 && !((s.angle ?? 0) % 360));
-  const sizes = new Map();
+  const tiles = frame.filter(s => s.target === 2 && s.focus === 4 && s.visible && (s.opacity ?? 0) > 0 && !((s.angle ?? 0) % 180));
+  const sizes = new Map(); // same zoom = same tile size
   for (const s of tiles) {
     const key = `${s.zoomX},${s.zoomY}`;
     if (!sizes.has(key)) sizes.set(key, []);
@@ -48,15 +53,31 @@ export function screenCover(frame) {
   for (const same of sizes.values()) {
     const w = 96 * Math.abs(same[0].zoomX ?? 0) / 100, h = 96 * Math.abs(same[0].zoomY ?? 0) / 100;
     if (!w || !h) continue;
+    if (same.length === 1) {
+      const tile = same[0], x = +(tile.x ?? 0), y = +(tile.y ?? 0);
+      if (x - w / 2 <= SCREEN.left + NEAR && x + w / 2 >= SCREEN.right - NEAR
+        && y - h / 2 <= SCREEN.top + NEAR && y + h / 2 >= SCREEN.bottom - NEAR && painted(same, w, h) >= 0.75) found.add(tile);
+      continue;
+    }
     const dx = (a, b) => Math.abs((a.x ?? 0) - (b.x ?? 0)), dy = (a, b) => Math.abs((a.y ?? 0) - (b.y ?? 0));
     const overlaps = (a, b) => dx(a, b) < w - NEAR && dy(a, b) < h - NEAR;
-
+    // rows: tiles side by side, one tile width apart
     const rows = [], inRow = new Set();
     for (const first of same) {
       if (inRow.has(first)) continue;
       const row = [first]; inRow.add(first);
       for (let i = 0; i < row.length; i++) for (const b of same) {
         if (!inRow.has(b) && Math.abs(dx(row[i], b) - w) <= NEAR && dy(row[i], b) <= NEAR) { inRow.add(b); row.push(b); }
+      }
+
+      for (let grown = row.length > 1; grown;) {
+        grown = false;
+        const ends = [row.reduce((a, b) => ((a.x ?? 0) <= (b.x ?? 0) ? a : b)), row.reduce((a, b) => ((a.x ?? 0) >= (b.x ?? 0) ? a : b))];
+        for (const b of same) {
+          if (inRow.has(b) || dy(ends[0], b) > NEAR) continue;
+          const left = (b.x ?? 0) < (ends[0].x ?? 0) && dx(ends[0], b) < w - NEAR, right = (b.x ?? 0) > (ends[1].x ?? 0) && dx(ends[1], b) < w - NEAR;
+          if (left || right) { inRow.add(b); row.push(b); grown = true; break; }
+        }
       }
       rows.push(row);
     }
@@ -85,13 +106,39 @@ export function screenCover(frame) {
   return found;
 }
 
-function painted(tiles, w, h) {
+export function painted(tiles, w, h) {
+  if (tiles.length > 1) return paintedGrouped(tiles, w, h);
   let inside = 0, all = 0;
-  for (let y = SCREEN.top + 2; y < SCREEN.bottom; y += 4) for (let x = SCREEN.left + 2; x < SCREEN.right; x += 4) {
+  for (let y = SCREEN.top + SAMPLE_OFFSET; y < SCREEN.bottom; y += SAMPLE_STEP) for (let x = SCREEN.left + SAMPLE_OFFSET; x < SCREEN.right; x += SAMPLE_STEP) {
     all++;
     if (tiles.some(s => Math.abs(x - (s.x ?? 0)) <= w / 2 && Math.abs(y - (s.y ?? 0)) <= h / 2)) inside++;
   }
   return inside / all;
+}
+
+function paintedGrouped(tiles, w, h) {
+  const coverage = new Uint32Array(SAMPLE_ROWS * WORDS_PER_ROW), columns = new Uint32Array(WORDS_PER_ROW);
+  for (const tile of tiles) {
+    const x = tile.x ?? 0, y = tile.y ?? 0;
+    columns.fill(0);
+    for (let col = 0; col < SAMPLE_COLUMNS; col++) {
+      if (Math.abs(SCREEN.left + SAMPLE_OFFSET + col * SAMPLE_STEP - x) <= w / 2) columns[Math.floor(col / WORD_BITS)] |= 1 << (col % WORD_BITS);
+    }
+    for (let row = 0; row < SAMPLE_ROWS; row++) {
+      if (Math.abs(SCREEN.top + SAMPLE_OFFSET + row * SAMPLE_STEP - y) > h / 2) continue;
+      const offset = row * WORDS_PER_ROW;
+      for (let word = 0; word < WORDS_PER_ROW; word++) coverage[offset + word] |= columns[word];
+    }
+  }
+  let inside = 0;
+  for (const word of coverage) inside += countBits(word);
+  return inside / (SAMPLE_COLUMNS * SAMPLE_ROWS);
+}
+
+function countBits(word) {
+  word -= (word >>> 1) & 0x55555555;
+  word = (word & 0x33333333) + ((word >>> 2) & 0x33333333);
+  return (((word + (word >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24;
 }
 
 export function backgroundPhase(h, bgY = 0) {

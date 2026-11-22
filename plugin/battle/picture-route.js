@@ -1,3 +1,4 @@
+/** Route ids (settings row order) */
 export const PICTURE_ROUTES = Object.freeze(['auto', 'direct', 'risu']);
 export const DEFAULT_PICTURE_ROUTE = 'auto';
 

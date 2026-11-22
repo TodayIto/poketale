@@ -1,13 +1,36 @@
 import { esc, safeKey } from './card.mjs';
+import { hashKey } from './blocks.mjs';
 import { moneyAmount } from './diary.mjs';
 import { say } from './screen-text.mjs';
-import { PR_ITEMS } from './panel-html.mjs';
+import { PR_ITEMS, discMark } from './panel-html.mjs';
 
 export const SHOP_MS = Object.freeze({ grow: 320, fold: 220, paid: 800 });
-
+/** Most of one item bought (or sold) in one cart */
 export const CART_MAX = 99;
 
-export const cartMost = (mode, row) => (mode === 'sell' ? row?.owned ?? 0 : row?.limited || row?.one ? 1 : CART_MAX);
+export const cartMost = row => (row?.limited || row?.one ? 1 : CART_MAX);
+
+export const cartRange = row => ({ least: row?.sell ? -Math.min(row.owned ?? 0, CART_MAX) || 0 : 0, most: row?.price != null && !row.soldOut ? cartMost(row) : 0 });
+
+export function shownOf(list, cart, paid) {
+  const lines = Object.entries(cart ?? {}).filter(([, n]) => n).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const rows = (list ?? []).map(row => [row.id, row.price ?? null, row.sell ?? null, row.soldOut ? 1 : 0]);
+  return { cart: lines, rows, spent: paid?.spent ?? 0, got: paid?.got ?? 0, bonus: paid?.error ? 0 : paid?.bonus ?? 0 };
+}
+const shownClass = shown => `x-risu-pkbsg-${safeKey(hashKey(JSON.stringify(shown)))}`;
+
+export const shownSelector = (key, shown) => `.x-risu-pkbsb-${safeKey(key)}.${shownClass(shown)}`;
+
+export function fitCart(cart, list) {
+  const byId = new Map((list ?? []).map(row => [row.id, row]));
+  for (const [id, n] of Object.entries(cart ?? {})) {
+    const row = byId.get(id);
+    const { least, most } = row ? cartRange(row) : { least: 0, most: 0 };
+    const fit = Math.min(most, Math.max(least, n));
+    if (fit) cart[id] = fit; else delete cart[id];
+  }
+  return cart;
+}
 
 export const SPECIAL_TAB = 'special';
 
@@ -20,6 +43,7 @@ export const shopName = (block, lang) => block?.name || say(lang, `shop.kind.${k
 
 export const regionName = (region, lang) => (region && /^[a-z]+$/.test(region) ? (() => { try { return say(lang, `region.${region}`); } catch { return ''; } })() : '');
 
+/** Storefront (awning + door) - the band's and the tile's picture */
 const ICON_SHOP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path class="x-risu-pkb-shwall" d="M4 10.5V20h16v-9.5" fill="#fff" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
   + '<path class="x-risu-pkb-shaw" d="M3 4.5h18l1 4.2a2.6 2.6 0 0 1-5 .8 2.6 2.6 0 0 1-5 0 2.6 2.6 0 0 1-5 0 2.6 2.6 0 0 1-5-.8z" fill="#2f7fc1" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
   + '<path d="M10 20v-5.2h4V20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
@@ -34,32 +58,33 @@ function btn(key, action, inner, { cls = '', label = '', item = '', off = false 
 function itemPicture(icon) {
   if (icon?.url) return `<span class="x-risu-pkb-shic"><span class="x-risu-pkb-shicpa"><img src="${esc(icon.url)}" alt="" loading="lazy"></span></span>`;
   if (icon?.sheet === 'pokerogue') {
-    return `<span class="x-risu-pkb-shic"><span class="x-risu-pkb-shicpr"><span style="left:${icon.ox}px;top:${icon.oy}px;width:${icon.w}px;height:${icon.h}px;background-position:-${icon.x}px -${icon.y}px"></span></span></span>`;
+    return `<span class="x-risu-pkb-shic"><span class="x-risu-pkb-shicpr"><span style="left:${icon.ox}px;top:${icon.oy}px;width:${icon.w}px;height:${icon.h}px;background-position:-${icon.x}px -${icon.y}px"></span></span>${discMark(icon, 'x-risu-pkb-shicgen')}</span>`;
   }
   return '<span class="x-risu-pkb-shic"><span class="x-risu-pkb-shicdot"></span></span>';
 }
 
 function itemRow(view, row, lang) {
-  const count = row.count ?? 0, max = cartMost(view.mode, row);
-  if (row.soldOut) {
-    return `<div class="x-risu-pkb-shit x-risu-pkb-shout">${itemPicture(row.icon)}<span class="x-risu-pkb-shn">${esc(row.name)}</span>`
+  const count = row.count ?? 0, { least, most } = cartRange(row);
+  const owned = row.owned > 0 ? `<span class="x-risu-pkb-show">×${esc(row.owned)}</span>` : '';
+  if (row.soldOut && !least) {
+    return `<div class="x-risu-pkb-shit x-risu-pkb-shout">${itemPicture(row.icon)}<span class="x-risu-pkb-shn">${esc(row.name)}</span>${owned}`
       + `<span class="x-risu-pkb-shp">${esc(moneyAmount(row.price, lang))}</span><span class="x-risu-pkb-shsold">${esc(say(lang, 'shop.soldOut'))}</span></div>`;
   }
-  return `<div class="x-risu-pkb-shit${count ? ' x-risu-pkb-shon' : ''}">${itemPicture(row.icon)}<span class="x-risu-pkb-shn">${esc(row.name)}</span>`
-    + (view.mode === 'sell' ? `<span class="x-risu-pkb-show">×${esc(row.owned)}</span>` : '')
-    + (row.was ? `<span class="x-risu-pkb-shsale">SALE</span><s class="x-risu-pkb-shwas">${esc(moneyAmount(row.was, lang))}</s>` : '')
-    + `<span class="x-risu-pkb-shp${row.was ? ' x-risu-pkb-shpsale' : ''}">${esc(moneyAmount(row.price, lang))}</span><span class="x-risu-pkb-shq">`
-    + btn(view.key, 'shopsub', '−', { cls: 'x-risu-pkb-shqb', item: row.id, label: say(lang, 'shop.less'), off: !count })
-    + `<span class="x-risu-pkb-shc">${count}</span>`
-    + btn(view.key, 'shopadd', '+', { cls: 'x-risu-pkb-shqb', item: row.id, label: say(lang, 'shop.more'), off: count >= max })
-    + '</span></div>';
-}
+  const selling = count < 0 || (row.price == null && !row.soldOut);
 
-function modeSwitch(view, lang) {
-  const side = mode => (view.mode === mode
-    ? `<span class="x-risu-pkb-shmd x-risu-pkb-shmd-${mode} x-risu-pkb-shmdon">${esc(say(lang, `shop.mode.${mode}`))}</span>`
-    : btn(view.key, mode === 'buy' ? 'shopbuy' : 'shopsell', esc(say(lang, `shop.mode.${mode}`)), { cls: `x-risu-pkb-shmd x-risu-pkb-shmd-${mode}` }));
-  return `<div class="x-risu-pkb-shmode">${side('buy')}${side('sell')}</div>`;
+  const sale = row.was && !selling;
+  const picture = sale ? `<span class="x-risu-pkb-shicw">${itemPicture(row.icon)}<span class="x-risu-pkb-shsale">SALE</span></span>` : itemPicture(row.icon);
+  const price = selling ? `<span class="x-risu-pkb-shp x-risu-pkb-shpsell">${esc(moneyAmount(row.sell, lang))}</span>`
+    : row.soldOut ? `<span class="x-risu-pkb-shp x-risu-pkb-shpout">${esc(say(lang, 'shop.soldOut'))}</span>`
+    : sale ? `<span class="x-risu-pkb-shp x-risu-pkb-shpsale"><s class="x-risu-pkb-shwas">${esc(moneyAmount(row.was, lang))}</s>${esc(moneyAmount(row.price, lang))}</span>`
+      : `<span class="x-risu-pkb-shp">${esc(moneyAmount(row.price, lang))}</span>`;
+  const side = count > 0 ? 'buy' : count < 0 ? 'sell' : '';
+  return `<div class="x-risu-pkb-shit${side ? ` x-risu-pkb-shon${side === 'sell' ? ' x-risu-pkb-shonsell' : ''}` : ''}">${picture}<span class="x-risu-pkb-shn">${esc(row.name)}</span>${owned}`
+    + `${price}<span class="x-risu-pkb-shq">`
+    + btn(view.key, 'shopsub', '−', { cls: 'x-risu-pkb-shqb', item: row.id, label: say(lang, 'shop.less'), off: count <= least })
+    + `<span class="x-risu-pkb-shc${side ? ` x-risu-pkb-shc${side}` : ''}">${count > 0 ? `+${count}` : count < 0 ? `−${-count}` : 0}</span>`
+    + btn(view.key, 'shopadd', '+', { cls: 'x-risu-pkb-shqb', item: row.id, label: say(lang, 'shop.more'), off: count >= most })
+    + '</span></div>';
 }
 
 function tabRow(view, lang) {
@@ -75,14 +100,16 @@ function tabRow(view, lang) {
 
 function cartRow(view, lang) {
   const t = key => esc(say(lang, key));
-  const sell = view.mode === 'sell';
+  const spent = view.spent ?? 0, got = view.got ?? 0, net = spent - got;
+  const gain = net < 0;
   const why = view.why && view.why !== 'empty' ? `<div class="x-risu-pkb-shwhy x-risu-pkb-shbad">${t(`shop.why.${view.why}`)}</div>` : '';
-  const bonus = !sell && view.bonus ? `<span class="x-risu-pkb-shbonus">${esc(say(lang, 'shop.bonus', { n: view.bonus }))}</span>` : '';
+  const bonus = view.bonus ? `<span class="x-risu-pkb-shbonus">${esc(say(lang, 'shop.bonus', { n: view.bonus }))}</span>` : '';
+  const label = spent && got ? 'shop.payTrade' : got ? 'shop.paySell' : 'shop.payBuy';
   const act = view.paid
-    ? `<span class="x-risu-pkb-shpaid x-risu-pkb-shpaid-${sell ? 'sell' : 'buy'}">${ICON_CHECK}</span>`
-    : btn(view.key, 'shoppay', t(sell ? 'shop.paySell' : 'shop.payBuy'), { cls: `x-risu-pkb-shpay x-risu-pkb-shpay-${sell ? 'sell' : 'buy'}`, off: !!view.why });
-  return `<div class="x-risu-pkb-shcart"><div class="x-risu-pkb-shsum"><div class="x-risu-pkb-shtot"><span>${t(sell ? 'shop.gain' : 'shop.total')}</span>`
-    + `<b>${esc(`${sell && view.total ? '+' : ''}${moneyAmount(view.total ?? 0, lang)}`)}</b>${bonus}</div>${why}</div><div class="x-risu-pkb-act">${act}</div></div>`;
+    ? `<span class="x-risu-pkb-shpaid x-risu-pkb-shpaid-${view.paid === 'sell' ? 'sell' : 'buy'}">${ICON_CHECK}</span>`
+    : btn(view.key, 'shoppay', t(label), { cls: `x-risu-pkb-shpay x-risu-pkb-shpay-${gain ? 'sell' : 'buy'}`, off: !!view.why });
+  return `<div class="x-risu-pkb-shcart"><div class="x-risu-pkb-shsum"><div class="x-risu-pkb-shtot"><span>${t(gain ? 'shop.gain' : 'shop.total')}</span>`
+    + `<b>${esc(`${gain ? '+' : ''}${moneyAmount(Math.abs(net), lang)}`)}</b>${bonus}</div>${why}</div><div class="x-risu-pkb-act">${act}</div></div>`;
 }
 
 const note = n => (n ? `<div class="x-risu-pkb-note x-risu-pkb-note-${n.kind}">${esc(n.text).replaceAll('\n', '<br>')}</div>` : '');
@@ -103,10 +130,12 @@ export function renderShopInside(view, lang) {
   let shop = '';
   if (open) {
     const rows = view.rows ?? [];
-    const list = rows.length ? rows.map(row => itemRow(view, row, lang)).join('') : `<div class="x-risu-pkb-shnone">${t('shop.sellNone')}</div>`;
+    const list = rows.map(row => itemRow(view, row, lang)).join('');
     const fill = Math.max(1, view.fill ?? rows.length);
-    const body = `${modeSwitch(view, lang)}${tabRow(view, lang)}<div class="x-risu-pkb-shlist${view.tab === SPECIAL_TAB ? ' x-risu-pkb-shlistsp' : ''}" style="min-height:${fill * ROW_H - 5}px">${list}</div>${cartRow(view, lang)}${note(view.note)}`;
-    shop = `<div class="x-risu-pkb-shbody${view.grow ? ' x-risu-pkb-shgrow' : ''} x-risu-pkbsb-${safeKey(view.key)}"><div class="x-risu-pkb-shin">${body}</div></div>`;
+    const body = `${tabRow(view, lang)}<div class="x-risu-pkb-shlist${view.tab === SPECIAL_TAB ? ' x-risu-pkb-shlistsp' : ''}" style="min-height:${fill * ROW_H - 5}px">${list}</div>${cartRow(view, lang)}${note(view.note)}`;
+    // signed with what a checkout pays (shownOf - none given: as before)
+    const signed = view.shown ? ` ${shownClass(view.shown)}` : '';
+    shop = `<div class="x-risu-pkb-shbody${view.grow ? ' x-risu-pkb-shgrow' : ''} x-risu-pkbsb-${safeKey(view.key)}${signed}"><div class="x-risu-pkb-shin">${body}</div></div>`;
   }
   return `<div class="x-risu-pkb-box x-risu-pkb-l-${look}">${head}${top}${shop}</div>`;
 }
@@ -135,12 +164,12 @@ export const SHOP_CSS = [
   `.x-risu-pkb-l-shdepartment .x-risu-pkb-title{color:#3f1a5c;}`,
   `.x-risu-pkb-l-shdepartment .x-risu-pkb-shit{border-color:#e2d3ec;}`,
   `.x-risu-pkb-l-shdepartment .x-risu-pkb-shcart{border-top-color:#e4cf98;}`,
-
+  // fold control: the battle card's white x square, with a chevron
   `.x-risu-pkb-hd .x-risu-pkb-btn.x-risu-pkb-shfold{position:relative;color:var(--pkb-band);}`,
-
+  // Enter: blue
   `.x-risu-pkb-btn.x-risu-pkb-shgo{background:${ENTER[0]};border-color:${ENTER[1]};box-shadow:0 3px 0 ${ENTER[1]};}`,
   `.x-risu-pkb-btn.x-risu-pkb-shgo:active{box-shadow:0 1px 0 ${ENTER[1]};}`,
-
+  // money on the open card's top row
   `.x-risu-pkb-shm{display:flex;flex:none;flex-direction:column;align-items:flex-end;margin-left:auto;font-size:11px;line-height:1.3;color:#5d7486;}`,
   `.x-risu-pkb-shm b{font-weight:400;font-size:15px;color:#14304a;white-space:nowrap;}`,
 
@@ -150,13 +179,6 @@ export const SHOP_CSS = [
   `.x-risu-pkb-shgone{animation:x-risu-pkbshfold ${SHOP_MS.fold / 1000}s ease-in forwards;}`,
   `@keyframes x-risu-pkbshgrow{from{grid-template-rows:0fr;opacity:.2;} to{grid-template-rows:1fr;opacity:1;} }`,
   `@keyframes x-risu-pkbshfold{from{grid-template-rows:1fr;opacity:1;} to{grid-template-rows:0fr;opacity:0;} }`,
-
-  `.x-risu-pkb-shmode{display:flex;margin:0 12px 8px;padding:3px;border:2px solid #b9cbd9;border-radius:11px;background:#eef3f7;}`,
-  `.x-risu-pkb-shmd,.x-risu-pkb-btn.x-risu-pkb-shmd{flex:1 1 0;display:flex;align-items:center;justify-content:center;min-width:0;height:30px;margin:0;padding:0 6px;border:0;border-radius:8px;background:transparent;box-shadow:none;color:#5d7486;font-size:13.5px;}`,
-  `.x-risu-pkb-btn.x-risu-pkb-shmd:active{transform:none;box-shadow:none;}`,
-  `.x-risu-pkb-shmdon{color:#fff;box-shadow:0 2px 0 rgba(0,0,0,.25);}`,
-  `.x-risu-pkb-shmdon.x-risu-pkb-shmd-buy{background:${BUY[0]};}`,
-  `.x-risu-pkb-shmdon.x-risu-pkb-shmd-sell{background:${SELL[0]};}`,
 
   `.x-risu-pkb-shtabs{display:flex;flex-wrap:nowrap;gap:4px;margin:0 12px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;border-bottom:2px solid #c9d9e5;}`,
   `.x-risu-pkb-shtab,.x-risu-pkb-btn.x-risu-pkb-shtab{position:relative;flex:none;display:flex;align-items:center;gap:4px;width:auto;min-width:0;margin:0 0 -2px;padding:6px 10px 5px;border:2px solid transparent;border-bottom:0;border-radius:8px 8px 0 0;background:transparent;box-shadow:none;color:#6a8193;font-size:12.5px;white-space:nowrap;}`,
@@ -172,27 +194,34 @@ export const SHOP_CSS = [
   `.x-risu-pkb-shlistsp .x-risu-pkb-shon{border-color:#c99a2e;background:#fffdf6;}`,
   `.x-risu-pkb-shout{opacity:.6;filter:grayscale(.8);}`,
   `.x-risu-pkb-shsold{flex:none;width:80px;text-align:center;padding:2px 0;border:1.5px solid #b9c3cb;border-radius:7px;color:#6b7a86;font-size:12px;}`,
-  `.x-risu-pkb-shnone{padding:12px 4px;text-align:center;font-size:12.5px;color:#8193a1;}`,
   `.x-risu-pkb-shit{display:flex;align-items:center;gap:7px;min-height:36px;padding:3px 5px 3px 6px;border:2px solid #c9d9e5;border-radius:10px;background:#fff;}`,
   `.x-risu-pkb-shon{border-color:#4383ae;background:#f4f9fd;}`,
+  `.x-risu-pkb-shonsell{border-color:${SELL[0]};background:#f1faf8;}`,
   `.x-risu-pkb-shic{position:relative;flex:none;display:block;width:24px;height:24px;overflow:hidden;}`,
+
+  '.x-risu-pkb-shicgen{position:absolute;right:3px;bottom:1px;display:block;width:9px;height:11px;}', '.x-risu-pkb-shicgen svg{display:block;width:100%;height:100%;}',
   `.x-risu-pkb-shicpr{position:absolute;left:0;top:0;width:32px;height:32px;transform:scale(.75);transform-origin:0 0;}`,
   `.x-risu-pkb-shicpr span{position:absolute;display:block;background-image:url("${PR_ITEMS}");background-repeat:no-repeat;image-rendering:pixelated;}`,
-  `.x-risu-pkb-shicpa{position:absolute;left:0;top:0;width:32px;height:32px;transform:scale(.75);transform-origin:0 0;}`,
+  `.x-risu-pkb-shicpa{position:absolute;left:0;top:0;width:32px;height:32px;transform:scale(.75);transform-origin:0 0;}`, // PokeAPI picture (30 x 30), as a PokeRogue one
   `.x-risu-pkb-shicpa img{position:absolute;left:1px;top:1px;width:30px;height:30px;max-width:none;image-rendering:pixelated;}`,
   `.x-risu-pkb-shicdot{display:block;width:14px;height:14px;margin:5px;border-radius:50%;background:#e9b24c;box-shadow:inset 0 0 0 2px #a5741c;}`,
   `.x-risu-pkb-shn{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:#14304a;}`,
-  `.x-risu-pkb-show{flex:none;font-size:11px;color:#7b8c99;}`,
+  // how many I have: a small grey tag after the name
+  `.x-risu-pkb-show{flex:none;padding:0 5px;border-radius:999px;background:#eef3f7;font-size:10.5px;line-height:16px;color:#6a8193;white-space:nowrap;}`,
   `.x-risu-pkb-shp{flex:none;margin-left:auto;font-size:12.5px;color:#3d5a70;white-space:nowrap;}`,
+  // what one sells for (selling, or a row the shop does not sell): teal
+  `.x-risu-pkb-shpsell{color:${SELL[0]};}`,
+  `.x-risu-pkb-shpout{padding:0 5px;border:1.5px solid #b9c3cb;border-radius:6px;font-size:11px;line-height:16px;color:#6b7a86;}`,
 
-  `.x-risu-pkb-shsale{flex:none;margin-left:auto;padding:0 4px;border-radius:4px;background:#e8484d;color:#fff;font-size:9.5px;line-height:15px;letter-spacing:.03em;}`,
-  `.x-risu-pkb-shwas{flex:none;font-size:11px;color:#98a6b1;white-space:nowrap;}`,
-  `.x-risu-pkb-shsale ~ .x-risu-pkb-shp{margin-left:0;}`,
-  `.x-risu-pkb-shpsale{color:#d2353d;}`,
+  `.x-risu-pkb-shicw{position:relative;flex:none;display:block;width:24px;height:24px;}`,
+  `.x-risu-pkb-shsale{position:absolute;left:-7px;top:-6px;padding:0 2px;border-radius:3px;background:#e8484d;box-shadow:0 0 0 1px #fff;color:#fff;font-size:8px;line-height:10px;letter-spacing:.02em;transform:rotate(-14deg);pointer-events:none;}`,
+  `.x-risu-pkb-shpsale{position:relative;top:5px;padding-left:7px;line-height:14px;color:#d2353d;}`,
+  `.x-risu-pkb-shwas{position:absolute;left:0;bottom:100%;margin-bottom:-1px;font-size:10px;line-height:10px;color:#98a6b1;white-space:nowrap;}`,
   `.x-risu-pkb-shq{display:flex;flex:none;align-items:center;gap:2px;}`,
   `.x-risu-pkb-btn.x-risu-pkb-shqb{width:26px;height:26px;padding:0;border:2px solid #4383ae;border-radius:7px;background:#fff;color:#23435f;font-size:15px;line-height:1;box-shadow:0 2px 0 #23435f;}`,
   `.x-risu-pkb-btn.x-risu-pkb-shqb:active{transform:translateY(1.5px);box-shadow:0 .5px 0 #23435f;}`,
-  `.x-risu-pkb-shc{display:inline-block;min-width:24px;text-align:center;font-size:13px;color:#14304a;}`,
+  `.x-risu-pkb-shc{display:inline-block;min-width:26px;text-align:center;font-size:13px;color:#14304a;}`,
+  `.x-risu-pkb-shcsell{color:${SELL[0]};}`,
   `.x-risu-pkb-btn:disabled{cursor:default;filter:none;transform:none;color:#8d98a1;background:#eef1f3;border-color:#b9c3cb;box-shadow:0 3px 0 #b9c3cb;}`,
   `.x-risu-pkb-btn.x-risu-pkb-shqb:disabled{box-shadow:0 2px 0 #c9d1d8;}`,
 
@@ -219,7 +248,7 @@ export const SHOP_CSS = [
   `@container (max-width:380px){`
     + `.x-risu-pkb-shcart .x-risu-pkb-act{width:100%;}`
     + ` .x-risu-pkb-shlist{padding:8px 9px 9px;}`
-    + ` .x-risu-pkb-shcart,.x-risu-pkb-shmode{margin-left:9px;margin-right:9px;}`
+    + ` .x-risu-pkb-shcart{margin-left:9px;margin-right:9px;}`
     + ` .x-risu-pkb-shtabs{margin:0 9px;gap:2px;}`
     + ` .x-risu-pkb-shtab,.x-risu-pkb-btn.x-risu-pkb-shtab{padding:6px 7px 5px;font-size:12px;}`
     + ` }`,

@@ -8,6 +8,7 @@ const read = path => readFileSync(new URL(path, ROOT), 'utf8');
 const src = read('src/data/moves/move.ts');
 const lineOf = index => src.slice(0, index).split('\n').length;
 
+// --- 1. Class hierarchy and classes with scoring functions ---
 const parent = {};
 const classAt = [];
 for (const m of src.matchAll(/^export (?:abstract )?class (\w+)(?:<[^>]*>)?(?: extends (\w+))?/gm)) {
@@ -56,7 +57,7 @@ const SUBCLASSES = {
   ShiftStatAttr: ['constructor(statToSwitch: EffectiveStat, statToSwitchWith: EffectiveStat)', a => ['ShiftStat', a[0], a[1]]],
   SacrificialAttrOnHit: ['export class SacrificialAttrOnHit extends MoveEffectAttr', () => ['Sacrificial']],
   SacrificialFullRestoreAttr: ['export class SacrificialFullRestoreAttr extends SacrificialAttr', () => ['SacrificialFullRestore']],
-  MatchHpAttr: ['/*getUserBenefitScore(user: Pokemon, target: Pokemon, move: Move): number {', () => null],
+  MatchHpAttr: ['/*getUserBenefitScore(user: Pokemon, target: Pokemon, move: Move): number {', () => null], // commented out in the source -> score 0
 };
 // Decided by name alone, no arguments
 const SIMPLE = {
@@ -120,6 +121,7 @@ function value(token) {
   return { raw: token.slice(0, 40) };
 }
 
+// --- 4. Split initMoves() into one chunk per move ---
 const init = src.indexOf('export function initMoves');
 const startRe = /new (AttackMove|ChargingAttackMove|StatusMove|SelfStatusMove|ChargingSelfStatusMove)\(MoveId\.([A-Z0-9_]+),/g;
 startRe.lastIndex = init;
@@ -169,6 +171,7 @@ for (const [k, m] of starts.entries()) {
   moves[dexMove.id] = { line: lineOf(m.index), chance, power, ...(firstMove ? { firstMove } : {}), attrs };
 }
 
+// --- 5. Legendary Pokemon (PokeRogue species.legendary) ---
 const legendary = [];
 const speciesDir = new URL('src/data/balance/species/', ROOT);
 for (const file of readdirSync(speciesDir).filter(f => f.endsWith('.ts')).sort()) {

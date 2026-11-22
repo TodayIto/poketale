@@ -7,12 +7,15 @@ import { arrange } from './order.js';
 import { createProtocolReader } from './parse.js';
 import { checkLang, DEFAULT_LANG } from './lang.js';
 import { loadExpText } from './steps-exp.js';
-import { gimmickOptions } from './steps-mega.js';
+import { gimmickSuffix, specGimmicks, maxEntries, maxDeniedSource } from './steps-mega.js';
+import { formatRules } from '../engine/rules.mjs';
+import { battleRuleGen } from '../engine/generation.mjs'; // the battle's rule generation (0.1.0 G2 - steps-mega.js specGimmicks)
 import { commitChoice } from '../ai/commit.js';
 import { positionAt } from './read.js';
 import { screenLog, recordingView } from './text.js';
 import { sameName, sideParts } from '../story/blocks.mjs';
 
+/** Most turns one command block may hold */
 const PLAN_MAX_TURNS = 6;
 
 const plain = request => !!request && !request.wait && !request.forceSwitch && !!request.active;
@@ -39,6 +42,21 @@ function bagPick({ battle, bag, names, lang }, request, command, slot, ...more) 
   return bag.choice({ kind: 'item', item: command.item, slot, move: Math.max(move ?? 0, 0) }, party, ...more);
 }
 
+function gimmickWord(gimmick, request, gimmicks, slot, index, used = {}) {
+  const flag = { mega: 'mega', tera: 'tera', ultra: 'ultra', z: 'z', dynamax: 'dynamax' }[gimmick];
+  if (!flag) return '';
+  try { return gimmickSuffix({ kind: 'move', index, [flag]: true }, request, gimmicks, slot, used); } catch { return ''; }
+}
+
+function denied({ battle, names, lang }, request, slot, index, suffix) {
+  const option = request.active[slot].moves[index], pokemon = battle.sides[0].active[slot];
+  const text = blockedAs => moveDeniedText(battle, names, blockedAs, lang, pokemon);
+  if ((option.pp ?? 1) <= 0) return { reason: 'noPp', text: text(option) };
+  const maxed = maxEntries(request, pokemon, slot, suffix === ' dynamax')?.[index];
+  if (maxed ? maxed.disabled : option.disabled) return { reason: 'disabled', text: text(maxed ? { ...option, disabledSource: maxDeniedSource(pokemon) } : option) };
+  return null;
+}
+
 function resolveMine(ctx, request, me) {
   const { battle, bag, run, names, lang, wild, gimmicks } = ctx;
   const side = battle.sides[0];
@@ -54,11 +72,10 @@ function resolveMine(ctx, request, me) {
     const index = options.findIndex(option => option.id === me.move);
     if (index < 0) return { reason: 'noMove' };
     const option = options[index];
-    if ((option.pp ?? 1) <= 0) return { reason: 'noPp', text: moveDeniedText(battle, names, option, lang) };
-    if (option.disabled) return { reason: 'disabled', text: moveDeniedText(battle, names, option, lang) };
 
-    const offered = gimmickOptions(request, gimmicks);
-    const suffix = me.gimmick === 'mega' && offered.mega ? ' mega' : me.gimmick === 'tera' && offered.tera ? ' terastallize' : '';
+    const suffix = gimmickWord(me.gimmick, request, gimmicks, 0, index);
+    const blocked = denied(ctx, request, 0, index, suffix);
+    if (blocked) return blocked;
     return { choice: `move ${index + 1}${suffix}` };
   }
   if (me.kind === 'switch') {
@@ -105,7 +122,7 @@ function resolveFoe(battle, request, foe, i = 0, side = battle.sides[1]) {
 }
 
 const MINE = ['me', 'me2'], FOES = ['foe', 'foe2'];
-const POSITION_KEYS = { player: MINE[0], player2: MINE[1], enemy: FOES[0], enemy2: FOES[1] };
+const POSITION_KEYS = { player: MINE[0], player2: MINE[1], enemy: FOES[0], enemy2: FOES[1] }; // director/read.js positionAt
 
 function placeTurn(battle, turn) {
   const field = new Map();
@@ -172,7 +189,7 @@ async function resolveDouble(ctx, request, turn) {
   const autos = request.active.map((_, i) => autoPick(battle, request, i));
   const alone = autos.filter(auto => auto === null).length === 1;
   const picks = [], chosen = new Set(), taken = new Map();
-  let gimmickUsed = false;
+  const used = { gimmick: false, z: false };
   for (const [i, auto] of autos.entries()) {
     if (auto !== null) { picks.push(auto); continue; }
     const { key, command } = commandAt(turn, i, alone);
@@ -180,17 +197,17 @@ async function resolveDouble(ctx, request, turn) {
     const no = (reason, text) => ({ reason, ...(text ? { text } : {}), part: key });
     if (!command) return no('noCommand');
     if (command.kind === 'run') {
-      try { return { choice: ctx.run.choice() }; } catch { return no('cantRun'); }
+      try { return { choice: ctx.run.choice() }; } catch { return no('cantRun'); } // either position: the whole side runs
     }
     if (command.kind === 'item') {
-
-      if (!bag || !(bag.remaining(command.item, taken) > 0)) return no('noItem');
+      // one of the bag's own, its target named or the user itself (bagPick)
+      if (!bag || !(bag.remaining(command.item, taken) > 0)) return no('noItem'); // the bag's own count rule (a flute serves both positions)
       const named = slotOf(side, command.target), cheered = bag.cheerSlot(command.item);
       const slot = named >= 0 ? named : cheered >= 0 ? cheered : side.pokemon.indexOf(pokemon);
       let pick;
       try { pick = bagPick(ctx, request, command, slot, i, taken); }
       catch { return no('cantUse'); }
-      if (isBall(command.item)) return { choice: pick };
+      if (isBall(command.item)) return { choice: pick }; // a ball takes the whole side's turn
       taken.set(command.item, (taken.get(command.item) ?? 0) + 1);
       picks.push(pick);
       continue;
@@ -207,12 +224,15 @@ async function resolveDouble(ctx, request, turn) {
     const index = active.moves.findIndex(option => option.id === command.move);
     if (index < 0) return no('noMove');
     const option = active.moves[index];
-    if ((option.pp ?? 1) <= 0) return no('noPp', moveDeniedText(battle, names, option, lang, pokemon));
-    if (option.disabled) return no('disabled', moveDeniedText(battle, names, option, lang, pokemon));
-    const offered = gimmickUsed ? {} : gimmickOptions(request, gimmicks, i);
-    const suffix = command.gimmick === 'mega' && offered.mega ? ' mega' : command.gimmick === 'tera' && offered.tera ? ' terastallize' : '';
-    gimmickUsed ||= !!suffix;
-    picks.push(`move ${index + 1}${targetLoc(battle, pokemon, option, command.at)}${suffix}`);
+
+    const suffix = gimmickWord(command.gimmick, request, gimmicks, i, index, used);
+    const blocked = denied(ctx, request, i, index, suffix);
+    if (blocked) return no(blocked.reason, blocked.text);
+    const z = suffix === ' zmove';
+    if (z) used.z = true; else if (suffix) used.gimmick = true;
+    const maxed = maxEntries(request, pokemon, i, suffix === ' dynamax')?.[index];
+    const aimed = z ? { ...option, target: active.canZMove[index].target } : maxed ? { ...option, target: maxed.target } : option;
+    picks.push(`move ${index + 1}${targetLoc(battle, pokemon, aimed, command.at)}${suffix}`);
   }
   return { choice: joinParts(picks) };
 }
@@ -254,7 +274,7 @@ export async function planTurns(sim, snapshot, turns, { options = {}, enemyAI, n
     };
     await readOn();
     const logFrom = battle.log.length;
-    const ctx = { battle, bag, run, names, lang, wild, gimmicks: { teraOrb: snapshot.spec.teraOrb !== false } };
+    const ctx = { battle, bag, run, names, lang, wild, gimmicks: specGimmicks(snapshot.spec, { champions: formatRules(sim, battle.format).champions, gen: battleRuleGen(battle) }) };
     const double = battle.activePerHalf > 1;
     const entries = [], results = [];
 

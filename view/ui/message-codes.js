@@ -1,6 +1,7 @@
 // from pokerogue src/ui/handlers/message-ui-handler.ts (showTextInternal @c/@d/@s/@f codes) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 
+/** utils/common.ts getFrameMs: frames at 60fps -> ms */
 export const frameMs = frames => Math.floor((1000 / 60) * frames);
 
 export function parseCodes(text) {
@@ -41,7 +42,7 @@ export function typeWithCodes(message, page, { delays, sounds }, offset = 0) {
         const ch = characters[index++];
         shown += ch;
         text.setText(shown);
-        if (/\s/.test(ch)) step();
+        if (/\s/.test(ch)) step(); // whitespace does not advance the position
         else at(++seen);
       });
     };

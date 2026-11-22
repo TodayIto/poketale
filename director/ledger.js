@@ -21,11 +21,11 @@ export function createLedger({ battle, names }) {
       pokemon.set(p.m.uid, { uid: p.m.uid, side, speciesId: p.species.id, spriteId: spriteIdOf(p.species), name: pokemonName(names, p),
         level: p.level, gender: p.gender || '', shiny: !!p.set.shiny, hp: p.hp, maxhp: p.maxhp, status: p.fainted ? '' : p.status || '',
         ball: p.pokeball, boosts: {}, substitute: false, semiInvulnerable: null, disabled: null, fainted: !!p.fainted,
-        ...(p.m.partner ? { partner: p.m.partner } : {}),
-        ...(p.m.trainer ? { trainer: p.m.trainer } : {}) });
+        ...(p.m.partner ? { partner: p.m.partner } : {}), // tag battle: the partner trainer's name
+        ...(p.m.trainer ? { trainer: p.m.trainer } : {}) }); // a second opposing trainer's Pokemon on the opponent's engine side
     }
   }
-  let current = null;
+  let current = null; // event being read now (ident -> uid via that line's tag)
 
   const blank = (uid, side, name) => ({ uid, side, name, boosts: {}, substitute: false, semiInvulnerable: null, disabled: null, fainted: false });
 
@@ -42,7 +42,7 @@ export function createLedger({ battle, names }) {
   const setHealth = (entry, value) => {
     const health = parseHealth(value, entry.maxhp);
     Object.assign(entry, health);
-    if (health.hp > 0) entry.fainted = false;
+    if (health.hp > 0) entry.fainted = false; // Revival Blessing
   };
   function setView(entry, mon) {
     for (const key of VIEW_KEYS) delete entry[key];
@@ -74,6 +74,7 @@ export function createLedger({ battle, names }) {
 
       const passed = previous && previous !== entry && ['copyvolatile', 'shedtail'].includes(event.cause) ? copy(previous) : null;
       if (previous && previous !== entry) Object.assign(previous, { boosts: {}, substitute: false, semiInvulnerable: null, disabled: null });
+      if (previous && previous !== entry) delete previous.dynamax; // (the engine ends Dynamax with -end before the switch)
       setView(entry, monView(battle, names, a[0], a[1], a[2], entry.maxhp));
       entry.boosts = passed && event.cause === 'copyvolatile' ? passed.boosts : {};
       entry.substitute = !!passed?.substitute;
@@ -91,7 +92,7 @@ export function createLedger({ battle, names }) {
     case '-damage': case '-heal': case '-sethp': setHealth(entry, a[1]); break;
     case '-status': entry.status = a[1]; break;
     case '-curestatus': entry.status = ''; break;
-    case 'faint': entry.fainted = true; entry.substitute = false; break;
+    case 'faint': entry.fainted = true; entry.substitute = false; delete entry.dynamax; break; // no -end for a Dynamaxed one (steps.js faint)
     case '-boost': case '-unboost': {
       const delta = Number(a[2]) * (kind === '-boost' ? 1 : -1);
       setBoost(entry, a[1], (entry.boosts[a[1]] || 0) + delta);
@@ -135,11 +136,13 @@ export function createLedger({ battle, names }) {
     }
     case '-start':
       if (/substitute/i.test(a[1] ?? '')) entry.substitute = true;
-      if (/^(move: )?disable$/i.test(a[1] ?? '')) entry.disabled = a[2];
+      if (/^(move: )?disable$/i.test(a[1] ?? '')) entry.disabled = a[2]; // |-start|X|Disable|move
+      if (a[1] === 'Dynamax') entry.dynamax = a[2] === 'Gmax' ? 'gmax' : 'dynamax'; // |-start|X|Dynamax|[Gmax]
       break;
     case '-end':
       if (/substitute/i.test(a[1] ?? '')) entry.substitute = false;
       if (/^(move: )?disable$/i.test(a[1] ?? '')) entry.disabled = null;
+      if (a[1] === 'Dynamax') delete entry.dynamax;
       break;
     case '-terastallize': entry.tera = a[1]; break;
     case '-story-levelup': {
@@ -157,17 +160,17 @@ export function createLedger({ battle, names }) {
 
   return {
     pokemon, field, observe,
-
+    /** Ledger entry of the Pokemon named by ident in this event */
     get,
 
     atField,
-
+    /** Whether ident's Pokemon is on the field now (false when benched) */
     onField: ident => isIdent(ident) && Object.values(field).includes(get(ident).uid),
-
+    /** Position the Pokemon with this uid stands at, or null when benched */
     positionOfUid: uid => Object.keys(field).find(position => field[position] === uid) ?? null,
 
     abilityShown: uid => !!pokemon.get(uid)?.abilityShown,
-
+    /** Ledger -> view MonView */
     view: entry => Object.fromEntries(VIEW_KEYS.filter(key => entry[key] !== undefined).map(key => [key, entry[key]])),
   };
 }

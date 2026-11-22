@@ -1,8 +1,5 @@
-// Modified for PokeTale on 2026-11-19. See THIRD-PARTY-NOTICES.md.
-// Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
+// Adapted from PlayNav (MIT). See THIRD-PARTY-NOTICES.md.
 // Copyright (c) 2026 poooooby, MIT License. See THIRD-PARTY-NOTICES.md.
-// Ported from PlayNav (https://github.com/poooooby/PlayNav) src/training/core_app.lua and bags_app.lua (the punch, the bag's swing, the burst, the meter's two
-// shapes, the bag list) - drawn here, no picture files. The hanging bag (pixel art, chain, straps), its swing from the clasp, the contact 70 ms after a tap
 
 import { createCore, hangBlock, meterAxis, bagOf, BAG_IDS, BAG_SIZES, RESET_BAG, METER_MAX, METER_ORDER, statRoom } from '../story/training.mjs';
 import { mountTrainingFrame } from './training-frame.js';
@@ -24,14 +21,14 @@ import {
   TRAIN_LAYOUT, trainingMarks, swingParams, swingState, stepSwing, hitSwing, swingAngle, squashAt, HIT_DELAY, sandHit, sandLeak, burstBits, feetDust, stepBit,
 } from './training-motion.js';
 
-const BAG = TRAIN_LAYOUT.bag;
+const BAG = TRAIN_LAYOUT.bag;     // a hanging bag (field units)
 
 let bagSize = 'm';
 
 const LABEL_SIZE = 60;
 
 const HIT_SEGMENTS = 5;
-
+/** After a bag drops, taps wait this long (s) - it is shown first */
 const FOUND_HOLD = 1.1;
 
 export class TrainingScreen {
@@ -113,6 +110,8 @@ export class TrainingScreen {
     });
   }
 
+  // -- the parts -----------------------------------------------------
+
   makePokemon(front) {
     const s = this.scene, box = front.bounds, bw = box.right - box.left, bh = box.bottom - box.top;
     const room = this.tall ? Math.min(this.H * 0.26, 90) : 70;
@@ -183,7 +182,7 @@ export class TrainingScreen {
     const axis = stat => meterAxis(this.base?.[stat] ?? 0, evs[stat]);
     poly(shape(stat => axis(stat).base + axis(stat).effort), 0xffb84a, 0.85, 0xfff2c0);
     poly(shape(stat => axis(stat).base), 0x9ad8ff, 0.9, null);
-
+    // a stat that cannot rise any more: its name in yellow
     for (const [stat, label] of this.meterLabels) label.setColor(statRoom(evs, stat) ? '#f8f8f8' : '#ffd84a');
     this.drawEnergy();
     this.drawEffect();
@@ -198,6 +197,7 @@ export class TrainingScreen {
     g.fillStyle(colorOf(effect) ?? BLANK_COLOR, 1).fillRoundedRect(x - 4.5, y - 6, 9, 13, 2.5);
   }
 
+  /** The energy ring (the frame's): its share of full - once the frame is up */
   drawEnergy() { this.hud?.energy(this.core.energy / this.energyMax); }
 
   drawBag() {
@@ -231,7 +231,7 @@ export class TrainingScreen {
   drawHits(color, share) {
     const px = 1 / this.unit, g = this.gauge, w = 44, h = (this.tall ? 12 : 14) * px, x = this.hook.x - w / 2, y = this.hook.y + BAG.strap + this.dims.h + 6;
     const line = 2 * px, pad = 2 * px, gap = 2 * px, lit = Math.min(HIT_SEGMENTS - 1, Math.ceil(HIT_SEGMENTS * share));
-
+    // the shadow under it, the frame, the white inside
     g.fillStyle(0x1a3247, 0.6).fillRect(x, y + 2 * px, w, h);
     g.fillStyle(0x23435f, 1).fillRect(x, y, w, h);
     g.fillStyle(0xf8fbfd, 1).fillRect(x + line, y + line, w - 2 * line, h - 2 * line);
@@ -260,8 +260,10 @@ export class TrainingScreen {
     this.hint.show(this.core.bag ? [bag] : [() => this.hud.bagsAt(), bag]);
   }
 
+  /** A field spot in CSS px from the screen's top left (the frame's) */
   toScreen(x, y) { return { x: this.at.x + x * this.unit, y: this.at.y + y * this.unit }; }
 
+  /** A short line for secs */
   talk(text, secs = 1.8) {
     const s = this.scene, box = this.say;
     box.text.setText(text);
@@ -273,6 +275,8 @@ export class TrainingScreen {
     this.sayTimer?.remove();
     this.sayTimer = s.time.delayedCall(secs * 1000, () => box.setVisible(false));
   }
+
+  // -- the bag picker (the frame's) -------------------------------------------
 
   pickerState() {
     const w = this.words, hung = this.core.bag, effect = this.core.trainee.effect;
@@ -290,6 +294,8 @@ export class TrainingScreen {
     this.play(this.core.hang(id));
     this.guide();
   }
+
+  // -- input -------------------------------------------------------------
 
   listen() {
     const s = this.scene, input = s.input;
@@ -326,16 +332,18 @@ export class TrainingScreen {
 
     const at = performance.now() / 1000;
     if (at < this.holdUntil) return;
-
+    // the first hit: the finger has done its job for this visit
     if (!this.hit) { this.hit = true; this.hint.remove(); }
     this.play(this.core.tap(at));
   }
 
+  /** What the visit leaves: the bags cleared and the one hanging */
   result() {
     const bag = this.core.bag;
     return { bags: [...this.core.cleared], hung: bag && { id: bag.id, hits: bag.hits } };
   }
 
+  /** Leaves the screen: resolves open with the bags cleared */
   close() {
     if (!this.isOpen) return;
     this.isOpen = false;
@@ -350,6 +358,8 @@ export class TrainingScreen {
     this.restoreSize = null;
     this.resolve(this.result());
   }
+
+  // -- events ---------------------------------------------------------------
 
   play(events) {
     this.flush();
@@ -367,10 +377,12 @@ export class TrainingScreen {
     this.onChange(this.result());
   }
 
+  /** Shows the contacts still waiting, now */
   flush() {
     while (this.contacts.length) this.show(this.contacts.shift().events);
   }
 
+  /** What events show (play) */
   show(events) {
     const w = this.words;
     let burst = false;
@@ -432,12 +444,14 @@ export class TrainingScreen {
         default: break;
       }
     }
-
+    // a bag burst and none goes up after it: the blank bag drops in
     if (burst) { this.drawBag(); this.drop(false); }
   }
 
+  /** An emote over its head (view/amie-art.js EMOTES) */
   emote(kind) { emote(this.scene, this.fx, kind, this.monX + 14, this.feetY - this.reach * 1.7); }
 
+  /** Something shown after what is on screen now (the burst first) */
   later(fn, secs) { this.scene.time.delayedCall(secs * 1000, () => { if (this.isOpen) fn(); }); }
 
   lunge() {
@@ -499,6 +513,7 @@ export class TrainingScreen {
     this.burstAt('spark', 3, this.monX, this.feetY - this.reach * 1.4, { rise: 0.8, scale: 1.1 });
   }
 
+  /** n pictures rising from (x, y) and fading (view/amie.js burst) */
   burstAt(name, n, x, y, { rise = 1, scale = 1 } = {}) {
     const s = this.scene;
     for (let i = 0; i < n; i++) {
@@ -512,22 +527,24 @@ export class TrainingScreen {
     }
   }
 
+  // -- each frame ------------------------------------------------------------
+
   frame(delta) {
     if (!this.isOpen) return;
     const dt = Math.min(250, delta) / 1000, life = this.life;
     life.t += dt;
     this.yard.update();
-
+    // a punch's contact and what follows it, once its time comes
     while (this.contacts.length && this.contacts[0].at <= life.t) this.show(this.contacts.shift().events);
     life.lunge = Math.max(0, life.lunge - dt / 0.22);
     life.sink += ((this.core.resting ? 1 : 0) - life.sink) * (1 - Math.exp(-3 * dt));
-
+    // the punch: a lunge toward the bag and back
     const toward = Math.max(0, this.hook.x - this.dims.w / 2 - this.reach - this.monX - 4);
     const lunge = Math.sin(life.lunge * Math.PI) * Math.min(26, toward);
     const breath = Math.sin(life.t * 3) * 0.015;
     this.holder.setPosition(this.monX + lunge, this.feetY);
     this.holder.setRotation(0.12 * Math.sin(life.lunge * Math.PI) + Math.sin(life.t * 1.6) * 0.03 * life.sink);
-
+    // mirrored: it faces the bag at its right
     this.holder.setScale(-this.scale * (1 + 0.04 * life.sink), this.scale * (1 + breath - 0.07 * life.sink));
 
     stepSwing(this.swing, dt, this.swingP);
@@ -548,4 +565,3 @@ export class TrainingScreen {
     }
   }
 }
-

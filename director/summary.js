@@ -3,10 +3,13 @@ import en from './text-summary-en.json' with { type: 'json' };
 import { learnMoveOption } from './steps-exp.js';
 import { ownText } from './text.js';
 import { checkLang, DEFAULT_LANG } from './lang.js';
+import { genHas, battleRuleGen } from '../engine/generation.mjs';
+import { dvIvs } from '../engine/rules.mjs';
+import { say as screenSay } from '../story/screen-text.mjs';
 
 const PHRASES = { ko, en };
 import { expForLevel } from '../engine/exp.mjs';
-import { MAX_LEVEL, NON_HP_STATS } from '../engine/mon.mjs';
+import { MAX_LEVEL, NON_HP_STATS, hasOneSpecial } from '../engine/mon.mjs';
 
 export function summaryView(battle, names, entry, pokemon, options = {}, lang = DEFAULT_LANG) {
   const phrases = PHRASES[checkLang(lang)];
@@ -18,7 +21,8 @@ export function summaryView(battle, names, entry, pokemon, options = {}, lang = 
     types: [...species.types],
     ball: entry.pokeball || pokemon.pokeball || 'pokeball',
     trainer: pokemon.m?.ot || pokemon.side.name,
-    ability: { name: names.ability(ability.id), description: phrases[`ability.${ability.id}`] ?? '' },
+
+    ability: hasOneSpecial(battle.gen) ? null : { name: names.ability(ability.id), description: phrases[`ability.${ability.id}`] ?? '' },
 
     item: pokemon.item ? names.item(pokemon.item) : pokemon.m?.heldCustom ?? null,
 
@@ -39,7 +43,17 @@ export function summaryView(battle, names, entry, pokemon, options = {}, lang = 
   if (!battle.dex.currentMod.startsWith('champions')) summary.ivs = { hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31, ...pokemon.set.ivs };
   else if (battle.ruleTable.has('levelclausemod')) summary.ivs = { hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31 };
 
+  if (summary.ivs && hasOneSpecial(battle.gen)) summary.ivs = dvIvs(summary.ivs);
+  if (battle.gen === 1) summary.oneSpecial = { label: screenSay(checkLang(lang), 'stat.special') };
+
   if (entry.teraType) summary.teraType = entry.teraType;
+
+  const shown = genHas(battleRuleGen(battle), 'dynamax') && options.dynamaxShown === true;
+  if (shown && !species.cannotDynamax && Number.isInteger(pokemon.dynamaxLevel)) {
+    summary.dynamaxLevel = Math.max(0, Math.min(10, pokemon.dynamaxLevel));
+  }
+
+  if (shown && pokemon.set.gigantamax === true && pokemon.baseSpecies.canGigantamax) summary.gigantamax = true;
   const exp = expInfo(battle, pokemon, options.exp);
   if (exp) summary.exp = exp;
   return summary;

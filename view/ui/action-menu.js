@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/command-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/fight-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/target-select-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/battle-message-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
@@ -8,17 +8,22 @@
 
 import { addWindow } from './window.js';
 import { addTextObject, pad2 } from './text.js';
-import { GimmickButton } from './mega-tera.js';
+import { GimmickButton, FIGHT_CURSOR } from './mega-tera.js'; // Mega Evolution / Terastallization / Ultra Burst / Z-Move / Dynamax button
 import { openBag } from './bag.js';
 import { chooseRun } from '../run-away.js';
-import { playSelect, playError } from './keys.js';
-import { openMenu } from './menu.js';
-import { FIGHT_WINDOWS } from './tap-back.js';
-import { POSITIONS, isPlayerSide } from '../positions.js';
-import { fixed } from '../game-speed.js';
-import { themeColors } from './theme.js';
+import { playSelect, playError } from './keys.js'; // menu sounds
+import { openMenu } from './menu.js'; // menu frame (keys, closing, tapping empty space)
+import { FIGHT_WINDOWS } from './tap-back.js'; // tapping empty space during move selection
+import { POSITIONS, isPlayerSide } from '../positions.js'; // battler order for target selection
+import { fixed } from '../game-speed.js'; // target flash and marker bob ignore game speed (fixedInt)
+import { themeColors } from './theme.js'; // legacy theme text colours
 
-export const moveEnabled = move => !!move && !move.disabled && (move.pp === undefined || move.pp > 0);
+export const moveEnabled = move => !!move && !move.disabled && !move.zOff && !move.maxOff && (move.pp === undefined || move.pp > 0);
+
+const OFF_ALPHA = 0.45;
+
+const GIMMICK_MID = 7.7;
+const PROMPT_WRAP = 1110, PROMPT_LINES = 2;
 
 const HINT_COLORS = { 0: '#929292', 0.125: '#FF5500', 0.25: '#FF7400', 0.5: '#FE8E00', 2: '#4AA500', 4: '#4BB400', 8: '#52C200' };
 export const hintColor = move => (typeof move?.effectiveness === 'number' ? HINT_COLORS[move.effectiveness] : undefined);
@@ -38,9 +43,12 @@ const asksTarget = target => !!target && (target.choose || target.spread) && tar
 export class ActionMenu {
   constructor(scene) { this.scene = scene; this.memos = {}; this.position = 'player'; }
 
-  choose({ moves, canSwitch = false, party, partner = null, mega = false, tera = '', bag, run, position = 'player', back = false }) {
+  choose({ moves, canSwitch = false, party, partner = null, mega = false, tera = '', ultra = false, z = null, dynamax = null, max = null, bag, run, position = 'player', back = false }) {
     if (this.finish) throw new Error('Action menu already open');
     if (!Array.isArray(moves) || !moves.length || moves.length > 4) throw new Error('Expected 1–4 move options');
+    if (z != null && (!Array.isArray(z) || z.length !== moves.length)) throw new Error('Expected one Z option (or null) per move');
+    if (dynamax != null && (!Array.isArray(dynamax.moves) || dynamax.moves.length !== moves.length)) throw new Error('Expected one Max Move option (or null) per move');
+    if (max != null && (!Array.isArray(max) || max.length !== moves.length)) throw new Error('Expected one Max Move option (or null) per move');
     if (!POSITIONS.includes(position) || !isPlayerSide(position)) throw new Error(`Invalid command position: ${position}`);
 
     if (position !== this.position) {
@@ -49,14 +57,17 @@ export class ActionMenu {
       this.position = position;
     }
     this.back = !!back;
-    this.moves = moves.map(m => ({ ...m })); this.mode = 'command'; this.notice = '';
+    this.baseMoves = this.moves = moves.map(m => ({ ...m })); this.mode = 'command'; this.notice = '';
+    this.zMoves = z;
+    this.maxMoves = max ?? dynamax?.moves ?? null; this.maxNow = !!max; // Max Move menu (showMax): from the button, or from the start while Dynamaxed
+    if (this.maxNow) this.showMax(true);
 
     this.cursor = this.lastCommand === 2 || !this.lastCommand ? 0 : this.lastCommand;
 
     this.party = canSwitch && Array.isArray(party) ? party : null;
     this.partner = partner;
-    this.gimmick = GimmickButton.create(this, { mega, tera });
-    this.bag = bag ?? null;
+    this.gimmick = GimmickButton.create(this, { mega, tera, ultra, z, dynamax: max ? null : dynamax }); // only when the request marks it available (view/ui/mega-tera.js)
+    this.bag = bag ?? null; // if given, the "Ball" slot becomes "Bag" -> view/ui/bag.js
     this.run = run ?? null;
     const scene = this.scene;
     scene.messages.container.setVisible(false);
@@ -80,27 +91,29 @@ export class ActionMenu {
       return;
     }
     if (mode === 'target') return this.targetInput(action);
-    if (action === 'back' && mode === 'command' && this.back) return this.finish({ kind: 'back' });
+    if (action === 'back' && mode === 'command' && this.back) return this.finish({ kind: 'back' }); // command-phase.ts:673 cancel (silent, as below)
     if (action === 'back') { if (mode === 'fight') { playSelect(this.scene); this.rememberMove(); } this.mode = 'command'; this.cursor = 0; this.notice = ''; }
     else if (action === 'ok') {
       if (this.mode === 'command') {
-        this.lastCommand = this.cursor;
+        this.lastCommand = this.cursor; // cursor memory
         const open = this.cursor === 0 || (this.cursor === 2 && this.party) || (this.cursor === 1 && this.bag) || (this.cursor === 3 && this.run);
         if (open) playSelect(this.scene); else playError(this.scene);
         if (this.cursor === 0) { this.mode = 'fight'; this.cursor = this.rememberedMove(); this.notice = ''; }
         else if (this.cursor === 2 && this.party) return this.openParty();
-        else if (this.cursor === 1 && this.bag) return openBag(this);
+        else if (this.cursor === 1 && this.bag) return openBag(this); // bag (view/ui/bag.js)
         else if (this.cursor === 3 && this.run) return chooseRun(this);
 
         else this.notice = this.scene.words(this.party ? 'own.onlyFightParty' : 'own.onlyFight');
       } else if (moveEnabled(this.moves[this.cursor])) {
-        playSelect(this.scene); this.rememberMove();
+        playSelect(this.scene); this.rememberMove(); // cursor memory
         const target = this.moves[this.cursor].target;
         if (asksTarget(target)) return this.openTarget();
-
-        return this.finish({ kind:'move', index:this.cursor, ...(target?.choose && target.targets.length === 1 ? { target: target.targets[0] } : {}), ...this.gimmick?.choice() });
+        // a single possible target is picked without asking
+        return this.finish({ kind:'move', index:this.cursor, ...(target?.choose && target.targets.length === 1 ? { target: target.targets[0] } : {}), ...this.gimmick?.choice() }); // mega/tera
       }
-      else if (this.moves[this.cursor]?.blocked) { playError(this.scene); return this.showBlocked(this.moves[this.cursor].blocked); }
+      else if (this.moves[this.cursor]?.zOff) { /* no Z-Move for this slot: it simply cannot be picked - no text, no sound */ }
+      else if (this.moves[this.cursor]?.maxOff) playError(this.scene);
+      else if (this.moves[this.cursor]?.blocked) { playError(this.scene); return this.showBlocked(this.moves[this.cursor].blocked); } // reason text down-arrow
       else { playError(this.scene); this.notice = this.blockedReason(); }
     } else {
       if (action === 'up' && this.cursor >= 2) this.cursor -= 2;
@@ -115,10 +128,28 @@ export class ActionMenu {
 
   rememberedMove() {
     const memory = this.moveMemory, summoned = this.scene.summonCount?.[this.position];
-    if (memory && memory.summoned === summoned && memory.cursor < this.moves.length) return memory.cursor;
+    if (memory && memory.summoned === summoned && memory.cursor < this.moves.length && !this.moves[memory.cursor].zOff && !this.moves[memory.cursor].maxOff) return memory.cursor;
     return Math.max(0, this.moves.findIndex(moveEnabled));
   }
   rememberMove() { this.moveMemory = { summoned: this.scene.summonCount?.[this.position], cursor: this.cursor }; }
+
+  showZ(on) {
+    this.moves = !on || !this.zMoves ? this.baseMoves : this.baseMoves.map((move, i) => {
+      const z = this.zMoves[i];
+      if (!z) return { ...move, zOff: true };
+      const { name, type, category, power = null, accuracy = null, effectiveness, target } = z;
+      return { ...move, name, type, category, power, accuracy, effectiveness, target };
+    });
+  }
+
+  showMax(on) {
+    this.moves = !on || !this.maxMoves ? this.baseMoves : this.baseMoves.map((move, i) => {
+      const max = this.maxMoves[i];
+      if (!max) return { ...move, blocked: undefined, maxOff: true };
+      const { name, type, category, power = null, accuracy = null, effectiveness, target, disabled = false } = max;
+      return { ...move, name, type, category, power, accuracy, effectiveness, target, disabled: !!disabled, blocked: undefined, maxOff: !!disabled };
+    });
+  }
 
   openTarget() {
     const target = this.moves[this.cursor].target, memory = this.targetMemory;
@@ -177,16 +208,16 @@ export class ActionMenu {
     this.flashing = (this.spread ? this.targets : [this.cursor]).filter(position => s.pokemon[position]).map(position => {
       const sprite = s.pokemon[position].container, info = s.info[position];
       const tweens = [s.tweens.add({ targets: sprite, alpha: { from: 1, to: 0.25 }, loop: -1, loopDelay: 150, duration: fixed(450), ease: 'Sine.easeInOut', yoyo: true })];
-      if (info) tweens.push(s.tweens.add({ targets: info.container, y: { from: info.baseY, to: info.baseY + 1 }, loop: -1, duration: fixed(250), ease: 'Linear', yoyo: true }));
+      if (info) tweens.push(s.tweens.add({ targets: info.container, y: { from: info.restY ?? info.baseY, to: (info.restY ?? info.baseY) + 1 }, loop: -1, duration: fixed(250), ease: 'Linear', yoyo: true }));
       return { sprite, alpha: sprite.alpha, info, tweens };
     });
   }
-
+  /** Back to how they were (alpha 0.5 behind a substitute doll) */
   stopFlash() {
     for (const { sprite, alpha, info, tweens } of this.flashing ?? []) {
       tweens.forEach(t => t.stop());
       sprite.setAlpha(alpha);
-      if (info) info.container.y = info.baseY;
+      if (info) info.container.y = info.restY ?? info.baseY;
     }
     this.flashing = null;
   }
@@ -194,7 +225,7 @@ export class ActionMenu {
     this.stopFlash();
     this.targetHits?.forEach(hit => hit.destroy()); this.targetHits = null;
   }
-
+  /** Double battle: a bobbing marker over the mon whose command this is */
   markTurn() {
     const s = this.scene, p = s.double && s.pokemon[this.position];
     if (!p) return;
@@ -234,6 +265,7 @@ export class ActionMenu {
   }
   blockedReason() {
     const move = this.moves[this.cursor];
+    if (move?.zOff || move?.maxOff) return '';
     const reason = !move ? 'own.noMove' : move.pp !== undefined && move.pp <= 0 ? 'own.noPp' : move.disabled ? 'own.moveDisabled' : null;
     return reason ? this.scene.words(reason) : '';
   }
@@ -282,10 +314,12 @@ export class ActionMenu {
       this.text(248,info?-8.5:-9,s.words('own.back'),info?44:48).setInteractive({useHandCursor:true}).on('pointerdown',this.tapped(()=>this.input('back')));
     } else {
       c.add(addWindow(s,202,-48,118,48));
-      this.promptText = this.text(12,-39,'',96,4,5,{wordWrap:{width:1110},maxLines:2},'message');
+      this.promptWrap = PROMPT_WRAP; // the gimmick button (mega-tera.js draw) narrows it
+      this.promptText = this.text(12,-39,'',96,4,5,{wordWrap:{width:PROMPT_WRAP},maxLines:PROMPT_LINES},'message');
     }
     const labels = fight ? this.moves.map(m=>m.name)
       : ['command-ui-handler.fight', this.bag ? 'own.bag' : 'command-ui-handler.ball', 'command-ui-handler.pokemon', 'command-ui-handler.run'].map(key => s.words(key));
+    this.labels = [];
     for (let i=0;i<4;i++) {
       const col = i%2, row = Math.floor(i/2), step = fight ? 114 : 56;
       const hit = s.add.rectangle((fight?8:207)+col*step,-40+row*16,step,16,0,0)
@@ -294,17 +328,29 @@ export class ActionMenu {
       hit.on('pointerdown',this.tapped(()=>{this.cursor=i;this.input('ok');})); c.add(hit);
       const label = this.text((fight?18:217)+col*(fight?114:55.8),-38.7+row*16,labels[i] ?? '-',
         fight?96:92,fight?3:4,fight?3:5,fight?{}:{padding:{top:2}});
-      const color = fight && this.scene.options.typeHints && hintColor(this.moves[i]);
+
+      const color = fight && this.scene.options.typeHints && !this.moves[i]?.zOff && !this.moves[i]?.maxOff && hintColor(this.moves[i]);
       if (color) label.setColor(color);
+      if (fight && (this.moves[i]?.zOff || this.moves[i]?.maxOff)) label.setAlpha(OFF_ALPHA);
+
+      const full = label.scaleY;
+      if (fight && label.displayWidth > step - 10) label.setScale(label.scaleX * (step - 10) / label.displayWidth);
+      this.labels.push({ y: label.y, k: full ? label.scaleY / full : 1 });
     }
     this.cursorObj = s.add.image(0,0,'cursor'); c.add(this.cursorObj);
     this.gimmick?.draw(c, fight);
+    if (fight && this.maxNow) { const [key, scale] = FIGHT_CURSOR.dynamax; this.cursorObj.setTexture(key).setScale(scale); } // Dynamaxed: the Dynamax Band cursor
     this.updateSelection();
   }
   updateSelection() {
     const col = this.cursor%2, row = Math.floor(this.cursor/2);
     if (this.mode === 'fight') {
-      this.cursorObj.setPosition(13+col*114,-31+row*15);
+
+      const label = this.labels?.[this.cursor];
+
+      const gimmick = this.maxNow || !!this.gimmick?.lit;
+      if (gimmick && label) this.cursorObj.setPosition(12+col*114, Math.round(label.y + GIMMICK_MID*(label.k || 1)));
+      else this.cursorObj.setPosition(13+col*114,-31+row*15);
       const move = this.moves[this.cursor];
       this.typeIcon.setVisible(!!move); this.categoryIcon.setVisible(false); this.ppLabel.setVisible(!!move); this.ppText.setVisible(!!move);
       if (move) {
@@ -320,16 +366,26 @@ export class ActionMenu {
       }
       const reason = this.notice || this.blockedReason();
       this.reasonText.setText(reason);
-
-      for (const t of [this.powerLabel, this.powerText, this.accuracyLabel, this.accuracyText]) t?.setVisible(!!move && !reason);
+      // if blocked, hide that slot's power/accuracy (PP stays)
+      for (const t of [this.powerLabel, this.powerText, this.accuracyLabel, this.accuracyText]) t?.setVisible(!!move && !reason && !move.zOff && !move.maxOff);
     } else {
       this.cursorObj.setPosition(212+col*56,-30.7+row*16);
 
       const words = this.scene.words;
       const pokemonName = this.scene.pokemon[this.position]?.mon.name ?? words('command-ui-handler.pokemon');
-      this.promptText.setText(this.notice || words('command-ui-handler.actionMessage', { pokemonName }));
+      this.setPrompt(this.notice || words('command-ui-handler.actionMessage', { pokemonName }));
     }
-    this.gimmick?.update();
+    this.gimmick?.update(); // on the button slot: hide the cursor and light the button
+  }
+
+  setPrompt(str) {
+    const wrap = this.promptWrap, maxLines = PROMPT_LINES;
+    const t = this.promptText.setScale(1 / 6).setWordWrapWidth(wrap).setText(str);
+    if (t.displayWidth <= wrap / 6 && t.getWrappedText(str).length <= maxLines) return;
+    if (String(str).split('\n').length > maxLines) return; // a text written longer than the box is left to the wrap as before
+    t.setWordWrapWidth(null);
+    const k = Math.min(1, wrap / 6 / t.displayWidth);
+    t.setScale(k / 6).setWordWrapWidth(wrap / k + 1); // + 1: no new break from rounding
   }
   clear() {
     this.finish = this.fail = null;

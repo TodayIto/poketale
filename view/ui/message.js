@@ -1,11 +1,11 @@
 // from pokerogue src/ui/handlers/message-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/battle-message-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/message-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 import { addTextObject } from './text.js';
 import { keyAction, playSelect } from './keys.js';
 import { delay } from '../lifetime.js';
-import { parseCodes, typeWithCodes, visibleCount } from './message-codes.js';
+import { parseCodes, typeWithCodes, visibleCount } from './message-codes.js'; // @d/@s
 
 export const DEFAULT_HOLD = 1500;
 
@@ -98,14 +98,14 @@ export class BattleMessage {
     const width = probe.displayWidth; probe.destroy();
     this.prompt.setPosition(this.text.x + width + 2, this.text.y + (lines.length - 1) * 18 + 2);
   }
-
+  /** Shows down-arrow only (presses are not taken - final text) */
   showPrompt() {
     this.placePrompt();
     this.prompt.setVisible(true); this.prompt.play?.('prompt');
   }
 
   waitForInput() {
-    this.showPrompt();
+    this.showPrompt(); // down-arrow position
     focusStage(this.parent);
     return new Promise(resolve => {
       this.advance = () => { this.advance = null; this.prompt.stop?.(); this.prompt.setVisible(false); playSelect(this.scene); resolve(); };

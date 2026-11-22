@@ -7,6 +7,7 @@ import { opponentGender } from './trainer-look.mjs';
 
 const V = SETTLEMENT_BOT.vars;
 
+// mine / opponent: 'M' | 'F' | null (unknown)
 const alternativeAllowed = (vars, mine, opponent) => {
   if (String(vars[V.winInstruction]) !== '1') return false;
   const mode = Number(vars[V.mode]);
@@ -38,7 +39,7 @@ export async function victoryChoices({ chat, index, survey, myGender = null }) {
   const info = survey?.battles.get(survey.lastBattleKey);
   if (info?.phase !== 'done' || info.result?.outcome !== 'win' || info.result.index !== index) return '';
   const messages = chat?.message ?? [];
-  if (index < messages.length - 2) return '';
+  if (index < messages.length - 2) return ''; // same recent-message window as the native display rules
   const tail = messages.slice(index).map(m => String(m?.data ?? '')).join('\n');
   if (/\[(?:Settlement (?:Choice|Outcome)\s*\||Select (?:Money|Sexual Forfeit)(?:\s*\||\]))/.test(tail)) return '';
   const block = battlesIn(messages[info.index], info.index, rulesAt(chat)(info.index)).find(b => b.key === info.key);

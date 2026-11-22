@@ -60,7 +60,7 @@ export function liveSends(chat, sends) {
 const stageOfSend = send => send.stage ?? 1;
 
 const progress = send => [stageOfSend(send), send.upto ?? -1, Number.isInteger(send.logEnd) ? send.logEnd : Infinity, send.ended ? 1 : 0];
-
+/** < 0 when send a is behind send b, 0 when level, > 0 when ahead */
 function ahead(a, b) {
   const x = progress(a), y = progress(b);
   const at = x.findIndex((v, i) => v !== y[i]);

@@ -21,7 +21,7 @@ export function moveTargets(battle, user, targetType) {
       : targetType === 'allAdjacent' ? battle.validTargetLoc(loc, user, loc > 0 ? 'adjacentFoe' : 'adjacentAlly')
         : targetType === 'foeSide' ? loc > 0
           : targetType === 'all' ? true
-            : loc < 0);
+            : loc < 0); // allySide, allies, allyTeam
     return { choose: false, spread: true, targets: locs.filter(loc => standing(loc) && hit(loc)).map(target) };
   }
   return { choose: false, spread: false, targets: [{ loc: user.getLocOf(user), position: positionOfMon(user), ally: true }] };

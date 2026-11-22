@@ -1,5 +1,5 @@
 // from pokerogue src/battle.ts (getBgmOverride) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/data/trainers/trainer-config.ts (battleBgm / victoryBgm defaults) @ 7d7da4a8 (AGPL-3.0-only)
 
 import BGM from '../data/bgm.json' with { type: 'json' };

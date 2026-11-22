@@ -1,5 +1,5 @@
 // from pokerogue src/phases/quiet-form-change-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/phases/pokemon-transform-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/pokemon-anim-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/field/pokemon.ts @ 7d7da4a8 (AGPL-3.0-only)
@@ -12,16 +12,17 @@ import { SPRITE_SLOTS, onInfoBox } from './sprites/placement.js';
 import { teamOf, isPlayerSide, fieldOffset, checkPosition, fieldPositions } from './positions.js';
 import { hasAnimation, chargeFile } from './anims/data.js';
 import { tween, delay } from './lifetime.js';
+import { playUltraBurst } from './ultra-burst.js'; // Ultra Burst effect (not in the source - 0.1.0)
 
 export const EFFECT_IMAGES = {
   ability_bar_left: 'images/ui/ability_bar_left.png', ability_bar_right: 'images/ui/ability_bar_right.png',
   pbinfo_player_stats: 'images/ui/pbinfo_player_stats.png', pbinfo_enemy_mini_stats: 'images/ui/pbinfo_enemy_mini_stats.png',
   pbinfo_stat_numbers: 'images/ui/pbinfo_stat_numbers.png', pbinfo_stat: 'images/ui/text_images/ko/battle_ui/pbinfo_stat_ko.png',
-
+  // loading-scene.ts: pkmn__sub / pkmn__back__sub
   sub: 'images/pokemon/sub.png', sub_back: 'images/pokemon/back/sub.png',
 };
 export const EFFECT_SOUNDS = ['battle_anims/PRSFX- Transform.wav', 'battle_anims/PRSFX- Substitute2.wav'];
-
+// Pokemon.getSubstituteOffset() (by side)
 const SUB_OFFSET = { player: [-30, 10], enemy: [30, -10] };
 
 const dollSpot = (scene, side) => {
@@ -80,7 +81,7 @@ export class BattleEffects {
     if (pressed) this.statsHeld.add(source); else this.statsHeld.delete(source);
     this.showStats();
   }
-
+  /** Treats everything pressed as released (window focus lost, collapse) */
   releaseStats() { this.statsHeld.clear(); this.showStats(); }
   showStats() {
     const visible = this.statsHeld.size > 0;
@@ -90,20 +91,7 @@ export class BattleEffects {
   }
 
   async changeForm(side, mon, { instant = false, sound = true } = {}) {
-    const scene = this.scene, old = scene.requireMon(side);
-    const next = { ...old.mon, speciesId: mon.speciesId, spriteId: mon.spriteId, shiny: !!mon.shiny, gender: mon.gender ?? old.mon.gender,
-      ...(mon.name !== undefined ? { name: mon.name } : {}), ...(mon.level !== undefined ? { level: mon.level } : {}) };
-    const asset = await scene.assets.mon(next, isPlayerSide(side));
-    scene.life.check();
-    const sprite = new PokemonSprite(scene, side, next, asset);
-    const offset = this.subs[side] ? SUB_OFFSET[teamOf(side)] : [0, 0];
-    sprite.container.setPosition(sprite.placement.x + offset[0], sprite.placement.y + offset[1]).setAlpha(old.container.alpha);
-    scene.field.moveAbove(sprite.container, old.container);
-    const info = scene.info[side], relabel = info && (mon.name !== undefined || mon.level !== undefined);
-    const swap = () => {
-      old.destroy(); scene.pokemon[side] = sprite;
-      if (relabel) info.init({ ...info.mon, name: next.name, level: next.level, gender: next.gender, ...(mon.exp !== undefined ? { exp: mon.exp } : {}) });
-    };
+    const scene = this.scene, { old, sprite, swap } = await this.formSprite(side, mon);
     if (instant) {
       swap(); sprite.container.setVisible(true); sprite.playAnim();
       if (sound) await scene.audio.play('battle_anims/PRSFX- Transform.wav');
@@ -122,6 +110,29 @@ export class BattleEffects {
     swap(); sprite.getSprite().setVisible(true);
     await delay(scene, 250);
     await Promise.all([sprite.untint(1000, 'Cubic.easeOut'), played]);
+  }
+
+  async ultraBurst(side, mon) {
+    const { old, sprite, swap } = await this.formSprite(side, mon);
+    await playUltraBurst(this.scene, { old, next: sprite, swap: () => { swap(); sprite.container.setVisible(true); sprite.playAnim(); } });
+  }
+
+  async formSprite(side, mon) {
+    const scene = this.scene, old = scene.requireMon(side);
+    const next = { ...old.mon, speciesId: mon.speciesId, spriteId: mon.spriteId, shiny: !!mon.shiny, gender: mon.gender ?? old.mon.gender,
+      ...(mon.name !== undefined ? { name: mon.name } : {}), ...(mon.level !== undefined ? { level: mon.level } : {}) };
+    const asset = await scene.assets.mon(next, isPlayerSide(side));
+    scene.life.check();
+    const sprite = new PokemonSprite(scene, side, next, asset);
+    const offset = this.subs[side] ? SUB_OFFSET[teamOf(side)] : [0, 0];
+    sprite.container.setPosition(sprite.placement.x + offset[0], sprite.placement.y + offset[1]).setAlpha(old.container.alpha);
+    scene.field.moveAbove(sprite.container, old.container); // keep the old drawing order (player in front)
+    const info = scene.info[side], relabel = info && (mon.name !== undefined || mon.level !== undefined);
+    const swap = () => {
+      old.destroy(); scene.pokemon[side] = sprite;
+      if (relabel) info.init({ ...info.mon, name: next.name, level: next.level, gender: next.gender, ...(mon.exp !== undefined ? { exp: mon.exp } : {}) });
+    };
+    return { old, sprite, swap };
   }
 
   async substitute(side, action) {

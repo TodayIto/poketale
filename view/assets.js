@@ -8,10 +8,10 @@ import { pokerogueGeometry } from './sprites/pokerogue.js';
 import { iconFrame, iconAtlas } from './ui/party-icons.js';
 import { biomeImages, biomeKey, DEFAULT_BIOME } from './arena.js';
 import { fieldAtlases, atlasJson } from './field-atlases.js';
-import { withRetry, timeLimit, LoadError, TimeoutError } from './retry.js';
-import { createImageRoute, DIRECT_ONLY } from './image-route.js';
+import { withRetry, timeLimit, LoadError, TimeoutError } from './retry.js'; // fetch retry, failure kinds
+import { createImageRoute, DIRECT_ONLY } from './image-route.js'; // direct, else through the host (pictureWays option)
 import { checkTheme, usesLegacyArt, artPalette, recolorPixels } from './ui/theme.js';
-import { langPath, langAtlasKey } from './lang-images.js';
+import { langPath, langAtlasKey } from './lang-images.js'; // text images in the view's language
 import { isPlayerSide } from './positions.js';
 
 export const DEFAULT_ASSET_BASE = 'https://raw.githubusercontent.com/pagefaultgames/pokerogue-assets/37789817134f881da0a038af21991ccc93a66372/';
@@ -89,7 +89,8 @@ export class Assets {
     this.spriteStyle = spriteStyle;
     this.source = spriteSource; this.pending = new Map(); this.mons = new Map(); this.diagnostics = [];
   }
-  url(path) { return this.base + path; }
+
+  url(path) { return this.localUrl?.(path) ?? this.base + path; }
 
   loadImage(src) { return this.route.image(src, url => this.loadImageOnce(url)); }
   loadImageOnce(src) {
@@ -117,7 +118,8 @@ export class Assets {
       const promise = this.loadImage(this.url(path)).then(loaded => {
         this.life.check();
         const img = palette ? recolored(loaded, palette) : loaded;
-        if (atlas) this.scene.textures.addAtlas(key, img, atlas);
+        const atlasData = typeof atlas === 'function' ? atlas() : atlas; // an atlas given as a function is built only now (party icons: icon)
+        if (atlasData) this.scene.textures.addAtlas(key, img, atlasData);
         else this.scene.textures.addImage(key, img);
       }).catch(e => { this.pending.delete(key); throw e; });
       this.pending.set(key, promise);
@@ -155,8 +157,9 @@ export class Assets {
 
   async icon(mon) {
     const frame = iconFrame(mon, POKEMON_ICONS);
-    const key = `pokemon_icons_${POKEMON_ICONS[frame][0]}`;
-    await this.image(key, `images/${key}.png`, iconAtlas(POKEMON_ICONS[frame][0], POKEMON_ICONS));
+    const sheet = POKEMON_ICONS[frame][0], key = `pokemon_icons_${sheet}`;
+
+    await this.image(key, `images/${key}.png`, () => iconAtlas(sheet, POKEMON_ICONS));
     return { key, frame };
   }
 

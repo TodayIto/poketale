@@ -13,7 +13,7 @@ function wordRe(word) {
 }
 
 const fold = text => ` ${String(text ?? '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
-
+/** [[regexp, id, length]] longest word first */
 const wordList = table => Object.entries(table).flatMap(([id, words]) => words.map(w => [wordRe(w), id, fold(w).replace(/ /g, '').length]))
   .sort((a, b) => b[2] - a[2]);
 const STYLE_LIST = wordList(pool.styleWords);

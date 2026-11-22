@@ -45,7 +45,7 @@ function namesOf(official) {
     if (m && m[2].includes(m[1]) && !skipKo.has(m[2])) ko.push([m[2], record.num]);
 
     const region = REGIONS_KO[/^[^-]+-(Alola|Galar|Hisui|Paldea)(?:-(?:Aqua|Blaze|Combat))?$/.exec(record.en)?.[1]];
-    const base = region && record.en !== 'Pikachu-Alola' ? speciesTable[record.base] : null;
+    const base = region && record.en !== 'Pikachu-Alola' ? speciesTable[record.base] : null; // Pikachu-Alola is a cap, not a regional form
     for (const name of base ? koSpellings(base, reading) : []) {
       for (const glue of ['', '의']) ko.push([`${region}${glue}${name}`, record.num]);
       if (skipKo.has(name)) for (const glue of [' ', '의 ']) ko.push([`${region}${glue}${name}`, record.num]);
@@ -107,7 +107,7 @@ export const resetMentionCache = () => { cache.clear(); scanStats.scanned = 0; }
 
 function ruleFrom(chat, count, name) {
   const at = rulesAt(chat);
-  let lo = 0, hi = count;
+  let lo = 0, hi = count; // the answer is in lo..hi (hi = none)
   while (lo < hi) { const mid = (lo + hi) >> 1; if (at(mid)[name] !== false) hi = mid; else lo = mid + 1; }
   return lo;
 }
@@ -116,7 +116,7 @@ export function storyMentions(chat) {
   const messages = chat?.message ?? [];
   const out = new Set();
   const chatKey = String(chat?.id ?? '');
-  if (!messages.length) { cache.delete(chatKey); return out; }
+  if (!messages.length) { cache.delete(chatKey); return out; } // an empty chat keeps nothing
   const from = ruleFrom(chat, messages.length, 'officialKo'), edgesFrom = ruleFrom(chat, messages.length, 'blockEdges');
   let kept = cache.get(chatKey);
   if (!kept) {

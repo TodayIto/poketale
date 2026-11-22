@@ -1,5 +1,5 @@
 // from pokerogue src/audio/audio-manager.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/audio/background-music.ts @ 7d7da4a8 (AGPL-3.0-only)
 
 import { battleMusic, bgmKey, loopPoint, victoryMusic } from './bgm.js';
@@ -26,7 +26,7 @@ function volumeSource({ volume, sound } = {}) {
 class Clock {
   constructor() { this.stoppedAt = null; this.lost = 0; this.timers = new Set(); }
   now() { return (this.stoppedAt ?? performance.now()) - this.lost; }
-
+  /** callback after ms of effect time. The returned function cancels */
   timeout(ms, callback) {
     const timer = { at: this.now() + ms, callback, id: null };
     this.timers.add(timer);
@@ -53,7 +53,7 @@ class Music {
     this.wanted = false; this.destroyed = false; this.ended = false; this.endCallbacks = []; this.cancelFade = null;
     if (owner.level('bgm') > 0) this.attach();
   }
-
+  /** The track's <audio> (owner.music - fetched from here on) */
   attach() {
     if (this.audio || this.destroyed) return;
     this.audio = this.owner.music(this.key);
@@ -71,7 +71,7 @@ class Music {
   play() {
     if (this.destroyed) return;
     this.wanted = true;
-    if (!this.owner.musicEnabled || this.owner.suspended || this.owner.level('bgm') === 0) return;
+    if (!this.owner.musicEnabled || this.owner.suspended || this.owner.level('bgm') === 0) return; // only the wanted state
     this.attach();
     if (!this.audio.paused) return;
 
@@ -121,18 +121,18 @@ export class BattleAudio {
     this.voices = new WeakMap();
     this.diagnostics = [];
     this.volume = volumeSource(options);
-    this.voicePacks = typeof options.voicePacks === 'function' ? options.voicePacks : null; this.pack = null; this.packRead = null;
+    this.voicePacks = typeof options.voicePacks === 'function' ? options.voicePacks : null; this.pack = null; this.packRead = null; // voice packs (cryVoice)
     this.wild = options.wild ?? true;
     const chosen = battleMusic(options);
     this.battleBgm = chosen.key;
     if (chosen.unknown !== undefined) this.note(`Unknown PokeRogue BGM "${chosen.unknown}" → ${chosen.key}`);
     this.victoryBgm = victoryMusic(options);
     this.musicEnabled = true; this.destroyed = false;
-    this.currentBgm = null; this.tracks = new Set();
+    this.currentBgm = null; this.tracks = new Set(); // live tracks (current track + replaceBgmUntilEnd temporary track)
     this.pendingLoads = new Set(); this.finishes = new Set();
     // If autoplay was blocked, retry on the first touch/key
     this.unlock = () => { if (this.suspended) return; for (const track of this.tracks) if (track.wanted) track.play(); };
-    this.suspended = false;
+    this.suspended = false; // view.suspend (window collapsed)
     this.clock = new Clock(); this.wake = null; this.woken = null;
 
     this.speed = () => 1;
@@ -140,9 +140,9 @@ export class BattleAudio {
     parent.addEventListener('keydown', this.unlock);
     this.stopVolume = this.volume.listen(() => this.volumeChanged());
   }
-
+  /** A kind's level now (0..1 - soundKind) */
   level(kind) { return unit(this.volume.levels()?.[kind]); }
-
+  /** Every kind at 0 (amie-sound.js off) */
   get silent() { return KINDS.every(kind => this.level(kind) === 0); }
 
   adopt(voice, base, path, kind = soundKind(path)) {
@@ -165,7 +165,7 @@ export class BattleAudio {
     }
   }
   note(text) { if (!this.diagnostics.includes(text)) this.diagnostics.push(text); }
-
+  /** Resolves when a loaded <audio> (load) has its address, or no way gave one */
   sourced(audio) {
     const entry = [...this.sounds.values()].find(sound => sound.audio === audio);
     return entry?.sourced ?? Promise.resolve();
@@ -174,14 +174,14 @@ export class BattleAudio {
   load(path, loop = false, kind = soundKind(path)) {
     if (this.destroyed) throw new Error('BattleAudio destroyed');
     if (this.sounds.has(path)) return this.sounds.get(path);
-    if (this.level(kind) === 0) return SILENT;
+    if (this.level(kind) === 0) return SILENT; // its kind at 0: not fetched (a later load with the level up fetches it)
     const audio = new Audio();
     audio.crossOrigin = 'anonymous'; audio.preload = 'auto'; audio.loop = loop;
     const voice = kind === 'cry' && this.voicePacks && path.startsWith('cry/'), file = voice ? path.replace(/#\d+$/, '') : path;
     const url = this.assets.url(`audio/${file}`), route = this.assets.route;
     const ways = [...(voice ? ['pack'] : []), ...(route ? route.order(url) : ['direct'])];
     let finished = false, sourcedNow;
-    const sourced = new Promise(resolve => { sourcedNow = resolve; });
+    const sourced = new Promise(resolve => { sourcedNow = resolve; }); // an address is set, or none will be
     const ready = new Promise(resolve => {
       const done = () => {
         finished = true;
@@ -192,7 +192,7 @@ export class BattleAudio {
       const left = [...ways];
       let triedDirect = false;
       const next = () => {
-        if (this.destroyed) return;
+        if (this.destroyed) return; // destroy empties the element (its error lands here)
         const way = left.shift();
         if (!way) {
           if (!finished) { this.diagnostics.push(`Audio unavailable: ${path}`); done(); }
@@ -209,8 +209,8 @@ export class BattleAudio {
         if (way === 'direct') { triedDirect = true; audio.src = url; sourcedNow(); audio.load(); return; }
         route.objectUrl(url, () => audioType(url)).then(src => {
           if (this.destroyed) return;
-          if (triedDirect) route.markDown(url);
-          audio.src = src; sourcedNow(); audio.load();
+          if (triedDirect) route.markDown(url); // direct failed, the host gave it
+          audio.src = src; sourcedNow(); audio.load(); // also after the 15s limit (ready already resolved): a late track still plays
         }, error => { this.note(`Audio via host failed: ${path} (${error?.message ?? error})`); if (!this.destroyed) next(); });
       };
 
@@ -232,7 +232,7 @@ export class BattleAudio {
   }
 
   preloadMusic() {
-    this.load(`bgm/${this.battleBgm}.mp3`, true);
+    this.load(`bgm/${this.battleBgm}.mp3`, true); // music at 0: nothing (load)
   }
 
   cryPath(mon) {
@@ -265,12 +265,14 @@ export class BattleAudio {
     return line ? `${path}#${line}` : path;
   }
 
+  // -- Background music (audio-manager.ts) --
+
   music(key) {
     const path = `bgm/${key}.mp3`;
     const cached = this.load(path, true).audio;
     if (![...this.tracks].some(track => track.audio === cached)) return cached;
     const audio = new Audio();
-    audio.crossOrigin = 'anonymous'; audio.preload = 'auto'; audio.src = cached.src || this.assets.url(`audio/${path}`);
+    audio.crossOrigin = 'anonymous'; audio.preload = 'auto'; audio.src = cached.src || this.assets.url(`audio/${path}`); // the same file (a blob: address when it came through the host)
     this.extra ??= new Set(); this.extra.add(audio);
     return audio;
   }
@@ -302,7 +304,7 @@ export class BattleAudio {
     temp.play();
     return temp;
   }
-
+  /** fadeOutBgm(duration = 500, destroy = true) */
   fadeOutBgm(duration = 500, destroy = true) {
     this.currentBgm?.fadeOut(duration, destroy);
     if (destroy) this.currentBgm = null;
@@ -345,8 +347,10 @@ export class BattleAudio {
     return (this.woken ??= new Promise(resolve => { this.wake = () => { this.wake = this.woken = null; resolve(); }; }));
   }
 
+  // -- Sound effects --
+
   async play(path, rate = 1, volume = SFX_VOLUME, { maxMs = Infinity, kind = path && soundKind(path) } = {}) {
-    if (!path || this.destroyed || this.suspended || this.level(kind) === 0) return;
+    if (!path || this.destroyed || this.suspended || this.level(kind) === 0) return; // no new sounds while collapsed
     const { audio, ready } = this.load(path, false, kind);
     await ready;
     if (this.suspended) await this.awake();
@@ -355,6 +359,8 @@ export class BattleAudio {
     if (audio.error || audio.readyState < 2) return;
     // Animation sound events can overlap, including repetitions of the same sample.
     const voice = this.adopt(audio.cloneNode(), volume, path, kind);
+
+    voice.preservesPitch = voice.webkitPreservesPitch = voice.mozPreservesPitch = false;
     voice.playbackRate = rate;
     await new Promise(resolve => {
       let cancel, cancelWait = null;
@@ -392,13 +398,13 @@ export class BattleAudio {
     this.stopVolume();
     this.musicEnabled = false;
     this.currentBgm = null;
-    for (const track of [...this.tracks]) track.destroy();
+    for (const track of [...this.tracks]) track.destroy(); // temporary tracks' onEnd sees destroyed, so it doesn't restart another track
     this.parent.removeEventListener('pointerdown', this.unlock);
     this.parent.removeEventListener('keydown', this.unlock);
     for (const done of [...this.pendingLoads]) done();
-    this.wake?.();
+    this.wake?.(); // sounds waiting for reopen see destroyed and end
     for (const finish of [...this.finishes]) finish();
-    for (const voice of this.active) voice.pause();
+    for (const voice of this.active) voice.pause(); // sounds added directly by exp-bar.js
     const media = [...[...this.sounds.values()].map(s => s.audio), ...(this.extra ?? [])];
     for (const audio of media) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
     this.sounds.clear(); this.active.clear(); this.extra?.clear();

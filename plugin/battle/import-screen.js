@@ -1,5 +1,5 @@
 import { UI_VARS, CARD_FRAME, crossIcon, ringCss, ringOnKeys } from './ui-css.js';
-import { controlsCss, segmentControl } from './controls.js';
+import { controlsCss, segmentControl } from './controls.js'; // one of a few: the settings window's segment
 import { loadFont } from '../../view/fonts.js';
 import { LOCKED, UNLOCKED } from '../../view/lock-icon.js';
 import { FONT, noteRule } from '../../story/card.mjs';
@@ -14,12 +14,13 @@ import { EGG_SPRITE } from '../../engine/breeding.mjs';
 import { isCustomItem, customText, DEFAULT_EMOJI, CUSTOM_EFFECTS, ownerName } from '../../story/custom-items.mjs';
 import { ITEM_EFFECTS_READY } from '../../story/item-effects.mjs';
 import { learnableTms } from '../../story/item-info.mjs';
+import { expShareHeldIn } from '../../story/battle-rule.mjs';
 import { STATS, MAX_LEVEL, MAX_MOVES, MAX_IV, PARTY_MAX, STATUS_IDS, displayName, toID, spriteIdOf } from '../../engine/mon.mjs';
 import { EV_STAT_MAX, EV_TOTAL_MAX } from '../../engine/rules.mjs';
 import { FRIENDSHIP_MAX } from '../../engine/friendship.mjs';
 import storyNames from '../../data/story-names.json' with { type: 'json' };
 import itemTable from '../../data/names/items.json' with { type: 'json' };
-import { pushBack } from './contextmenu.js';
+import { pushBack } from './contextmenu.js'; // right click = Escape
 
 export const FROM_LABEL = perLang(t => Object.freeze(Object.fromEntries(['record', 'auto', 'user', 'ai', 'current'].map(from => [from, t(`import.from.${from}`)]))));
 
@@ -47,7 +48,7 @@ const BAG_COUNT_MAX = 999;
 export const STATUS_CHOICES = perLang(t => Object.freeze([['', t('import.none')], ...[...STATUS_IDS].filter(Boolean).map(id => [id, t(`import.status.${id}`)])]));
 const SHINY_CHOICES = perLang(t => Object.freeze([[false, t('import.no')], [true, t('import.yes')]]));
 const TYPE_KO = Object.fromEntries(Object.entries(storyNames.types).filter(([k]) => /[가-힣]/.test(k)).map(([ko, en]) => [en, ko]));
-
+/** A type's name in lang (English = the engine's type name) */
 export const typeName = (type, lang) => (lang === 'ko' ? TYPE_KO[type] ?? type : type);
 const GENDER_LABEL = perLang(t => ({ M: t('import.gender.M'), F: t('import.gender.F'), '': t('import.none') }));
 
@@ -58,6 +59,8 @@ function screenNames(sim, lang) {
 }
 
 const itemLabelIn = (holder, id, sim, lang, { bag = false } = {}) => itemLabel(holder, id, namesFor(lang, sim), { bag });
+
+// ---------- Choices (per engine Dex and language, made once) ----------
 
 function pickList(entries, fallback) {
   const count = new Map();
@@ -70,6 +73,7 @@ function pickList(entries, fallback) {
     options,
     label: key => byKey.get(key) ?? (key ? String(key) : ''),
     find: text => byText.get(squash(text)) ?? fallback?.(text) ?? null,
+    has: key => byKey.has(key),
   };
 }
 const norm = text => String(text ?? '').normalize('NFC').trim().toLowerCase();
@@ -78,11 +82,12 @@ const squash = text => norm(text).replace(/\s+/g, '');
 const available = entry => entry.exists && (!entry.isNonstandard || entry.isNonstandard === 'Past');
 const cache = new WeakMap();
 
-export function choicesFor(sim, lang) {
+export function choicesFor(sim, lang, gen = null) {
   const { Dex } = sim;
   let byLang = cache.get(Dex);
   if (!byLang) cache.set(Dex, byLang = new Map());
-  let lists = byLang.get(lang);
+  const key = expShareHeldIn(gen) ? `${lang}:expshare` : lang;
+  let lists = byLang.get(key);
   if (lists) return lists;
   const t = sayer(lang), n = screenNames(sim, lang);
   const species = Dex.species.all().filter(s => available(s) && s.num > 0 && !s.battleOnly && !/Gmax|Totem/.test(s.forme));
@@ -93,11 +98,11 @@ export function choicesFor(sim, lang) {
   const stat = s => statName(s, lang);
   lists = {
     species: pickList(species.map(s => ({ key: s.name, label: n.species(s.id), hint: s.name })), speciesOf),
-
+    // Hidden Power's typed variants share the id 'hiddenpower' - one entry per id
     moves: pickList(Dex.moves.all().filter((m, i, all) => available(m) && !m.isZ && !m.isMax && all.findIndex(o => o.id === m.id) === i)
       .map(m => ({ key: m.id, label: n.moves(m.id), hint: m.name }))),
 
-    items: pickList(items.filter(item => (!item.engine.exists || available(item.engine)) && canHold(item.id, sim))
+    items: pickList(items.filter(item => (!item.engine.exists || available(item.engine)) && canHold(item.id, sim, null, gen))
       .map(item => ({ key: item.id, label: n.item(item.id), hint: english(item) }))),
     bag: pickList(items.map(item => ({ key: item.id, label: n.bagItem(item.id), hint: english(item) }))),
     abilities: pickList(Dex.abilities.all().filter(a => available(a) && a.id !== 'noability').map(a => ({ key: a.name, label: n.abilities(a.name), hint: a.name }))),
@@ -106,7 +111,7 @@ export function choicesFor(sim, lang) {
       .sort((a, b) => a[1].localeCompare(b[1], lang)),
     types: Dex.types.all().filter(type => available(type)).map(type => [type.name, typeName(type.name, lang)]),
   };
-  byLang.set(lang, lists);
+  byLang.set(key, lists);
   return lists;
 }
 
@@ -205,7 +210,7 @@ export function quickSummary(draft, ctx, lang) {
   const label = m => {
     if (m.egg) return say(lang, 'panel.egg');
     const found = sim.Dex.species.get(m.set.species);
-    const species = found.exists ? namesFor(lang, sim).species(found.id) : String(m.set.species ?? '');
+    const species = found.exists ? namesFor(lang, sim).species(found.id) : String(m.set.species ?? ''); // the base name, as the games show it (the picker keeps the form)
     const name = m.set.name && m.set.name !== species ? say(lang, 'import.quick.nick', { name: m.set.name, species }) : species;
     return Number.isInteger(m.set.level) ? `${name} Lv${m.set.level}` : name;
   };
@@ -241,6 +246,8 @@ export function bagSummary(draft, state, sim, lang) {
   const name = draft.customItems[id]?.name ?? itemLabelIn(state, id, sim, lang, { bag: true });
   return say(lang, 'import.bagSummary', { name, add: draft.add, now: draft.base.bag[id], count });
 }
+
+// ---------- Screen ----------
 
 const IMPORT_Z = 310;
 
@@ -444,11 +451,11 @@ function fromBadge(from, lang, text = FROM_LABEL(lang)[from], mode = 'import') {
 }
 
 export function mountImportScreen({ parent = document.body, mode: firstMode = 'import', draft: given = null, state = null, ctx, seed = () => [1, 2, 3, 4], lang, money = null,
-  readAi = null, manual = null, onApply = async () => {}, onClose = () => {} }) {
+  readAi = null, manual = null, onApply = async () => {}, onClose = () => {}, gen = null }) {
   loadFont(SHEET_FONT).catch(error => console.warn('[poke-battle] 가져오기 화면 글꼴을 올리지 못함 — 대체 글꼴로', error));
   const { sim } = ctx;
   const t = sayer(lang);
-  const lists = choicesFor(sim, lang);
+  const lists = choicesFor(sim, lang, gen);
   let mode = firstMode;
   let text = MODES(lang)[mode === 'quick' || mode === 'aiAsk' ? 'import' : mode];
   const fieldLabel = FIELD_LABEL(lang), fromLabel = FROM_LABEL(lang);
@@ -456,7 +463,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
   const title = m => monTitle(m, sim, lang);
 
   const words = note => ruleText(note, lang);
-  const one = mode === 'create' || mode === 'edit';
+  const one = mode === 'create' || mode === 'edit'; // the one-Pokemon editor (no list)
   const id = `pkb-imp-${++seq}`;
 
   let wanted = { item: null, name: '', emoji: DEFAULT_EMOJI, add: 1, isNew: false, effect: undefined, owner: undefined };
@@ -464,7 +471,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     effect: wanted.effect, owner: wanted.owner });
   let start = mode === 'bag' ? fromPick() : mode === 'aiAsk' ? manual : given;
   let draft = start, busy = false, failure = '', picker = null, details = false, reading = false;
-  let view = one ? start.mons[0].key : null;
+  let view = one ? start.mons[0].key : null; // the one-Pokemon modes have no list: always their one Pokemon
 
   const root = el('section', { className: 'pkb-import' });
   root.innerHTML = `<style>${CSS}</style><div class="card" role="dialog" aria-labelledby="${id}-title">
@@ -475,7 +482,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     <div class="ft"><span class="sum" aria-live="polite"></span><button class="apply" type="button">${text.apply}</button></div>
   </div>`;
   parent.append(root);
-  ringOnKeys(root);
+  ringOnKeys(root); // the ring on the X it opens with only once the keyboard is used
   const card = root.querySelector('.card'), body = root.querySelector('.body'), sum = root.querySelector('.ft .sum'), applyButton = root.querySelector('.apply'), back = root.querySelector('.hd .back');
   const heading = root.querySelector('.hd b'), foot = root.querySelector('.ft'), cap = root.querySelector('.cap');
 
@@ -513,7 +520,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
         if (room) out.push(el('h4', { textContent: g.label }), found.slice(0, room).map(entryButton));
         shown += Math.min(room, found.length); more += Math.max(0, found.length - room);
       }
-
+      // Nothing found: the line, or what `empty(text)` offers instead
       if (!shown && !out.length) out.push(empty?.(q) ?? el('p', { className: 'more', textContent: t('import.noName') }));
       if (more) out.push(el('p', { className: 'more', textContent: t('import.more', { n: more }) }));
       if (searchHint && !searching) out.push(el('p', { className: 'more', textContent: searchHint }));
@@ -531,7 +538,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     input.focus();
   }
   function closePicker() { picker?.remove(); picker = null; }
-
+  /** A field showing the chosen name that opens the picker */
   const pickButton = (text, { label, placeholder, open }) => {
     const b = el('button', { type: 'button', className: 'pickbtn' }, el('span', { className: `t${text ? '' : ' ph'}`, textContent: text || placeholder }), svg(NEXT));
     b.setAttribute('aria-label', t('import.pickOf', { label, text: text || placeholder }));
@@ -558,7 +565,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     };
     return input;
   };
-
+  // ----- list -----
   function monRow(m) {
     const bad = m.action !== 'skip' && m.problems.length > 0;
     const row = el('div', { className: `mon${bad ? ' bad' : ''}${m.action === 'skip' ? ' skip' : ''}` });
@@ -574,7 +581,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
         bad ? el('ul', { className: 'probs' }, m.problems.map(p => el('li', { textContent: words(p) }))) : null),
       svg(NEXT));
     open.setAttribute('aria-label', t('import.editOf', { mon: title(m) }));
-
+    // a record's egg has nothing to edit but its place (on the row)
     if (m.egg) open.disabled = true;
     else open.onclick = () => { view = m.key; draw(); body.scrollTop = 0; };
     row.append(open, actionLine(m), m.action === 'skip' ? null : placeLine(m));
@@ -686,7 +693,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     const refill = el('button', { type: 'button', className: 'btn', textContent: t('import.refill') });
     refill.title = t('import.refillHint');
     refill.onclick = () => change(refillMon(draft, m.key, ctx, { seed: seed() }));
-    refill.hidden = !Object.values(m.from).includes('auto');
+    refill.hidden = !Object.values(m.from).includes('auto'); // nothing it would draw again
     const s = m.set;
     const evTotal = STATS.reduce((n, stat) => n + (s.evs?.[stat] ?? 0), 0);
     const range = typedRange(draft);
@@ -706,7 +713,8 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       ability: () => pickButton(s.ability ? abilityChoices(sim, s.species, s.ability, lang).find(([v]) => v === s.ability)[1] : '', { label: fieldLabel.ability, placeholder: t('import.notChosen'),
         open: () => openPicker({ title: t('import.pickAbility'), value: s.ability ?? '', groups: abilityGroups(sim, s.species, lang), searchHint: t('import.otherAbilities'), pick: v => edit(m.key, 'ability', v) }) }),
       moves: () => moveSlots(m),
-      item: () => pickButton(lists.items.label(s.item ?? ''), { label: fieldLabel.item, placeholder: t('import.none'), open: () => openPicker({
+
+      item: () => pickButton(!s.item || lists.items.has(s.item) ? lists.items.label(s.item ?? '') : itemLabelIn(draft, s.item, sim, lang), { label: fieldLabel.item, placeholder: t('import.none'), open: () => openPicker({
         title: t('import.pickItem'), value: s.item ?? '', none: t('import.none'), groups: [{ label: t('import.items'), entries: lists.items.options }], pick: v => edit(m.key, 'item', v) }) }),
       hpPercent: () => numberInput(m.hpPercent, { min: 0, max: 100, label: 'HP %', pick: v => edit(m.key, 'hpPercent', v) }),
       friendship: () => friendshipLock(m, numberInput(m.friendship, { min: 0, max: FRIENDSHIP_MAX, label: fieldLabel.friendship, pick: v => edit(m.key, 'friendship', v) })),
@@ -756,6 +764,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       details ? FIELD_GROUPS(lang).filter(g => g.details).map(group) : null);
   }
 
+  // ----- bag mode -----
   const setPick = patch => { wanted = { ...wanted, ...patch }; draft = fromPick(); failure = ''; draw(); };
 
   const openBagPicker = () => openPicker({
@@ -813,6 +822,8 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       el('fieldset', {}, el('legend', { textContent: t('import.itemToPut') }), rows));
   }
 
+  // ----- quick mode -----
+
   const toList = () => { mode = 'import'; text = MODES(lang).import; view = null; draw(); body.scrollTop = 0; };
   function drawQuick() {
     const { party, box, problems } = quickSummary(draft, ctx, lang);
@@ -833,6 +844,8 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       failure ? el('p', { className: 'err', textContent: failure }) : null));
   }
 
+  // ----- helper-model mode -----
+
   const toListWith = next => { start = next; draft = next; failure = ''; toList(); };
   async function readWithAi() {
     if (reading) return;
@@ -840,7 +853,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
     let read;
     try { read = await readAi(); } catch (error) { console.warn('[poke-battle] 보조 모델로 파티를 읽지 못함', error); read = manual; }
     reading = false;
-    if (closed) return;
+    if (closed) return; // closed while it was reading: what it read is not used
     toListWith(read);
   }
   function drawAiAsk() {
@@ -859,7 +872,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
   function draw() {
     const top = body.scrollTop;
     const quick = mode === 'quick' || mode === 'aiAsk';
-    cap.hidden = true;
+    cap.hidden = true; // the editor's warning (drawEditor)
     root.classList.toggle('quick', quick);
     foot.hidden = quick;
     heading.textContent = quick ? t('import.quick.title') : text.title;
@@ -900,7 +913,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
 
   function askClose() {
     if (busy) return undefined;
-    if (mode === 'aiAsk') return close();
+    if (mode === 'aiAsk') return close(); // nothing to lose yet (a call under way is let go)
     if (mode === 'bag' ? !wanted.item && !wanted.isNew : draft === start) return close();
     closePicker();
     const keep = el('button', { type: 'button', className: 'btn', textContent: t('import.keepEditing') });
@@ -929,6 +942,6 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
   });
   draw();
   root.querySelector('.hd .x').focus();
-  if (mode === 'bag') openBagPicker();
+  if (mode === 'bag') openBagPicker(); // the bag mode starts by choosing the item
   return { close, get draft() { return draft; } };
 }

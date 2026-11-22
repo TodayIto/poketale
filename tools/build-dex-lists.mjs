@@ -22,7 +22,7 @@ export const DEXES = [
 const SEEN_ONLY = [['unovaBW', 'original-unova']];
 
 const sha = text => createHash('sha256').update(text.replace(/\r\n/g, '\n')).digest('hex');
-
+/** Plain CSV (these two files have no quotes) -> row objects */
 function rows(text) {
   const [head, ...lines] = text.replace(/^﻿/, '').replace(/\r\n/g, '\n').split('\n').filter(Boolean);
   const keys = head.split(',');

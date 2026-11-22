@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const ASSETS = resolve(root, 'vendor/pokerogue/assets');
 const OUT = resolve(root, 'plugin/battle/pinned-assets.json');
-const HASH_BYTES = 6;
+const HASH_BYTES = 6; // -> 8 base64 characters
 
 const base = /DEFAULT_ASSET_BASE = '([^']+)'/.exec(readFileSync(resolve(root, 'view/assets.js'), 'utf8'))?.[1];
 const commit = /\/([0-9a-f]{40})\/$/.exec(base ?? '')?.[1];
@@ -25,7 +25,7 @@ const WANTED = [
   /^audio\/(se|ui|cry|battle_anims)\/[^/]+\.(wav|mp3|m4a|ogg)$/i,
   /^audio\/bgm\/.+\.(wav|mp3|m4a|ogg)$/i,
 ];
-
+// the commit's tree: mode type blob-id \t path (NUL separated)
 const tree = git('ls-tree', '-r', '-z', commit).toString().split('\0').filter(Boolean).map(line => {
   const [meta, path] = line.split('\t');
   const [, type, id] = meta.split(' ');

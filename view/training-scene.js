@@ -96,14 +96,14 @@ export function trainingScene(options = {}) {
   let grains = '';
   for (let i = 0; i < 5; i++) grains += run(q(hx - sr + 4 + rnd() * (2 * sr - 8)), sy0 + q((rnd() - 0.5) * 4), 2);
   L4 += P(tint(Y.sand), oval(hx, sy0, sr, tall ? 5 : 4)) + P(tint(Y.grain), grains);
-
+  // the post's foot: a dot of earth heaped up, two stones
   S += P(soil[0], run(x0 - 4, y1 - 4, x1 - x0 + 8, 2)) + P(sd, oval(x0 - 4, y1 - 2, 4, 3)) + P(sl, oval(x0 + 4, y1, 5, 3) + oval(x0 - 5, y1 - 3, 2, 1));
-
+  // little stones and grass ticks in the side fifths only
   let stones = '', ticks = '';
   for (let i = 0; i < 3; i++) {
     const x = q(i === 1 ? w * (0.84 + rnd() * 0.1) : w * (0.03 + rnd() * 0.14));
     let y = q(i === 1 ? hz + 16 + rnd() * 10 : hz + 16 + rnd() * (m.feet - hz - 30));
-
+    // never in the meter's box (PC: its left fifth) - under it, or none
     if (x < Qz.x1 + 4 && y < Qz.y1 + 4) y = q(Qz.y1 + 8 + rnd() * 6);
     if (y > h - 16 || (!tall && i === 2)) continue;
     stones += oval(x, y, 3, 2);
@@ -111,7 +111,7 @@ export function trainingScene(options = {}) {
   }
   L4 += P(sd, stones) + P(gd, ticks);
   if (!tall) {
-
+    // PC: a stump with a towel over it under the meter, left
     const sx0 = 40, sb = 160;
     L4 += P(wm, run(sx0, sb - 10, 18, 10)) + P(wl, run(sx0, sb - 10, 4, 10)) + P(wd, run(sx0 + 14, sb - 10, 4, 10)) + P(wl, run(sx0 + 2, sb - 12, 14, 2)) + P(wd, run(sx0 + 8, sb - 12, 4, 2));
     L4 += P(tint(Y.towel), run(sx0 + 4, sb - 12, 8, 2) + run(sx0 - 4, sb - 12, 8, 12)) + P(tint(Y.stripe), run(sx0 - 4, sb - 8, 8, 2) + run(sx0 - 4, sb - 4, 8, 2));
@@ -121,11 +121,11 @@ export function trainingScene(options = {}) {
   const tb = q(h) + 2, th = tall ? 28 : 16, tx = tall ? 10 : 12;
   const tuft = f => P(gd, oval(tx, tb, 10, 4) + blades(c, tx, tb, th, 5, f, -1)) + P(gm, blades(c, tx + 2, tb, th * 0.7, 3, f, -1));
   const L5 = twoFrames(c, tuft(0), tuft(1), 2.6);
-
+  // -- L6: at night two or three fireflies at the sides, low over the yard
   let L6 = '';
   if (night) {
     for (let i = 0; i < 3; i++) {
-
+      // PC: the left fifth is the meter's box - all at the right, past the bag
       const x = tall ? q(i % 2 ? w * (0.82 + rnd() * 0.14) : w * (0.03 + rnd() * 0.15)) : q([m.bag.x1 + 8, m.post.x1 + 4, w - 6][i]), y = q(hz + 6 + rnd() * 24);
       if (inBox(x - 6, y - 6, x + 10, y + 6)) continue;
       L6 += anim(c, `pkbS ${3 + i}s steps(3) infinite alternate`, twinkle(c, P(mix('#e8ff9a', '#2a3450', 0.55), run(x - 2, y - 2, 6, 6)) + P('#e8ff9a', run(x, y, 2)), 1.2 + i * 0.4, i * 0.5), '--dx:4px;');
@@ -134,4 +134,5 @@ export function trainingScene(options = {}) {
   return wrap(c, { L0, L1, L2, L3, L4, L3post: S, L5, L6 }, options);
 }
 
+/** The earth's middle colour at a time (the dust at the feet) */
 export const yardDust = time => context({ time }).tint(YARD.soil[1]);

@@ -1,5 +1,5 @@
 // from pokerogue locales/{ko,en}/*.json @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { toID } from './sources.mjs';
@@ -12,7 +12,7 @@ const keys = {
 
   battle: ['expGain', 'levelUp', 'learnMove', 'learnMovePrompt', 'learnMoveLimitReached', 'learnMoveReplaceQuestion',
     'learnMoveStopTeaching', 'learnMoveNotLearned', 'learnMoveForgetQuestion', 'learnMoveForgetSuccess', 'countdownPoof', 'learnMoveAnd'],
-
+  // evolution-phase.ts
   menu: ['evolving', 'stoppedEvolving', 'evolutionDone'],
 };
 const en = await json('en/move');
@@ -43,7 +43,7 @@ for (const lang of LANGS) {
     count++;
   }
   if (missing.length) throw new Error(`영어 이름이나 ${lang} 설명이 없는 기술: ${missing.join(', ')}`);
-  const { table, replaced } = withKoTerms(lang, result);
+  const { table, replaced } = withKoTerms(lang, result); // our Korean terms (tools/ko-terms.mjs)
   await writeFile(new URL(`../director/text-exp-${lang}.json`, import.meta.url), JSON.stringify(table, null, 1) + '\n');
   if (replaced.length) console.log(`  ko-terms (tools/ko-terms.mjs): ${replaced.join(', ')}`);
   console.log(`Extracted ${Object.keys(keys).reduce((n, f) => n + keys[f].length, 0)} phrases + ${count} move effects -> director/text-exp-${lang}.json`

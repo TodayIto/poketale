@@ -13,6 +13,7 @@ export function padText(text, key, { ints, decimals, sign = false }) {
   return (decimal === undefined ? int.length < ints : decimal.length < decimals) ? text + key : text;
 }
 
+/** Keyboard key -> pad key (null = not a pad key) */
 const keyOf = key => (/^\d$/.test(key) || key === '.' || key === '-' ? key : key === 'Backspace' || key === 'Delete' ? 'delete' : null);
 
 export const numberPadCss = scope => `
@@ -74,7 +75,7 @@ export function openNumberPad({ parent, title, range = '', format = text => text
   };
   const type = key => { text = padText(text, key, digits); draw(); };
   const confirm = () => { if (accepts(text)) finish(() => onConfirm(text)); };
-
+  // Everything else in parent is out of reach while the pad is open
   const covered = [...parent.children];
   const before = covered.map(el => el.inert);
   let done = false, popBack = () => {};
@@ -94,7 +95,7 @@ export function openNumberPad({ parent, title, range = '', format = text => text
     else return;
     e.preventDefault(); e.stopPropagation();
   });
-  pad.addEventListener('pointerdown', e => { if (e.target === pad) finish(onCancel); });
+  pad.addEventListener('pointerdown', e => { if (e.target === pad) finish(onCancel); }); // pressing outside the sheet cancels
   for (const el of covered) el.inert = true;
   parent.append(pad);
   popBack = pushBack(pad, () => finish(onCancel));

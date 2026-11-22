@@ -22,7 +22,7 @@ export function subBarHtml(subs, now, hit, lang) {
 
 const LAMPS = '<span class="x-risu-pkbp-dxlamps" aria-hidden="true"><i class="x-risu-pkbp-dxlens"></i><i style="background:#ff8a8a"></i><i style="background:#ffd84a"></i><i style="background:#6fd39a"></i></span>';
 const ball = lang => `<span class="x-risu-pkbp-dxball" title="${esc(say(lang, 'dex.caughtMark'))}">${ballBadge('pokeball')}</span>`;
-
+/** One cell of the icon sheet (national number num) */
 const icon = num => `<span class="x-risu-pkbp-dxi" style="background-position:calc(-${(num % ICON_COLS) * ICON_W}px * var(--pkbp-z)) calc(-${Math.floor(num / ICON_COLS) * ICON_H}px * var(--pkbp-z))"></span>`;
 
 export function dexListHtml(view, hit, lang, icons) {
@@ -81,7 +81,7 @@ export const DEX_CSS = [
   `${C}-dxw > ${C}-dxlist{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;}`,
   `${C}-dxov{position:absolute;inset:0;z-index:3;overflow:auto;padding:8px 10px 10px;background:linear-gradient(160deg,#ffffff,#eef5fa);} ${C}-dxov:empty{display:none;}`,
   `${C}-wslot{display:contents;}`,
-
+  // the device
   `${C}-dxdev{border:2.5px solid #23435f;border-radius:12px;overflow:hidden;background:#d8434d;box-shadow:0 3px 0 #1a3247;}`,
   `${C}-dxtop{flex:none;display:flex;align-items:center;gap:6px;padding:6px 8px;color:#fff;}`,
   `${C}-dxlamps{display:flex;align-items:center;gap:4px;flex:none;margin-right:2px;}`,
@@ -94,7 +94,7 @@ export const DEX_CSS = [
   `${C}-dxbar{flex:none;display:flex;align-items:baseline;gap:14px;padding:3px 12px 4px;background:#b8323c;color:#ffd9dc;font-size:${z(11.5)};}`,
   `${C}-dxbar b{margin-left:4px;font-weight:400;color:#fff;font-size:${z(13)};} ${C}-dxof{margin-left:auto;font-size:${z(11)};}`,
   `${C}-dxscr{flex:1 1 auto;min-height:0;overflow-y:auto;margin:0 6px 6px;border:2px solid #8e2835;border-radius:8px;background:#fff;}`,
-
+  // a row: ball spot, number, icon, name. Not seen: pale, no icon
   `${C}-dxrb{position:relative;display:flex;align-items:center;gap:6px;width:100%;min-height:${z(31)};padding:1px 10px 1px 16px;border:0;border-radius:0;background:#fff;color:#14304a;font-size:${z(13)};text-align:left;}`,
   `button${C}-dxrb{cursor:pointer;} button${C}-dxrb:active{background:#fff1c9;}`,
   `${C}-dxrb:nth-child(even){background:#f3f7fa;} ${C}-dxrb + ${C}-dxrb{border-top:1px solid #e3eaf0;}`,
@@ -107,7 +107,7 @@ export const DEX_CSS = [
   `${C}-dxsec{display:flex;align-items:center;gap:8px;min-height:${z(31)};padding:0 12px;border-top:1px solid #e3eaf0;background:#fbe9ea;color:#a32634;font-size:${z(11.5)};letter-spacing:.04em;}`,
   `${C}-dxsec::before,${C}-dxsec::after{content:"";flex:1;height:1px;background:#e3b3b8;}`,
   `${C}-dxun{color:#a9b5be;} ${C}-dxun ${C}-dxno{color:#c0cad2;} ${C}-dxun ${C}-dxn{letter-spacing:.18em;}`,
-
+  // the detail
   `${C}-dxname{display:flex;align-items:center;gap:7px;margin:0 6px;padding:6px 10px 5px;border:2px solid #8e2835;border-bottom:0;border-radius:8px 8px 0 0;background:#fff;color:#14304a;}`,
   `${C}-dxname b{font-weight:400;font-size:${z(15)};white-space:nowrap;} ${C}-dxname ${C}-dxno{width:auto;} ${C}-dxname small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:${z(11)};color:#5d7486;}`,
   `${C}-dxsplit{display:flex;gap:8px;margin:0 6px;padding:0 8px 8px;border:2px solid #8e2835;border-top:1.5px dashed #e3b9bd;border-bottom:0;background:#fff;}`,

@@ -8,7 +8,7 @@ import { say } from './screen-text.mjs';
 // What the plugin puts in a message besides OOC: action tags, marks, and a result line with its tag
 const RESULT_WITH_TAG = new RegExp(String.raw`${RESULT_LINE_RE.source}(?=\s*<pkb#)`, 'g');
 const ourParts = text => [...findOocs(text), ...findTags(text), ...findMarks(text)].sort((a, b) => b.start - a.start);
-
+/** The text left when our parts are taken out (my own words) */
 function ownWords(text) {
   let out = String(text ?? '').replace(RESULT_WITH_TAG, '');
   for (const part of ourParts(out)) out = out.slice(0, part.start) + out.slice(part.end);
@@ -29,9 +29,9 @@ export function sendRange({ sent = { upto: -1 }, log = [], to = log.length, ende
   const first = !(sent?.count > 0 || sent?.upto >= 0);
   const from = first ? 0 : Number.isInteger(sent?.logEnd) ? sent.logEnd : legacyEnd(log, sent?.upto);
   const end = Math.min(Math.max(to ?? 0, 0), log.length);
-  if (ended && sent?.ended && from >= end) return null;
+  if (ended && sent?.ended && from >= end) return null; // everything already sent
   const read = readLog(log, { from, to: end, dex });
-  if (!hasEvents(read) && !(ended && !sent?.ended)) return null;
+  if (!hasEvents(read) && !(ended && !sent?.ended)) return null; // the end (result) of a finished battle is sent once even with no new events
   return { from, to: end, first, read };
 }
 

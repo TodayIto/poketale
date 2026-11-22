@@ -40,6 +40,7 @@ function buildExpTable() {
 	return { growthRates: GROWTH_RATES, species: list };
 }
 
+// -- EV yields (PokeAPI) --
 const require = createRequire(import.meta.url);
 const { Dex } = require('../vendor/pokemon-showdown/dist/sim/index.js');
 
@@ -70,7 +71,7 @@ function buildEffortTable() {
 		// Some base form identifiers carry the form name (deoxys-normal etc.), so the name is matched by prefix
 		if (!toID(p.identifier).startsWith(sd.id) && !toID(p.identifier).startsWith(toID(sd.baseSpecies))) throw new Error(`#${num}: 이름이 다릅니다 (PokeAPI ${p.identifier} / Showdown ${sd.id})`);
 		if (!sameBase(row, sd)) skipped.baseStats.push(`${sd.id}`);
-
+		// Every species yields some EVs -> all zeros means the data is missing
 		if (!row.effort.some(Boolean)) throw new Error(`${p.identifier}: 노력치가 모두 0 입니다`);
 		effort[num] = row.effort.join('');
 	}

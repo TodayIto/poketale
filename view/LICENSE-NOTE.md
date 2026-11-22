@@ -72,6 +72,7 @@ Showdown 그림은 `play.pokemonshowdown.com/sprites/`의 ani → gen5ani → ge
 | `ui/ability-bar.js` | `src/ui/containers/ability-bar.ts`, `src/phases/show-ability-phase.ts`, `hide-ability-phase.ts` | 기본(레거시 아님) 테마의 118×31 막대·글자 자리(15,3)·72px·숨김 x=-118·내 쪽 y=-116/상대 -130·500ms Sine.easeOut+1000ms 멈춤·200ms 내림. 더블 위치·패시브·레거시 nine-slice 제거, 문구 틀은 `fight-ui-handler.json` 의 abilityFlyInText 를 코드에 둠 |
 | `ui/battle-stats.js` | `src/ui/battle-info/battle-info.ts`(constructStatContainer·updateStats·toggleStats), `player-battle-info.ts`, `enemy-battle-info.ts` | 능력치 순위 패널의 자리 계산식·순서·125ms 토글 그대로. 보스·미니 전환·치명 표시 제거. 정보창(BattleInfo)에 나중에 붙인다 |
 | `effects.js` | `src/phases/quiet-form-change-phase.ts`, `pokemon-transform-phase.ts`, `pokemon-anim-phase.ts`(대타 4종), `src/field/pokemon.ts`(getSubstituteOffset), `src/ui-inputs.ts`(buttonStats) | 폼 변화 흰 실루엣 1000/500/1000ms, 변신 즉시 교체+소리, 대타 인형 생성·앞뒤 이동·8번 깜빡임, STATS 버튼(C·Shift, 터치는 정보창 누르기). 셰이더(팔레트·테라 색) 대신 tintFill, 규칙·태그 계산 제거 |
+| `ultra-burst.js` | 원본 없음 (우리 연출) | 울트라버스트 연출 — PokeRogue 메가(폼 변화)·테라스탈 연출에 맞춘 속도·해상도로 새로 만듦. 소리는 PokeRogue `battle_anims/PRSFX- Transform.wav` (플레이 때 받기만), 별·빛 그림은 우리 도트(`ui/z-art.js`) |
 | `anims/player.js` | (기존) | `playCommon` 에 대상 쪽 인자 추가 (씨뿌리기처럼 건 쪽→걸린 쪽) |
 
 빌드에 새로 넣은 JSON (`embedded:view`): `images/ui/pbinfo_stat_numbers.json`, `images/ui/text_images/ko/battle_ui/pbinfo_stat_ko.json`.
@@ -84,10 +85,11 @@ Showdown 그림은 `play.pokemonshowdown.com/sprites/`의 ani → gen5ani → ge
 
 | 우리 파일 | 원본 경로 | 발췌·변경 범위 |
 |---|---|---|
-| `ui/mega-tera.js` | `src/ui/handlers/command-ui-handler.ts`, `src/ui/handlers/fight-ui-handler.ts` | 테라 버튼 자리 (217,-38.7)+(-32,15)·1.3배·타입 프레임, ←/→/결정 흐름, 버튼 칸이면 커서 숨김, 메시지 줄바꿈 910, 기술 메뉴 `cursor_tera` 0.7배. 더블(fieldIndex)·테라 횟수 계산 제거 (감독이 request 로 알려 줌). 메가 버튼은 원본 없음 — 같은 자리에 `items/mega_bracelet.png` |
+| `ui/mega-tera.js` | `src/ui/handlers/command-ui-handler.ts`, `src/ui/handlers/fight-ui-handler.ts` | 테라 버튼 자리 (217,-38.7)+(-32,15)·1.3배·타입 프레임, ←/→/결정 흐름, 버튼 칸이면 커서 숨김, 메시지 줄바꿈 910, 기술 메뉴 `cursor_tera` 0.7배. 더블(fieldIndex)·테라 횟수 계산 제거 (감독이 request 로 알려 줌). 메가·Z·울트라버스트 단추와 그 커서는 원본 없음 — 우리 도트(`ui/z-art.js`, PokeRogue 테라 단추·커서의 그림체로 그림. 메가 단추는 원작 키스톤 도구 그림을 참고한 키스톤 — 사용자 2026-11-20). 다이맥스 단추·커서·거다이 표시도 우리 도트 (`ui/z-art.js` dmax_button·cursor_dmax·gmax_mark — 다이맥스 문장 모양을 따라 그림, 원작 그림 복사 없음), 켜짐은 테라 빛을 붉은색으로, 테라와 함께면 단추 칸 하나에 위아래 작은 화살표(우리 도트)로 바꿈 |
 | `tera.js` | `src/pipelines/glsl/sprite-frag-shader.frag`(191-206행과 도우미 함수), `src/pipelines/sprite.ts`, `src/phases/tera-phase.ts`, `src/ui/battle-info/battle-info.ts`(teraIcon), `src/data/type.ts`(getTypeRgb) | 셰이더의 테라 부분만 PostFX 로 (팔레트·융합·그림자·밤낮 색 제거, 화면 좌표 → 그림 좌표 변환 추가, 무늬 좌표 fract), 정보창 아이콘 자리·색, 테라스탈 순서(애니 → 빛) |
+| `dynamax.js` (D3 시안) | 원본 없음 (PokeRogue 에 다이맥스 배틀 없음) | 우리 연출 — PokeRogue 의 흰 칠하기·배율 트윈(폼 변화·돌아오기) 방식을 빌려 붉게 칠하고 커지기·줄어들기, 거다이 그림은 `changeForm` 으로 바꿈. 붉은 테두리 빛은 우리 임시 연출 (연출 일감 DA2 가 바꿈). 정보창 표시는 없음 (2차 시안) |
 
-런타임 직접 로드 추가: `images/ui/button_tera.png`(+JSON 내장, `embedded:view`), `images/ui/cursor_tera.png`, `images/ui/icon_tera.png`, `images/effects/tera.png`, `images/items/mega_bracelet.png`,
+런타임 직접 로드 추가: `images/ui/button_tera.png`(+JSON 내장, `embedded:view`), `images/ui/cursor_tera.png`, `images/ui/icon_tera.png`, `images/effects/tera.png`,
 그리고 기존 `battle-anims/common-terastallize.json` 이 가리키는 그림·소리.
 
 ## T21 (가방 화면·볼 던지기·도구 대상 고르기)
@@ -179,9 +181,9 @@ Showdown 그림은 `play.pokemonshowdown.com/sprites/`의 ani → gen5ani → ge
 
 빌드에 새로 넣은 데이터: `view/text-*.json` 에 `fight-ui-handler.pp` 한 줄 (`tools/extract-view-text.mjs`).
 
-## 기술 연출 묶음 (8·9세대 기술 연출 프로젝트, 0.0.9)
+## 기술 연출 묶음 (8·9세대 기술 연출 프로젝트, 0.1.0)
 
-출처: https://www.pokecommunity.com/threads/the-gen-9-move-animation-project.526189/ (Essentials 형식 `PkmnAnimations.rxdata`). 첫 글의 조건 "Please include these credits when adding these animations to your game" 에 따라 크레딧을 그대로 적는다:
+출처: https://www.pokecommunity.com/threads/the-gen-9-move-animation-project.526189/ (Essentials 형식 `PkmnAnimations.rxdata` 와 그림·소리). 첫 글의 조건 "Please include these credits when adding these animations to your game" 에 따라 크레딧을 그대로 적는다:
 
 > Thanks to the Reborn team for letting people use their resources. You are awesome.
 >
@@ -193,5 +195,7 @@ Showdown 그림은 `play.pokemonshowdown.com/sprites/`의 ani → gen5ani → ge
 
 | 우리 파일 | 묶음에서 가져온 것 |
 |---|---|
+| `anims/foregrounds.js` | PokeRogue 변환에서 빠진 전경(foreground) 시간표 45개 기술 — 그림 이름·투명도·자리·색·프레임. `tools/build-anim-fg.mjs` 가 묶음에서 만든다. 그림은 PokeRogue 것을 플레이 때 받는다 |
 | `anims/tints.js` | PokeRogue 변환에서 색이 빠진 18개 기술의 배경 시간표 — 그림 이름·투명도·자리·색·프레임, 원본 값 그대로. `tools/build-anim-tints.mjs` 가 묶음에서 만든다. `anims/bg-engine.js` 가 원본 플레이어 규칙대로 재생한다 |
 | `anims/bg-names.js` | 빈칸이 된 배경 그림 이름 15개 기술 |
+| `anims/pack/images/` (19), `anims/pack/audio/` (101) | PokeRogue 에 없는 Z기술 그림·소리. 다음 단계(Z기술 연출)에서 쓴다 |

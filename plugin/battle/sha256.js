@@ -39,7 +39,7 @@ export function sha256Plain(bytes) {
 export async function sha256(bytes) {
   const subtle = globalThis.crypto?.subtle;
   if (subtle) {
-    try { return new Uint8Array(await subtle.digest('SHA-256', bytes)); } catch {                                           }
+    try { return new Uint8Array(await subtle.digest('SHA-256', bytes)); } catch { /* not allowed here: the plain version */ }
   }
   return sha256Plain(bytes);
 }

@@ -14,6 +14,7 @@ export const withUserName = (messages, name) =>
 
 export const SCENE_SIZE = 3;
 
+// Text for the model
 export const FORGE_INTRO = `You write Battle Blocks for a Pokémon story. Write no story text.
 Choose an opponent and levels that fit the scene and {{user}}'s party. Named characters keep their usual strength.`;
 
@@ -22,6 +23,7 @@ export const FORGE_ASK = {
   trainer: `Write exactly one Battle Block for a Trainer battle that could start in the latest scene, and nothing else. Use a Trainer from the scene; if none is present, bring in a Trainer who fits the place.`,
 };
 
+/** Whether a message can ever have the forge button: an AI message */
 export const mayForge = message => message?.role === 'char';
 
 export const forgeAt = (chat, { quiet = true } = {}) => (quiet && !battlesOff(chat) ? (chat?.message ?? []).findLastIndex(mayForge) : -1);

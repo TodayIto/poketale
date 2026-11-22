@@ -1,27 +1,34 @@
 // from pokerogue src/phases/enemy-command-phase.ts, src/field/pokemon.ts (getNextMove, getNextTargets), src/field/trainer.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 
-import { snapshot, restore, rolloutMove, tryChoice, applyGimmick, atSlot } from './engine-copy.js';
+import { genHas } from '../engine/generation.mjs';
+import { snapshot, restore, rolloutMove, tryChoice, applyGimmick, atSlot, activeMaxMove } from './engine-copy.js';
 import { partyMatchupScores, getMatchupScore, sortScores, nextSummonIndex } from './matchup.js';
-import { targetScore, targetWeight, combineScores, tableEntry } from './move-score.js';
+import { targetScore, targetWeight, combineScores, tableEntry, zPowerScore, maxEffectScore, maxEntry } from './move-score.js';
 import { liveSeedText, deriveSeed, createRng } from './rng.js';
 import { lookahead, switchChoices } from './lookahead.js';
 import { DEFAULT_POLICY, bossHealItems } from './policy.js';
 import { checkEnemyItem, toolsOn } from '../engine/bag.mjs';
 import { trainerOf, twinSeat } from '../engine/seats.mjs';
+import { usedMoves } from '../engine/used-moves.mjs';
 import { holdDecision } from './commit.js';
 import { moveTargets } from '../director/targets.js';
 import { isReviving } from '../director/simple-ai.js';
 
 export { DEFAULT_POLICY, bossHealItems };
 
+/** Difficulties on the settings screen (in ascending order) */
 export const DIFFICULTIES = ['easy', 'normal', 'hard', 'max'];
 
-export function gimmickRules(foeGimmick) {
-  if (foeGimmick === 'tera') return { mega: false, tera: 'ace' };
-  if (foeGimmick === 'mega') return { mega: true, tera: 'never' };
-  if (foeGimmick === 'none' || foeGimmick != null) return { mega: false, tera: 'never' };
-  return {};
+export function gimmickRules(foeGimmick, gen = null) {
+  const rules = foeGimmick === 'tera' ? { mega: false, tera: 'ace', z: false, dynamax: false }
+    : foeGimmick === 'mega' ? { mega: true, tera: 'never', z: false, dynamax: false }
+      : foeGimmick === 'z' ? { mega: false, tera: 'never', z: true, dynamax: false }
+        : foeGimmick === 'dynamax' ? { mega: false, tera: 'never', z: false, dynamax: true }
+          : foeGimmick != null ? { mega: false, tera: 'never', z: false, dynamax: false } : {};
+  if (gen == null) return rules;
+  return { ...rules, ...(genHas(gen, 'mega') ? {} : { mega: false }), ...(genHas(gen, 'tera') ? {} : { tera: 'never' }),
+    ...(genHas(gen, 'z') ? {} : { z: false }), ...(genHas(gen, 'dynamax') ? {} : { dynamax: false }) };
 }
 
 export function aiTier({ trainer = true, difficulty = 'normal', boss = false } = {}) {
@@ -36,7 +43,7 @@ export function createEnemyAI(sim, options = {}) {
   const opts = settle({ trainer: true, difficulty: 'normal', boss: false, bossPokemon: false, mega: policy.megaAsap, ...options, policy });
 
   const partnerOpts = settle({ ...opts, trainer: true, boss: false, bossTrainer: false, bossPokemon: false, healItems: false,
-    tera: undefined, difficulty: policy.partner.difficulty });
+    tera: undefined, dynamax: false, difficulty: policy.partner.difficulty });
   const optsOf = sideId => (sideId === 'p3' ? partnerOpts : opts);
 
   const states = new WeakMap();
@@ -68,7 +75,7 @@ export function createEnemyAI(sim, options = {}) {
     if (request.teamPreview) return 'default';
     const half = halfOf(battle, sideId), state = stateOf(battle, half), seatOpts = optsOf(sideId), twin = twinSeat(liveSide);
     const plan = healPlan(sideId, liveSide, twin);
-    if (plan && state.itemsLeft === null) state.itemsLeft = plan.count;
+    if (plan && state.itemsLeft === null) state.itemsLeft = plan.count; // initial count (start value, independent of decisions)
     const forced = !!request.forceSwitch, turns = heldOf(battle);
     const earlier = !forced && turns[half]?.turn === battle.turn && !turns[half].sides.includes(sideId) ? turns[half] : null;
     const start = earlier?.state ?? { switchCounter: state.switchCounter, itemsLeft: state.itemsLeft };
@@ -77,7 +84,7 @@ export function createEnemyAI(sim, options = {}) {
     try {
       ctx = openDecision(sim, battle, sideId, request, liveSide, seatOpts, problems);
 
-      decision = decide(ctx, start, plan, given, !!(twin && earlier?.gimmickUsed));
+      decision = decide(ctx, start, plan, given, { gimmick: !!(twin && earlier?.gimmickUsed), z: !!(twin && earlier?.zUsed) });
     } catch (error) {
 
       decision = { info: { kind: 'error', stage: error?.stage ?? 'decide', error: String(error?.stack || error), choice: 'default' }, parts: null };
@@ -90,7 +97,7 @@ export function createEnemyAI(sim, options = {}) {
     info.tier = seatOpts.tier;
     if (!forced) {
       turns[half] = { turn: battle.turn, sides: [...(earlier?.sides ?? []), sideId], state: parts ? parts.reduce(partState, start) : start,
-        gimmickUsed: !!(earlier?.gimmickUsed || decision.gimmickUsed) };
+        gimmickUsed: !!(earlier?.gimmickUsed || decision.gimmickUsed), zUsed: !!(earlier?.zUsed || decision.zUsed) };
     }
 
     const decided = info.choice;
@@ -123,6 +130,8 @@ export function createEnemyAI(sim, options = {}) {
 function settle(opts) {
   opts.bossTrainer ??= opts.boss;
   opts.tera ??= opts.bossTrainer ? opts.policy.tera.bossTrainer : opts.policy.tera.trainer;
+  opts.z ??= opts.policy.zMove.use;
+  opts.dynamax ??= opts.policy.dynamax.use;
   opts.tier = aiTier(opts);
   return opts;
 }
@@ -138,7 +147,7 @@ function openDecision(sim, battle, sideId, request, liveSide, opts, problems) {
     side: probe.getSide(sideId),
     rng: createRng(deriveSeed('ai', ...seed)),
     rolls: new Map(),
-    scenes: new Map(),
+    scenes: new Map(), // forms to score, by field position (after the gimmick: gimmickScene)
     close() {
       probe.destroy();
       for (const scene of ctx.scenes.values()) if (scene.battle !== probe) scene.battle.destroy();
@@ -147,10 +156,10 @@ function openDecision(sim, battle, sideId, request, liveSide, opts, problems) {
   return ctx;
 }
 
-function decide(ctx, start, plan, given, gimmickUsed) {
+function decide(ctx, start, plan, given, used) {
   const { request } = ctx;
-  const turn = { parts: [], taken: new Set(), gimmickUsed };
-  for (const part of given) if (/^switch /.test(part ?? '')) turn.taken.add(Number(part.slice(7)));
+  const turn = { parts: [], taken: new Set(), gimmickUsed: used.gimmick, zUsed: used.z };
+  for (const part of given) if (/^switch /.test(part ?? '')) turn.taken.add(Number(part.slice(7))); // a later position's given switch too
   let state = start;
   const slots = [];
   const count = (request.forceSwitch ?? request.active).length;
@@ -159,16 +168,17 @@ function decide(ctx, start, plan, given, gimmickUsed) {
       : request.forceSwitch ? forcedSlot(ctx, i, turn) : commandSlot(ctx, seatOf(ctx, i, turn), state, plan, turn);
     if (!['item', 'given'].includes(info.kind) && info.choice !== 'default') info.choice = validate(ctx, i, info, turn);
     slots.push(info);
-    if (info.choice === 'default') break;
+    if (info.choice === 'default') break; // the engine's default from here on (enemyAI: fallbackChoice)
     turn.parts.push(info.choice);
     if (/^switch /.test(info.choice)) turn.taken.add(Number(info.choice.slice(7)));
-    if (/ (mega|terastallize)$/.test(info.choice)) turn.gimmickUsed = true;
+    if (/ (mega|terastallize|ultra|dynamax)$/.test(info.choice)) turn.gimmickUsed = true;
+    if (/ zmove$/.test(info.choice)) turn.zUsed = true;
     state = partState(state, info.choice);
   }
   const choice = slots.at(-1).choice === 'default' ? 'default' : turn.parts.join(', ');
   const info = count === 1 ? slots[0] : { kind: 'double', choice, slots };
-
-  return { info, parts: request.forceSwitch ? null : turn.parts, gimmickUsed: turn.gimmickUsed };
+  // parts: what changes the AI state once accepted (none for a forced switch)
+  return { info, parts: request.forceSwitch ? null : turn.parts, gimmickUsed: turn.gimmickUsed, zUsed: turn.zUsed };
 }
 
 function partState(s, part) {
@@ -179,6 +189,7 @@ function partState(s, part) {
   return { ...s, switchCounter: lower };
 }
 
+/** State when a choice other than the AI's pick is accepted, part by part */
 function acceptedState(state, choice) {
   const parts = typeof choice === 'string' ? choice.split(',').map(part => part.trim()) : [''];
   return parts.reduce(partState, { switchCounter: state.switchCounter, itemsLeft: state.itemsLeft });
@@ -252,7 +263,7 @@ function considerSwitch(ctx, seat, counter, turn) {
   const { user } = seat;
 
   if (user.getLockedMove()) return null;
-
+  // isTrapped()
   if (user.trapped || seat.active.trapped) return null;
   const partyScores = partyMatchupScores(probe, side, true, seat.i, turn.taken);
   if (!partyScores.length) return null;
@@ -272,14 +283,58 @@ function usableMoves(active) {
     .filter(m => !m.disabled && (m.pp === undefined || m.pp > 0));
 }
 
+function maxPool(seat) {
+  const { active } = seat, dynamaxed = !!seat.user?.volatiles['dynamax'];
+  return (active?.maxMoves?.maxMoves ?? []).map((m, k) => (m.disabled || (dynamaxed && active.moves[k]?.disabled) ? null
+    : { ...active.moves[k], slot: k + 1, target: m.target, maxMove: m.move })).filter(Boolean);
+}
+
+const poolOf = seat => (seat.max ? maxPool(seat) : usableMoves(seat.active));
+
 function seatOf(ctx, i, turn) {
   const seats = ctx.seats ??= [];
   if (!seats[i]) {
-    const active = ctx.request.active[i];
-    const gimmick = turn.gimmickUsed ? '' : chooseGimmick(active, ctx.liveSide.active[i], ctx.liveSide, ctx.opts);
-    seats[i] = { i, active, user: ctx.side.active[i], gimmick };
+    const active = ctx.request.active[i], user = ctx.side.active[i];
+    const seat = { i, active, user, gimmick: turn.gimmickUsed ? '' : chooseGimmick(active, ctx.liveSide.active[i], ctx.liveSide, ctx.opts) };
+    if (!seat.gimmick && !turn.gimmickUsed && mayDynamax(ctx.opts, active, ctx.liveSide.active[i])) {
+      if (ctx.opts.tier === 'hidden' && ctx.probe.activePerHalf === 1) seat.dynamaxBranch = true;
+      else {
+        const held = ctx.opts.policy.dynamax.hold.includes(ctx.opts.tier) || ctx.opts.tier === 'hidden' ? dynamaxHold(ctx, seat) : null;
+        if (held) seat.dynamaxHeld = held;
+        else seat.gimmick = 'dynamax';
+      }
+    }
+    seat.max = (seat.gimmick === 'dynamax' || !!user?.volatiles['dynamax']) && !!active?.maxMoves;
+
+    if (!seat.gimmick && !turn.zUsed && active?.canZMove && ctx.opts.z && ctx.opts.trainer && !twinSeat(ctx.liveSide)?.zMoveUsed) seat.zMoves = active.canZMove;
+    seats[i] = seat;
   }
   return seats[i];
+}
+
+const mayDynamax = (opts, active, livePokemon) => !!(opts.dynamax && opts.trainer && active?.canDynamax && livePokemon?.m.dynamaxAce);
+
+function dynamaxHold(ctx, seat) {
+  const { user } = seat;
+  const foes = user?.foes() ?? [];
+  if (!foes.length) return null;
+  const ko = new Set(rollMoves(ctx, seat, usableMoves(seat.active)).flatMap(e => knockedOut(e, user).map(t => t.pokemon.getSlot())));
+  const why = foes.map(foe => (ko.has(foe.getSlot()) ? 'ko' : protectExpected(foe) ? 'protect' : ''));
+  if (why.some(w => !w) || threatened(ctx, user)) return null;
+  return { why: why.includes('ko') ? 'ko' : 'protect' };
+}
+
+function threatened(ctx, pokemon) {
+  for (const foe of pokemon.foes()) {
+    const shown = usedMoves(foe);
+    for (const slot of foe.moveSlots) {
+      if (!shown.includes(slot.id) || slot.disabled || slot.pp <= 0) continue;
+      const roll = rolloutMove(ctx.sim, ctx.json, ctx.seed, foe.side.id, { position: foe.position, move: slot.id, target: pokemon.getSlot() });
+      if (roll.error) ctx.problems.push({ type: 'degraded', what: 'threat', move: slot.id, error: roll.error });
+      else if (roll.hits[pokemon.getSlot()]?.ko) return true;
+    }
+  }
+  return false;
 }
 
 function aimsOf(ctx, seat, option, move) {
@@ -298,20 +353,57 @@ function aimsOf(ctx, seat, option, move) {
 }
 
 function moveOf(ctx, seat, option) {
-  const key = `${seat.i}|${option.slot}`;
+  const { max, gimmick } = seat;
+  const key = `${seat.i}|${option.slot}${max ? '|max' : ''}`;
   let e = ctx.rolls.get(key);
   if (e) return e;
-  const move = ctx.probe.dex.moves.get(option.id);
+
+  let move;
+  if (max) {
+    const { battle, user } = gimmickScene(ctx, seat);
+    move = activeMaxMove(battle, option.id, user, user.foes()[0] ?? null);
+  } else move = ctx.probe.dex.moves.get(option.id);
   const aims = aimsOf(ctx, seat, option, move);
   const rollAt = pokemon => {
-    const roll = rolloutMove(ctx.sim, ctx.json, ctx.seed, ctx.sideId, { position: seat.i, move: option.id, target: pokemon.getSlot(), gimmick: seat.gimmick });
-    if (roll.error) ctx.problems.push({ type: 'degraded', what: 'rollout', move: option.id, error: roll.error });
+    const roll = rolloutMove(ctx.sim, ctx.json, ctx.seed, ctx.sideId, { position: seat.i, move: option.id, target: pokemon.getSlot(), gimmick });
+    if (roll.error) ctx.problems.push({ type: 'degraded', what: 'rollout', move: option.id, ...(max ? { max: option.maxMove } : {}), error: roll.error });
     return roll;
   };
   let shared = null;
   const rollOf = target => (aims.spread ? (shared ??= rollAt(aims.targets[0].pokemon)) : (target.roll ??= rollAt(target.pokemon)));
-  ctx.rolls.set(key, e = { option, move, aims, rollOf });
+  ctx.rolls.set(key, e = { option, move, aims, rollOf, ...(max ? { max: option.maxMove } : {}) });
   return e;
+}
+
+function zMoveOf(ctx, seat, option, z) {
+  const key = `${seat.i}|${option.slot}|z`;
+  let e = ctx.rolls.get(key);
+  if (e) return e;
+  const { probe } = ctx;
+  const base = probe.dex.moves.get(option.id);
+  const move = base.category === 'Status' ? base : probe.actions.getActiveZMove(probe.dex.getActiveMove(option.id), seat.user);
+  const aims = aimsOf(ctx, seat, { ...option, target: z.target }, move);
+  const rollAt = pokemon => {
+    const roll = rolloutMove(ctx.sim, ctx.json, ctx.seed, ctx.sideId, { position: seat.i, move: option.id, target: pokemon.getSlot(), zmove: true });
+    if (roll.error) ctx.problems.push({ type: 'degraded', what: 'rollout', move: option.id, zmove: true, error: roll.error });
+    return roll;
+  };
+  let shared = null;
+  const rollOf = target => (aims.spread ? (shared ??= rollAt(aims.targets[0].pokemon)) : (target.roll ??= rollAt(target.pokemon)));
+  ctx.rolls.set(key, e = { option, move, aims, rollOf, z });
+  return e;
+}
+
+const protects = (dex, id) => id !== 'endure' && !!dex.moves.get(id).stallingMove;
+
+function protectExpected(pokemon) {
+  const { dex } = pokemon.battle;
+  if (pokemon.volatiles['stall'] || (pokemon.lastMove && protects(dex, pokemon.lastMove.id))) return false;
+  const shown = usedMoves(pokemon).filter(id => protects(dex, id));
+  if (pokemon.volatiles['dynamax']) {
+    return shown.length > 0 && pokemon.moveSlots.some(slot => dex.moves.get(slot.id).category === 'Status' && !pokemon.maxMoveDisabled(slot.id));
+  }
+  return pokemon.moveSlots.some(slot => !slot.disabled && slot.pp > 0 && shown.includes(slot.id));
 }
 
 function hitOn(roll, pokemon) {
@@ -333,12 +425,36 @@ function rollMoves(ctx, seat, pool) {
   return rows;
 }
 
+function candidates(ctx, seat, pool, opts) {
+  const plain = rollMoves(ctx, seat, pool);
+  const rows = plain.map(e => ({ e })), spared = [];
+  const zPool = opts.tier === 'wild' || !seat.zMoves ? [] : pool.filter(option => seat.zMoves[option.slot - 1]);
+  if (!zPool.length) return { rows, spared };
+  const sparing = opts.policy.zMove.spare.includes(opts.tier);
+  const plainKO = sparing ? new Set(plain.flatMap(e => knockedOut(e, seat.user).map(t => t.pokemon.getSlot()))) : null;
+  for (const option of zPool) {
+    const e = zMoveOf(ctx, seat, option, seat.zMoves[option.slot - 1]);
+    for (const target of e.aims.targets) e.rollOf(target);
+    const foes = foeTargets(e, seat.user);
+    if (!sparing || e.move.category === 'Status' || !foes.length) { rows.push({ e }); continue; }
+    const open = foes.filter(t => !plainKO.has(t.pokemon.getSlot()) && !protectExpected(t.pokemon));
+    if (open.length) rows.push({ e, ...(open.length < foes.length ? { only: new Set(open.map(t => t.pokemon.getSlot())) } : {}) });
+    else spared.push({ slot: option.slot, why: foes.some(t => plainKO.has(t.pokemon.getSlot())) ? 'ko' : 'protect' });
+  }
+  return { rows, spared };
+}
+
+/** A candidate's targets (aims), only those it may go at (candidates only) */
+const openTargets = row => (row.only ? row.e.aims.targets.filter(t => row.only.has(t.pokemon.getSlot())) : row.e.aims.targets);
+/** The foes a candidate KOs this turn, among those it may go at */
+const koOf = (row, user) => knockedOut(row.e, user).filter(t => !row.only || row.only.has(t.pokemon.getSlot()));
+
 function knockOutCheck(ctx, seat) {
-  const rows = rollMoves(ctx, seat, usableMoves(seat.active));
-  const kos = rows.map(e => knockedOut(e, seat.user).length > 0);
-  return { ko: kos.some(Boolean), moves: rows.map((e, k) => {
+  const { rows } = candidates(ctx, seat, poolOf(seat), ctx.opts);
+  const kos = rows.map(row => koOf(row, seat.user).length > 0);
+  return { ko: kos.some(Boolean), moves: rows.map(({ e }, k) => {
     const error = e.aims.targets.map(t => e.rollOf(t).error).find(Boolean);
-    return { move: e.move.id, ko: kos[k], ...(error ? { error } : {}) };
+    return { move: e.option.id, ko: kos[k], ...(e.z ? { z: true } : {}), ...(error ? { error } : {}) };
   }) };
 }
 
@@ -362,7 +478,10 @@ function gimmickScene(ctx, seat) {
 
 function scoring(ctx, seat, e, target) {
   const { battle, user } = gimmickScene(ctx, seat);
-  return { ctx: { battle, user, move: e.move, activeMove: battle.dex.getActiveMove(e.option.id), entry: tableEntry(e.move.id, e.move),
+  const zAttack = e.z && e.move.category !== 'Status';
+  // a Max Move is already the engine's active move, made on this scene (moveOf)
+  const activeMove = e.max ? e.move : zAttack ? battle.actions.getActiveZMove(battle.dex.getActiveMove(e.option.id), user) : battle.dex.getActiveMove(e.option.id);
+  return { ctx: { battle, user, move: e.move, activeMove, entry: e.max ? maxEntry(e.move) : tableEntry(e.move.id, e.move),
     roll: hitOn(e.rollOf(target), target.pokemon), options: ctx.opts }, pokemon: atSlot(battle, target.pokemon.getSlot()) };
 }
 
@@ -384,15 +503,17 @@ function pickTarget(ctx, seat, e, candidates) {
   return rows[weights.findIndex(w => roll < (sum += w))].target;
 }
 
-function scoreMove(ctx, seat, e, koOnly) {
+function scoreMove(ctx, seat, e, choices) {
   const { aims } = e;
   if (aims.scripted) return { score: combineScores([], false), targets: aims.targets };
-  const targets = aims.spread ? aims.targets : [pickTarget(ctx, seat, e, koOnly ? knockedOut(e, seat.user) : aims.targets)];
+  const targets = aims.spread ? aims.targets : [pickTarget(ctx, seat, e, choices)];
   const scores = targets.map(target => { const { ctx: c, pokemon } = scoring(ctx, seat, e, target); return targetScore(c, pokemon); });
-  return { score: combineScores(scores, aims.spread && !aims.field), targets };
+  const score = combineScores(scores, aims.spread && !aims.field);
+  if (e.max) return { score: score + maxEffectScore(e.rollOf(targets[0]).maxEffect), targets };
+  return { score: e.z && e.move.category === 'Status' ? score + zPowerScore(e.rollOf(targets[0]).zPower) : score, targets };
 }
 
-const movePart = (seat, e, target) => `move ${e.option.slot}${e.aims.named ? ` ${target.loc}` : ''}${seat.gimmick ? ` ${seat.gimmick}` : ''}`;
+const movePart = (seat, e, target) => `move ${e.option.slot}${e.aims.named ? ` ${target.loc}` : ''}${e.z ? ' zmove' : seat.gimmick ? ` ${seat.gimmick}` : ''}`;
 
 function rollSummary(e, user, targets) {
   const hits = targets.map(t => hitOn(e.rollOf(t), t.pokemon));
@@ -405,22 +526,25 @@ function rollSummary(e, user, targets) {
 function chooseMove(ctx, seat, how = {}) {
   const { rng } = ctx;
   const opts = how.wild ? { ...ctx.opts, tier: 'wild', bossPokemon: false } : ctx.opts;
-  const usable = usableMoves(seat.active);
+  const held = seat.dynamaxHeld ? { dynamaxHeld: seat.dynamaxHeld } : {};
+  const usable = poolOf(seat);
   const attacks = how.attackOnly ? usable.filter(m => ctx.probe.dex.moves.get(m.id).category !== 'Status') : [];
   const pool = attacks.length ? attacks : usable;
   if (!pool.length) return { choice: 'default', reason: 'no usable move' };
-  if (pool.length === 1) {
+  if (pool.length === 1 && (how.wild || !seat.zMoves?.[pool[0].slot - 1])) {
 
     const e = moveOf(ctx, seat, pool[0]);
-    if (!e.aims.named) return { choice: movePart(seat, e, e.aims.targets[0]), pool: pool.map(m => m.id) };
+    if (!e.aims.named) return { choice: movePart(seat, e, e.aims.targets[0]), pool: pool.map(m => m.id), ...held };
   }
 
-  const evaluated = rollMoves(ctx, seat, pool);
+  // Use each move (and Z-Move) once on an engine copy (per target)
+  const { rows, spared } = candidates(ctx, seat, pool, opts);
 
-  const ko = evaluated.filter(e => knockedOut(e, seat.user).length);
+  const ko = rows.filter(row => koOf(row, seat.user).length);
   const koOnly = ko.length > 0 && opts.tier !== 'easy';
-  const scored = (koOnly ? ko : evaluated).map(e => {
-    const { score, targets } = scoreMove(ctx, seat, e, koOnly);
+  const scored = (koOnly ? ko : rows).map(row => {
+    const { e } = row;
+    const { score, targets } = scoreMove(ctx, seat, e, koOnly ? koOf(row, seat.user) : openTargets(row));
     return { e, score, targets, roll: rollSummary(e, seat.user, targets) };
   });
   const sorted = scored.sort((a, b) => (a.score < b.score ? 1 : a.score > b.score ? -1 : 0));
@@ -431,11 +555,24 @@ function chooseMove(ctx, seat, how = {}) {
     koOnly: ko.length > 0,
     rank: chosen,
     ...(seat.gimmick ? { gimmick: seat.gimmick } : {}),
-    scores: sorted.map(({ e, score, targets, roll }) => ({ move: e.move.id, slot: e.option.slot, score, ...roll,
-      ...(e.aims.named ? { target: targets[0].loc } : {}) })),
+    ...held,
+    ...(spared.length ? { zSpared: spared } : {}),
+    scores: sorted.map(({ e, score, targets, roll }) => ({ move: e.option.id, slot: e.option.slot, score, ...roll,
+      ...(e.aims.named ? { target: targets[0].loc } : {}), ...(e.z ? zReport(e, targets) : {}), ...(e.max ? maxReport(e, targets) : {}) })),
   };
 }
 
+function maxReport(e, targets) {
+  const effect = e.rollOf(targets[0]).maxEffect;
+  return { max: e.max, ...(effect ? { maxEffect: effect, effect: maxEffectScore(effect) } : {}) };
+}
+
+function zReport(e, targets) {
+  const zPower = e.move.category === 'Status' ? e.rollOf(targets[0]).zPower : null;
+  return { z: true, zMove: e.z.move, ...(zPower && Object.keys(zPower).length ? { zPower } : {}) };
+}
+
+/** Which index to pick from candidates sorted by score (per tier) */
 function pickIndex(sorted, opts, rng) {
   const smartRandom = () => {
 
@@ -445,12 +582,12 @@ function pickIndex(sorted, opts, rng) {
   };
   switch (opts.tier) {
   case 'wild':
-
+    // aiType: boss || hasTrainer ? SMART : SMART_RANDOM (pokemon.ts 6723)
     if (!opts.bossPokemon) return smartRandom();
     break;
   case 'easy': {
     const roll = rng.int(10);
-    if (roll < 4) return rng.int(sorted.length);
+    if (roll < 4) return rng.int(sorted.length); // any move
     if (roll < 7) {
 
       for (let i = sorted.length - 1; i > 0; i--) if (!sorted[i].roll.failed) return i;
@@ -484,14 +621,18 @@ function chooseByLookahead(ctx, seat) {
   const best = chooseMove(ctx, seat);
   const { user } = seat;
   const suffix = seat.gimmick ? ` ${seat.gimmick}` : '';
+  const usable = poolOf(seat);
+  const zMoves = seat.zMoves ? candidates(ctx, seat, usable, ctx.opts).rows.filter(row => row.e.z).map(row => `move ${row.e.option.slot} zmove`) : [];
+  const dynamaxes = seat.dynamaxBranch ? maxPool(seat).map(m => `move ${m.slot} dynamax`) : [];
   const moves = best.scores
-    ? [...best.scores.map(s => `move ${s.slot}${suffix}`), ...usableMoves(seat.active).map(m => `move ${m.slot}${suffix}`)]
-    : [best.choice];
+    ? [...best.scores.map(s => `move ${s.slot}${s.z ? ' zmove' : suffix}`), ...usable.map(m => `move ${m.slot}${suffix}`), ...zMoves, ...dynamaxes]
+    : [best.choice, ...dynamaxes];
   const canSwitch = !user.getLockedMove() && !user.trapped && !request.active?.[0]?.trapped;
   const mine = [...new Set([...moves, ...(canSwitch ? switchChoices(ctx.probe, side) : [])])];
   if (mine.length === 1) return { kind: 'move', ...best };
   const looked = lookahead({ sim: ctx.sim, json: ctx.json, seed: ctx.seed, probe: ctx.probe, sideId: side.id, mine,
-    forcedSwitches: ctx.opts.policy.forcedSwitches, problems: ctx.problems });
+    forcedSwitches: ctx.opts.policy.forcedSwitches, problems: ctx.problems, ...(seat.zMoves ? { z: true } : {}),
+    ...(ctx.opts.dynamax && ctx.opts.trainer ? { dynamax: true } : {}) });
   if (!looked) return { kind: 'move', ...best };
   return { kind: looked.choice.startsWith('switch') ? 'switch' : 'move', ...best, choice: looked.choice, lookahead: looked };
 }
@@ -500,6 +641,7 @@ function chooseGimmick(active, livePokemon, liveSide, opts) {
   if (!active) return '';
   const twin = twinSeat(liveSide);
   if (active.canMegaEvo && opts.mega && !twin?.pokemon.some(p => p.species.isMega)) return 'mega';
+  if (active.canUltraBurst && opts.z && opts.trainer && !twin?.pokemon.some(p => p.species.name === 'Necrozma-Ultra')) return 'ultra';
   if (!active.canTerastallize || !opts.trainer || opts.tera === 'never' || twin?.pokemon.some(p => p.terastallized)) return '';
   if (opts.tera === 'first') return 'terastallize';
 
@@ -511,11 +653,15 @@ function chooseGimmick(active, livePokemon, liveSide, opts) {
 
 function validate(ctx, i, info, turn) {
   const tries = [info.choice];
-  if (/ (mega|terastallize)$/.test(info.choice)) tries.push(info.choice.replace(/ (mega|terastallize)$/, ''));
-  const firstUsable = usableMoves(ctx.request.active?.[i])[0];
-  if (firstUsable) {
-    const seat = seatOf(ctx, i, turn), e = moveOf(ctx, seat, firstUsable);
-    tries.push(`move ${firstUsable.slot}${e.aims.named ? ` ${e.aims.targets[0].loc}` : ''}`);
+  if (/ (mega|terastallize|ultra|zmove|dynamax)$/.test(info.choice)) tries.push(info.choice.replace(/ (mega|terastallize|ultra|zmove|dynamax)$/, ''));
+  if (ctx.request.active?.[i]) {
+    const live = seatOf(ctx, i, turn);
+    const seat = live.gimmick === 'dynamax' ? { ...live, gimmick: '', max: false } : live;
+    const firstUsable = poolOf(seat)[0];
+    if (firstUsable) {
+      const e = moveOf(ctx, seat, firstUsable);
+      tries.push(`move ${firstUsable.slot}${e.aims.named ? ` ${e.aims.targets[0].loc}` : ''}`);
+    }
   }
   const choice = tries.find(choice => accepts(ctx, [...turn.parts, choice], 'validate')) ?? 'default';
   if (choice !== info.choice) {

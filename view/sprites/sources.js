@@ -34,8 +34,6 @@ const cache = new Map();
 const orderKey = sources => sources.map(source => source.url ?? source.kind).join(' ');
 
 function dropSheet(entry) {
-  if (!entry.sheet) return;
-  entry.sheet.canvas.width = 0;
   delete entry.sheet;
 }
 
@@ -66,7 +64,7 @@ export async function loadMonSprite(assets, mon, back, key, reference, style = D
   const failures = [], down = new Set();
   for (const source of sources) {
     if (source.kind === 'pokerogue') {
-      if (!reference) continue;
+      if (!reference) continue; // no PokeRogue picture of this Pokemon
       const url = assets.url(pokerogueSheetPath(mon, back, reference));
       try {
         const result = await loadPokerogueStill(assets, mon, back, key, reference);
@@ -74,7 +72,7 @@ export async function loadMonSprite(assets, mon, back, key, reference, style = D
         return result;
       } catch (error) {
         assets.life.check();
-        failures.push({ url, error: String(error.message ?? error) });
+        failures.push({ url, error: String(error.message ?? error) }); // like the other steps: the next step, or "No sprite" when it was the last
         continue;
       }
     }

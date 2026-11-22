@@ -1,6 +1,6 @@
 import { say } from '../../story/screen-text.mjs';
 
-export const SLOW_MS = 3000;
+export const SLOW_MS = 3000; // Text only when it takes longer than this
 
 const CSS = `
   .pkb-loading { position:absolute; inset:0; z-index:2; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
@@ -27,7 +27,7 @@ export function mountLoading(parent, { before = null, page = false, hidden = fal
     element.hidden = false;
     element.classList.remove('slow');
     clearTimeout(slow);
-    slow = setTimeout(() => element.classList.add('slow'), SLOW_MS);
+    slow = setTimeout(() => element.classList.add('slow'), SLOW_MS); // whether the wait has passed 3 seconds
   };
   if (hidden) hide(); else show();
   return { element, show, hide, remove() { hide(); element.remove(); } };

@@ -2,16 +2,16 @@ import { readEvent, positionOf, sideIndexOf, isIdent, teamOf, fieldPositions } f
 import { monView } from './mon.js';
 import { createLedger } from './ledger.js';
 import { createEffects, EFFECT_KINDS } from './steps-effects.js';
-import { createMegaTera, MEGA_KINDS } from './steps-mega.js';
+import { createMegaTera, MEGA_KINDS, moveNameOf, dynamaxState } from './steps-mega.js';
 import { createBagSteps, BAG_KINDS } from './steps-bag.js';
 import { createExpSteps, EXP_KINDS } from './steps-exp.js';
 import { RUN_KINDS } from './run.js';
-import { winnerSide } from '../engine/core.mjs';
+import { winnerSide } from '../engine/core.mjs'; // winning side id (correct even when both trainers share a name)
 import { text as baseText, ownText, nameWithAffix } from './text.js';
 import { DEFAULT_LANG } from './lang.js';
 
 const IGNORED = ['', 't:', 'gametype', 'player', 'gen', 'tier', 'rule', 'debug', 'raw', 'teamsize', 'start', 'upkeep', 'turn'];
-
+/** Lines this file handles */
 const CORE_KINDS = ['switch', 'drag', 'replace', 'swap', 'move', '-crit', '-ohko', '-supereffective', '-resisted', '-immune', '-miss', 'faint', 'win', 'tie'];
 
 export function createSteps({ battle, view, names, warn, bag, options, run, mode = {}, onInput, wild = false, lang = DEFAULT_LANG }) {
@@ -28,8 +28,8 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
     return partner ? ownText('own.partnerPokemonWithAffix', { trainerName: partner, pokemonName: name }, lang) : sideAffix(name, position);
   };
 
-  const effects = createEffects({ battle, view, names, warn, ledger, lang, affix });
-  const megaTera = createMegaTera({ view, warn, ledger, lang, affix });
+  const megaTera = createMegaTera({ view, warn, ledger, dex: battle.dex, lang, affix });
+  const effects = createEffects({ battle, view, names, warn, ledger, lang, affix, dynamax: megaTera.dynamax });
 
   const bagSteps = createBagSteps({ battle, view, names, ledger, bag, lang, affix });
 
@@ -56,7 +56,7 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
     if (item.cue) return effects.cue(item);
     const event = ledger.observe(readEvent(item));
     await effects.bar(event);
-    if (event.kind !== 'move') await reappear(event);
+    if (event.kind !== 'move') await reappear(event); // move lines reappear after the "X used Fly!" text (present 'move')
     const owner = ownerOf(event);
     if (owner) await owner(event);
     else warn(event.kind);
@@ -128,6 +128,7 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
     if (!(wildAppears && encounter)) await summon();
   }
 
+  /** Lines this file handles (CORE_KINDS) */
   async function present(event) {
     const { kind, args: a, kwArgs: kw } = event;
     switch (kind) {
@@ -159,10 +160,16 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
       break;
     }
     case 'move': {
-      const id = battle.dex.toID(a[1]);
+
+      const id = battle.dex.toID(kw.anim ?? a[1]); // the animation's move
+      const moveName = moveNameOf(names, lang, a[1]);
+      const zMove = !!kw.zeffect || (/^Z-/.test(a[1]) && !!kw.anim) || !!battle.dex.moves.get(a[1]).isZ;
+
+      if (kw.zeffect) await view.message(ownText('own.zEffect', values(a[0]), lang), {});
+      if (zMove) await view.moveBanner?.(positionOf(a[0]), moveName);
 
       const reflected = /^(ability:\s*)?magic\s*(coat|bounce)$/i.test(String(kw.from ?? ''));
-      await view.message(text(reflected ? 'battle.magicCoatActivated' : 'battle.useMove', { ...values(a[0]), moveName: names.move(id) }), { hold: 500 });
+      await view.message(text(reflected ? 'battle.magicCoatActivated' : 'battle.useMove', { ...values(a[0]), moveName }), { hold: 500 });
 
       await reappear(event);
 
@@ -172,7 +179,7 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
     }
 
     case '-crit': await say('battle.hitResultCriticalHit'); break;
-    case '-ohko': await say('battle.hitResultOneHitKo'); break;
+    case '-ohko': await say('battle.hitResultOneHitKo'); break; // move-effect-phase.ts:749
     case '-supereffective':
     case '-resisted': {
       if (event.repeat) break;
@@ -184,10 +191,13 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
       break;
     }
     case '-immune': await say('battle.hitResultImmune', values(a[0])); break;
-    case '-miss': await say('battle.attackMissed', values(a[1] || a[0])); break;
+
+    case '-miss': await (a[1] ? say('battle.attackMissed', values(a[1])) : view.message(ownText('own.attackMissed', values(a[0]), lang), {})); break;
     case 'faint':
       if (event.before?.substitute) await view.substitute(positionOf(a[0]), 'clear');
+
       await view.faint(positionOf(a[0]));
+      if (event.before?.dynamax) await view.undynamax?.(positionOf(a[0]), { fainted: true, stay: !!event.endsBattle });
 
       await view.message(text('battle.fainted', values(a[0])), { wait: true });
       break;
@@ -207,14 +217,14 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
       if (outcome === 'win' && !wild) {
 
         const said = text('battle.trainerDefeated', { trainerName: foeTrainers });
-        await Promise.all([view.showTrainer?.(), view.end({ outcome, text: said })]);
+        await Promise.all([view.showTrainer?.({ ending: true }), view.end({ outcome, text: said })]);
       } else await view.end({ outcome });
       break;
     }
     }
   }
-  step.flush = () => effects.flush();
-  step.afterBattle = result => exp.afterBattle(result);
+  step.flush = () => effects.flush(); // end of a turn chunk: hide any ability popup still shown
+  step.afterBattle = result => exp.afterBattle(result); // evolution after the battle ends
 
   step.restoreState = () => {
     const state = { stages: {}, substitute: {}, hidden: {}, trainer: !wild };
@@ -225,10 +235,12 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
       state.stages[side] = { ...entry.boosts };
       state.substitute[side] = entry.substitute;
       state.hidden[side] = !!entry.semiInvulnerable;
+
+      if (entry.dynamax) (state.dynamax ??= {})[side] = dynamaxState(battle.dex, entry);
     }
     return state;
   };
   step.abilityShown = ledger.abilityShown;
-  step.ledger = ledger;
+  step.ledger = ledger; // for tests (ledger = engine state)
   return step;
 }

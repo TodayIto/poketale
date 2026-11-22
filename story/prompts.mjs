@@ -29,6 +29,8 @@ export const BACK_TO_BACK = {
   oocLine: battle => `{{user}} won the first battle against ${stageTrainer(battle, 1)} one-on-one. What follows is the second battle, against ${stageTrainer(battle, 2)}.`,
 };
 
+// -- Result line -----------------------------------------
+
 export function resultLine({ outcome, battle, kind, caught = null, evolutions = [], stages = null, prize = null, lang = 'ko', en = null }) {
   const namer = createNamer({ lang, en });
   const parts = [`Opponent: ${opponentText(battle, namer)}`, ...partnerField(battle, kind), ...(stages ? [BACK_TO_BACK.resultField(battle, stages)] : []),
@@ -167,7 +169,7 @@ export function logLine(event, namer = createNamer({ lang: 'en' }), money = null
     if (e.kind === 'evolve') return `evolved into ${namer.species(e.species)}`;
     if (e.kind === 'teach') return `learned ${namer.moves(e.move)}`;
     // Out-of-battle items
-    if (e.kind === 'evs') return e.to === e.from ? '' : `its base ${STAT_FULL[e.stat] ?? e.stat} ${e.to > e.from ? 'rose' : 'fell'}`;
+    if (e.kind === 'evs') return e.to === e.from ? '' : `its base ${STAT_FULL[e.stat] ?? e.stat} ${e.to > e.from ? 'rose' : 'fell'}`; // no effect: the item name only
     if (e.kind === 'exp') return `+${e.amount} EXP${e.to > e.from ? `, Lv${e.from} → ${e.to}` : ''}`;
     if (e.kind === 'ability') return `ability ${namer.abilities(e.from)} → ${namer.abilities(e.to)}`;
     if (e.kind === 'nature') return `stats now grow as ${e.nature} nature`;
@@ -178,6 +180,7 @@ export function logLine(event, namer = createNamer({ lang: 'en' }), money = null
     if (e.kind === 'form') return e.species ? `it changed into ${namer.species(e.species)}` : '';
     if (e.kind === 'fuse') return `it fused with ${monEn(e.other)} into ${namer.species(e.species)}`;
     if (e.kind === 'unfuse') return `${monEn(e.other)} separated from it and returned to the party`;
+
     return '';
   };
   switch (event?.kind) {
@@ -202,12 +205,12 @@ export function logLine(event, namer = createNamer({ lang: 'en' }), money = null
 
     case 'withdraw': return event.revived ? REVIVED_LOG(monEn(event.who)) : `${USER} moved ${monEn(event.who)} to the party`;
     case 'release': return `${USER} released ${monEn(event.who)}`;
-    case 'evolvelock': return EVOLVE_LOCK_LOG({ mon: monEn(event.who), locked: event.locked === true });
+    case 'evolvelock': return EVOLVE_LOCK_LOG({ mon: monEn(event.who), locked: event.locked === true }); // pkbLog tells only what changed (lockGroups)
     case 'nickname': return `${USER} nicknamed ${event.who?.species ? namer.species(event.who.species) : monEn(event.who)} "${event.name}"`;
     case 'teach': {
       const who = monEn(event.who), move = namer.moves(event.move);
       if (event.forget) return `${who} learned ${move} (forgot ${namer.moves(event.forget)})`;
-      return event.learned ? `${who} learned ${move}` : `${who} can learn ${move}`;
+      return event.learned ? `${who} learned ${move}` : `${who} can learn ${move}`; // learned: panel level-up wrap-up
     }
 
     case 'evolve': return [`${monEn(event.who)} evolved into ${namer.species(event.species)}`,
@@ -228,7 +231,7 @@ export function logLine(event, namer = createNamer({ lang: 'en' }), money = null
     }
     case 'hatch': return `${event.slot ? `The Egg in party #${event.slot}` : 'An Egg'} hatched into ${namer.species(event.who?.species)}`;
     case 'item': return `${itemEn(event.item)} ${signed(event.delta)}`;
-
+    // the message's catches gathered (fishGroups - FISH_LOG)
     case 'fished': return fishLog ? fishLog({ items: event.items.map(i => ({ name: namer.items(i.item), count: i.count })) }) : null;
     case 'shop': return SHOP_LOG.shop(event, id => namer.items(id), money);
     case 'add': return `${USER} got ${namer.species(event.who?.species)} Lv${event.level}${event.box ? ', sent to storage' : ''}`;

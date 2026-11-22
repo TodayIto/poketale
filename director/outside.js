@@ -1,24 +1,25 @@
 import { createStoryBattle } from '../engine/core.mjs';
 import { engineMember } from '../engine/input.mjs';
-import { STATS, displayName, spriteIdOf } from '../engine/mon.mjs';
+import { STATS, displayName, spriteIdOf, hasOneSpecial } from '../engine/mon.mjs';
 import { newMovePp } from '../engine/pp.mjs';
 import { summaryView } from './summary.js';
 import { createLearnSteps, learnMoveOption, loadExpText } from './steps-exp.js';
 import { PLAYER_NAME, EV_TOTAL_MAX, sameNickname } from '../story/rules.mjs';
 import { DEFAULT_LANG } from './lang.js';
-import { DEFAULT_FORMAT } from '../engine/rules.mjs';
+import { DEFAULT_FORMAT, DEFAULT_GEN, genFormat, formatRules } from '../engine/rules.mjs';
 import { enjoymentOf, fullnessOf, gameCandidates } from '../story/amie.mjs';
 import { GAMES, LEVELS } from '../story/amie-games.mjs';
 import { FIND_ORDER, BAG_IDS, BAG_SIZES, EFFECT_BAGS, SOOTHING_BAG, bagOf, traineeOf, hungBagOf, ENERGY_MAX, effortOn } from '../story/training.mjs';
 import { foodList, puffFood } from '../story/panel.mjs';
-import { canSpin, evolutionChoices, evolutionFlips, evolutionHeld } from '../engine/evolution.mjs';
+import { canSpin, evolutionChoices, evolutionFlips, evolutionHeld, genMark } from '../engine/evolution.mjs';
+import { evolveGenOf } from '../story/battle-rule.mjs';
 import { friendshipOf, friendshipLine, isEgg } from '../story/state.mjs';
 import { sayer } from '../story/screen-text.mjs';
 import { withParticle } from '../story/diary.mjs';
 import { EGG_SPRITE } from '../engine/breeding.mjs';
 import { friendshipLocked } from '../engine/friendship.mjs';
 
-const OUTSIDE_SEED = [1, 2, 3, 4];
+const OUTSIDE_SEED = [1, 2, 3, 4]; // read-only battle, so any value works (same value -> same engine state)
 const langOf = ctx => ctx.lang ?? DEFAULT_LANG;
 
 function readOutside(ctx, mon, read) {
@@ -32,6 +33,7 @@ function readOutside(ctx, mon, read) {
   const foe = { uid: 'outside-foe', set: structuredClone(mon.set) };
   const spec = {
     seed: OUTSIDE_SEED, formatid: format, writtenForms: true,
+    ...(ctx.formGen ? { formGen: ctx.formGen } : {}), // the battle generation (summaryCtx - the summary only)
     p1: { name: ctx.trainer || PLAYER_NAME, team: [member] }, p2: { name: '-', team: [foe] },
   };
   const options = ctx.exp && ctx.levelUp ? { exp: ctx.exp, levelUp: ctx.levelUp } : {};
@@ -54,6 +56,7 @@ function monViewOf(ctx, { battle, pokemon, fainted }, mon, species) {
   };
 }
 
+/** Current move slots (LearnMoveOption[]) */
 const moveOptions = (ctx, { battle, pokemon }) => pokemon.baseMoveSlots.map(slot => learnMoveOption(battle, ctx.names, slot.id, slot.pp, slot.maxpp, langOf(ctx)));
 
 function newMoveOption(ctx, battle, move) {
@@ -62,12 +65,20 @@ function newMoveOption(ctx, battle, move) {
 }
 
 export function outsideSummarySlot(ctx, mon) {
-  return readOutside(ctx, mon, made => {
+  const shown = summaryCtx(ctx);
+  return readOutside(shown, mon, made => {
     const { battle, pokemon, fainted, options, format } = made;
+
+    if (shown !== ctx && !fainted && mon.hp > 0) pokemon.hp = shareHp(mon.hp, formatRules(ctx.sim, ctx.battleFormat || DEFAULT_FORMAT).maxHp(mon.set), pokemon.maxhp);
     const entry = battle.sides[0].getRequestData().pokemon[0];
-    const summary = summaryView(battle, ctx.names, entry, pokemon, options, langOf(ctx));
+    const summary = summaryView(battle, ctx.names, entry, pokemon, ctx.dynamaxShown ? { ...options, dynamaxShown: true } : options, langOf(ctx));
     if (fainted) summary.stats = { ...summary.stats, hp: 0 };
     if (effortOn(ctx.sim, format)) summary.evs = Object.fromEntries(STATS.map(s => [s, pokemon.set.evs?.[s] ?? 0]));
+
+    if (summary.evs && hasOneSpecial(battle.gen)) {
+      summary.evs.spa = summary.evs.spd = Math.max(summary.evs.spa, summary.evs.spd);
+      summary.evsUncapped = true;
+    }
 
     const bond = friendshipLine(mon, ctx, langOf(ctx));
     if (bond) summary.bond = bond;
@@ -77,13 +88,21 @@ export function outsideSummarySlot(ctx, mon) {
   });
 }
 
+function summaryCtx(ctx) {
+  const gen = ctx.battleGen;
+  if (!Number.isInteger(gen)) return ctx;
+  return { ...ctx, battleFormat: gen < DEFAULT_GEN ? genFormat(gen) : ctx.battleFormat, formGen: gen };
+}
+
+const shareHp = (hp, was, max) => (hp >= was ? max : was === max ? hp : Math.max(1, Math.min(max - 1, Math.round(hp * max / was))));
+
 export function lockView(ctx, mon, locked = mon.evolveLocked === true) {
   const held = evolutionHeld(ctx.sim.Dex, { species: mon.set.species, item: mon.set.item, ...(locked ? { evolveLocked: true } : {}) });
   return { locked, ...(held ? { held: true } : {}), ...(locked || held ? { text: sayer(langOf(ctx))('panel.sc.evolveLocked') } : {}) };
 }
 
 export async function showOutsideSummary({ view, ctx, mon, onRename, onEvolveLock }) {
-  await loadExpText(langOf(ctx));
+  await loadExpText(langOf(ctx)); // move descriptions (learnMoveOption)
   const slot = outsideSummarySlot(ctx, mon);
   await view.prepareOutside({ mons: [slot] });
   let nickname = null;
@@ -131,7 +150,7 @@ export function rememberModel(ctx, mon, moves) {
 }
 
 export async function learnMoveOutside({ view, ctx, mon, move: moveId, party }) {
-  await loadExpText(langOf(ctx));
+  await loadExpText(langOf(ctx)); // move descriptions (learnMoveOption)
   const plan = learnModel(ctx, mon, moveId);
   if (!plan) return { learned: false };
   const backdrop = outsidePartyViews(ctx, party, mon);
@@ -145,7 +164,7 @@ export async function learnMoveOutside({ view, ctx, mon, move: moveId, party }) 
 }
 
 export async function rememberMoveOutside({ view, ctx, mon, moves, party }) {
-  await loadExpText(langOf(ctx));
+  await loadExpText(langOf(ctx)); // move descriptions (learnMoveOption)
   const options = rememberModel(ctx, mon, moves);
   const backdrop = outsidePartyViews(ctx, party, mon);
   await view.prepareOutside({ mons: [] });
@@ -169,7 +188,7 @@ async function learnOne({ view, lang, shown, moves, newMove, inEvolution }) {
 }
 
 export async function evolveOutside({ view, ctx, mon, into, learn = () => [] }) {
-  await loadExpText(langOf(ctx));
+  await loadExpText(langOf(ctx)); // move descriptions (learnMoveOption)
   const choices = evolutionChoices(ctx.sim.Dex, mon.set.species, into);
 
   const plan = readOutside(ctx, mon, made => {
@@ -186,7 +205,7 @@ export async function evolveOutside({ view, ctx, mon, into, learn = () => [] }) 
   const { from, moves } = plan;
   await view.prepareOutside({ mons: [from, ...plan.targets.map(t => t.view)] });
   await view.startEvolution(from);
-
+  // What is settled so far. Not yet evolved = stopped (the same result as B)
   const result = { evolved: false, into: ctx.sim.Dex.species.get(into).name, learned: [] };
   try {
     const picked = choices.length ? await chooseForm(choices) : result.into;
@@ -199,7 +218,7 @@ export async function evolveOutside({ view, ctx, mon, into, learn = () => [] }) 
     if (!result.evolved) await say('menu.stoppedEvolving', { pokemonName: from.name });
     else {
       await sayTimed('menu.evolutionDone', { pokemonName: from.name, evolvedPokemonName: target.name }, { promptDelay: 4000 });
-
+      // Evolution moves: skip moves already known (learn-move-phase.ts:53)
       const { dexNumber, newMoves } = plan.targets.find(t => t.species === picked);
       const shown = { ...target, dexNumber };
       for (const newMove of newMoves) {
@@ -207,7 +226,7 @@ export async function evolveOutside({ view, ctx, mon, into, learn = () => [] }) 
         result.learned.push({ move: newMove.id, ...await learnOne({ view, lang: langOf(ctx), shown, moves, newMove, inEvolution: true }) });
       }
     }
-    await view.endEvolution();
+    await view.endEvolution(); // EndEvolutionPhase: close after learning the moves
   } catch (error) {
 
     if (!view.closed) throw error;
@@ -262,13 +281,13 @@ export async function amieOutside({ view, ctx, mon, state = null, party = [], de
   try {
     const { spent, gains, friends, done, spin, train } = await view.startAmie({
       mon: plan.shown, num: plan.num, scene: scene ?? undefined, species: plan.ids, enjoy: enjoymentOf(mon), full: fullnessOf(mon), friendship: friendshipOf(ctx, mon),
-      party: others, foods, puffFood: id => food(puffFood(id, lang)), words, debug, records: state?.amieRecords ?? {}, spins: canSpin(ctx.sim.Dex, { species: mon.set.species, item: mon.set.item }),
+      party: others, foods, puffFood: id => food(puffFood(id, lang)), words, debug, records: state?.amieRecords ?? {}, spins: canSpin(ctx.sim.Dex, { species: mon.set.species, item: mon.set.item, ...genMark(evolveGenOf(ctx)) }),
       awake, trainWhy: trainWhy ? say(`panel.trainWhy.${trainWhy}`) : null, lock: debug && lock ? { on: friendshipLocked(mon), set: lock } : null,
       onChange: now => Object.assign(result, { spent: now.spent, gains: now.gains, friends: now.friends ?? [], done: now.done }),
     });
     Object.assign(result, { spent, gains, friends: friends ?? [], done, spin: spin ?? null, train: !!train });
   } catch (error) {
-
+    // The view closed under the screen (the window's X): what was settled stands
     if (!view.closed) throw error;
   }
   return result;
@@ -301,7 +320,7 @@ export async function trainingOutside({ view, ctx, mon, scene = null }) {
     });
     Object.assign(result, { bags, hung: left });
   } catch (error) {
-
+    // The view closed under the screen (the window's X): what was cleared stands
     if (!view.closed) throw error;
   }
   return result;

@@ -1,5 +1,5 @@
 // from pokerogue src/pipelines/glsl/sprite-frag-shader.frag @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/pipelines/sprite.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/tera-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/battle-info/battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
@@ -9,9 +9,10 @@ import Phaser from 'phaser';
 
 export const MEGA_TERA_IMAGES = {
   button_tera: 'images/ui/button_tera.png', cursor_tera: 'images/ui/cursor_tera.png', icon_tera: 'images/ui/icon_tera.png',
-  tera: 'images/effects/tera.png', mega_bracelet: 'images/items/mega_bracelet.png',
+  tera: 'images/effects/tera.png',
 };
 
+// data/type.ts getTypeRgb
 export const TYPE_RGB = {
   normal: [168, 168, 120], fighting: [192, 48, 40], flying: [168, 144, 240], poison: [160, 64, 160], ground: [224, 192, 104],
   rock: [184, 160, 56], bug: [168, 184, 32], ghost: [112, 88, 152], steel: [184, 184, 208], fire: [240, 128, 48],
@@ -136,12 +137,35 @@ void main() {
 
 const PIPELINE = 'TeraFX';
 let TeraFX;
-
+// The Phaser stand-in (Node tests) has no Renderer -> skipped without glow
 function teraPipelineClass() {
   const Base = Phaser?.Renderer?.WebGL?.Pipelines?.PostFXPipeline;
   if (!Base) return null;
   return TeraFX ??= class extends Base {
-    constructor(game) { super({ game, fragShader: FRAG }); this.teraColor = [0, 0, 0]; }
+    constructor(game) {
+      super({ game, fragShader: FRAG }); this.teraColor = [0, 0, 0];
+      this.screenMatrix = new Phaser.GameObjects.Components.TransformMatrix();
+    }
+
+    drawSpriteArea(renderTarget, object, world) {
+      const { renderer, gl } = this, camera = object.scene.cameras.main, clip = renderer.currentScissor;
+      if (!clip || object.scene.cameras.cameras.length !== 1 || renderer.fboStack.length !== 1
+        || renderTarget.width !== renderer.width || renderTarget.height !== renderer.height
+        || object.blendMode !== Phaser.BlendModes.NORMAL || object.flipX || object.flipY || object.isCropped
+        || (camera.roundPixels && (!Number.isInteger(object.x) || !Number.isInteger(object.y)))) {
+        this.bindAndDraw(renderTarget);
+        return;
+      }
+      const matrix = this.screenMatrix.copyFrom(camera.matrix).multiplyWithOffset(world, -camera.scrollX * object.scrollFactorX, -camera.scrollY * object.scrollFactorY);
+      const x = -object.displayOriginX, y = -object.displayOriginY;
+      const [x0, y0, x1, y1, x2, y2, x3, y3] = matrix.setQuad(x, y, x + object.frame.realWidth, y + object.frame.realHeight);
+      const left = Phaser.Math.Clamp(Math.floor(Math.min(x0, x1, x2, x3)) - 1, clip[0], clip[0] + clip[2]);
+      const top = Phaser.Math.Clamp(Math.floor(Math.min(y0, y1, y2, y3)) - 1, clip[1], clip[1] + clip[3]);
+      const right = Phaser.Math.Clamp(Math.ceil(Math.max(x0, x1, x2, x3)) + 1, left, clip[0] + clip[2]);
+      const bottom = Phaser.Math.Clamp(Math.ceil(Math.max(y0, y1, y2, y3)) + 1, top, clip[1] + clip[3]);
+      gl.scissor(left, renderer.drawingBufferHeight - bottom, right - left, bottom - top);
+      try { this.bindAndDraw(renderTarget); } finally { renderer.resetScissor(); }
+    }
     onDraw(renderTarget) {
       const object = this.gameObject, texture = this.game.textures.get('tera');
       if (!object || !texture?.source?.[0]?.glTexture) { this.bindAndDraw(renderTarget); return; }
@@ -160,7 +184,7 @@ function teraPipelineClass() {
       this.set1f('teraTime', (this.game.getTime() % 500000) / 500000);
       this.set3f('teraColor', ...this.teraColor.map(c => c / 255));
       this.bindTexture(texture.source[0].glTexture, 1);
-      this.bindAndDraw(renderTarget);
+      this.drawSpriteArea(renderTarget, object, m);
     }
   };
 }
@@ -176,12 +200,12 @@ export class TeraView {
     const pipelines = this.scene.renderer?.pipelines;
     const Class = teraPipelineClass();
     if (!pipelines || !Class) return;
-    pipelines.addPostPipeline(PIPELINE, Class);
+    pipelines.addPostPipeline(PIPELINE, Class); // unchanged if already there
     object.removePostPipeline?.(PIPELINE);
     if (!type) return;
     object.setPostPipeline(PIPELINE);
     const instance = object.getPostPipeline(PIPELINE);
-    for (const fx of [instance].flat()) fx.teraColor = typeRgb(type);
+    for (const fx of [instance].flat()) fx.teraColor = Array.isArray(type) ? type : typeRgb(type);
   }
 
   applySprite(pokemon) { if (pokemon.mon?.tera) this.glow(pokemon.getSprite(), pokemon.mon.tera); }
@@ -194,8 +218,7 @@ export class TeraView {
       info.container.add(info.teraIcon);
     }
     const [r, g, b] = typeRgb(type);
-    info.teraIcon.setVisible(true).setTintFill(Phaser.Display.Color.GetColor(r, g, b))
-      .setPosition(info.nameText.x + info.nameText.displayWidth + (info.gender?.displayWidth ?? 0) + 1, info.nameText.y + 2);
+    info.teraIcon.setVisible(true).setTintFill(Phaser.Display.Color.GetColor(r, g, b)); // placed by the info box with its name row (layoutName)
   }
 
   async terastallize(side, type) {
@@ -207,6 +230,6 @@ export class TeraView {
     current.mon.tera = type;
     this.glow(current.getSprite(), type);
     const info = scene.info[side];
-    if (info) { info.mon.tera = type; this.applyInfo(info, type); }
+    if (info) { info.mon.tera = type; this.applyInfo(info, type); info.layoutName(); } // the name is cut again to make room for the icon
   }
 }

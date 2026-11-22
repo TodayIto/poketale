@@ -32,7 +32,7 @@ export function buildMap() {
     const match = list.find(f => f.form === forme) ?? (forme ? only(f => f.form && (f.form.startsWith(forme) || forme.startsWith(f.form))) ?? only(f => f.form.includes(forme)) : null);
     if (match) map[spriteIdOf(sprite)] = match.stem;
   }
-  map[EGG_SPRITE] = 'egg';
+  map[EGG_SPRITE] = 'egg'; // the egg: sprites/pokemon/egg.png (no Pokemon entry)
   return map;
 }
 

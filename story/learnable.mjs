@@ -11,6 +11,7 @@ export function encodeMoveSet(indexes) {
   return out;
 }
 
+/** The move ids of one written set */
 function decodeMoveSet(code, moves) {
   const out = new Set();
   let previous = -1;

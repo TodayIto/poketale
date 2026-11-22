@@ -1,9 +1,9 @@
 // from pokerogue src/ui/containers/move-info-overlay.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 
 import { addWindow } from './window.js';
 import { addTextObject, styledText } from './text.js';
-import { fixed } from '../game-speed.js';
+import { fixed } from '../game-speed.js'; // description scrolling ignores game speed (fixedInt)
 
 const EFF_HEIGHT = 48, EFF_WIDTH = 82, DESC_HEIGHT = 48, BORDER = 8, GLOBAL_SCALE = 6;
 
@@ -14,7 +14,7 @@ export class MoveInfoOverlay {
   constructor(scene, { x = 1, y = -(EFF_HEIGHT + DESC_HEIGHT) - 1, width = 320 / 2 - 30 } = {}) {
     const s = this.scene = scene;
     const c = this.container = s.add.container(x, y);
-    this.box = { x, y, width, height: EFF_HEIGHT + DESC_HEIGHT };
+    this.box = { x, y, width, height: EFF_HEIGHT + DESC_HEIGHT }; // where it sits in the UI (tapping it is not empty space)
     this.descY = EFF_HEIGHT + BORDER - 2;
     c.add(addWindow(s, 0, EFF_HEIGHT, width, DESC_HEIGHT));
     this.desc = addTextObject(s, BORDER, this.descY, '', 'info', { wordWrap: { width: (width - (BORDER - 2) * 2) * GLOBAL_SCALE } });
@@ -50,7 +50,7 @@ export class MoveInfoOverlay {
     this.desc.setText(move.description ?? '');
     this.scroll?.remove(); this.scroll = null;
     this.desc.y = this.descY;
-
+    // over 3 lines: scrolls up one line every 2s after a 2s delay, then repeats
     const lines = Math.floor((this.desc.displayHeight * (96 / 72)) / 14.83);
     if (lines > 3) {
       this.scroll = this.scene.tweens.add({ targets: this.desc, delay: fixed(2000), loop: -1, hold: fixed(2000),

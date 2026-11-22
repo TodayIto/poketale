@@ -1,23 +1,25 @@
 import { createStoryBattle, extractResult } from '../engine/core.mjs';
 import { createProtocolReader } from './parse.js';
 import { createSteps } from './steps.js';
-import { arrange } from './order.js';
+import { arrange } from './order.js'; // grouping + ordering table (R1-R6)
 import { text, nameWithAffix, screenLog, recordingView } from './text.js';
 import { checkLang, DEFAULT_LANG } from './lang.js';
 import { simpleAI, isReviving, lockedTurn } from './simple-ai.js';
 import { monView } from './mon.js';
-import { gimmickOptions, gimmickSuffix } from './steps-mega.js';
+import { gimmickOptions, gimmickSuffix, specGimmicks, zMoveOptions, maxMoveOptions, maxEntries, maxDeniedSource, prefetchCutIns } from './steps-mega.js'; // Mega Evolution, Terastallization, Z-Moves, Ultra Burst, Dynamax
 import { createBag } from './bag.js';
-import { createRun } from './run.js';
-import { summaryView } from './summary.js';
+import { createRun } from './run.js'; // running away
+import { summaryView } from './summary.js'; // summary screen
 import { loadExpText } from './steps-exp.js';
-import { effectText } from './steps-effects.js';
+import { effectText } from './steps-effects.js'; // blocked-move and hidden-trap text (text-effects-<lang>.json)
 import { pokemonName } from './bag.js';
 import { moveMenuInfo } from './move-info.js';
-import { replaceMove } from '../engine/exp.mjs';
-import { chooseEnemyParts, hasEnemyItem } from '../engine/bag.mjs';
-import { commitChoice } from '../ai/commit.js';
-import { chooseDouble } from './double.js';
+import { replaceMove } from '../engine/exp.mjs'; // snapshot input 'learn'
+import { chooseEnemyParts, hasEnemyItem } from '../engine/bag.mjs'; // boss healing items (ai/index.js 'item <item>' parts)
+import { formatRules } from '../engine/rules.mjs'; // Champions rules: no Key Stone asked (steps-mega.js specGimmicks)
+import { battleRuleGen } from '../engine/generation.mjs'; // the battle's rule generation (0.1.0 G2 - steps-mega.js specGimmicks)
+import { commitChoice } from '../ai/commit.js'; // AI state reflects only choices the engine accepted
+import { chooseDouble } from './double.js'; // commands with two of the player's Pokemon out
 
 export function partySlots(battle, names, lang, request, { trapped = false, reviving = false, options } = {}) {
   const side = battle.sides[0];
@@ -56,13 +58,15 @@ function switchChoice(choice, party, { reviving = false } = {}) {
 }
 
 const DENIED = {
-  disable: 'battle.moveDisabled', encore: 'battle.moveDisabled',
-  taunt: 'own.moveDisabledTaunt', torment: 'battle.moveDisabledTorment', imprison: 'battle.moveDisabledImprison',
-  healblock: 'battle.moveDisabledHealBlock', throatchop: 'battle.moveCannotBeSelected',
+  disable: 'battle.moveDisabled', encore: 'battle.moveDisabled', // DisabledTag :463, EncoreTag :1798
+  taunt: 'own.moveDisabledTaunt', torment: 'battle.moveDisabledTorment', imprison: 'battle.moveDisabledImprison', // :3543 :3496 :3600
+  healblock: 'battle.moveDisabledHealBlock', throatchop: 'battle.moveCannotBeSelected', // :3137 ThroatChoppedTag :391
   gravity: 'battle.moveDisabledGravity', belch: 'battle.moveDisabledBelch', stuffcheeks: 'battle.moveDisabledNoBerry',
   bloodmoon: 'battle.moveDisabledConsecutive', gigatonhammer: 'battle.moveDisabledConsecutive',
-  choiceband: 'battle.canOnlyUseMove', choicescarf: 'battle.canOnlyUseMove', choicespecs: 'battle.canOnlyUseMove',
+  choiceband: 'battle.canOnlyUseMove', choicescarf: 'battle.canOnlyUseMove', choicespecs: 'battle.canOnlyUseMove', // GorillaTacticsTag :539
   gorillatactics: 'battle.canOnlyUseMove',
+
+  eragimmick: 'own.eraGimmickDisabled',
 };
 export function moveDeniedText(battle, names, option, lang = DEFAULT_LANG, pokemon = battle.sides[0].active[0]) {
   const name = pokemon ? pokemonName(names, pokemon) : '';
@@ -73,7 +77,7 @@ export function moveDeniedText(battle, names, option, lang = DEFAULT_LANG, pokem
 
   const locked = source === 'gorillatactics' ? pokemon?.abilityState?.choiceLock : pokemon?.volatiles?.choicelock?.move;
   const values = { pokemonName: name, pokemonNameWithAffix: name, moveName: key === 'battle.canOnlyUseMove' && locked ? names.move(locked) : moveName };
-  return effectText(key, values, lang).trimEnd();
+  return effectText(key, values, lang).trimEnd(); // trailing \n in the moveDisabledTorment source text
 }
 
 export function hiddenTrapText(battle, names, lang = DEFAULT_LANG, wild = false) {
@@ -208,7 +212,8 @@ function filledSpec(battle, spec) {
       const pokemon = engine.find(p => p.m.uid === member.uid);
       if (!pokemon && !waiting) return member;
 
-      const set = pokemon ? { ...JSON.parse(JSON.stringify(pokemon.set)), ...pokemon.m.start } : JSON.parse(JSON.stringify(waiting[i]));
+      const given = pokemon && (({ dynamaxLevel, gigantamax, ...rest }) => rest)(pokemon.set);
+      const set = pokemon ? { ...JSON.parse(JSON.stringify(given)), ...pokemon.m.start } : JSON.parse(JSON.stringify(waiting[i]));
 
       set.shiny = !!set.shiny;
       return { ...member, set };
@@ -249,9 +254,9 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
   const { battle, wild, bag, run } = buildEngine(sim, spec, options, names, lang);
 
   try {
-
+    // Snapshot: initial state + input log (SNAPSHOT_VERSION above)
     const baseSpec = from ? from.spec : filledSpec(battle, spec);
-    const fp = fingerprint(battle);
+    const fp = fingerprint(battle); // before any input (teams before form changes)
     const inputs = [];
     const input = entry => { inputs.push(structuredClone(entry)); return applyInput({ battle, bag, run }, entry); };
     const reseeds = from?.reseeds ?? [];
@@ -260,7 +265,7 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
       enemyAI.loadState?.(battle, from.ai);
     }
     let latest = null, final = null;
-    let asking = false;
+    let asking = false; // waiting on the player's choice (command menu or a forced switch)
     let shown = 0;
     const takeSnapshot = () => ({ v: SNAPSHOT_VERSION, spec: baseSpec, inputs: structuredClone(inputs),
       ai: enemyAI.saveState?.(battle) ?? null, turn: battle.turn, fp, check: stateCheck(battle),
@@ -268,14 +273,15 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
     onBattle?.({
 
       progress: () => final ?? { turn: battle.turn, ended: battle.ended, log: [...battle.log], result: extractResult(sim, battle), shown },
-
+      /** Snapshot from the latest command choice (null if none) */
       snapshot: () => latest,
 
       position: () => (asking ? { point: battlePoint(battle), snapshot: takeSnapshot() } : null),
     });
-    const battleOptions = options;
 
-    const gimmicks = { teraOrb: spec.teraOrb !== false };
+    const battleOptions = spec.dynamaxShown === true ? { ...options, dynamaxShown: true } : options;
+
+    const gimmicks = specGimmicks(spec, { champions: formatRules(sim, battle.format).champions, gen: battleRuleGen(battle) }); // the generation rule's table too (0.1.0 G2)
     const seen = new Set(warnings);
     const warn = kind => {
       if (seen.has(kind)) return;
@@ -284,7 +290,8 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
       if (development) console.warn(`[director] Unhandled protocol: ${kind}`);
     };
 
-    const moveInfo = (moveId, user, target) => moveMenuInfo(battle, moveId, user, target, { sim, abilityShown: uid => step.abilityShown(uid) });
+    const moveInfo = (moveId, user, target, as = false) => moveMenuInfo(battle, moveId, user, target,
+      { sim, abilityShown: uid => step.abilityShown(uid), z: as === true || as === 'z', max: as === 'max' });
     async function choosePlayer(request) {
 
       if (battle.activePerHalf > 1) {
@@ -302,38 +309,50 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
       if (!options?.length) throw new Error('No player move request');
       // A locked turn: no menu (showing it would stall - with no pp the view blocks that slot as "no PP")
       if (lockedTurn(request.active[0])) return 'move 1';
-      const moves = options.map(option => ({
-        id: option.id, name: names.move(option.id),
 
-        pp: option.pp, maxpp: option.maxpp, disabled: !!option.disabled,
+      const user = battle.sides[0].active[0], maxed = maxEntries(request, user);
+      const moves = options.map((option, i) => {
+        const blocked = maxed ? (maxed[i]?.disabled ? { ...option, disabledSource: maxDeniedSource(user) } : null)
+          : option.disabled || (option.pp ?? 1) <= 0 ? option : null;
+        return {
+          id: option.id, name: names.move(option.id),
 
-        ...(option.disabled || (option.pp ?? 1) <= 0 ? { blocked: moveDeniedText(battle, names, option, lang) } : {}),
+          pp: option.pp, maxpp: option.maxpp, disabled: maxed ? !!maxed[i]?.disabled : !!option.disabled,
 
-        ...moveInfo(option.id, battle.sides[0].active[0], battle.sides[1].active[0]),
-      }));
+          ...(blocked ? { blocked: moveDeniedText(battle, names, blocked, lang) } : {}),
+
+          ...moveInfo(option.id, user, battle.sides[1].active[0]),
+        };
+      });
       const party = partySlots(battle, names, lang, request, { trapped: !!request.active[0].trapped, options: battleOptions });
 
-      const choice = await view.chooseAction({ moves, canSwitch: true, party, ...gimmickOptions(request, gimmicks), ...(bag ? { bag: bag.menu(party) } : {}), run: run.menu() });
+      const z = zMoveOptions({ names, lang, moveInfo }, request, gimmicks, 0, user, () => battle.sides[1].active[0]);
+      prefetchCutIns(battle, view, request, gimmicks);
+
+      const dynamax = maxMoveOptions({ names, moveInfo }, request, gimmicks, 0, user, () => battle.sides[1].active[0]);
+      const choice = await view.chooseAction({ moves, canSwitch: true, party, ...gimmickOptions(request, gimmicks), ...(z ? { z } : {}), ...dynamax,
+        ...(bag ? { bag: bag.menu(party) } : {}), run: run.menu() }); // run
       if (choice?.kind === 'switch') return switchChoice(choice, party);
       if (choice?.kind === 'run') return run.choice();
       if (choice?.kind === 'item' && bag) return bag.choice(choice, party);
-      if (choice?.kind !== 'move' || !Number.isInteger(choice.index) || !moves[choice.index] || moves[choice.index].disabled) {
+
+      if (choice?.kind !== 'move' || !Number.isInteger(choice.index) || !moves[choice.index] || (!choice.dynamax && moves[choice.index].disabled)) {
         throw new Error('Invalid player choice');
       }
-      return `move ${choice.index + 1}${gimmickSuffix(choice, request, gimmicks)}`;
+      return `move ${choice.index + 1}${gimmickSuffix(choice, request, gimmicks)}`; // ' mega' / ' terastallize' / ' ultra' / ' zmove' / ' dynamax'
     }
     const reader = createProtocolReader();
 
     const mode = { silent: !!from };
     let current = from ? replayView : view;
     const stepView = new Proxy({}, { get: (_, key) => current[key] });
-    const step = createSteps({ battle, view: stepView, names, warn, bag, options, run, mode, wild, lang,
+    const step = createSteps({ battle, view: stepView, names, warn, bag, options, run, mode, wild, lang, // run
       onInput: entry => inputs.push(structuredClone(entry)) });
     let turns = 0;
     if (from) {
       for (const item of arrange(reader.read(battle.log, battle.storyLogMeta))) await step(item);
       await step.flush();
-      shown = reader.cursor;
+      shown = reader.cursor; // past logs are already over
       mode.silent = false; current = view;
 
       if (!battle.ended) await view.restore?.(step.restoreState());
@@ -361,7 +380,7 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
           if (error?.name === 'AbortError') throw error;
           result.evolutionError = String(error?.message ?? error);
           if (development) console.warn('[director] evolution failed; battle result kept', error);
-          try { await view.endEvolution?.(); await view.showEnd?.(); } catch {                                }
+          try { await view.endEvolution?.(); await view.showEnd?.(); } catch { /* already closed: leave it */ } // end text + down-arrow
         }
         final = { turn: battle.turn, ended: true, log: result.log, result, shown: result.log.length };
         return result;
@@ -386,7 +405,7 @@ export async function runBattle({ sim, spec, options = {}, view, names, lang = D
       }
       asking = !request?.wait;
       const playerChoice = request?.wait ? undefined : await choosePlayer(request ?? {}).finally(() => { asking = false; });
-
+      // Forfeit: ends at once (the foe is not asked)
       if (playerChoice && run.ends(playerChoice)) {
         if (!input(['p1', playerChoice])) throw new Error('Engine rejected forfeit');
         continue;

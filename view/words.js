@@ -21,7 +21,8 @@ const OWN = {
     'own.renameFailed': '닉네임을 바꾸지 못했습니다.\n다시 시도해 주십시오.',
     'own.evolveLockFailed': '진화 잠금을 바꾸지 못했습니다.\n다시 시도해 주십시오.',
     'own.partnerMon': '{{trainerName}}의 포켓몬',
-    'own.partner': '동료',
+    'own.partner': '동료', // party screen button (tag battle) -> the partner's Pokemon
+    'own.dynamaxLevel': '다이맥스 레벨', // summary stats page line
   },
   en: {
     'own.onlyFightParty': 'Only Fight and Pokémon\ncan be used now.',
@@ -41,10 +42,12 @@ const OWN = {
     'own.evolveLockFailed': 'Couldn’t change the evolution lock.\nPlease try again.',
     'own.partnerMon': '{{trainerName}}’s Pokémon',
     'own.partner': 'Partner',
+    'own.dynamaxLevel': 'Dynamax Level',
   },
 };
 export const VIEW_TEXT = Object.freeze({ ko: { ...ko, ...OWN.ko }, en: { ...en, ...OWN.en } });
 
+/** The view's words in lang: (key, values) -> text */
 export function viewWords(lang) {
   const table = VIEW_TEXT[checkLang(lang)];
   return (key, values = {}) => {

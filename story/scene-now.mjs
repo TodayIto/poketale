@@ -3,6 +3,7 @@ import { battlesIn } from './blocks.mjs';
 import { rulesAt } from './setting-changes.mjs';
 import { readBattleAt } from './chat.mjs';
 
+/** The default when the chat says nothing: plains in the day */
 export const SCENE_DEFAULT = Object.freeze({ place: 'plains', time: 'day', indoors: false });
 
 function latestBattle(chat) {

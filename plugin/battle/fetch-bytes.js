@@ -7,9 +7,9 @@ const POST_HOSTS = new Set([SHOWDOWN_HOST]);
 export const CLEAR_URL = `https://${SHOWDOWN_HOST}/sprites/gen5/pikachu.png`;
 
 const REQUEST_TIMEOUT_MS = 20000;
-
+/** ...for a sound (a battle song through the host is megabytes) */
 const SOUND_TIMEOUT_MS = 60000;
-
+/** Memory kept for verified files per host API (oldest use dropped first) */
 const KEEP_LIMIT = Object.freeze({ bytes: 32 * 1024 * 1024, files: 800 });
 const SEEN_LIMIT = 4096;
 
@@ -31,7 +31,7 @@ export function magicOk(kind, bytes) {
   const view = new Uint8Array(bytes);
   switch (kind) {
     case 'png': return [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((byte, i) => view[i] === byte)
-      || (ascii(view, 0, 'RIFF') && ascii(view, 8, 'WEBP'));
+      || (ascii(view, 0, 'RIFF') && ascii(view, 8, 'WEBP')); // PokeRogue has a WebP named .png (images/pokemon/581.png)
     case 'gif': return ascii(view, 0, 'GIF87a') || ascii(view, 0, 'GIF89a');
     case 'json': {
       let i = view[0] === 0xef && view[1] === 0xbb && view[2] === 0xbf ? 3 : 0;
@@ -58,8 +58,8 @@ function stateOf(risuai, keepLimit) {
       seen: new Map(),
       kept: new Map(),
       keptBytes: 0,
-      pending: new Map(),
-      signal: true,
+      pending: new Map(), // address -> the fetch in progress
+      signal: true,       // pass an AbortSignal (false once the host could not carry it)
     });
   }
   return states.get(risuai);
@@ -73,7 +73,7 @@ export function createFetchBytes(risuai, { timeoutMs = REQUEST_TIMEOUT_MS, sound
       try { return await risuai.nativeFetch(url, { ...options, signal }); }
       catch (error) {
         if (!cloneFailure(error)) throw error;
-        state.signal = false;
+        state.signal = false; // an older host that posts the options across windows: without the signal
       }
     }
     return risuai.nativeFetch(url, options);
@@ -91,7 +91,7 @@ export function createFetchBytes(risuai, { timeoutMs = REQUEST_TIMEOUT_MS, sound
       if (!accept(response.status)) throw httpError(response.status, url);
       return response.arrayBuffer();
     })();
-    work.catch(() => {});
+    work.catch(() => {}); // a late failure after the limit
     try { return await Promise.race([work, limit]); } finally { clearTimeout(timer); }
   }
   const nonEmpty = (bytes, url) => {
@@ -99,6 +99,7 @@ export function createFetchBytes(risuai, { timeoutMs = REQUEST_TIMEOUT_MS, sound
     return bytes;
   };
 
+  /** The invalidating POST. Fails -> throws (the file is then not fetched) */
   async function flush(url) {
     try { await request(CLEAR_URL, { method: 'POST', body: '' }, status => status >= 200 && status < 400); }
     catch (error) { throw new FetchCheckError(`비우는 POST 실패 — 받지 않음: ${url} (${error?.message ?? error})`); }
@@ -149,7 +150,7 @@ export function createFetchBytes(risuai, { timeoutMs = REQUEST_TIMEOUT_MS, sound
   return async url => {
     const hit = state.kept.get(url);
     if (hit) {
-      state.kept.delete(url); state.kept.set(url, hit);
+      state.kept.delete(url); state.kept.set(url, hit); // last use
       return hit.slice(0);
     }
     if (!state.pending.has(url)) {

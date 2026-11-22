@@ -21,7 +21,7 @@ export function imageKind(bytes) {
   const h = new Uint8Array(bytes);
   if (h.length >= 6 && String.fromCharCode(...h.subarray(0, 6)).match(/^GIF8[79]a$/)) return 'image/gif';
   if (h.length >= 8 && [137, 80, 78, 71, 13, 10, 26, 10].every((v, i) => h[i] === v)) return 'image/png';
-  if (h.length >= 12 && String.fromCharCode(...h.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...h.subarray(8, 12)) === 'WEBP') return 'image/webp';
+  if (h.length >= 12 && String.fromCharCode(...h.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...h.subarray(8, 12)) === 'WEBP') return 'image/webp'; // PokeRogue images/pokemon/581.png
   return null;
 }
 
@@ -79,20 +79,23 @@ function frameMetrics(grid) {
 function packFrames(grid, frameBounds, limit) {
   const cuts = frameBounds.map(b => ({ w: b?.right ?? 1, h: b?.bottom ?? 1 }));
   const tall = [...cuts].sort((a, b) => b.h - a.h);
+
   const shelve = (width, place) => {
-    let x = 0, y = 0, rowHeight = 0, used = 0;
+    let x = 0, y = 0, rowHeight = 0, used = 0, nextWidth = Infinity;
     for (const c of tall) {
-      if (x + c.w > width) { x = 0; y += rowHeight; rowHeight = 0; }
+      if (x + c.w > width) { nextWidth = Math.min(nextWidth, x + c.w); x = 0; y += rowHeight; rowHeight = 0; }
       if (place) { c.x = x; c.y = y; }
       x += c.w; used = Math.max(used, x); rowHeight = Math.max(rowHeight, c.h);
     }
-    return [used, y + rowHeight];
+    return [used, y + rowHeight, nextWidth];
   };
   let best;
-  for (let width = Math.max(...cuts.map(c => c.w)); width <= limit; width++) {
-    const [w, h] = shelve(width);
+  for (let width = Math.max(...cuts.map(c => c.w)); width <= limit;) {
+    const [w, h, nextWidth] = shelve(width);
     if (h <= limit && !(best?.area <= w * h)) best = { width, area: w * h };
     if (h === tall[0].h) break;
+
+    width = nextWidth;
   }
   if (!best) throw new Error('GIF atlas exceeds GPU texture size');
   const canvas = document.createElement('canvas');
@@ -127,14 +130,7 @@ const textureLimit = assets => {
   return Math.min(gl ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : 4096, 4096);
 };
 
-function copyCanvas(source) {
-  const canvas = document.createElement('canvas');
-  canvas.width = source.width; canvas.height = source.height;
-  canvas.getContext('2d').drawImage(source, 0, 0);
-  return canvas;
-}
-
-const copySheet = sheet => ({ ...sheet, canvas: copyCanvas(sheet.canvas), cuts: sheet.cuts.map(c => ({ ...c })),
+const copySheetMetadata = sheet => ({ ...sheet, cuts: sheet.cuts.map(c => ({ ...c })),
   bounds: { ...sheet.bounds }, durations: [...sheet.durations] });
 
 export async function showdownSprite(assets, mon, back, key, url, bytes, failures, cached, entry = null) {
@@ -145,7 +141,7 @@ export async function showdownSprite(assets, mon, back, key, url, bytes, failure
     const stored = entry?.sheet;
     if (stored && stored.url === url && stored.limit === textureLimit(assets)) {
       assets.life.check();
-      return installSheet(assets, mon, back, key, url, copySheet(stored), failures, cached);
+      return installSheet(assets, mon, back, key, url, copySheetMetadata(stored), failures, cached);
     }
   }
   let grid;
@@ -171,13 +167,14 @@ function sheetSprite(assets, mon, back, key, url, grid, failures, cached, entry 
   const { canvas, cuts } = packFrames(grid, metrics.map(f => f.bounds), limit);
   grid.canvas.width = 0;
   const sheet = { canvas, cuts, width, height, bounds, medianOpaquePixels, durations };
-  if (entry) entry.sheet = { ...copySheet(sheet), url, limit, size: canvas.width * canvas.height * 4 };
+  if (entry) entry.sheet = { ...copySheetMetadata(sheet), url, limit, size: canvas.width * canvas.height * 4 };
   return installSheet(assets, mon, back, key, url, sheet, failures, cached);
 }
 
 function installSheet(assets, mon, back, key, url, sheet, failures, cached) {
   const { canvas, cuts, width: w, height: h, bounds, medianOpaquePixels, durations } = sheet;
-  const texture = assets.scene.textures.addCanvas(key, canvas);
+
+  const texture = assets.scene.textures.addImage(key, canvas);
   cuts.forEach((c, i) => texture.add(i, 0, c.x, c.y, c.w, c.h).setTrim(w, h, 0, 0, c.w, c.h));
 
   assets.scene.anims.create({ key, frameRate: 1000, repeat: -1,

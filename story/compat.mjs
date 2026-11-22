@@ -29,9 +29,9 @@ export const compatEntries = gymMark => Object.freeze([
 export const COMPAT_ENTRIES = compatEntries(GYM_ENTRY_MARK);
 
 export const compatFold = foldNorm;
-
+/** One bracket line on one text line: [1] = what is inside the brackets */
 export const COMPAT_LINE_RE = /\[([^[\]\n]*)\]/g;
-
+/** Field separators inside a bracket line (ASCII and full-width bar) */
 export const COMPAT_FIELD_SEP = /[|｜]/;
 
 const heads = Object.entries(COMPAT_LINES).map(([line, head]) => [line, compatFold(head)]).sort((a, b) => b[1].length - a[1].length);
@@ -82,7 +82,7 @@ export const compatLang = chat => OUR_LANG[compatBotLang(chat)] ?? null;
 
 export const COMPAT_TRAINER_GENDER_VAR = 'yp_GenericTrainerGender';
 const COMPAT_TRAINER_GENDERS = new Map([['2', 'M'], ['3', 'F']]);
-
+/** chat -> 'M' | 'F' | null (no variable, 1, or an unknown value) */
 export const compatTrainerGender = chat => compatVar(chat, COMPAT_TRAINER_GENDER_VAR, COMPAT_TRAINER_GENDERS);
 
 const COMPAT_START_VARS = Object.freeze({ region: 'yp_StartRegion', adventure: 'yp_Adventure', starter: 'yp_Starter', mode: 'yp_StartMode' });
@@ -161,7 +161,7 @@ function parseHtml(html) {
     const [, close, name, attrs, text] = m;
     const here = open.at(-1);
     if (text !== undefined || m[0] === '<') { if (here.tag !== 'script' && here.tag !== 'style') here.children.push(decode(text ?? '<')); continue; }
-    if (!name) continue;
+    if (!name) continue; // a comment
     const tag = name.toLowerCase();
     if (close) {
       const at = open.findLastIndex(el => el.tag === tag);
@@ -188,7 +188,7 @@ function elementsWith(el, name) {
   walk(el);
   return found;
 }
-
+/** Plain text of an element (without the element skip), spaces collapsed */
 function textOf(el, skip = null) {
   const parts = [];
   const walk = node => { for (const child of node.children) if (typeof child === 'string') parts.push(child); else if (child !== skip) walk(child); };
@@ -244,6 +244,7 @@ export function addLine(content, line) {
   return `${removeAdded(text)}${block}`;
 }
 
+/** One entry's edit (COMPAT_ENTRIES): on = put in / off = taken out */
 const edit = (want, content, on) => (want.add ? (on ? addLine(content, want.add) : removeAdded(content)) : on ? wrap(content) : unwrap(content));
 
 function find(lore, want, taken) {
@@ -274,7 +275,7 @@ export function compatUpToDate(lore, entries = COMPAT_ENTRIES) {
 }
 
 const TIMES_OF_DAY = Object.freeze(['morning', 'day', 'dusk', 'night']);
-
+/** Time of day of an hour 0-23 */
 export const timeOfDayAt = hour => (hour >= 6 && hour <= 9 ? 'morning' : hour >= 10 && hour <= 16 ? 'day' : hour === 17 ? 'dusk' : 'night');
 
 export const dayOrNight = timeOfDay => (isNight(timeOfDay) ? 'night' : 'day');
@@ -300,7 +301,7 @@ function wordIn(table, text) {
 }
 
 const WEATHER_WORDS = wordTable(STATUS_WORDS.weather);
-
+// Buildings (Site): no weather reaches a battle there
 const INDOOR_WORDS = wordTable({ indoors: STATUS_WORDS.indoors });
 
 const REGION_WORDS = wordTable(STATUS_WORDS.regions);
@@ -342,11 +343,7 @@ const MONEY_RE = /^(?:\d+|\d{1,3}(?:,\d{3})+)$/;
 const STATUS_RE = /\[Status Window\s*\|([^\]\r\n]*)\]/g;
 
 export function readStatusWindow(inner) {
-  const fields = {};
-  for (const part of String(inner ?? '').split(COMPAT_FIELD_SEP)) {
-    const m = /^\s*([A-Za-z ]+?)\s*[:：]\s*(.*?)\s*$/.exec(part);
-    if (m && m[2]) fields[m[1].toLowerCase()] = m[2];
-  }
+  const fields = windowFields(inner);
   const indoors = !!fields.site && wordIn(INDOOR_WORDS, fields.site) !== null;
   const money = fields.money && MONEY_RE.test(fields.money) ? Number(fields.money.replaceAll(',', '')) : null;
   return {
@@ -363,8 +360,20 @@ export function readStatusWindow(inner) {
   };
 }
 
+function windowFields(inner) {
+  const fields = {};
+  for (const part of String(inner ?? '').split(COMPAT_FIELD_SEP)) {
+    const m = /^\s*([A-Za-z ]+?)\s*[:：]\s*(.*?)\s*$/.exec(part);
+    if (m && m[2]) fields[m[1].toLowerCase()] = m[2];
+  }
+  return fields;
+}
+
 const windowsIn = message => (message?.role === 'char' ? [...String(message.data ?? '').matchAll(STATUS_RE)].map(m => readStatusWindow(m[1])).reverse() : []);
 
+export const statusPlacesIn = message => (message?.role === 'char' ? [...String(message.data ?? '').matchAll(STATUS_RE)]
+  .map(m => { const fields = windowFields(m[1]); return { location: fields.location ?? null, site: fields.site ?? null }; }).reverse() : []);
+/** The last status window of one message (readStatusWindow) | null */
 export const statusIn = message => windowsIn(message)[0] ?? null;
 
 export function latestStatus(chat, upto = Infinity) {
@@ -403,6 +412,7 @@ export function earlierRegion(chat, index) {
   return null;
 }
 
+// Battle backgrounds that are inside: no weather
 const SHELTERED = new Set(['cave', 'ice_cave', 'fairy_cave', 'seabed', 'laboratory', 'factory', 'dojo', 'power_plant', 'temple', 'abyss', 'space']);
 
 export function battleScene(battle, status) {

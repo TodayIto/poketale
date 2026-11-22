@@ -1,4 +1,4 @@
-import { say } from '../../story/screen-text.mjs';
+import { say } from '../../story/screen-text.mjs'; // pad and back labels
 
 export const PHONE_SIZES = Object.freeze({ tap: Object.freeze([44, 60]), tapShare: 0.1, bandRoom: 4, sideRoom: 20, pad: 210, minScreen: 160, bandSpan: 6,
   cell: Object.freeze([40, 80]), lift: Object.freeze([16, 56]), liftShare: 0.05, edge: Object.freeze([14, 64]), edgeShare: 0.06, gap: 0.9, spareAbove: 0.5 });
@@ -117,7 +117,7 @@ export function bindPress(button, fire) {
   button.addEventListener('pointerdown', event => {
     if (event.button > 0) return;
     event.preventDefault();
-    try { button.setPointerCapture?.(event.pointerId); } catch {                        }
+    try { button.setPointerCapture?.(event.pointerId); } catch { /* already released */ }
     button.classList.add('held');
     fire();
   });

@@ -3,21 +3,33 @@ import { partyMatchupScores, sortScores } from './matchup.js';
 import { deriveSeed } from './rng.js';
 
 const PESSIMISM = 0.7;
-const SWITCHES = 2;
-const BEAM = 2;
-const REPLIES = 2;
+const SWITCHES = 2; // switch candidates (both sides)
+const BEAM = 2;     // own candidates kept for turn 2
+const REPLIES = 2;  // opposing replies examined in turn 2 per candidate
 
 export function moveChoices(pokemon, suffix = '') {
   if (!pokemon || pokemon.fainted) return [];
   return pokemon.moveSlots.map((slot, i) => (!slot.disabled && slot.pp > 0 ? `move ${i + 1}${suffix}` : null)).filter(Boolean);
 }
 
+export function zChoices(battle, pokemon) {
+  if (!pokemon || pokemon.fainted) return [];
+  return (battle.actions.canZMove(pokemon) ?? []).map((z, i) => (z ? `move ${i + 1} zmove` : null)).filter(Boolean);
+}
+
+export function dynamaxChoices(battle, pokemon) {
+  if (!pokemon || pokemon.fainted || !pokemon.m.dynamaxAce || pokemon.volatiles['dynamax']) return [];
+  const offer = pokemon.getDynamaxRequest();
+  return (offer?.maxMoves ?? []).map((m, i) => (m.disabled ? null : `move ${i + 1} dynamax`)).filter(Boolean);
+}
+
+/** Top switch candidates by matchup score (PokeRogue getMatchupScore) */
 export function switchChoices(battle, side, count = SWITCHES) {
   const scores = partyMatchupScores(battle, side, true);
   return sortScores(scores).slice(0, count).map(s => `switch ${s.index}`);
 }
 
-export function lookahead({ sim, json, seed, probe, sideId, mine, forcedSwitches, problems }) {
+export function lookahead({ sim, json, seed, probe, sideId, mine, forcedSwitches, problems, z = false, dynamax = false }) {
   const foe = probe.getSide(sideId).foe;
   const theirs = [...moveChoices(foe.active[0]), ...switchChoices(probe, foe)];
   if (!theirs.length) theirs.push('default');
@@ -46,7 +58,8 @@ export function lookahead({ sim, json, seed, probe, sideId, mine, forcedSwitches
         retained.add(copy);
         const side = copy.getSide(sideId);
         replies.push({ reply, value: value(copy, sideId),
-          next: copy.ended ? null : { copy, mine: moveChoices(side.active[0]), theirs: moveChoices(side.foe.active[0]) } });
+          next: copy.ended ? null : { copy, mine: [...moveChoices(side.active[0]), ...(z ? zChoices(copy, side.active[0]) : []),
+          ...(dynamax ? dynamaxChoices(copy, side.active[0]) : [])], theirs: moveChoices(side.foe.active[0]) } });
         if (copy.ended) destroy(copy);
 
         const keep = new Set(worstReplies(replies));
@@ -113,6 +126,7 @@ function play(sim, json, seed, sideId, mine, theirs, cap) {
   }
 }
 
+/** Value of the position as seen from sideId */
 function value(battle, sideId) {
   const side = battle.getSide(sideId);
   if (battle.ended) {

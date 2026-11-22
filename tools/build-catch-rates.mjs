@@ -8,11 +8,11 @@ const root = new URL('../', import.meta.url);
 const read = path => readFileSync(new URL(path, root), 'utf8');
 
 const SV_OVERRIDES = {
-	384: 3,
-	550: 190,
-	789: 3, 790: 3, 791: 3, 792: 3,
-	800: 3,
-	899: 45, 900: 15, 901: 20, 902: 45, 903: 20, 904: 45,
+	384: 3, // Rayquaza
+	550: 190, // Basculin
+	789: 3, 790: 3, 791: 3, 792: 3, // Cosmog/Cosmoem/Solgaleo/Lunala
+	800: 3, // Necrozma
+	899: 45, 900: 15, 901: 20, 902: 45, 903: 20, 904: 45, // Wyrdeer/Kleavor/Ursaluna/Basculegion/Sneasler/Overqwil
 };
 
 const FILE = 'pokemon_species.csv';

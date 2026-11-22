@@ -1,5 +1,6 @@
 import { SIZE } from '../../story/panel-html.mjs';
 
+/** The host's text boxes: the chat input among them */
 export const HOST_INPUT = 'textarea';
 
 export const INPUT_PAD = 10;

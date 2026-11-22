@@ -1,5 +1,6 @@
 import { say } from './screen-text.mjs';
 
+/** Kinds of why (screen text fail.why.<kind>) */
 export const WHY = Object.freeze(Object.fromEntries([
   'noChat', 'chatGone', 'chatMoved', 'oocMoved', 'blockGone', 'blockBroken', 'unreadable', 'denied', 'noMainScreen', 'writeBlocked', 'replying',
   'storyOn', 'busy', 'inBattle', 'ironMode', 'emptyParty', 'allFainted', 'unresumable', 'notOpened', 'noRecord', 'parkFailed', 'notPicture',
@@ -22,7 +23,7 @@ export function ruleText(note, lang) {
 }
 
 export const refusal = (notes, { join = '\n' } = {}) => Object.assign(new Error(notes.map(note => ruleText(note, 'ko')).join(join)), { notes, join });
-
+/** A refusal by one rule */
 export const ruleError = (rule, values = {}) => refusal([ruleNote(rule, values)]);
 
 export const refused = error => Object.assign(new Error(error.message), error?.notes ? { why: 'rule', notes: error.notes, join: error.join }

@@ -1,5 +1,5 @@
 // from pokerogue src/ui/text.ts (getTextColor isLegacyTheme branch) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/ui-theme.ts (addWindow borders, legacy images) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/scene-base.ts (loadImage: images/ui -> images/ui/legacy) @ 7d7da4a8 (AGPL-3.0-only)
 
@@ -13,19 +13,20 @@ export function checkTheme(theme) {
 }
 
 export const themeOf = scene => scene?.options?.theme ?? DEFAULT_THEME;
-
+/** Whether this theme uses the legacy window images (images/ui/legacy/) */
 export const usesLegacyArt = theme => theme !== 'default';
 
+// plugin colours (same values as the cards, panels and settings window)
 const WHITE = '#f8fbfd', SKY = '#eaf4fb', SKY2 = '#dbe8f2', LINE = '#a9c2d4', LINE2 = '#789db7';
 const BORDER = '#315a77', NAVY = '#23435f', SHADE = '#c8d8e4', ACCENT = '#d8434d', CURSOR = '#14304a';
 
 const COLORS = {
-  WINDOW: { plugin: [NAVY, SHADE], default: ['#f8f8f8', '#6b5a73'], legacy: ['#484848', '#d0d0c8'] },
+  WINDOW: { plugin: [NAVY, SHADE], default: ['#f8f8f8', '#6b5a73'], legacy: ['#484848', '#d0d0c8'] }, // WINDOW, WINDOW_BATTLE_COMMAND, MOVE_INFO_CONTENT, MOVE_PP_FULL, STATS_VALUE
   WINDOW_ALT: { plugin: [NAVY, SHADE] },
   MESSAGE: { plugin: [NAVY, SHADE], default: ['#f8f8f8', '#6b5a73'], legacy: ['#f8f8f8', '#6b5a73'] },
 
   MESSAGE_NOTE: { plugin: [LINE2, SKY2], default: ['#a0a0a0', '#636363'], legacy: ['#3a3a3a', '#8fb8b4'] },
-
+  // ability bar: the top part (name) is a navy strip, so white text
   ABILITY_BAR: { plugin: ['#f8f8f8', NAVY], default: ['#f8f8f8', '#6b5a73'], legacy: ['#f8f8f8', '#6b5a73'] },
   BATTLE_INFO: { plugin: [NAVY, SHADE], default: ['#f8f8f8', '#6b5a73'], legacy: ['#404040', '#ded6b5'] },
   MOVE_PP_HALF_FULL: { plugin: ['#a68e17', '#ebd773'], default: ['#ccbe00', '#6e672c'], legacy: ['#a68e17', '#ebd773'] },
@@ -38,6 +39,7 @@ export function themeColors(scene, style) {
   return COLORS[style]?.[themeOf(scene)] ?? null;
 }
 
+/** Applies theme colours to a text object. Shadow offset (sx, sy) is kept */
 export function applyTheme(text, scene, style) {
   const colors = themeColors(scene, style);
   if (!colors) return text;
@@ -49,11 +51,11 @@ export function applyTheme(text, scene, style) {
 export const windowBorder = scene => (usesLegacyArt(themeOf(scene)) ? 6 : 8);
 
 const PLUGIN_ART = [
-
+  // menu, confirm and move windows
   [['windows/window_1.png', 'windows/window_1_thin.png', 'windows/window_1_xthin.png'], {
     '#f8f8f8': WHITE, '#d8d0d8': SKY2, '#a8b8a8': LINE, '#8888c8': LINE2, '#706880': BORDER, '#484868': NAVY, '#283030': NAVY,
   }],
-
+  // message window
   [['bg.png'], {
     '#68a0a0': WHITE, '#808888': SKY2, '#d04838': BORDER, '#a86860': LINE2, '#984860': BORDER, '#684058': NAVY, '#484050': NAVY,
   }],
@@ -68,11 +70,11 @@ const PLUGIN_ART = [
     'text_images/ko/battle_ui/overlay_exp_label_ko.png'], {
     '#424242': NAVY, '#404040': NAVY, '#ded6b5': SHADE, '#d6cebd': SHADE, '#526b5a': BORDER, '#c6bd73': LINE,
   }],
-
+  // ability bar and level-up exp strip: navy strip on top, white below
   [['ability_bar_left.png', 'ability_bar_right.png', 'party_exp_bar.png'], {
     '#524a5a': BORDER, '#7b7383': LINE2, '#393141': NAVY, '#290841': NAVY, '#f8f8d8': WHITE, '#d8d0b0': SKY2,
   }],
-
+  // cursor and down-arrow
   [['cursor.png', 'cursor_tera.png'], { '#484848': CURSOR, '#d0d0c8': SHADE }],
   [['prompt.png'], { '#e00808': ACCENT, '#606060': SHADE }],
 

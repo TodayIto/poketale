@@ -1,5 +1,6 @@
 import { pixelSvg } from '../view/amie-art.js';
 
+// Navy outline - the panel's own line colour
 const K = '#23435f';
 
 const AMIE_ROWS = [

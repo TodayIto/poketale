@@ -1,5 +1,5 @@
 // from pokerogue src/phases/evolution-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/evolution-scene-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/end-evolution-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/animations.ts (doSpiralUpward; doArcDownward; doCycle; doCircleInward; doSpray) @ 7d7da4a8 (AGPL-3.0-only)
@@ -8,7 +8,7 @@ import { placeSprite } from './sprites/placement.js';
 import { tween, delay } from './lifetime.js';
 import { fadeSwap } from './ui/learn-move.js';
 import { keyAction } from './ui/keys.js';
-import { frameMs } from './ui/message-codes.js';
+import { frameMs } from './ui/message-codes.js'; // utils getFrameMs (60fps)
 
 export const EVOLUTION_IMAGES = { default_bg: 'images/arenas/default_bg.png', evo_sparkle: 'images/effects/evo_sparkle.png' };
 export const EVOLUTION_SOUNDS = ['se/charge.wav', 'se/beam.wav', 'se/sparkle.wav', 'se/shine.wav'];
@@ -49,7 +49,7 @@ export class EvolutionScene {
     this.from = from;
     await fadeSwap(s, () => {
       const c = this.container = s.add.container(0, -180);
-      s.ui.addAt(c, 0);
+      s.ui.addAt(c, 0); // bottom of the UI so the message window (bg, text) stays on top
       this.base = s.add.image(0, 0, 'default_bg').setOrigin(0);
       this.bgOverlay = s.add.rectangle(0, 0, 320, 180, 0x262626).setOrigin(0).setAlpha(0);
       c.add([this.base, this.bgOverlay]);
@@ -76,6 +76,7 @@ export class EvolutionScene {
     } catch { return null; }
   }
 
+  /** B would stop the evolution now (view/ui/tap-back.js screenButtons) */
   get cancelable() { return !!this.canCancel && !this.cancelled; }
   async evolve(to, { canCancel = true, flip = false } = {}) {
     const s = this.scene;
@@ -93,19 +94,19 @@ export class EvolutionScene {
       if (!this.canCancel || this.cancelled || e.repeat || keyAction(e) !== 'back') return;
       e.preventDefault(); e.stopImmediatePropagation(); this.cancelled = true;
     };
-    const unlisten = s.life.listen(parent, 'keydown', key, true);
+    const unlisten = s.life.listen(parent, 'keydown', key, true); // tied to the lifetime so it doesn't linger if closed mid-evolution
     try {
-      await delay(s, 1000);
+      await delay(s, 1000); // showText(..., callbackDelay 1000)
       if (flip) await this.turn(Math.PI);
       s.audio.cry(this.from, false, 'happy').catch(() => {});
-
+      // playEvolutionAnimation
       await delay(s, 1000);
       this.playBgm(BGM);
       await tween(s, { targets: this.bgOverlay, alpha: 1, delay: 500, duration: 1500, ease: 'Sine.easeOut' });
       s.time.delayedCall(1000, () => {
         this.videoWanted = true;
         if (!this.video || this.videoFailed || !this.container) return;
-        try { this.video.setCurrentTime(0); this.video.play(); } catch {                                 }
+        try { this.video.setCurrentTime(0); this.video.play(); } catch { /* proceed without the video */ }
       });
       s.audio.play('se/charge.wav').catch(() => {});
       this.doSpiralUpward();
@@ -122,7 +123,7 @@ export class EvolutionScene {
       await this.doCycle(1, 15);
       this.canCancel = false;
       if (this.cancelled) {
-
+        // handleFailedEvolution
         this.pokemonSprite.setVisible(true);
         this.pokemonTintSprite.setScale(1);
         this.stopBgm();

@@ -22,14 +22,14 @@ export function sectionOf(vars) {
 
 export const varsIn = chat => ({ ...Object.fromEntries(Object.entries(VARS).map(([k, name]) => [k, chat?.scriptstate?.[name]])),
   lore: trainerEntries(chat).map(({ key, content }) => ({ key, content })) });
-
+/** Whether two of varsIn are the same */
 export const sameVars = (a, b) => !!a && !!b && Object.keys(VARS).every(k => a[k] === b[k])
   && a.lore.length === b.lore.length && a.lore.every((e, i) => e.key === b.lore[i].key && e.content === b.lore[i].content);
 
 const texts = messages => (Array.isArray(messages) ? messages : []).filter(m => typeof m?.content === 'string');
 
 export const mayHold = messages => !!HEAD && texts(messages).some(m => m.content.includes(HEAD));
-
+/** Whether the prompt holds entry 2 filled in with these values */
 export const holds = (messages, vars) => { const section = sectionOf(vars); return !!section && texts(messages).some(m => m.content.includes(section)); };
 
 const cutForms = text => [`\n\n${text}`, `${text}\n\n`, `\n${text}`, `${text}\n`, text];

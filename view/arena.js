@@ -1,5 +1,5 @@
 // from pokerogue src/field/arena-base.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/field/arena.ts (getBiomeKey, getBiomeHasProps) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/battle-scene.ts (launchBattle arenaBg, loadBiomeAssets, base positions in reset) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/enums/biome-id.ts @ 7d7da4a8 (AGPL-3.0-only)
@@ -7,7 +7,7 @@
 export const BIOMES = ['town', 'plains', 'grass', 'tall_grass', 'metropolis', 'forest', 'sea', 'swamp', 'beach', 'lake', 'seabed',
   'mountain', 'badlands', 'cave', 'desert', 'ice_cave', 'meadow', 'power_plant', 'volcano', 'graveyard', 'dojo', 'factory', 'ruins',
   'wasteland', 'abyss', 'space', 'construction_site', 'jungle', 'fairy_cave', 'temple', 'slum', 'snowy_forest', 'island', 'laboratory', 'end'];
-
+/** getBiomeHasProps: biomes with prop images (_b_1-3) */
 const HAS_PROPS = new Set(['plains', 'metropolis', 'beach', 'lake', 'seabed', 'mountain', 'badlands', 'cave', 'desert', 'ice_cave', 'meadow',
   'power_plant', 'volcano', 'graveyard', 'factory', 'ruins', 'wasteland', 'abyss', 'construction_site', 'jungle', 'fairy_cave', 'temple',
   'snowy_forest', 'island', 'laboratory', 'end']);
@@ -27,6 +27,7 @@ export function biomeImages(biome) {
   return images;
 }
 
+/** For atlases, loops at 12fps like ArenaBase.setBiome (from 0001.png) */
 function playIfAnimated(scene, sprite, key) {
   const frames = scene.textures.get(key).getFrameNames().filter(n => /^\d{4}\.png$/.test(n)).sort();
   if (frames.length < 2) return;
@@ -34,11 +35,13 @@ function playIfAnimated(scene, sprite, key) {
   sprite.play(key);
 }
 
-export function createArena(scene, biome, props) {
+export const BASE_HOME = Object.freeze({ player: [0, 0], enemy: [20, 0] });
 
+export function createArena(scene, biome, props) {
+  // launchBattle: arenaBg is outside field, scale 6 (depth -1 below)
   const bg = scene.add.sprite(0, 0, `${biome}_bg`).setOrigin(0).setScale(6).setDepth(-1);
   const base = (player) => {
-    const container = scene.add.container(player ? 0 : 20, 0);
+    const container = scene.add.container(...BASE_HOME[player ? 'player' : 'enemy']);
     const key = `${biome}_${player ? 'a' : 'b'}`;
     const sprite = scene.add.sprite(0, 0, key).setOrigin(0);
     playIfAnimated(scene, sprite, key);

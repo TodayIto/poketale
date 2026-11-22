@@ -25,6 +25,7 @@ export function entry(kind, value) {
   return record ? Object.freeze(record) : null;
 }
 
+/** Whether a reading reads the official spellings */
 export const readsOfficial = reading => reading?.officialKo !== false;
 
 export const koSpellings = (record, reading) => (readsOfficial(reading) ? [record?.ko, ...(record?.old ?? [])] : record?.old ?? [record?.ko]).filter(Boolean);
@@ -43,6 +44,7 @@ function lookup(kind, value, lang = 'ko') {
 export function getWarnings() { return [...warnings.values()]; }
 export function clearWarnings() { warnings.clear(); }
 
+/** Name lookups of one language ('ko' | 'en') */
 export function namesIn(lang) {
   if (lang !== 'ko' && lang !== 'en') throw new TypeError(`Unknown name language: ${lang}`);
   return Object.freeze({

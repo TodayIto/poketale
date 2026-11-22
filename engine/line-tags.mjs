@@ -32,7 +32,7 @@ export function attachLineTags(battle) {
 	function tagOf(parts) {
 		const refs = [];
 		collect(parts, refs);
-		const kind = Array.isArray(parts[1]) ? parts[1][0] : parts[0];
+		const kind = Array.isArray(parts[1]) ? parts[1][0] : parts[0]; // addSplit(side, secret, shared)
 		const cause = (kind === 'switch' || kind === 'drag') && switchCause ? { cause: switchCause } : {};
 		const effects = [...outer, holderOf(battle.effect, battle.effectState)].filter(Boolean);
 		return refs.length || effects.length ? { refs, ...cause, ...(effects.length ? { effects } : {}) } : null;

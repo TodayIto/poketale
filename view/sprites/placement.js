@@ -7,15 +7,17 @@ export const INFO_RECTS = Object.freeze({
   player: { left: 180, top: 87, right: 310, bottom: 129 },
 });
 
-export function infoRect(double, position) {
+export function infoRect(double, position, compact = null) {
+  if (compact) return { left: compact.x, top: compact.y, right: compact.x + compact.width, bottom: compact.y + compact.height };
   const r = INFO_RECTS[teamOf(position)], { dx, dy } = infoLayout(double, position);
   return { left: r.left + dx, top: r.top + dy, right: r.right + dx, bottom: r.bottom + dy };
 }
 
 export function onInfoBox(scene, x, y) {
   return fieldPositions(scene.double).some(position => {
-    if (!scene.info?.[position]?.container?.visible) return false;
-    const r = infoRect(scene.double, position);
+    const info = scene.info?.[position];
+    if (!info?.container?.visible) return false;
+    const r = infoRect(scene.double, position, info.compactBox);
     return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
   });
 }
@@ -63,7 +65,7 @@ export function placeSprite(asset, side) {
   }
   const w = right - left, h = bottom - top;
   if (asset.source === 'pokerogue') {
-
+    // Original PokeRogue origin is the canvas bottom-center, including padding.
     return { x: slot.x, y: slot.bottom, scale: 1, originX: 0.5, originY: 1, mode: 'pokerogue', anchor: [0, -height / 2],
       box: { left: slot.x - width / 2 + left, top: slot.bottom - height + top,
         right: slot.x - width / 2 + right, bottom: slot.bottom - height + bottom } };
@@ -85,7 +87,7 @@ export function placeSprite(asset, side) {
   }
 
   const legacyBottom = side === 'player' ? 130 : slot.bottom;
-
+  // Retain a little of the artist's bottom padding (e.g. hovering sprites).
   const bottomPadding = Math.min(12, height - bottom);
   const preferred = side === 'player' || (w <= 32 && h <= 24) ? 1.5 : 1;
   const capacity = Math.min(2 * Math.min(slot.x - slot.region.left, slot.region.right - slot.x) / w,

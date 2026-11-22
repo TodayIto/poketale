@@ -12,7 +12,7 @@ for (const [id, key] of Object.entries(CRIES)) {
   const dex = NAME_DEX.get(id.split('-')[0]) ?? Number.parseInt(key, 10);
   if (KNOWN_DEX.has(dex)) CRY_DEX.set(key, dex);
 }
-
+/** The National Dex number of a cry key ('25', '4079'), or null */
 export const cryDex = key => CRY_DEX.get(key) ?? null;
 
 const toId = text => text.normalize('NFKD').replace(/♀/g, 'f').replace(/♂/g, 'm').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -174,7 +174,7 @@ export async function readZip(blob) {
     const flags = u16(dir, p + 8), method = u16(dir, p + 10);
     let packed = u32(dir, p + 20), local = u32(dir, p + 42);
     const nameLength = u16(dir, p + 28), extraLength = u16(dir, p + 30), commentLength = u16(dir, p + 32);
-
+    // Windows PowerShell 5.1 Compress-Archive writes backslash separators
     const name = text.decode(dir.subarray(p + 46, p + 46 + nameLength)).replaceAll('\\', '/');
     for (let e = p + 46 + nameLength, stop = e + extraLength; e + 4 <= stop; e += 4 + u16(dir, e + 2)) {
       if (u16(dir, e) !== 1) continue;

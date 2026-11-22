@@ -7,7 +7,7 @@ import { SHARED_COLORS, level32, hexOf } from '../view/sprites/recolor.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const TRAINERS = resolve(root, 'vendor/pokerogue/assets/images/trainer');
-
+/** The look pictures, in table order: [PokeRogue key, Showdown face] */
 export const LOOK_SPRITES = Object.freeze(Object.values(LOOK_PICTURES).flat().map(([sprite, face]) => [sprite, face]));
 
 export async function loadSprite(key) {
@@ -42,7 +42,7 @@ const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 const luma = hex => { const [r, g, b] = rgb(hex); return 0.299 * r + 0.587 * g + 0.114 * b; };
 function hue(hex) {
   const [r, g, b] = rgb(hex).map(v => v / 255), max = Math.max(r, g, b), min = Math.min(r, g, b);
-  if (max - min < 0.12) return null;
+  if (max - min < 0.12) return null; // grey
   const d = max - min;
   const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
   return (h * 60 + 360) % 360;
@@ -90,7 +90,7 @@ export function draftEntry(sprite, face) {
   return { face, parts, ...(split.length ? { split: [{ colors: split, bands: [[0.35, 'hair'], [1, 'bottom']] }] } : {}) };
 }
 
-const PARTS = ['hair', 'hat', 'top', 'bottom', 'accent'];
+const PARTS = ['hair', 'hat', 'top', 'bottom', 'accent']; // hat: takes the hair colour (view/sprites/recolor.js)
 
 export async function checkTable(table) {
   const problems = [];

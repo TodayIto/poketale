@@ -85,6 +85,7 @@ export const mix = (a, b, t) => { const B = rgb(b); return hex(rgb(a).map((v, i)
 
 export const tintWith = land => { const T = rgb(land), F = rgb(NIGHT_FLOOR); return c => hex(rgb(c).map((v, i) => Math.max(F[i], v * T[i] / 255))); };
 
+/** A seeded random (same place, same picture) */
 export function seeded(text) {
   let a = 2166136261;
   for (const ch of text) a = Math.imul(a ^ ch.charCodeAt(0), 16777619);
@@ -98,7 +99,7 @@ export function seeded(text) {
 
 export const P = (fill, d, more = '') => (d ? `<path fill="${fill}"${more} d="${d}"/>` : '');
 export const run = (x, y, w, h = DOT) => (w > 0 ? `M${x} ${y}h${w}v${h}h${-w}z` : '');
-
+/** A row of every other dot from x0 (a dither line) */
 const dotRow = (x0, y, x1) => `M${x0} ${y}${'h2v2h-2zm4 0'.repeat(Math.max(0, Math.ceil((x1 - x0) / 4)))}`;
 
 export function rowsPath(rows) {
@@ -110,7 +111,7 @@ export function rowsPath(rows) {
   }
   return out.map(([y, a, b, h]) => `M${a} ${y}h${b - a}v${h}h${a - b}z`).join('');
 }
-
+/** Stepped union of ovals [cx, cy, rx, ry], cut flat at yMax */
 export function blob(ovals, yMax = Infinity) {
   const rows = [];
   let top = Infinity, bottom = -Infinity;
@@ -151,7 +152,7 @@ export const anim = (c, style, inner, base = '') => (c.animate ? `<g style="${ba
 
 export const drift = (c, inner, span, secs) => (c.animate
   ? `<g style="animation:pkbX ${(span / DOT) * secs}s steps(${span / DOT}) infinite;--dx:${-span}px">${inner}<g transform="translate(${span} 0)">${inner}</g></g>` : inner);
-
+/** Two pictures taking turns every t s (only the first without animate) */
 export const twoFrames = (c, a, b, t) => (c.animate ? anim(c, `pkbA ${t}s steps(1) infinite`, a) + anim(c, `pkbB ${t}s steps(1) infinite`, b, 'opacity:0;') : a);
 export const twinkle = (c, inner, t, at = 0) => anim(c, `pkbT ${t}s steps(1) ${-at}s infinite`, inner);
 
@@ -167,7 +168,7 @@ export function context({ place = 'plains', time = 'day', w = 180, h = 390, px, 
   px = px || F.ref;
   const T = TIMES[time] || TIMES.day, { art, drawn } = placeArt(place), A = PLACE_ART[art];
   const feet = q(h - F.feet / px), hz = q(feet - 0.3 * h);
-  const tint = ROOFED.has(A.kind) ? col => col : tintWith(T.land);
+  const tint = ROOFED.has(A.kind) ? col => col : tintWith(T.land); // under a roof the time does not tint
   return { w, h, tall, px, feet, hz, top: q(F.topRow / px), T, A, art, drawn, time: TIMES[time] ? time : 'day', tint, animate, rnd: seeded(`${art}/${w}x${h}`), place };
 }
 
@@ -254,7 +255,7 @@ export function ground(c, y0, A = c.A) {
 
 export function sideMarks(c, y0, color, n, mark = (x, y) => run(x, y, 2, 4)) {
   let d = '';
-  if (c.photo) return d;
+  if (c.photo) return d; // the puzzle picture has no little ground marks
   for (let i = 0; i < n; i++) {
     const x = q(i % 2 ? c.w * (0.8 + c.rnd() * 0.18) : c.w * (0.02 + c.rnd() * 0.18));
     let y = q(y0 + 6 + c.rnd() * (c.h - y0 - 10));
@@ -277,12 +278,12 @@ export function corners(c, dark, light, extra = () => '') {
   const room = c.h - c.feet, hgt = q(Math.min(room * 0.5, c.tall ? 64 : 28));
   const spots = c.tall ? [[c.w * 0.07, 9], [c.w * 0.93, 9]] : [[c.w * 0.14, 8], [c.w * 0.8, 7]], B = q(c.h) + 2;
   return spots.map(([x, n], i) => {
-
+    // a low mound under the blades so the tuft reads as one clump
     const pic = f => P(dark, oval(q(x), B, n * 2 + 2, q(hgt * 0.22)) + blades(c, q(x), B, hgt, n, f, i ? 1 : -1)) + P(light, blades(c, q(x) + 2, B, hgt * 0.7, n - 3, f, i ? 1 : -1)) + extra(q(x), hgt, f, B);
     return twoFrames(c, pic(0), pic(1), i ? 3.4 : 2.6);
   }).join('');
 }
-
+/** L6: up to six little things floating down across the screen */
 export function floaters(c, colors, n, size = DOT) {
   let s = '';
   for (let i = 0; i < n; i++) {
@@ -308,7 +309,7 @@ export const KINDS = {
     const far = x => hz - 4 - edge(c, x) * lift - 2 * Math.sin(x / 13 + 1);
     const near = x => hz + 2 - edge(c, x) * lift * 0.45 - 2 * Math.sin(x / 9);
     let L2 = P(tint(A.hill), ridge(c, far, hz + 8)) + P(tint(mix(A.dark, A.hill, 0.4)), ridge(c, near, hz + 8));
-
+    // a few far trees on the side hills
     let L3 = '';
     for (const fx of [0.05, 0.15, 0.88, 0.96]) {
       const x = q(w * fx), y = q(far(x)) + 2;
@@ -345,7 +346,7 @@ export const KINDS = {
       const tx = side ? w - q(w * 0.03) - tw : q(w * 0.03), mirror = x => (side ? w - x : x);
       trunk += run(tx, -4, tw, gy + 4) + run(tx - 2, gy - 4, tw + 4, 4) + run(tx - 4, gy - 2, tw + 8, 2);
       bark += run(side ? tx : tx + tw - 4, -4, 4, gy + 4) + [0.3, 0.5, 0.72].map(f => run(tx + 4 + (side ? 2 : 0), q(gy * f), 2, 4)).join('');
-
+      // on a tall field the leaves hang lower (the top row covers the first 27 u)
       const reach = Math.min(0.34 * s, 0.24 * w + 4), drop = c.tall ? c.h * 0.11 : 0.16 * s;
       const o = [[mirror(-4), 4, reach, drop], [mirror(0.12 * s), -6, reach * 0.8, drop * 0.75], [mirror(-4), drop * 1.7, 0.2 * s, drop * 0.6]];
       back += blob(o);
@@ -362,7 +363,7 @@ export const KINDS = {
     const { A, w, hz, tint, T, rnd } = c, night = c.time === 'night';
     const shore = q(hz + 0.42 * (c.feet - hz)), mid = q(hz + 0.45 * (shore - hz));
     let L2 = bands(c, [tint(A.far), tint(A.near)], hz, shore + 4, [(mid - hz) / (shore + 4 - hz)]) + P(mix(tint(A.far), '#ffffff', 0.3), run(-4, hz, w + 8, 2));
-
+    // a small far islet at one side of the horizon
     L2 += P(tint(mix(A.grass, A.far, 0.45)), blob([[w * 0.86, hz, 0.07 * w, 5], [w * 0.9, hz, 0.05 * w, 7]], hz + 1));
 
     const shine = f => { let d = ''; for (let i = 0; i < 10; i++) { const x = q(i % 2 ? w * (0.74 + rnd() * 0.22) : w * (0.02 + rnd() * 0.22)), y = q(hz + 4 + ((i * 7 + f * 3) % 10) / 10 * (shore - hz - 8)); d += run(x, y, 4 + (i % 2) * 2); } return d; };
@@ -374,7 +375,7 @@ export const KINDS = {
       path = P(col, path);
     }
     L2 += path + twoFrames(c, P(glint, shine(0)), P(glint, shine(1)), 1);
-
+    // foam where the water meets the shore
     let foam = '';
     for (let x = -4; x < w + 4; x += 6) foam += run(x, shore - 2 - (Math.sin(x / 9) > 0.3 ? 2 : 0), 6 - (x % 12 ? 2 : 0));
     let L4 = ground(c, shore + 2) + P(mix(tint(A.near), '#ffffff', 0.75), foam);
@@ -385,7 +386,7 @@ export const KINDS = {
     if (A.rock) { const rx = q(w * 0.1); L3 = P(tint(A.rock), blob([[rx, shore + 2, 9, 6], [rx + 8, shore + 4, 6, 4]], shore + 6)) + P(tint(mix(A.rock, '#ffffff', 0.35)), oval(rx - 2, shore - 2, 4, 2)); }
     if (A.reeds) for (const x of [w * 0.06, w * 0.94]) L3 += P(tint(A.grass), blades(c, q(x), shore + 6, 20, 5, 0)) + P(tint('#8a6a40'), run(q(x) - 2, shore - 14, 2, 6) + run(q(x) + 4, shore - 10, 2, 6));
     const L5 = corners(c, tint(A.grass), tint(mix(A.grass, A.light, 0.35)));
-
+    // spray dots blinking over the foam (night lake: fireflies)
     let L6 = '';
     if (night && A.reeds) L6 = fireflies(c, 4);
     else for (let i = 0; i < 4; i++) L6 += twinkle(c, P('#ffffff', run(q(i % 2 ? w * (0.78 + rnd() * 0.18) : w * (0.04 + rnd() * 0.18)), shore - 6 - q(rnd() * 6), 2)), 1.1 + i * 0.3, i * 0.6);
@@ -398,11 +399,11 @@ export const KINDS = {
     const far = x => hz - 6 - edge(c, x) * lift - 3 * Math.sin(x / 15 + 2);
     const near = x => hz + 2 - edge(c, x) * lift * 0.4 - 2 * Math.sin(x / 10);
     let L2 = P(mix(tint(A.dark), haze, 0.35), ridge(c, far, hz + 8));
-
+    // small far pines on the far hills
     let pines = '';
     for (const f of [0.04, 0.1, 0.9, 0.97]) { const x = q(w * f), y = q(far(x)) + 2; for (let k = 0; k < 8; k += 2) pines += run(x - q(k / 2), y - 10 + k, 2 + 2 * q(k / 2)); }
     L2 += P(mix(tint(A.tree), haze, 0.5), pines) + P(tint(A.mid), ridge(c, near, hz + 8));
-
+    // two big snow-capped pines at each side
     const gy = q(hz + 0.28 * (c.feet - hz)), big = q(Math.min(0.24 * c.h, 0.42 * w));
     let L3 = '';
     for (const [f, sc] of [[0.06, 1], [0.17, 0.7], [0.94, 1], [0.83, 0.72]]) L3 += pine(c, q(w * f), q(gy + (1 - sc) * 10), q(big * sc));
@@ -425,7 +426,7 @@ export const KINDS = {
     const front = x => flat(hz + 2 - e(x) * lift * 0.5 - (0.3 + e(x)) * 8 * peak(x, 21, 0.6));
     let L2 = P(tint(mix(far[0], haze, 0.3)), ridge(c, back, hz + 8)) + P(tint(mix(A.dark, far[1], 0.5)), ridge(c, front, hz + 8));
     if (A.cone) {
-
+      // the volcano's warm rim and a soft smoke rising off it (two frames)
       const puff = k => blob([[cx, coneTop - 6 - k, 6, 4], [cx + 5, coneTop - 13 - k, 7, 5], [cx + 1, coneTop - 22 - k, 8, 5]]);
       L2 += P(A.acc[0], run(cx - 6, q(coneTop), 12, 2)) + twoFrames(c, P(tint(mix(A.smoke, haze, 0.3)), puff(0)), P(tint(mix(A.smoke, haze, 0.3)), puff(2)), 2.6);
     }
@@ -491,7 +492,7 @@ export const KINDS = {
     let posts = '';
     for (const [a, b] of [[q(w * 0.22), q(w * 0.36)], [q(w * 0.64), q(w * 0.78)]]) { posts += run(a, gy - 6, b - a, 2); for (let x = a; x < b; x += 6) posts += run(x, gy - 8, 2, 8); }
     L3 += P(tint(mix(A.wall[1], '#a87850', 0.35)), posts);
-
+    // flower beds before the houses, paving marks at the sides
     const beds = [[0, q(w * 0.2)], [q(w * 0.8), w]];
     let L4 = ground(c, gy) + P(tint(GREEN), beds.map(([a, b]) => run(a, gy + 2, b - a, 4)).join('')) + P('#ffb8cc', beds.map(([a, b]) => run(a + 4, gy + 2, 2) + run(b - 10, gy + 2, 2)).join(''));
     L4 += sideMarks(c, gy + 10, tint(mix(A.mid, A.dark, 0.5)), c.tall ? 10 : 14, (x, y) => run(x, y, 6, 2));
@@ -537,9 +538,9 @@ export const KINDS = {
     let lines = '';
     for (let y = fy + 4, gap = 4; y < c.h + 4; y += gap, gap += 2) if (Math.abs(y - c.feet) > 14) lines += run(-4, y, w + 8);
     const L4 = ground(c, fy) + P(A.dark, lines, ' fill-opacity=".35"') + P(mix(A.acc[0], A.light, 0.2), oval(w / 2, c.feet + 4, 0.34 * w, 16)) + P(mix(A.acc[0], A.light, 0.55), oval(w / 2, c.feet + 4, 0.34 * w - 4, 14));
-
+    // potted plants in the two bottom corners
     const L5 = corners(c, '#4f8e3e', '#78b856', (x, hgt, f, B) => P(A.pot || '#c8805a', run(x - 8, B - 14, 16, 16)) + P(mix(A.pot || '#c8805a', '#ffffff', 0.25), run(x - 10, B - 16, 20, 4)));
-
+    // the window's light on the floor and dust in it (none at night)
     let L6 = '';
     if (!night) {
       const rows = [], end = Math.min(c.feet - 16, fy + 0.6 * (c.feet - fy));
@@ -571,7 +572,7 @@ export const KINDS = {
       for (let k = 0; k < len; k += DOT) drips += run(x - (k < len / 2 ? 2 : 0), y0 + k, k < len / 2 ? 6 : 2);
     }
     let L2 = P(w2, rowsPath(outer)) + P(w1, rowsPath(rim)) + P(A.icicles ? '#ffffff' : w1, drips);
-
+    // a few lighter lumps on the side walls
     for (let i = 0; i < (c.photo ? 0 : 6); i++) L2 += P(mix(w1, w2, 0.5), oval(q(i % 2 ? w * (0.9 + rnd() * 0.08) : w * (0.02 + rnd() * 0.08)), q(c.top + rnd() * (hz - c.top)), 4, 3));
 
     if (sea) {
@@ -580,17 +581,17 @@ export const KINDS = {
       L2 += P(A.ray, d, ' fill-opacity=".3"');
     } else {
       const glow = c.time === 'morning' ? mix(A.glow, c.T.sky[3], 0.5) : c.time === 'dusk' ? mix(A.glow, c.T.sun, 0.45) : A.glow, ex = q(w * (c.photo ? 0.7 : 0.76));
-
+      // (the puzzle picture puts the mouth up in the right third)
       const ey = c.photo ? q(hz * 0.4) : hz + 4, cut = c.photo ? Infinity : hz + 4;
       L2 += P(mix(glow, back, 0.55), blob([[ex, ey, 13, 12]], cut)) + P(glow, blob([[ex, ey, 8, 9]], cut));
     }
-
+    // crystals at the side walls (the seabed: weed)
     const crystal = (x, base, hgt) => { let l = '', r = ''; for (let k = 0; k < hgt; k += DOT) { const s = Math.min(4, k + 2); l += run(x - s, base - hgt + k, s); r += run(x, base - hgt + k, s); } return P(A.stars ? A.glow : A.acc[0], l) + P(mix(A.stars ? A.glow : A.acc[0], w2, 0.45), r); };
     const spots = [[q(w * 0.08), hz + 4, 14], [q(w * 0.08) + 6, hz + 6, 8], [q(w * 0.92), hz + 2, 12], [q(w * 0.92) - 6, hz + 6, 6]];
     const L3 = sea ? [0.06, 0.18, 0.86].map(f => P(A.weed, blades(c, q(w * f), hz + 10, 26, 4, 0)) + P(mix(A.weed, A.light, 0.3), blades(c, q(w * f) + 2, hz + 10, 16, 2, 0))).join('')
       : spots.map(([x, y, hgt]) => crystal(x, y, hgt)).join('');
     const L4 = ground(c, hz + 4) + sideMarks(c, hz + 8, A.dark, c.tall ? 10 : 14, (x, y) => run(x, y, 6, 4) + run(x + 2, y - 2, 2)) + sideMarks(c, hz + 8, A.light, 6, (x, y) => run(x, y, 4, 2));
-
+    // the corners: rock lumps with a crystal (the seabed: swaying weed)
     const B = q(c.h) + 2, hgt = q(Math.min((c.h - c.feet) * 0.45, c.tall ? 40 : 22));
     const L5 = sea ? corners(c, mix(A.weed, w2, 0.3), A.weed) : (c.tall ? [0.07, 0.93] : [0.14, 0.8]).map((f, i) => {
       const x = q(w * f), s = i ? -1 : 1;

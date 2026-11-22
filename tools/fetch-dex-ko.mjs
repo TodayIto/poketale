@@ -31,6 +31,7 @@ export function parseList(html) {
 	return out;
 }
 
+/** The "#|#count#|#" tail of a load_more answer (entries on that page) */
 export const listCount = text => {
 	const m = /#\|#\s*(\d+)\s*#\|#\s*$/.exec(text);
 	return m ? Number(m[1]) : null;
@@ -63,7 +64,7 @@ export function parseDetail(html) {
 	const height = field(main, '키'), weight = field(main, '몸무게');
 	return {
 		num: Number(head[1]), name: cleanText(head[2]), label: cleanText(head[3]), versions,
-		category: field(main, '분류') === '-' ? null : field(main, '분류'),
+		category: field(main, '분류') === '-' ? null : field(main, '분류'), // Gigantamax pages show "-", "28.0m~", "???.?kg"
 		height: number(height, 'm'), heightRaw: height,
 		weight: number(weight, 'kg'), weightRaw: weight,
 		types: [...typeBlock.matchAll(/<span class="img-type">[\s\S]*?<p>([\s\S]*?)<\/p>/g)].map(m => cleanText(m[1])),
@@ -81,6 +82,7 @@ export function pickText(versions) {
 	return null;
 }
 
+// --- network + cache ---
 const isBlock = (status, body) => [403, 429, 503].includes(status) || /Just a moment|cf-chl|challenge-platform|Attention Required/i.test(body);
 let lastRequest = 0;
 async function politeFetch(url, init = {}) {

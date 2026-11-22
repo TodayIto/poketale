@@ -14,7 +14,7 @@ export const isSurvive = ({ kind, args: a, kwArgs: kw }) =>
 
 const isDamage = ({ kind, args: a, kwArgs: kw }) => (kind === '-damage' && !kw.from)
   || ((kind === '-activate' || kind === '-end') && /substitute/i.test(a[1] ?? ''));
-
+/** First-arg Pokemon of a line (uid) */
 const actorOf = e => (isIdent(e.args[0]) ? uidOf(e, e.args[0]) : null);
 
 export function openingOrder(events) {
@@ -50,12 +50,26 @@ function linkItems(events) {
   }
 }
 
+function linkZPower(events) {
+  events.forEach((e, i) => {
+    if (e.kind !== '-zpower') return;
+    const uid = actorOf(e);
+    const move = events.slice(i + 1).find(m => m.kind === 'move' && actorOf(m) === uid);
+    if (move) e.zMove = move;
+  });
+}
+
+function markFaintEnd(events) {
+  const end = events.findIndex(e => e.kind === 'win' || e.kind === 'tie');
+  if (end >= 0) events.slice(0, end).forEach(e => { if (e.kind === 'faint') e.endsBattle = true; });
+}
+
 const LEVEL_KINDS = new Set(['-story-levelup', '-story-learnmove', '-story-movequeue']);
 function markSharedExp(events) {
   let said = false;
   events.forEach((e, i) => {
     const kind = events[i - 1]?.kind;
-    if (!(kind === '-story-exp' || LEVEL_KINDS.has(kind))) said = false;
+    if (!(kind === '-story-exp' || LEVEL_KINDS.has(kind))) said = false; // new group
     if (e.kind === '-story-exp' && e.kwArgs.shared && !said) { e.sharedFirst = true; said = true; }
   });
 }
@@ -99,7 +113,7 @@ function orderSegment(segment) {
   const inHit = new Set(hits.flatMap(h => h.lines));
   const lastHit = new Map(hits.map(h => [h.target, h]));
   const ohko = hits.length ? segment.filter(e => e.kind === '-ohko') : [];
-  const said = new Set();
+  const said = new Set(); // targets whose effectiveness text was emitted
   const seen = new Map();
   const out = [];
   if (head) out.push({ cue: 'doll-out', move: head });
@@ -107,11 +121,11 @@ function orderSegment(segment) {
   const back = () => { if (dollBack) { out.push({ cue: 'doll-back', move: head }); dollBack = false; } };
   segment.forEach((e, i) => {
     if (inHit.has(i) || ohko.includes(e)) return;
-    if (e.kind === 'faint') back();
+    if (e.kind === 'faint') back(); // R4: the doll returns before the faint
     const hit = hits.find(h => h.damage === i);
     if (!hit) {
       out.push(e);
-      if (isSurvive(e)) out.push({ cue: 'survive', event: e });
+      if (isSurvive(e)) out.push({ cue: 'survive', event: e }); // endure line with no damage line (normally none)
       return;
     }
     const lines = hit.lines.map(j => segment[j]);
@@ -134,9 +148,12 @@ function orderSegment(segment) {
   return out;
 }
 
+/** One turn chunk's events -> display order (no event is ever dropped) */
 export function arrange(events) {
   linkItems(events);
+  linkZPower(events);
   markSharedExp(events);
+  markFaintEnd(events);
   const ordered = orderLevelUps(openingOrder(events));
   const out = [];
   let segment = [];

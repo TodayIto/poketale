@@ -92,14 +92,14 @@ export function mountTrainingFrame(stage, { f, words, stats, sizes, size, resetI
   return {
     root,
     get pickerOpen() { return !picker.hidden; },
-
+    /** The energy ring: share (0 - 1) of full energy */
     energy(share) { drawRing($('.ring.energy'), share); },
 
     bagsAt() {
       const box = $('.fab.bags .o').getBoundingClientRect(), at = root.getBoundingClientRect();
       return { x: box.left + box.width / 2 - at.left, y: box.top + box.height / 2 - at.top };
     },
-
+    /** B: closes the picker -> whether it was open */
     back() {
       if (picker.hidden) return false;
       open(false);

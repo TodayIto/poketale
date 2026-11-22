@@ -1,5 +1,5 @@
 // from pokerogue src/field/pokemon.ts, src/field/trainer.ts, src/data/arena-tag.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 
 import table from './pokerogue-moves.json' with { type: 'json' };
 import { trainerOf } from '../engine/seats.mjs';
@@ -8,6 +8,7 @@ const LEGENDARY = new Set(table.legendary);
 
 export const hpRatio = pokemon => Math.round(pokemon.hp / pokemon.maxhp * 100) / 100;
 
+/** Phaser.Math.Linear */
 const linear = (from, to, t) => from + (to - from) * t;
 
 export function typeEffectiveness(battle, type, target) {
@@ -15,6 +16,7 @@ export function typeEffectiveness(battle, type, target) {
   return 2 ** battle.dex.getEffectiveness(type, target);
 }
 
+/** Pokemon.getMatchupScore(opponent) (pokemon.ts 2930-3019) */
 export function getMatchupScore(battle, user, opponent) {
   const enemyTypes = opponent.getTypes();
   const outspeed = (user.isActive ? user.getStat('spe') : user.storedStats.spe) >= opponent.getStat('spe');

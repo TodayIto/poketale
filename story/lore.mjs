@@ -7,6 +7,7 @@ import { customText, customInfo, ownerName } from './custom-items.mjs';
 import { TOOL_EFFECTS } from './tools.mjs';
 import { ITEM_EFFECTS_READY } from './item-effects.mjs';
 import { battleStatusLines, actRules } from './act-prompts.mjs';
+import { GENS } from '../engine/rules.mjs';
 
 const FOE_LOOK_FORMAT = 'foe partner gender: male|female\nfoe partner look: preschooler|boy|girl|young man|young woman|middle-aged man|middle-aged woman|old man|old woman';
 const LOOK_FORMAT = 'look: preschooler|boy|girl|young man|young woman|middle-aged man|middle-aged woman|old man|old woman';
@@ -114,6 +115,8 @@ const ITEM_FORMAT_LINE = ITEM_EFFECTS_READY ? `${ITEM_LINE}\nitem: Emoji Item +{
 const ITEM_TAG_LINE = "- effect: A story-only item may have one effect: food (a Pokémon can eat it), cheer (a keepsake of one of {{user}}'s Pokémon), taunt or distract (something that provokes or distracts one opponent). For cheer, taunt, and distract, write for and the name of that Pokémon or trainer after the effect. hold lines and an add line's item take the same field. Write no effect for anything else.";
 const ITEM_TAG_LINES = ITEM_EFFECTS_READY ? `\n${ITEM_TAG_LINE}` : '';
 
+export const MUSHROOM_LINE = "- Near Pokémon Dens in Galar's Wild Area, {{user}} sometimes finds Max Mushrooms; add them with an item line.";
+
 export const CHANGE_ENTRY = `@@depth 0
 
 ## Pokémon Changes
@@ -157,6 +160,7 @@ teach: #N Move | #N Move forget Move
 - heal: Restores HP fully or by a percentage, cures status only, or revives a fainted Pokémon (e.g., a Pokémon Center visit or a full night's sleep anywhere → heal: all).
 - teach: Adds a move; with forget, it replaces that move. Without forget, {{user}} chooses later which move to forget.
 - item, hold: Start every item name with one emoji that fits the item (e.g., 🧪 Potion, 🗺️ Old Map). An item that exists only in the story keeps the name you give it, written in the story's language.${ITEM_TAG_LINES}
+${MUSHROOM_LINE}
 - Use official English names for species, moves, and official items. Write nicknames and story-only items in the story's language.
 - Changes listed in <pkb-log> are already applied, including any that {{user}}'s message also describes.
 
@@ -169,6 +173,10 @@ add: Pidgey Lv7
 item: 🗺️ Old Map +1
 </pkb-change>
 \`\`\``;
+
+if (CHANGE_ENTRY.split(`\n${MUSHROOM_LINE}\n`).length !== 2) throw new Error('CHANGE_ENTRY: no single Max Mushrooms line');
+
+export const CHANGE_ENTRY_NO_DYNAMAX = CHANGE_ENTRY.replace(`\n${MUSHROOM_LINE}\n`, '\n');
 
 const section = (text, name) => {
   const start = text.indexOf(`### ${name}\n`);
@@ -191,27 +199,44 @@ if (BATTLE_ENTRY.split(PLACE_FORMAT).length !== 2 || (BATTLE_ENTRY.match(new Reg
 export const BATTLE_ENTRY_OTHER = BATTLE_ENTRY.replace(PLACE_FORMAT, `\nplace: place\n${BATTLE_REGION_FORMAT}\n`).replace(PLACE_LINE, `$1\n${BATTLE_REGION_LINE}`)
   .replace(FIELDS_END, `\n${LEVEL_LINE}${FIELDS_END}`);
 
+export const genLine = gen => `- Battles in this story follow Generation ${gen} rules, so Battle Blocks use only the Pokémon, moves, items and battle gimmicks that generation has.`;
+
+const withGenLine = (entry, gen) => (gen ? entry.replace(FIELDS_END, `\n${genLine(gen)}${FIELDS_END}`) : entry);
+
 const PREFIX = '포켓몬 배틀 · ';
 const TRAINER_PREFIX = `${PREFIX}지난 배틀 · `;
 const comment = (name, content) => `${PREFIX}${name} (판 ${hashKey(content).slice(0, 6)})`;
 
 const LORE_INSERT_ORDER = 935;
-
+/** The entries with their insert orders, in the listed order */
 const withOrder = entries => entries.map((e, i) => ({ ...e, insertorder: LORE_INSERT_ORDER - i }));
 
-const entriesOf = battle => [
+const entriesOf = (battle, change = CHANGE_ENTRY) => [
   { name: '배틀 블록', content: battle, battle: true },
   { name: '상점', content: SHOP_ENTRY },
-  { name: '포켓몬 변경', content: CHANGE_ENTRY },
+  { name: '포켓몬 변경', content: change },
 ].map(e => ({ ...e, comment: comment(e.name, e.content) }));
+
+export const MAINLINE_LORE = Object.freeze({ gen: null, dynamax: true });
+
+export const loreRuleOf = (value, gen) => ({ gen: Number.isInteger(gen) ? gen : null, dynamax: value === 'mainline' || gen === 8 });
 
 export const LORE_ENTRIES = entriesOf(BATTLE_ENTRY);
 
 export const LORE_ENTRIES_OTHER = entriesOf(BATTLE_ENTRY_OTHER);
+const ruleEntries = new Map();
 
-const entriesFor = (chat, other) => ((other ?? kindIn(chat) ?? false) ? LORE_ENTRIES_OTHER : LORE_ENTRIES);
+export function loreEntries(other, rule = MAINLINE_LORE) {
+  const gen = rule?.gen ?? null, dynamax = rule?.dynamax !== false;
+  if (gen === null && dynamax) return other ? LORE_ENTRIES_OTHER : LORE_ENTRIES;
+  const key = `${!!other}:${gen}:${dynamax}`;
+  if (!ruleEntries.has(key)) ruleEntries.set(key, entriesOf(withGenLine(other ? BATTLE_ENTRY_OTHER : BATTLE_ENTRY, gen), dynamax ? CHANGE_ENTRY : CHANGE_ENTRY_NO_DYNAMAX));
+  return ruleEntries.get(key);
+}
 
-const fixedFor = (chat, other, battles) => withOrder(entriesFor(chat, other)).filter(e => battles || !e.battle);
+const entriesFor = (chat, other, rule) => loreEntries(other ?? kindIn(chat) ?? false, rule);
+
+const fixedFor = (chat, other, battles, rule) => withOrder(entriesFor(chat, other, rule)).filter(e => battles || !e.battle);
 
 const isOurs = entry => typeof entry?.comment === 'string' && entry.comment.startsWith(PREFIX);
 const isTrainer = entry => isOurs(entry) && entry.comment.startsWith(TRAINER_PREFIX);
@@ -221,10 +246,10 @@ export const trainerEntries = chat => (chat?.localLore ?? []).filter(isTrainer);
 
 const newUuid = () => globalThis.crypto.randomUUID();
 
-export function setLore(chat, on, { newId = newUuid, other = null, battles = true } = {}) {
-  if (loreInLine(chat, on, other, battles)) return false;
+export function setLore(chat, on, { newId = newUuid, other = null, battles = true, rule = MAINLINE_LORE } = {}) {
+  if (loreInLine(chat, on, other, battles, rule)) return false;
   const before = chat.localLore ?? [];
-  chat.localLore = on ? [...before.filter(entry => !isFixed(entry)), ...fixedFor(chat, other, battles).map(e => ({ key: '', secondkey: '', insertorder: e.insertorder, comment: e.comment, mode: 'normal',
+  chat.localLore = on ? [...before.filter(entry => !isFixed(entry)), ...fixedFor(chat, other, battles, rule).map(e => ({ key: '', secondkey: '', insertorder: e.insertorder, comment: e.comment, mode: 'normal',
     alwaysActive: true, selective: false, useRegex: false, id: newId(), content: e.content }))] : before.filter(entry => !isOurs(entry));
   // Compatibility-mode marker: entries wrapped in the bot card (story/compat.mjs) are dropped in this chat
   chat.scriptstate ??= {};
@@ -236,21 +261,24 @@ const COMPAT_KEY = `$${COMPAT_VAR}`;
 const compatOn = chat => chat?.scriptstate?.[COMPAT_KEY] === '1';
 export const hasLore = chat => (chat?.localLore ?? []).some(isOurs);
 
-export const loreInLine = (chat, on, other = null, battles = true) => (on ? loreUpToDate(chat, other, battles)
+export const loreInLine = (chat, on, other = null, battles = true, rule = MAINLINE_LORE) => (on ? loreUpToDate(chat, other, battles, rule)
   : !hasLore(chat) && !(COMPAT_KEY in (chat?.scriptstate ?? {})) && !Object.values(VARS).some(name => name in (chat?.scriptstate ?? {})));
 
-export function loreUpToDate(chat, other = null, battles = true) {
-  return compatOn(chat) && entriesAre(chat, fixedFor(chat, other, battles));
+export function loreUpToDate(chat, other = null, battles = true, rule = MAINLINE_LORE) {
+  return compatOn(chat) && entriesAre(chat, fixedFor(chat, other, battles, rule));
 }
 function entriesAre(chat, entries) {
   const ours = (chat?.localLore ?? []).filter(isFixed);
   return ours.length === entries.length && entries.every((e, i) => ours[i]?.comment === e.comment && ours[i]?.content === e.content && ours[i]?.insertorder === e.insertorder);
 }
 
+const LORE_RULES = [null, ...GENS].flatMap(gen => [true, false].map(dynamax => ({ gen, dynamax })));
 function kindIn(chat) {
-  if (entriesAre(chat, withOrder(LORE_ENTRIES_OTHER))) return true;
-  return entriesAre(chat, withOrder(LORE_ENTRIES)) ? false : null;
+  for (const other of [true, false]) if (LORE_RULES.some(rule => entriesAre(chat, withOrder(loreEntries(other, rule))))) return other;
+  return null;
 }
+
+// -- Rematch lorebook -----------------------------------------
 
 export function pastBattleLine(trainer, { lang = 'ko', en = null } = {}) {
   const namer = createNamer({ lang, en });
@@ -279,6 +307,8 @@ export function writeTrainerLore(chat, entries, { newId = newUuid } = {}) {
   return true;
 }
 
+// -- Chat variables (line shapes verbatim) ---------------------
+
 export const VARS = { party: '$pkb_party', storage: '$pkb_storage', bag: '$pkb_bag' };
 
 export function breedingLabels(state) {
@@ -306,11 +336,11 @@ export function varTexts(state, { sim, battle = null, lang = 'ko', en = null, ef
 
       if (battle.stage > 1) party.push(BACK_TO_BACK.defeatedLine(spec, battle.stage));
 
-      if (battle.commands && battle.now) party.push(...battleStatusLines(battle.now, namer, spec), actRules(battle.now, { tools: battle.tools !== false }));
+      if (battle.commands && battle.now) party.push(...battleStatusLines(battle.now, namer, spec), actRules(battle.now, { tools: battle.tools !== false, gimmicks: battle.gimmicks }));
     }
   }
   (state?.party ?? []).forEach((mon, i) => {
-
+    // an egg takes its slot (#n) and says nothing of what hatches from it
     if (isEgg(mon)) { party.push(`[${ownLabel(i + 1)} | Egg]`); return; }
     const hp = sim ? hpPercentOf(sim, mon, stateFormat(state)) : mon.hp === 0 ? 0 : 100;
     const status = hp === 0 ? 'Fainted' : STATUS_EN[mon.status || ''] ?? 'Normal';

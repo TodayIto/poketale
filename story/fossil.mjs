@@ -27,8 +27,9 @@ export const COMBO_LEVEL = 10;
 
 export const COMBO_PERFECT_IVS = 3;
 
+/** Whether an item id is a fossil (one of FOSSILS or a Sword/Shield half) */
 export const isFossil = id => Object.hasOwn(FOSSILS, id) || FOSSIL_TOPS.includes(id) || FOSSIL_BOTTOMS.includes(id);
-
+/** Whether a fossil needs a second one (a Sword/Shield half) */
 export const isHalf = id => FOSSIL_TOPS.includes(id) || FOSSIL_BOTTOMS.includes(id);
 
 export const halvesFor = id => (FOSSIL_TOPS.includes(id) ? FOSSIL_BOTTOMS : FOSSIL_BOTTOMS.includes(id) ? FOSSIL_TOPS : []);
@@ -44,6 +45,8 @@ export function revivalOf(items) {
 export const bagFossils = bag => Object.keys(bag ?? {}).filter(id => bag[id] > 0 && isFossil(id));
 
 export const labFossils = bag => bagFossils(bag).filter(id => !isHalf(id) || halvesFor(id).some(other => bag[other] > 0));
+
+// -- Where --------------------------------------------------
 
 export const LABS = Object.freeze([
   { id: 'cinnabar', regions: ['kanto'], ko: '홍련섬', en: 'Cinnabar Island', names: ['홍련섬', '홍련마을', 'Cinnabar Island'] },
@@ -81,7 +84,7 @@ export function labAt(status) {
 export const labHere = status => labAt(status).open;
 
 export const labName = (id, lang) => { const lab = LAB_BY_ID.get(id); return lab ? (lang === 'ko' ? lab.ko : lab.en) : ''; };
-
+/** Whether id is a lab of LABS */
 export const isLabId = id => LAB_BY_ID.has(id);
 
 export const labOf = state => (Array.isArray(state?.lab) ? state.lab : []);

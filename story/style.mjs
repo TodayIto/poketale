@@ -32,6 +32,7 @@ export function storyCss({ scope = '.chattext' } = {}) {
 
 export const SHEET_FONT = 'PkbPixel';
 
+/** @font-face for one font (base64 woff2 as a data: URL, normal weight) */
 export const fontFaceCss = (name, base64) => `@font-face{font-family:"${name}";src:url(data:font/woff2;base64,${base64}) format("woff2");font-weight:400;}`;
 
 export async function sheetCss() {

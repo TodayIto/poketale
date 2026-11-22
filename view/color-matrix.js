@@ -1,8 +1,8 @@
-// from pokerogue src/pipelines/field-sprite.ts (onBind uniforms, flush per object) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// from pokerogue src/pipelines/field-sprite.ts (onBind uniforms; flushed per object there, per matrix change here) @ 7d7da4a8 (AGPL-3.0-only)
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 
 export const COLOR_MATRIX_PIPELINE = 'SpriteColorMatrix';
-
+/** Phaser ColorMatrix.brightness(0): color to black, alpha kept */
 export const BLACK = Object.freeze([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0]);
 
 const FRAG = `
@@ -44,13 +44,19 @@ export function hueMatrix(deg) {
 }
 
 let ColorMatrixPipeline;
+const sameMatrix = (a, b) => a === b || (!!b && a.length === b.length && a.every((v, i) => Object.is(v, b[i])));
 
 function pipelineClass(Phaser) {
   return ColorMatrixPipeline ??= class extends Phaser.Renderer.WebGL.Pipelines.SinglePipeline {
     constructor(game) { super({ game, fragShader: FRAG }); }
 
-    onBind(gameObject) { super.onBind(); this.set1fv('uColorMatrix', gameObject.pipelineData.colorMatrix); }
-    onBatch(gameObject) { if (gameObject) this.flush(); }
+    onBind(gameObject) {
+      super.onBind();
+      const matrix = gameObject.pipelineData.colorMatrix, shader = this.currentShader;
+      if (shader !== this.matrixShader || !sameMatrix(matrix, this.batchMatrix)) this.flush();
+      this.set1fv('uColorMatrix', matrix);
+      this.batchMatrix = matrix; this.matrixShader = shader;
+    }
   };
 }
 

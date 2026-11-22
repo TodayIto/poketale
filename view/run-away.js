@@ -1,10 +1,10 @@
 // from pokerogue src/phases/attempt-run-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/phases/command-phase.ts (handleRunCommand, queueShowText) @ 7d7da4a8 (AGPL-3.0-only)
 
 import { teamOf, fieldPositions } from './positions.js';
 import { tween } from './lifetime.js';
-import { addTextObject } from './ui/text.js';
+import { addTextObject } from './ui/text.js'; // gray note
 import { themeColors } from './ui/theme.js';
 
 const NOTE_LINE = 18;
@@ -24,11 +24,11 @@ export async function runAway(scene) {
     tween(scene, { targets, alpha: 0, duration: 250, ease: 'Sine.easeIn' }),
     ...sides.map(side => scene.info[side]?.hide()),
   ]);
-  enemies.forEach(enemy => enemy.container.setVisible(false));
+  enemies.forEach(enemy => enemy.container.setVisible(false)); // onComplete: enemyPokemon.destroy()
 }
 
 export function chooseRun(menu) {
-  if (menu.run.confirm) return confirmForfeit(menu);
+  if (menu.run.confirm) return confirmForfeit(menu); // trainer battle
   if (!menu.run.blocked) return menu.finish({ kind: 'run' });
   const messages = menu.scene.messages;
   menu.mode = 'message'; menu.notice = '';

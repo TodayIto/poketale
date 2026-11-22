@@ -28,6 +28,7 @@ export function findOocs(text) {
   });
 }
 
+/** Strips only our OOC tags from a text (the text that goes to the AI) */
 export const unwrapOocs = text => String(text ?? '').replace(STORY_RE, (_, __, inner) => inner);
 
 export const dropOocs = text => String(text ?? '').replace(STORY_RE, '');
@@ -73,7 +74,7 @@ export function surveyBattles(chat, table = readTable(chat)) {
   const openings = openingsOf(messages, { open, openedAt, lastResult, attempt: readSave(chat)?.attempt ?? null, spot });
   const held = new Set();
   const quiet = quietAt(chat);
-  const spans = new Map();
+  const spans = new Map(); // key -> change blocks since its opening
   const begin = (info, at, attempt) => {
     if (attempt) info.attempt = { at };
     info.phase = 'open';
@@ -100,7 +101,7 @@ export function surveyBattles(chat, table = readTable(chat)) {
     ].sort((a, b) => a.start - b.start);
     let seq = 0;
     for (const event of events) {
-      const at = index * 1e6 + seq++;
+      const at = index * 1e6 + seq++; // for ordering
       if (event.type === 'battle') {
         const info = { key: event.key, index, chatId: message.chatId ?? null, result: null, ended: null, discarded: discarded.has(event.key),
           attempt: null, phase: 'ready', committed: 'ready', at, quiet: quiet(index) };
@@ -198,6 +199,7 @@ export function withMark(text, key, kind = null) {
   return kind ? out + markText(kind, key) : out;
 }
 
+/** Removes all marks of those kinds from the text, whatever their key */
 function dropKinds(text, kinds) {
   let out = String(text ?? '');
   for (const mark of findMarks(out).reverse()) if (kinds.includes(mark.kind)) out = out.slice(0, mark.start) + out.slice(mark.end);
@@ -219,6 +221,7 @@ export function setFollow(chat, key = null) {
   return changed;
 }
 
+/** Whether the chat has any follow mark (here, moved) */
 export const hasFollowMarks = chat => (chat?.message ?? []).some(m => findMarks(m?.data ?? '').some(mark => mark.kind === MARK.here || mark.kind === MARK.moved));
 
 export function findBlockMessage(chat, key) {
@@ -226,6 +229,7 @@ export function findBlockMessage(chat, key) {
   return (chat?.message ?? []).findIndex((m, i) => battlesIn(m, i, readAt(i)).some(b => b.key === key));
 }
 
+/** Sets or clears a mark. false if the message is not found */
 export function setMark(chat, key, kind) {
   const index = findBlockMessage(chat, key);
   if (index < 0) return false;
@@ -239,7 +243,7 @@ const BLOCK_MARKS = [MARK.open, MARK.moved, MARK.discarded];
 function sameBlockMessage(chat, table) {
   const messages = chat?.message ?? [];
   const save = readSave(chat);
-  const times = new Map();
+  const times = new Map(); // key -> Set of the times its records keep
   for (const rec of [...Object.values(table?.meta ?? {}), readLast(chat), save?.start, save?.record, save?.attempt]) {
     if (typeof rec?.blockKey !== 'string' || typeof rec.blockTime !== 'number') continue;
     if (!times.has(rec.blockKey)) times.set(rec.blockKey, new Set());
@@ -286,7 +290,7 @@ function placeIndex(messages, place) {
 
 export function relinkedKeys(chat, { table = readTable(chat), renamed = renamedKeys(chat, table) } = {}) {
   const save = readSave(chat), last = readLast(chat);
-  if (!save?.attempt?.block && !last?.block && !Object.values(table.meta ?? {}).some(m => m?.block)) return new Map();
+  if (!save?.attempt?.block && !last?.block && !Object.values(table.meta ?? {}).some(m => m?.block)) return new Map(); // only records that keep the block's text
   const messages = chat?.message ?? [];
   const blocks = [], texts = new Map(), marks = [];
   const readAt = rulesAt(chat);
@@ -297,11 +301,11 @@ export function relinkedKeys(chat, { table = readTable(chat), renamed = renamedK
     for (const m of findMarks(text)) marks.push({ ...m, index });
   });
   const present = new Set(blocks.map(b => b.key));
-
+  // keys something is recorded under, and the keys renamed records go to
   const taken = new Set([...Object.values(table.meta ?? {}).map(m => m?.blockKey), last?.blockKey, save?.start?.blockKey, save?.record?.blockKey, save?.attempt?.blockKey,
     ...marks.map(m => m.key)]);
   for (const [key, to] of renamed) if (taken.has(key)) taken.add(to);
-  const claims = new Map();
+  const claims = new Map(); // old key -> its block | null (more than one)
   const same = sameBlockMessage(chat, table);
   const claim = (rec, holds) => {
     const key = rec.blockKey;
@@ -433,6 +437,7 @@ export function undoable(chat, survey, key, { quiet = true } = {}) {
   return ![...survey.battles.values()].some(other => other.key !== key && other.result && other.result.at > result.at);
 }
 
+/** The message holding this block's latest result tag and the tag | null */
 function latestResult(chat, blockKey, table) {
   let found = null;
   for (const message of chat?.message ?? []) for (const tag of findTags(message?.data ?? '')) if (resultOf(table, tag.key, blockKey)) found = { message, tag: tag.key };
@@ -477,13 +482,14 @@ export function setOpenedAt(chat, key, on, table = readTable(chat)) {
   return changed;
 }
 
+/** Result line + tag at the end of a message */
 const appendResult = (message, line, tag) => { message.data = `${String(message.data ?? '').replace(/\s+$/, '')}\n\n${line}\n<pkb#${tag}>`; };
 
 export function placeResult(chat, { blockKey, line, tag }) {
   const messages = chat?.message ?? [];
   if (!messages.length) throw new Error('채팅에 메시지가 없습니다.');
   setMark(chat, blockKey, null);
-  setFollow(chat, null);
+  setFollow(chat, null); // the in-progress card goes away (the result line takes its place)
   const index = messages.length - 1;
   appendResult(messages[index], line, tag);
   return index;
@@ -513,7 +519,7 @@ export function restoreResult(chat, table = readTable(chat)) {
   const index = lostResult(chat, last, table);
   if (index < 0) return -1;
   appendResult(chat.message[index], last.line, last.tag);
-  setMark(chat, last.blockKey, null);
+  setMark(chat, last.blockKey, null); // a stale open mark goes, as when the result was written (placeResult)
   writeLast(chat, { ...last, place: resultPlace(chat, index) });
   return index;
 }
@@ -536,7 +542,7 @@ export function storyEndFixes(chat, table = readTable(chat), survey = surveyBatt
   const drop = endTags(chat, table).filter(({ meta }) => {
     const end = ends.find(e => e.source === meta.end);
     if (linked.has(meta.end) || !end) return true;
-    if (!meta.storyEnd?.engine && end.autosave && canPlay(end.autosave)) return true;
+    if (!meta.storyEnd?.engine && end.autosave && canPlay(end.autosave)) return true; // recorded without its engine state, and a replay may work now
     linked.add(meta.end);
     return false;
   });

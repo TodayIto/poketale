@@ -9,7 +9,7 @@ export const PAIR_TEAM_MAX = 3;
 export const OT_NAME_MAX = 24;
 
 export const BOX_SIZE = 30;
-
+/** Max box name length (fits the panel box header) */
 export const BOX_NAME_MAX = 16;
 
 export const NICKNAME_MAX = 20;

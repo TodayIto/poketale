@@ -10,12 +10,13 @@ const FILE = 'pokemon_species.csv';
 const source = JSON.parse(readFileSync(new URL('data/sources/pokeapi/source.json', root), 'utf8'));
 
 const GAME_DATA = Object.freeze({
-
+	// PokeAPI hatch_counter is a placeholder 50 for these
 	cycles: { 1012: 20, 1013: 20, 1014: 120, 1015: 120, 1016: 120, 1017: 10 },
 
 	eggGroups: { toedscool: ['Grass'], toedscruel: ['Grass'] },
 });
 
+// Showdown base species (not forms) number -> id, as in build-catch-rates.mjs
 const showdown = new Map();
 for (const s of Dex.species.all()) if (s.num > 0 && !s.forme && s.name === s.baseSpecies) showdown.set(s.num, s.id);
 

@@ -94,8 +94,14 @@ export function convertTiming(t) {
   const e = { frameIndex, resourceName: noPng(t['@name']) };
   for (const [from, to] of [['@bgX', 'bgX'], ['@bgY', 'bgY'], ['@opacity', 'opacity']]) if (t[from] != null) e[to] = t[from];
   e.duration = t['@duration'] ?? 0;
-  const color = ['@colorRed', '@colorGreen', '@colorBlue', '@colorAlpha'].map(k => t[k]);
-  if (color.some(v => v != null) && anyNonZero(...color)) e.color = four(...color);
+  const color = ['@colorRed', '@colorGreen', '@colorBlue', '@colorAlpha'].map(k => t[k] ?? null);
+  if (type >= 3) {
+
+    if (color.some(v => v !== null) && anyNonZero(...color)) e.color = color;
+  } else if (anyNonZero(...color)) {
+
+    e.tint = [...four(...color.slice(0, 3)), (color[3] ?? 0) / 255];
+  }
   if (t['@flashScope']) Object.assign(e, { flashScope: t['@flashScope'], flashColor: (t['@flashColor']?.d ?? []).map(Math.round), flashDuration: t['@flashDuration'] ?? 0 });
   e.eventType = eventType;
   return e;
@@ -104,8 +110,10 @@ export function convertTiming(t) {
 export function convertAnim(a) {
   const frames = (a['@array'] ?? []).map(frame => (frame ?? []).filter(Boolean).map(convertCel));
   const frameTimedEvents = {};
-  for (const t of [...(a['@timing'] ?? [])].sort((x, y) => (x['@frame'] ?? 0) - (y['@frame'] ?? 0))) {
+  const timings = (a['@timing'] ?? []).map((t, seq) => [t, seq]);
+  for (const [t, seq] of timings.sort(([x], [y]) => (x['@frame'] ?? 0) - (y['@frame'] ?? 0))) {
     const e = convertTiming(t);
+    if (e.eventType === EVENT[3] || e.eventType === EVENT[4]) e.seq = seq;
     (frameTimedEvents[e.frameIndex] ??= []).push(e);
   }
   return { graphic: noPng(a['@graphic']), frames, frameTimedEvents, position: a['@position'] ?? 1, hue: a['@hue'] ?? 0 };

@@ -20,7 +20,7 @@ export function postposition(word, particle) {
     const final = (code - 0xac00) % 28;
     return pair[final && !(pair[0] === '으로' && final === 8) ? 0 : 1];
   }
-
+  // The upstream processor also recognises numeric endings and kana.
   const last = plain.at(-1);
   if (/\d/.test(last || '')) {
     let final = '13678'.includes(last);
@@ -63,9 +63,10 @@ export function phrase(tables, key, values, lang = DEFAULT_LANG, what = 'text') 
 }
 
 const NO_TABLE = Object.fromEntries(LANGS.map(lang => [lang, {}]));
-
+/** Own sentence only (director/own-text.js) */
 export const ownText = (key, values, lang = DEFAULT_LANG) => phrase(NO_TABLE, key, values, lang, 'own text');
 
+/** Base battle sentence (director/text-<lang>.json) */
 export function text(key, values, lang = DEFAULT_LANG) {
   const table = BASE[checkLang(lang)];
   if (!Object.hasOwn(table, key) || key === '_source') throw new Error(`Unknown text key: ${key}`);

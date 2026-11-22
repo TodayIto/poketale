@@ -1,21 +1,22 @@
 // from pokerogue src/ui/handlers/ball-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/command-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 
 import { addWindow } from './window.js';
 import BAG_ICONS from '../../data/bag-icons.json' with { type: 'json' };
-import { playSelect, playError } from './keys.js';
-import { openMenu } from './menu.js';
+import { playSelect, playError } from './keys.js'; // menu sounds
+import { openMenu } from './menu.js'; // menu frame (keys, closing, tapping empty space)
 import { styledText } from './text.js';
 import { uiRect } from './tap-back.js';
-import { fixed } from '../game-speed.js';
-import { LoadError } from '../retry.js';
+import { fixed } from '../game-speed.js'; // ball wiggle ignores game speed (ball-ui-handler.ts fixedInt)
+import { LoadError } from '../retry.js'; // image load failure
 import { foodTexture } from '../amie-art.js';
-import { pokeapiItemUrl } from '../sprites/sources.js';
+import { pokeapiItemUrl } from '../sprites/sources.js'; // PokeAPI's item pictures (items PokeRogue has no picture of)
 import { loadItemPicture, itemPictureKey } from '../item-picture.js';
 
+// command-ui-handler.json ballCancel (view/words.js)
 const CANCEL_TEXT = 'command-ui-handler.ballCancel';
-const ROWS = 6;
+const ROWS = 6; // rows in the source ball menu (6 balls). Scrolls when exceeded
 const TAB_LEFT = 18;
 
 export const BALL_FRAMES = { pokeball: 'pb', greatball: 'gb', ultraball: 'ub', masterball: 'mb', luxuryball: 'lb' };
@@ -72,17 +73,17 @@ export class BagMenu {
     if (this.finish) throw new Error('Bag menu already open');
     if (!Array.isArray(bag?.pockets) || !bag.pockets.length) throw new Error('Expected bag pockets');
     const scene = this.scene;
-    await loadItemIcons(scene);
+    await loadItemIcons(scene); // usually already loaded (during the intro animation)
     scene.life.check();
     if (this.finish) throw new Error('Bag menu already open');
     this.bag = bag; this.party = party; this.partner = partner; this.prompt = prompt;
-    this.measuredWidths = new Map();
+    this.measuredWidths = new Map(); // text -> width while the window is open (measureWidths)
     Object.assign(this, this.startAt(bag)); this.sub = false;
     const menu = openMenu(scene, { input: action => this.input(action), close: () => this.clear(),
-      paused: () => this.sub,
-      tapWindows: () => (this.sub ? null : this.windows()) });
+      paused: () => this.sub, // the target selection party screen takes its own keys
+      tapWindows: () => (this.sub ? null : this.windows()) }); // inside the bag window is not back
     Object.assign(this, { finish: menu.finish, fail: menu.fail, abort: menu.abort });
-    this.listenScroll();
+    this.listenScroll(); // touch / mouse scrolling
     try { this.draw(); scene.options.parent.focus({ preventScroll: true }); }
     catch (error) { menu.fail(error); }
     return menu.promise;
@@ -102,9 +103,9 @@ export class BagMenu {
   remember(item) {
     this.lastUsed = { pocket: this.pocket, pocketId: this.bag.pockets[this.pocket].id, item: item.id, cursor: this.cursor, scroll: this.scroll };
   }
-
+  /** Tapping empty space: inside the bag window is not back */
   windows() { return this.rect ? [this.rect] : []; }
-
+  /** List = items + cancel (the last row of the source ball menu) */
   get length() { return this.items.length + 1; }
 
   measureWidths() {
@@ -138,7 +139,7 @@ export class BagMenu {
 
     this.promptText = windowText(s, 12, -39, this.prompt, { wordWrap: { width: 1110 }, maxLines: 2 }, 'WINDOW_WHITE');
     c.add(this.promptText);
-
+    // window size from the widths of every pocket's texts (measureWidths)
     const { namesWidth, countsWidth, tabs, content } = this.measureWidths();
     const width = 50 + content, height = 128, x = 320 - 51 - content, top = -49 - height;
     this.box = s.add.container(x, 0); c.add(this.box);
@@ -151,11 +152,11 @@ export class BagMenu {
       const t = windowText(s, tabX, rowY(0), pocket.name);
       if (i !== this.pocket) t.setColor(GREY[0]).setShadow(3, 3, GREY[1]);
       const hit = s.add.rectangle(tabX - 2, rowY(0), tabs[i] + 4, 16, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
-      hit.on('pointerdown', () => { if (this.sub) return; if (i !== this.pocket) playSelect(s); this.setPocket(i); });
+      hit.on('pointerdown', () => { if (this.sub) return; if (i !== this.pocket) playSelect(s); this.setPocket(i); }); // not while the target party screen is up
       this.box.add([t, hit]);
       tabX += tabs[i] + 8;
     });
-
+    // 6 list rows
     this.rows = [];
     for (let r = 0; r < ROWS; r++) {
       const index = this.scroll + r;
@@ -168,7 +169,7 @@ export class BagMenu {
       hit.on('pointerdown', () => this.setCursor(index));
       hit.on('pointerup', () => { if (!this.drag?.moved && this.cursor === index) this.input('ok'); });
       if (!item) {
-
+        // source cancelText (18, 9 + list height)
         this.box.add([windowText(s, 18, y, s.words(CANCEL_TEXT)), hit]);
         this.rows.push({ index });
         continue;
@@ -222,7 +223,7 @@ export class BagMenu {
     this.onMove = pointer => {
       const drag = this.drag;
       if (!drag || !pointer.isDown || this.sub) return;
-      const rows = Math.trunc((drag.y - pointer.worldY) / 6 / 16);
+      const rows = Math.trunc((drag.y - pointer.worldY) / 6 / 16); // dragging up brings lower items up
       if (rows) drag.moved = true;
       if (drag.moved) this.scrollBy(drag.scroll + rows - this.scroll);
     };
@@ -239,10 +240,10 @@ export class BagMenu {
   setCursor(index, force = false) {
     if (index === this.cursor && !force) return;
     this.cursor = index;
-
+    // scroll if the cursor is outside the visible rows
     const scroll = Math.min(Math.max(this.scroll, index - ROWS + 1), index);
     if (scroll !== this.scroll) { this.scroll = scroll; return this.draw(); }
-
+    // source setCursor: (12, 15 + (6 + cursor*96)/6) centred origin
     this.cursorObj.setPosition(12, this.top + 16 + 16 * (index - this.scroll + 1));
     this.wiggle(this.rows.find(row => row.index === index)?.icon);
   }
@@ -262,7 +263,7 @@ export class BagMenu {
 
   input(action) {
     if (this.sub) return;
-    if (this.promptText.text !== this.prompt) this.promptText.setText(this.prompt);
+    if (this.promptText.text !== this.prompt) this.promptText.setText(this.prompt); // the reason text is cleared on the next input
     const { cursor, pocket } = this;
     const moved = () => { if (this.cursor !== cursor || this.pocket !== pocket) playSelect(this.scene); };
     switch (action) {
@@ -296,7 +297,7 @@ export class BagMenu {
   clear() {
     this.finish = this.fail = null;
     this.measuredWidths?.clear();
-    const input = this.scene.input;
+    const input = this.scene.input; // scrolling
     if (input?.off) { input.off('wheel', this.onWheel); input.off('pointerdown', this.onDown); input.off('pointermove', this.onMove); input.off('pointerup', this.onUp); input.off('pointerupoutside', this.onUp); }
     this.drag = null;
     this.wiggle(null);

@@ -33,7 +33,7 @@ export async function startPartyScene(scene, { party, cursor = 0 } = {}) {
   try { scene.partyBackdrop = await showPartyBackdrop(scene, { party, cursor }); }
   catch (error) { scene.partyBackdrop = null; throw error; }
 }
-
+/** Removes the backdrop (fade to dark and back). No-op if absent */
 export async function endPartyScene(scene) {
   const backdrop = scene.partyBackdrop;
   scene.partyBackdrop = null;

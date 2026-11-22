@@ -11,6 +11,7 @@ export const CARD_COLORS = Object.freeze({
   tag: '#ffd84a', tagHi: '#fff1a0', tagLow: '#e8b830', tagInk: '#8a5a00',
 });
 
+/** colorAt(x, y) over w x h dots -> one path a colour */
 function paths(w, h, colorAt) {
   const by = {};
   for (let y = 0; y < h; y++) {
@@ -32,7 +33,7 @@ const shaped = (inside, fill, ink, drop, down) => (x, y) => {
 };
 
 const ROUND = [3, 2, 1, 1];
-
+/** The body's left edge at row y: the rounded corner, the front 1 dot in */
 const bodyAt = (d, y) => d.earW + (y > d.lip ? (y === d.bottom ? 2 : 1) : (ROUND[y - d.top] ?? 0));
 const inTray = d => (x, y) => {
   if (y >= d.top && y <= d.bottom && x >= bodyAt(d, y)) return true;
@@ -80,12 +81,13 @@ const CORNERS = {
   head: [['.BB.', 'BBBB', 'WNNW', '.WW.'], { B: '#5aa8e8', W: '#fbfbf4', N: '#23435f' }],
   tile: [['AABB', 'AABB', 'BBAA', 'BBAA'], { A: '#f0b040', B: '#ffe08a' }],
 };
-
+/** A card corner mark ('berry' | 'head' | 'tile'): 4 x 4 dots of 3 px */
 export function cardCornerSvg(game) {
   const [rows, colors] = CORNERS[game] || CORNERS.tile;
   return svg(4, 4, 3, paths(4, 4, (x, y) => colors[rows[y][x]] || null));
 }
 
+/** The new-record ribbon, V cut ends, 80 x 26 / 92 x 30 px (words in HTML) */
 export function recordTagSvg({ tall = true } = {}) {
   const C = CARD_COLORS, W = tall ? 40 : 46, H = tall ? 12 : 14, mid = (H - 1) / 2;
   const cut = y => Math.round(3 * (1 - Math.abs(y - mid) / mid));

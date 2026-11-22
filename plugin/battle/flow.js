@@ -1,6 +1,7 @@
 import { createStoryBattle, extractResult, waitingTrainer } from '../../engine/core.mjs';
 import { runBattle, isWild } from '../../director/index.js';
 import { createEnemyAI, gimmickRules } from '../../ai/index.js';
+import { ruleGen } from '../../engine/generation.mjs';
 import { battleNames, battleNamesIn } from './names.js';
 import { DEFAULT_LANG } from '../../director/lang.js';
 import { screenLog, screenLine, recordingView } from '../../director/text.js';
@@ -32,16 +33,17 @@ const AI_NOTES_MAX = 20;
 
 export { isWild };
 
-export const enemyOptions = spec => ({ trainer: !isWild(spec), difficulty: spec.difficulty ?? 'normal', boss: !!spec.boss, ...gimmickRules(spec.foeGimmick) });
+export const enemyOptions = spec => ({ trainer: !isWild(spec), difficulty: spec.difficulty ?? 'normal', boss: !!spec.boss,
+  ...gimmickRules(spec.foeGimmick, ruleGen(spec)) });
 
 export function battleMusicOptions(sim, spec, viewOptions = {}) {
-
+  // biome: wild battles use that area's track (view/bgm.js)
   return { wild: isWild(spec), bgm: viewOptions.bgm ?? spec.bgm, victoryBgm: viewOptions.victoryBgm ?? spec.victoryBgm, biome: spec.biome,
     enemies: (spec.p2?.team ?? []).map(member => sim.Dex.species.get(member?.set?.species ?? '').id).filter(Boolean) };
 }
 
 export function createBattleSession({ sim, spec, options, createView, viewOptions = {}, onPrepared = () => {}, development = false, from, onTurn, commands, lang = DEFAULT_LANG }) {
-  const names = battleNamesIn(lang, sim.Dex);
+  const names = battleNamesIn(lang, sim.Dex); // throws for an unknown language before anything starts
   const controller = new AbortController();
   const { signal } = controller;
   let view, started = false, paused = false, control = null;
@@ -49,7 +51,7 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
   const battleSpec = from?.spec ?? spec;
 
   const screen = screenLog();
-  const marks = {};
+  const marks = {};  // turn -> number of sentences up to that turn's start (range already sent)
   const turnStart = snapshot => {
     if (Number.isInteger(snapshot?.turn)) marks[snapshot.turn] = screen.lines.length;
     return onTurn?.(snapshot);
@@ -83,7 +85,7 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
     },
 
     pause() { if (paused) return; paused = true; view?.suspend?.(); },
-
+    /** Reopen: continues from where it paused */
     resume() { if (!paused) return; paused = false; view?.resume?.(); },
     get paused() { return paused; },
 
@@ -109,7 +111,7 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
       try {
         if (!view?.waitEnd) return false;
         await wait(() => view.waitEnd());
-        view?.fadeOutMusic?.();
+        view?.fadeOutMusic?.(); // fade out the music when leaving the end screen
         return true;
       }
       catch (error) { if (signal.aborted) return false; throw error; }
@@ -123,10 +125,10 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
         await wait(async () => {
 
           const booting = createView({ ...viewOptions, speed, ...battleMusicOptions(sim, battleSpec, viewOptions), signal, lang }).then(created => {
-
+            // Don't leave a closed view behind even if Phaser creation finishes late.
             if (signal.aborted) { created.destroy(); signal.throwIfAborted(); }
             view = created;
-            if (paused) view.suspend?.();
+            if (paused) view.suspend?.(); // collapsed while preparing
           });
           const engine = Promise.resolve(options).then(ready => { options = ready; preview = previewBattle(sim, battleSpec, options, names); });
 

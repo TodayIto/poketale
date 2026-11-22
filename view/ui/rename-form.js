@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/rename-form-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/form-modal-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/handlers/modal-ui-handler.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/text.ts (TOOLTIP_CONTENT, SETTINGS_LABEL, addTextInputObject) @ 7d7da4a8 (AGPL-3.0-only)
@@ -10,6 +10,7 @@ import { styledText, FONT_FAMILY } from './text.js';
 import { playSelect } from './keys.js';
 import { NICKNAME_MAX } from '../../story/rules.mjs';
 
+// menu.json renamePokemon, nickname, rename, cancel by name (view/words.js)
 const TEXT = Object.freeze({ title: 'menu.renamePokemon', label: 'menu.nickname', rename: 'menu.rename', cancel: 'menu.cancel' });
 
 const WIDTH = 160, HEIGHT = 20 + 26 + 28, MARGIN = [0, 0, 48, 0];
@@ -45,14 +46,14 @@ export class RenameForm {
     const label = formText(s, 10, 31, s.words(TEXT.label), 'TOOLTIP_CONTENT');
     const labelWidth = label.width ?? label.displayWidth * 6;
     const inputWidth = labelWidth < 320 ? 80 : 80 - (labelWidth - 320) / 5.5;
-    this.field = { x: 70 + (80 - inputWidth) + 4, y: 28 - 2, width: (inputWidth * 5.5) / 6, height: 116 / 6 };
+    this.field = { x: 70 + (80 - inputWidth) + 4, y: 28 - 2, width: (inputWidth * 5.5) / 6, height: 116 / 6 }; // addTextInputObject(4, -2, width*5.5, 116) * 1/6
     c.add([label, addWindow(s, 70 + (80 - inputWidth), 28, inputWidth, 16, 'xthin')]);
 
     const buttons = [s.words(TEXT.rename), s.words(TEXT.cancel)].map((str, i) => {
       const text = formText(s, 0, 8, str, 'TOOLTIP_CONTENT').setOrigin(0.5, 0.5);
       const bg = addWindow(s, 0, 0, text.displayWidth + 8, 16, 'thin').setOrigin(0.5, 0);
       bg.setInteractive({ useHandCursor: true });
-
+      // addInteractionHoverEffect: 0xbbbbbb on hover
       bg.on('pointerover', () => bg.setTint?.(0xbbbbbb));
       bg.on('pointerout', () => bg.clearTint?.());
       bg.on('pointerdown', () => (i ? this.cancel() : this.submit()));
@@ -71,7 +72,7 @@ export class RenameForm {
     this.showing = true;
 
     this.sync = () => this.place();
-
+    // nothing awaits it, so just a Phaser tween (onComplete when done)
     s.tweens.add({ targets: c, y: this.baseY, alpha: 1, duration: 1000, ease: 'Sine.easeInOut', onUpdate: this.sync,
       onComplete: () => { this.showing = false; this.place(); } });
     s.scale.on('resize', this.sync);
@@ -113,6 +114,7 @@ export class RenameForm {
     });
   }
 
+  /** Pad/keys (outside the input field): confirm = rename, back = cancel */
   input(action) {
     if (!this.finish) return;
     if (action === 'ok') this.submit();
@@ -135,7 +137,7 @@ export class RenameForm {
     this.input_?.remove?.(); this.input_ = null;
     this.container?.destroy(); this.container = null;
     this.finish = null; this.showing = false;
-    this.scene.options?.parent?.focus?.({ preventScroll: true });
+    this.scene.options?.parent?.focus?.({ preventScroll: true }); // give keys back to the view
   }
   destroy() { this.clear(); }
 }

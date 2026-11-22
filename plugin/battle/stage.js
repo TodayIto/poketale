@@ -15,8 +15,8 @@ const NOT_BOXES = ['iframe', 'script', 'style', 'link', 'meta', 'noscript', 'tem
 export const BODY_BOXES = `body > *${NOT_BOXES.map(s => `:not(${s})`).join('')}`;
 
 let doc = null;
-let aboveOthers = () => true;
-let debugOn = () => false;
+let aboveOthers = () => true; // the setting "show above other plugin windows" (below), read on each show
+let debugOn = () => false; // debug mode: one console line for each element lowered
 
 export function useMainDocument(root, onTop = () => true, debug = () => false) {
   doc = root; aboveOthers = onTop; debugOn = debug;
@@ -57,7 +57,7 @@ const kindOf = to => `${PAGE} ${to === BOX_Z ? 'box' : 'win'}`;
 export const LOW_SHEET = 'x-risu-pkb-stage-low';
 
 const HELD = `body > [${LOW_KIND}="${kindOf(BOX_Z)}"] { z-index: ${BOX_Z} !important; }\nbody > iframe[${LOW_KIND}="${kindOf(UNDER_Z)}"] { z-index: ${UNDER_Z} !important; }`;
-let holding = false;
+let holding = false; // our sheet's rules are in the main document (this opening)
 let sheet = null;
 let sheetDone = Promise.resolve();
 
@@ -74,18 +74,18 @@ function sheetWork(on) {
     }
     await sheet.setTextContent(on ? HELD : '');
     holding = on;
-  }).catch(() => { holding = false; });
+  }).catch(() => { holding = false; }); // no sheet: lowered as before (inline only)
   return sheetDone;
 }
 
-globalThis.addEventListener?.('pagehide', () => { holding = false; try { sheet?.setTextContent('').catch(() => {}); } catch {            } });
+globalThis.addEventListener?.('pagehide', () => { holding = false; try { sheet?.setTextContent('').catch(() => {}); } catch { /* gone */ } });
 let standing = false;
 
 let lowered = new Map();
 let leftAlone = new Set();
 let nextId = 1;
-let openingFirst = 1;
-let givingBack = Promise.resolve();
+let openingFirst = 1; // the first mark id of this opening
+let givingBack = Promise.resolve(); // giving back started at hide - the next show waits for it
 
 function inlineStyle(text) {
   const style = {};
@@ -171,11 +171,11 @@ async function stepOnTop(frame, { ours, over }) {
         if (known.raises.length >= RAISE_LIMIT) {
           known.left = true;
           leftAlone.add(id);
-          if (holding) await found.frame.setAttribute(LOW_KIND, '');
+          if (holding) await found.frame.setAttribute(LOW_KIND, ''); // never held by our sheet either
           await noteLeft(found);
           continue;
         }
-        if (holding) await found.frame.setAttribute(LOW_KIND, kindOf(known.to));
+        if (holding) await found.frame.setAttribute(LOW_KIND, kindOf(known.to)); // our attribute taken off (or marked before our sheet was in): held again
       }
     } else {
       const id = nextId++;
@@ -195,7 +195,7 @@ async function keepLowered() {
   for (let i = 0, n = await marked.length(); i < n; i++) {
     const el = await marked.at(i);
     const mark = readMark(await el.getAttribute(LOW_MARK));
-    if (!mark || mark.id < openingFirst) continue;
+    if (!mark || mark.id < openingFirst) continue; // an earlier opening's: already given back
     here.add(mark.id);
     const entry = lowered.get(mark.id);
     if (entry) entry.frame = el;
@@ -213,11 +213,11 @@ async function giveBack() {
     try {
 
       if (!left && zOf(inlineStyle(await frame.getStyleAttribute())) === to) await frame.setStyle('z-index', last ?? was);
-      if (await frame.getAttribute(LOW_KIND)) await frame.setAttribute(LOW_KIND, '');
+      if (await frame.getAttribute(LOW_KIND)) await frame.setAttribute(LOW_KIND, ''); // no longer held by our sheet
       await frame.setAttribute(LOW_MARK, '');
-    } catch {                          }
+    } catch { /* the window is gone */ }
   }
-  if (doc) await sheetWork(false);
+  if (doc) await sheetWork(false); // also holds nothing that could not be given back (gone, or failed above)
 }
 
 export const TRACK_MS = 500;
@@ -237,7 +237,7 @@ function track(frame, rect, full) {
         const found = await covering(frame);
         if (found.over.length > 0 && tracking === timer) await stepOnTop(frame, found);
       }
-    } catch {                             } finally { busy = false; }
+    } catch { /* check again next tick */ } finally { busy = false; }
   };
   const timer = setInterval(() => {
     if (busy) return;
@@ -255,14 +255,14 @@ export async function showFrame(show, { full = false } = {}) {
   const frame = doc ? await doc.querySelector(OUR_FRAME).catch(() => null) : null;
   if (!frame) return show();
   standing = aboveOthers();
-  if (!standing) await giveBack();
+  if (!standing) await giveBack(); // turned off while this opening was shown (settings window over a battle)
   const rect = full ? null : await measure().catch(() => null);
   await place(frame, rect);
   await show();
   await frame.setStyle('z-index', String(standing ? TOP_Z : PLAIN_Z));
   if (standing) {
     await frame.setAttribute(MARK, '1');
-    await sheetWork(true);
+    await sheetWork(true); // before the watch: whatever it lowers is held from the first time
   }
   track(frame, rect, full);
 }

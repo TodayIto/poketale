@@ -7,4 +7,5 @@ export function outcomeOf(result) {
   return 'lose';
 }
 
+/** Outcomes whose end screen offers "retry" - lose and forfeit */
 export const isLoss = result => ['lose', 'forfeit'].includes(outcomeOf(result));

@@ -1,3 +1,5 @@
+// Gen 8 / Gen 9 move animation project. Credits: view/LICENSE-NOTE.md.
+
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { essentialsAnims } from './essentials-anim.mjs';
 
@@ -16,7 +18,7 @@ function packIds(file) {
   return [`Move:${id}`, `OppMove:${id}`];
 }
 
-function entry(t) {
+export function entry(t) {
   const set = t['@timingType'] === 1, out = { f: t['@frame'] ?? 0 };
   if (set) out.set = noPng(t['@name']);
   else out.d = t['@duration'] ?? 0;
@@ -66,7 +68,9 @@ export function buildTints(packBuffer) {
   return table;
 }
 
-const HEAD = "// Generated background timings from the Gen 8 / Gen 9 move animation project.\n// Credits: view/LICENSE-NOTE.md.\n";
+const HEAD = `// Credits: view/LICENSE-NOTE.md.
+
+`;
 
 export function render(table) {
   const lines = Object.entries(table).map(([file, variants]) => `  '${file}': [\n${variants.map(v => `    { n: ${v.n}, bg: [\n${v.bg.map(e => `      ${JSON.stringify(e)},`).join('\n')}\n    ] },`).join('\n')}\n  ],`);

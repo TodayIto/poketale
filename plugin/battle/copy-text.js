@@ -1,7 +1,7 @@
 export async function copyText(text, { clipboard = globalThis.navigator?.clipboard, doc = globalThis.document } = {}) {
   try {
     if (typeof clipboard?.writeText === 'function') { await clipboard.writeText(text); return true; }
-  } catch {                                                    }
+  } catch { /* refused in the frame - the copy command next */ }
   let area = null;
   try {
     area = doc.createElement('textarea');

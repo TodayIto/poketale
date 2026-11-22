@@ -6,7 +6,7 @@ const freeze = value => {
 export const DEFAULT_POLICY = freeze({
 
   bossHeal: {
-
+    /** Used when the active Pokemon's HP ratio is at or below this */
     hpBelow: 0.25,
 
     byTopLevel: [
@@ -19,6 +19,10 @@ export const DEFAULT_POLICY = freeze({
   megaAsap: true,
 
   tera: { bossTrainer: 'ace', trainer: 'never' },
+
+  zMove: { use: true, spare: ['hard', 'max', 'hidden'] },
+
+  dynamax: { use: false, hold: ['hard', 'max'] },
 
   aceSlot: teamSize => teamSize - 1,
 

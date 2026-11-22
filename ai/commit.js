@@ -1,4 +1,4 @@
-const pending = new WeakMap();
+const pending = new WeakMap(); // battle -> Map(sideId -> apply(acceptedChoice))
 
 export function holdDecision(battle, sideId, apply) {
   let bySide = pending.get(battle);

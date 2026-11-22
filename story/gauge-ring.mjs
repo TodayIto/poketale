@@ -1,5 +1,5 @@
 const NAVY = '#23435f';
-
+/** The arc's length: radius 16 in a 48 box */
 export const RING_ARC = 2 * Math.PI * 16;
 export const RING_COLOR = Object.freeze({ enjoy: '#e0719a', full: '#e39a2d', energy: '#4fb848' });
 
@@ -9,6 +9,7 @@ export const RING_ICON = Object.freeze({
   energy: '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="#fff" d="M9.6 1 3.4 9.2h4.1L6.4 15l6.2-8.4H8.4z"/></svg>',
 });
 
+/** The arc's stroke-dasharray for share (0 - 1, kept in range) */
 export const ringDash = share => `${(Math.max(0, Math.min(1, share)) * RING_ARC).toFixed(1)} ${RING_ARC.toFixed(1)}`;
 
 export const ringSvg = (kind, share) => `<svg viewBox="0 0 48 48" aria-hidden="true">`

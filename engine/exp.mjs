@@ -1,12 +1,17 @@
 import { newMovePp } from './pp.mjs';
-import { friendlyExp, stepInBattle } from './friendship.mjs';
+import { friendlyExp, stepInBattle, hasPerks } from './friendship.mjs';
 import { setLevel, newMoveSlot } from './showdown-compat.mjs';
 import { formatRules, EV_STAT_MAX, EV_TOTAL_MAX } from './rules.mjs';
-import { MAX_LEVEL, STATS, NON_HP_STATS, learnsetOf, toID } from './mon.mjs';
-import { genderAllows, evolutionStops, levelEvolution, battleEvolution, ABSENT_TRADE_EVOLUTION, lockMark } from './evolution.mjs';
+import { MAX_LEVEL, STATS, NON_HP_STATS, learnsetOf, toID, hasOneSpecial } from './mon.mjs';
+import { genderAllows, evolutionStops, levelEvolution, battleEvolution, ABSENT_TRADE_EVOLUTION, lockMark, genMark, branchOpen } from './evolution.mjs';
+import { ruleGen, generationOf } from './generation.mjs';
 import { winnerSide } from './winner.mjs';
+import { statExpOf, statExpYield, gainStatExp } from './stat-exp.mjs';
+import { levelUpAt } from './levelup.mjs';
 
 const states = new WeakMap();
+
+// -- Level curve (level 1 is 0 for every group) --
 
 export function expForLevel(growth, level) {
 	const n = Math.trunc(level);
@@ -31,6 +36,7 @@ export function expForLevel(growth, level) {
 	throw new Error(`모르는 경험치 그룹 "${growth}"`);
 }
 
+/** Level (1-100) for a total experience */
 export function levelForExp(growth, exp) {
 	let level = 1;
 	while (level < MAX_LEVEL && expForLevel(growth, level + 1) <= exp) level++;
@@ -61,20 +67,25 @@ export const storyExpRate = rate => Math.round(expRateValue(rate) * STORY_EXP_PA
 
 const mod4096 = (value, numerator) => Math.floor((value * numerator + 2047) / 4096);
 
-export function calcExpGain({ baseExp, level, victorLevel, shared = false, luckyEgg = false, canEvolve = false, friendly = false, multipliers = [], rate = DEFAULT_EXP_RATE }) {
-	const s = shared ? 2 : 1;
+export function calcExpGain({ baseExp, level, victorLevel, shared = false, divisor = null, luckyEgg = false, canEvolve = false, friendly = false, multipliers = [], rate = DEFAULT_EXP_RATE }) {
+	const s = divisor ?? (shared ? 2 : 1);
 	const base = Math.floor(baseExp * level / (5 * s));
 	let exp = Math.floor(base * ((2 * level + 10) / (level + victorLevel + 10)) ** 2.5) + 1;
 	for (const m of [...multipliers, luckyEgg ? 6144 : 4096, canEvolve ? 4915 : 4096, friendly ? 4915 : 4096, Math.round(rate * 4096)]) exp = mod4096(exp, m);
 	return exp;
 }
 
+// -- Attaching to a battle --
+
 export function attachExperience(sim, battle, spec, { exp: table, levelUp }) {
 	if (!table?.species) throw new Error('경험치 표(options.exp)가 없습니다');
 	if (!levelUp) throw new Error('경험치를 쓰려면 레벨업 기술 표(options.levelUp)도 필요합니다');
 
-	const effort = formatRules(sim, battle.format).effort && Array.isArray(table.effort);
-	const state = { sim, table, levelUp, effort, share: spec.expShare !== false, rate: spec.expRate ?? DEFAULT_EXP_RATE, faced: new Map(), awarded: new Set(), learnQueue: [],
+	const statExp = hasOneSpecial(battle.gen); // battles with one Special stat raise stat experience in place of EVs
+	const effort = formatRules(sim, battle.format).effort && (statExp || Array.isArray(table.effort));
+
+	const era = spec.expShare === 'gen' ? { owned: spec.expShareOwned === true } : null;
+	const state = { sim, table, levelUp, effort, statExp, share: spec.expShare !== false, era, evolveGen: spec.genEvolve === true ? generationOf(ruleGen(spec)) : null, rate: spec.expRate ?? DEFAULT_EXP_RATE, faced: new Map(), awarded: new Set(), learnQueue: [],
 		world: { timeOfDay: spec.timeOfDay ?? 'day', ...(Number.isInteger(spec.clockHour) ? { clockHour: spec.clockHour } : {}), weather: spec.weather ?? null, region: spec.region ?? null, money: spec.money ?? null, badges: spec.badges ?? 0,
 			trade: spec.tradeEvolution ?? ABSENT_TRADE_EVOLUTION, partner: !!spec.partner } };
 	states.set(battle, state);
@@ -84,6 +95,11 @@ export function attachExperience(sim, battle, spec, { exp: table, levelUp }) {
 		if (pokemon.m.partner) continue;
 		const growth = growthOf(state.table, speciesOf(battle, pokemon));
 		pokemon.m.startLevel = pokemon.level;
+
+		const learnGen = members.get(pokemon.m.uid)?.learnGen;
+		if (Number.isInteger(learnGen)) pokemon.m.learnGen = learnGen;
+
+		if (statExp) pokemon.m.statExp = statExpOf(members.get(pokemon.m.uid)?.statExp, pokemon.set.evs);
 		if (!growth) continue;
 
 		const level = Math.min(pokemon.level, MAX_LEVEL);
@@ -103,7 +119,7 @@ export function attachExperience(sim, battle, spec, { exp: table, levelUp }) {
 	};
 
 	battle.onEvent('Faint', battle.format, -1e9, function (target) {
-		if (target.side.n % 2) awardExperience(battle, state, target);
+		if (target.side.n % 2) awardExperience(battle, state, target); // the opposing side (p2, and p4 with four players)
 	});
 	return state;
 }
@@ -140,25 +156,64 @@ function awardExperience(battle, state, foe) {
 	const row = state.table.species[speciesOf(battle, foe).num];
 	if (!row) return;
 	const faced = state.faced.get(foe) || new Set();
+
+	const alive = battle.sides[0].pokemon.filter(p => p.hp > 0 && !p.fainted && p.m.exp !== undefined);
+	const pieces = sharePieces(battle, state, faced, alive);
 	// EVs first, then experience (gainEffort below - on level-up the new stats include this battle's EVs)
-	if (state.effort) {
+	if (state.effort && state.statExp) {
+
+		const base = statExpYield(speciesOf(battle, foe).baseStats);
+		for (const p of alive) {
+			if (!pieces.has(p) || !p.m.statExp) continue;
+			const gain = Object.fromEntries(STATS.map(s => [s, pieces.get(p).reduce((sum, divisor) => sum + Math.floor(base[s] / divisor), 0)]));
+			const out = gainStatExp(p.m.statExp, p.set.evs, gain);
+			p.m.statExp = out.statExp;
+			Object.assign(p.set.evs, out.evs);
+		}
+	} else if (state.effort) {
 		const yieldOf = effortYield(state.table, speciesOf(battle, foe));
-		for (const p of battle.sides[0].pokemon) if (p.hp > 0 && !p.fainted && p.m.exp !== undefined && (state.share || faced.has(p))) gainEffort(p, yieldOf);
+		for (const p of alive) if (pieces.has(p)) gainEffort(p, yieldOf);
 	}
 
-	const recipients = battle.sides[0].pokemon
-		.filter(p => p.hp > 0 && !p.fainted && p.m.exp !== undefined && p.level < MAX_LEVEL)
+	const recipients = alive.filter(p => p.level < MAX_LEVEL && pieces.has(p))
 		.map(p => ({ pokemon: p, participant: faced.has(p) }))
-		.filter(r => state.share || r.participant)
 		.sort((a, b) => b.participant - a.participant);
 	for (const r of recipients) {
-		r.gain = calcExpGain({
-			baseExp: row[0], level: foe.level, victorLevel: r.pokemon.level, shared: !r.participant,
-			luckyEgg: r.pokemon.item === 'luckyegg', canEvolve: pastEvolutionLevel(battle, r.pokemon), friendly: friendlyExp(r.pokemon.m.friendship ?? 0), rate: state.rate,
-		});
+		r.gain = pieces.get(r.pokemon).reduce((sum, divisor) => sum + calcExpGain({
+			baseExp: row[0], level: foe.level, victorLevel: r.pokemon.level, divisor,
+			luckyEgg: r.pokemon.item === 'luckyegg', canEvolve: pastEvolutionLevel(battle, state, r.pokemon), friendly: hasPerks(battle.gen) && friendlyExp(r.pokemon.m.friendship ?? 0), rate: state.rate,
+		}), 0);
 	}
 	for (const { pokemon, gain, participant } of recipients) gainExperience(battle, state, pokemon, gain, participant);
 }
+
+function sharePieces(battle, state, faced, alive) {
+	const out = new Map();
+	const give = (p, divisor) => out.set(p, [...out.get(p) ?? [], divisor]);
+	const { era } = state;
+	if (!era || battle.gen >= 6) {
+		const share = era ? battle.gen >= 8 || era.owned : state.share;
+		for (const p of alive) if (faced.has(p)) give(p, 1); else if (share) give(p, 2);
+		return out;
+	}
+	const participants = alive.filter(p => faced.has(p));
+	const P = participants.length;
+	if (battle.gen === 1) {
+		if (!era.owned) { for (const p of participants) give(p, P); return out; }
+		const N = battle.sides[0].pokemon.filter(p => p.m.exp !== undefined).length;
+		for (const p of participants) give(p, 2 * P);
+		for (const p of alive) give(p, 2 * Math.max(P, 1) * N);
+		return out;
+	}
+	const holders = alive.filter(p => p.item === EXP_SHARE);
+	const H = holders.length;
+	if (!H) { for (const p of participants) give(p, P); return out; }
+	if (!P) { for (const p of holders) give(p, H); return out; }
+	for (const p of participants) give(p, 2 * P);
+	for (const p of holders) give(p, 2 * H);
+	return out;
+}
+const EXP_SHARE = 'expshare';
 
 function gainExperience(battle, state, pokemon, gain, participant) {
 	const growth = growthOf(state.table, speciesOf(battle, pokemon));
@@ -168,7 +223,7 @@ function gainExperience(battle, state, pokemon, gain, participant) {
 
 	while (pokemon.level < MAX_LEVEL && pokemon.m.exp >= expForLevel(growth, pokemon.level + 1)) {
 		setLevel(battle, pokemon, pokemon.level + 1);
-		stepInBattle(battle, pokemon, 'level');
+		stepInBattle(battle, pokemon, 'level'); // friendship before the evolution check (engine/friendship.mjs)
 		const { maxhp, hp } = pokemon;
 		battle.add('-story-levelup', pokemon, pokemon.m.uid, pokemon.level, JSON.stringify({ hp, maxhp, ...withoutHp(pokemon.baseStoredStats) }));
 		learnLevelMoves(battle, state, pokemon);
@@ -208,7 +263,7 @@ function gainEffort(pokemon, base) {
 }
 
 function learnLevelMoves(battle, state, pokemon) {
-	const learnset = learnsetOf(state.levelUp, speciesOf(battle, pokemon)) || [];
+	const learnset = learnsetOf(levelUpAt(state.levelUp, pokemon.m.learnGen), speciesOf(battle, pokemon)) || [];
 	for (const [level, moveid] of learnset) {
 		if (level !== pokemon.level) continue;
 		const move = battle.dex.moves.get(moveid);
@@ -219,7 +274,7 @@ function learnLevelMoves(battle, state, pokemon) {
 			addMoveSlot(battle, pokemon, move, pokemon.baseMoveSlots.length);
 			battle.add('-story-learnmove', pokemon, pokemon.m.uid, move.name);
 		} else {
-
+			// with 4 moves the caller decides -> replaceMove
 			state.learnQueue.push({ pokemon, move: move.id, level });
 			battle.add('-story-movequeue', pokemon, pokemon.m.uid, move.name);
 		}
@@ -266,9 +321,25 @@ export function replaceMove(battle, uid, slotIndex, moveId) {
 	refreshRequest(battle, side, pokemon);
 }
 
+function redoDisables(battle, pokemon) {
+	pokemon.maybeDisabled = false;
+	pokemon.maybeLocked = false;
+	for (const slot of pokemon.moveSlots) {
+		slot.disabled = false;
+		slot.disabledSource = '';
+	}
+	battle.runEvent('DisableMove', pokemon);
+	for (const slot of pokemon.moveSlots) {
+		const move = battle.dex.getActiveMove(slot.id);
+		battle.singleEvent('DisableMove', move, null, pokemon);
+		if (move.flags['cantusetwice'] && pokemon.lastMove?.id === slot.id) pokemon.disableMove(pokemon.lastMove.id);
+	}
+}
+
 function refreshRequest(battle, side, pokemon) {
 	const request = side.activeRequest;
 	if (!request || request.wait || battle.ended) return;
+	if (pokemon.isActive) redoDisables(battle, pokemon);
 	if (request.active && pokemon.isActive) request.active = side.active.map(p => p?.getMoveRequestData());
 	request.side = side.getRequestData();
 	side.emitRequest(request);
@@ -278,10 +349,11 @@ export function getLearnQueue(battle) {
 	return (states.get(battle)?.learnQueue || []).map(q => ({ uid: q.pokemon.m.uid, move: q.move, level: q.level }));
 }
 
-function pastEvolutionLevel(battle, pokemon) {
+function pastEvolutionLevel(battle, state, pokemon) {
+	const gate = genMark(state.evolveGen);
 	return speciesOf(battle, pokemon).evos.some(id => {
 		const t = battle.dex.species.get(id);
-		return !t.evoType && t.evoLevel && t.evoLevel <= pokemon.level && genderAllows(pokemon.gender, t);
+		return !t.evoType && t.evoLevel && t.evoLevel <= pokemon.level && genderAllows(savedGender(pokemon), t) && branchOpen(gate, t);
 	});
 }
 
@@ -289,21 +361,26 @@ function conditionText(t) {
 	return [t.evoType, t.evoItem, t.evoMove, t.evoCondition, t.evoRegion && `region ${t.evoRegion}`].filter(Boolean).join(' / ') || 'level';
 }
 
-function evolvingMon(battle, pokemon) {
-	return { species: pokemon.m.cloak ?? speciesOf(battle, pokemon).name, gender: pokemon.gender, item: toID(pokemon.set.item), uid: pokemon.m.uid,
-		moves: pokemon.baseMoveSlots.map(s => s.id), nature: pokemon.m.natureOrig ?? pokemon.set.nature, ability: pokemon.m.start.ability,
-		stats: { atk: pokemon.storedStats.atk, def: pokemon.storedStats.def }, counts: pokemon.m.counts, ...lockMark(pokemon.m.evolveLocked) };
+const savedGender = pokemon => pokemon.m.start?.whole?.gender ?? pokemon.gender;
+
+function evolvingMon(battle, state, pokemon) {
+	const whole = pokemon.m.start?.whole;
+	return { species: pokemon.m.cloak ?? speciesOf(battle, pokemon).name, gender: savedGender(pokemon), item: toID(whole?.item ?? pokemon.set.item), uid: pokemon.m.uid,
+		moves: pokemon.baseMoveSlots.map(s => s.id), nature: pokemon.m.natureOrig ?? whole?.nature ?? pokemon.set.nature, ability: pokemon.m.start.ability,
+		stats: { atk: pokemon.storedStats.atk, def: pokemon.storedStats.def }, counts: pokemon.m.counts, gigantamax: pokemon.set.gigantamax === true, ...lockMark(pokemon.m.evolveLocked),
+		...genMark(state.evolveGen) };
 }
 
 export function getEvolutions(battle) {
 	const list = [];
-	const { world } = states.get(battle);
+	const state = states.get(battle);
+	const { world } = state;
 	const won = winnerSide(battle) === 'p1';
 	const own = battle.sides[0].pokemon.filter(p => !p.m.partner);
 	for (const pokemon of own) {
 		if (pokemon.fainted || pokemon.hp <= 0) continue;
 		const species = speciesOf(battle, pokemon);
-		const mon = evolvingMon(battle, pokemon);
+		const mon = evolvingMon(battle, state, pokemon);
 		const now = { ...world, level: pokemon.level, friendship: pokemon.m.friendship, party: own.filter(p => p !== pokemon).map(p => speciesOf(battle, p).name) };
 		const entry = (to, extra) => ({ uid: pokemon.m.uid, from: species.name, to, ...extra });
 		const leveled = pokemon.level > pokemon.m.startLevel;
@@ -311,7 +388,7 @@ export function getEvolutions(battle) {
 		const to = byLevel ?? battleEvolution(battle.dex, mon, { ...now, won });
 		if (to) list.push(entry(to, byLevel ? { level: pokemon.level } : {}));
 		else if (leveled && !evolutionStops(battle.dex, mon, 'level')) {
-			for (const t of species.evos.map(id => battle.dex.species.get(id)).filter(t => genderAllows(pokemon.gender, t))) {
+			for (const t of species.evos.map(id => battle.dex.species.get(id)).filter(t => genderAllows(savedGender(pokemon), t) && branchOpen(mon, t))) {
 				if ((t.evoType || t.evoCondition || t.evoRegion || !t.evoLevel) && !(t.evoLevel > pokemon.level)) list.push(entry(t.name, { unsupported: conditionText(t) }));
 			}
 		}
@@ -319,6 +396,7 @@ export function getEvolutions(battle) {
 	return list;
 }
 
+/** Added to extractResult */
 export function experienceResult(battle) {
 	if (!states.has(battle)) return {};
 	return { evolutions: getEvolutions(battle), learnQueue: getLearnQueue(battle) };

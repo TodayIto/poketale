@@ -1,5 +1,4 @@
-// Modified for PokeTale on 2026-11-19. See THIRD-PARTY-NOTICES.md.
-// Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
+// Adapted from PlayNav (MIT). See THIRD-PARTY-NOTICES.md.
 // Copyright (c) 2026 poooooby, MIT License. See THIRD-PARTY-NOTICES.md.
 import { createBerryPicker, createHeadIt, headSlotAt, createTilePuzzle, prizesFor, starsOf, recordScore, beatsRecord, BERRY_RULES, HEAD_RULES, TILE_GRIDS } from '../story/amie-games.mjs';
 import { CARD_TIMES } from './amie-tray-card.js';
@@ -31,7 +30,7 @@ function gameLife(screen, layer) {
     for (const key of keys) if (s.textures.exists(key)) s.textures.remove(key);
   });
   const life = {
-
+    /** fn after ms, unless the game ends first */
     after(ms, fn) {
       if (over) return;
       const timer = s.time.delayedCall(ms, () => { running.delete(timer); fn(); });
@@ -39,7 +38,7 @@ function gameLife(screen, layer) {
     },
 
     wait: ms => new Promise(resolve => life.after(ms, resolve)),
-
+    /** scene.tweens.add for this game (the screen's burst takes it) */
     add(config) {
       if (over) return null;
       const added = s.tweens.add({ ...config, onComplete: (...args) => { running.delete(added); config.onComplete?.(...args); } });
@@ -48,13 +47,13 @@ function gameLife(screen, layer) {
     },
 
     tween: config => new Promise(resolve => life.add({ ...config, onComplete: () => resolve() })),
-
+    /** The screen's burst of pictures, into this game's layer (options.into) */
     burst: (name, n, x, y, options) => screen.burst(name, n, x, y, { ...options, tweens: life }),
 
     scene(svg) { const one = mountScene(s, svg, { prefix: 'amie-game', front: [] }); scenes.push(one); return one; },
-
+    /** A small SVG as one still texture (view/scene-bake.js svgTexture) */
     texture(svg) { const one = svgTexture(s, svg, 'amie-game'); keys.push(one.key); return one; },
-
+    /** Moves the game's scenes to the clock */
     tick() { for (const one of scenes) one.update(); },
   };
   return life;
@@ -124,7 +123,7 @@ export function roundRecord(screen, game, level, value) {
 }
 
 const END_BANDS = Object.freeze({ timeUp: 1000, done: 800 });
-
+/** Berry Picker's time bar turns red for its last seconds */
 export const BERRY_LOW_SECONDS = 5;
 
 function hud(screen, name) {
@@ -154,10 +153,10 @@ function berryPicker(s, layer, screen, level, end, life) {
   layer.add(hang.map(p => s.add.image(p.x + gap.box.x, p.y + gap.box.y, gap.key).setOrigin(0).setScale(2)));
   const onTree = hang.map((p, i) => s.add.image(p.x, p.y, `amie-berry-${i}`).setScale(1.5));
   layer.add(onTree);
-
+  // the three spots
   const spotX = [W * 0.5, W * 0.17, W * 0.83], feet = H - 4, tall = Math.min(48, H * 0.26);
   const players = threePlayers(screen.players);
-
+  // slot 0 is the middle, 1 the left, 2 the right
   const slots = [0, 1, 2].map(i => {
     const sprite = monSprite(s, players[i], spotX[i], feet + tall + 20, tall);
     const bubble = s.add.container(spotX[i], feet - tall - 16).setVisible(false);
@@ -200,7 +199,7 @@ function berryPicker(s, layer, screen, level, end, life) {
       const sl = near(at);
       const events = sl ? g.give(sl.i, d.kind) : [];
       if (events.length) { d.image.destroy(); play(events); return; }
-
+      // let go anywhere else: it falls
       life.tween({ targets: d.image, y: H + 20, duration: 450, ease: 'Sine.easeIn' }).then(() => d.image.destroy());
     },
     frame: dt => {
@@ -277,7 +276,7 @@ function headIt(s, layer, screen, level, end, life) {
   const size = Math.max(10, R.BALL_H * ky * 0.75), giantSize = size * 3.2;
 
   const ballTexture = b => (b.kind === 'purple' || b.kind === 'giant' ? `amie-ball-${b.kind}` : `amie-ball-${Math.min(2, g.stage)}`);
-
+  // "!!" over the middle Pokemon while the giant comes
   const alarm = s.add.container(fx(0), fy(-120) - tall - 10, [s.add.image(-4, 0, 'amie-bang'), s.add.image(4, 0, 'amie-bang')]).setVisible(false);
   layer.add(alarm);
   return {
@@ -305,14 +304,14 @@ function headIt(s, layer, screen, level, end, life) {
       const ticked = clock() - acc * 1000;
       for (const { slot, t } of taps) {
         if (g.over) break;
-        if (ticked - t > 500) continue;
+        if (ticked - t > 500) continue; // held over a pause (the quit question): dropped
         const free = g.heads[slot] === 0;
         play(g.tap(slot, ticked - t));
-
+        // the heading bob (not again while the head is still busy)
         if (free) life.tween({ targets: mons[slot], y: fy(-120) - 5, duration: 80, yoyo: true });
       }
       taps = [];
-
+      // the balls as they are now
       const seen = new Set();
       for (const b of g.balls) {
         seen.add(b);
@@ -357,7 +356,7 @@ function headIt(s, layer, screen, level, end, life) {
           life.burst('anger', 1, fx(R.SLOT_X[e.slot]), fy(-20), { into: effects, rise: 0.3 });
           break;
         case 'leave':
-
+          // the side Pokemon go down out of sight
           for (const i of [1, 2]) if (mons[i].visible) life.tween({ targets: mons[i], y: mons[i].y + tall + 10, duration: 300, ease: 'Back.easeIn' }).then(() => mons[i].setVisible(false));
           break;
         case 'giant': alarm.setVisible(true); cue(screen, 'giant'); break;
@@ -422,7 +421,7 @@ function tilePuzzle(s, layer, screen, level, end, life) {
     layer.add(image);
     return image;
   });
-
+  // marks on the tiles out of place (blue corners), the chosen one (red)
   const marks = s.add.graphics();
   layer.add(marks);
   const drawMarks = () => {
@@ -441,13 +440,13 @@ function tilePuzzle(s, layer, screen, level, end, life) {
   const fxLayer = s.add.container(0, 0);
   layer.add(fxLayer);
   let live = false;
-
+  // the whole picture first, then the tiles fly to their places
   tiles.forEach((image, place) => { const p = at(g.tiles[place]); image.setPosition(p.x, p.y); });
   countIn(screen, life).then(() => {
     tiles.forEach((image, place) => life.tween({ targets: image, ...at(place), duration: 500, delay: (place % 7) * 40 }));
     life.after(800, () => { live = true; drawMarks(); });
   });
-
+  // no time limit: the seconds so far are its score (no time bar)
   const showHud = () => setHud({ score: words.score.tile({ n: Math.floor(g.seconds) }), time: null });
   showHud();
   layer.once('destroy', () => s.textures.remove(key));

@@ -1,5 +1,6 @@
 import { messageId, stripForPrompt } from '../../story/blocks.mjs';
 
+/** No change for this long (ms), no streaming flag: the reply has finished */
 export const REPLY_QUIET_MS = 1500;
 
 const textOf = message => stripForPrompt(message?.data ?? '');
@@ -7,7 +8,7 @@ const textOf = message => stripForPrompt(message?.data ?? '');
 export function createReplyWatch({ messages = [], streaming = false, at = Date.now(), quiet = REPLY_QUIET_MS } = {}) {
   const known = new Map(messages.map((m, i) => [messageId(m, i), textOf(m)]));
   const last = messages.length - 1;
-
+  // a reply arriving as the watch begins: its end counts
   let pending = streaming && messages[last]?.role === 'char' ? { id: messageId(messages[last], last), at } : streaming ? { id: null, at } : null;
   return {
     see(list = [], { streaming: now = false, ours = false, at: when = Date.now() } = {}) {

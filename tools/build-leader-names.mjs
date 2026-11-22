@@ -7,14 +7,14 @@ const badges = JSON.parse(readFileSync(new URL('../data/badges.json', import.met
 const en = read('en', 'trainer-names.json'), ja = read('ja', 'trainer-names.json');
 
 const HAND_JA = {
-	Ilima: 'イリマ',
-	Lana: 'スイレン',
-	Kiawe: 'カキ',
-	Mallow: 'マオ',
+	Ilima: 'イリマ', // Alola captain (Verdant Cavern) - bulbapedia.bulbagarden.net/wiki/Ilima
+	Lana: 'スイレン', // Alola captain (Brooklet Hill) - bulbapedia.bulbagarden.net/wiki/Lana
+	Kiawe: 'カキ', // Alola captain (Wela Volcano Park) - bulbapedia.bulbagarden.net/wiki/Kiawe
+	Mallow: 'マオ', // Alola captain (Lush Jungle) - bulbapedia.bulbagarden.net/wiki/Mallow
 	Sophocles: 'マーマネ',
-	Mina: 'マツリカ',
-	Nanu: 'クチナシ',
-	Hapu: 'ハプウ',
+	Mina: 'マツリカ', // Alola captain (Seafolk Village) - bulbapedia.bulbagarden.net/wiki/Mina
+	Nanu: 'クチナシ', // Ula'ula kahuna - bulbapedia.bulbagarden.net/wiki/Nanu
+	Hapu: 'ハプウ', // Poni kahuna - bulbapedia.bulbagarden.net/wiki/Hapu
 	N: 'N',
 };
 
@@ -31,10 +31,11 @@ const CHAMPIONS = {
 	'paldea-champion': [['테사', 'Geeta'], ['네모', 'Nemona']],
 };
 
+// English names as written there may hold a no-break space (Lt. Surge)
 const plain = name => name.replace(/\s+/gu, ' ').trim().toLowerCase();
 const keyOf = new Map(Object.entries(en).filter(([, name]) => typeof name === 'string').map(([key, name]) => [plain(name), key]));
 const HAND = new Map(Object.entries(HAND_JA).map(([english, name]) => [plain(english), name]));
-
+/** The Japanese name for an English one: PokeRogue's, else HAND_JA, else '' */
 const japanese = english => {
 	const key = keyOf.get(plain(english));
 	return (key && typeof ja[key] === 'string' ? ja[key].trim() : '') || HAND.get(plain(english)) || '';

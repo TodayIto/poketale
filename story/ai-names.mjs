@@ -43,12 +43,13 @@ export function createNamer({ lang = 'ko', en = null, ko = tableKo } = {}) {
 function formNames(value) {
   let id = toID(typeof value === 'object' && value !== null ? value.id ?? value.name : value);
   if (!Object.hasOwn(aiForms, id)) return null;
-
+  // a row: [English, Korean | null], or the id it is named as
   for (let hops = 0; typeof aiForms[id] === 'string' && hops < 4; hops++) id = aiForms[id];
   const row = Object.hasOwn(aiForms, id) ? aiForms[id] : null;
   return Array.isArray(row) ? { id, en: row[0], ko: row[1] } : { id };
 }
 
+/** Status words for the AI (the party lines and the battle status lines) */
 export const STATUS_EN = { '': 'Normal', par: 'Paralyzed', brn: 'Burned', slp: 'Asleep', frz: 'Frozen', psn: 'Poisoned', tox: 'Badly Poisoned', fnt: 'Fainted' };
 
 export const nicknamed = (nick, species) => (nick ? `${nick} the ${species}` : species);

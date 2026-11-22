@@ -1,5 +1,5 @@
 // from pokerogue src/ui/handlers/battle-message-ui-handler.ts (levelUpStatsContainer, promptLevelUpStats) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 
 import { addWindow } from './window.js';
 import { windowText as baseWindowText, STAT_ROWS } from './text.js';

@@ -1,25 +1,25 @@
-// Modified for PokeTale on 2026-11-19. See THIRD-PARTY-NOTICES.md.
-// Adapted layouts: PlayNav, revision 7f1b4dcb8ca1cc85180272c165842374924f1564.
-// Ported from PlayNav (https://github.com/poooooby/PlayNav): data/training_rules.lua (LIMITS, BAGS, METER, CORE: REFRESHED_HITS_DIV, SECOND_WIND_AFTER_BAG,
-// ROUTINE_REST_BAGS, BLANK_BAG_DROP, BLANK_BAG_DROP_FULLY), src/training/rules.lua (the bag catalogue, GAME_ORDER, addEv, resetEvs, statRoom, rollBlankBag,
+// Adapted from PlayNav (MIT). See THIRD-PARTY-NOTICES.md.
 // pickBlackBag, isRareBag), src/training/session.lua (punch, finishBag, blankBagPunch, lieDown, wake, attachBag, HIT_LOCK).
-// PlayNav is MIT License, Copyright (c) 2026 poooooby - THIRD-PARTY-NOTICES.md.
+// Copyright (c) 2026 poooooby, MIT License. See THIRD-PARTY-NOTICES.md.
 
 import { STATS } from '../engine/mon.mjs';
 import { DEFAULT_FORMAT, formatRules, ruleFormat } from '../engine/rules.mjs';
 import { EV_STAT_MAX, EV_TOTAL_MAX } from './rules.mjs';
+import { STAT_EXP_MAX, statExpOf, statExpNow, evsWithStatExp, gainStatExp, vitaminWorks, vitaminGain } from '../engine/stat-exp.mjs';
 import { canPet, enjoymentOf, setEnjoyment, friendshipFor, ENJOY_STEP, FRIENDSHIP_PER_STEP } from './amie.mjs';
 
+// -- Bags ----------------------------------------------------------
+
 export const BAG_SIZES = Object.freeze(['s', 'm', 'l']);
-
+/** Hits a stat bag takes and the EVs it gives, by size */
 export const STAT_BAG = Object.freeze({ s: { hits: 10, ev: 1 }, m: { hits: 25, ev: 4 }, l: { hits: 50, ev: 12 } });
-
+/** The Reset Bag: hits it takes (it clears every EV) */
 export const RESET_HITS = 100;
 export const RESET_BAG = 'reset';
 
 export const EFFECT_BAGS = Object.freeze(['strength', 'toughen_up', 'swiftness', 'big_shot', 'double_up']);
 export const EFFECT_HITS = 10;
-
+/** The Soothing Bag: hits it takes and the friendship it gives */
 export const SOOTHING_BAG = 'soothing';
 export const SOOTHING_HITS = 250;
 export const SOOTHING_FRIENDSHIP = 20;
@@ -35,12 +35,38 @@ export function bagOf(id) {
   return { id, kind: 'stat', stat, size, ...STAT_BAG[size] };
 }
 
+// -- EVs -----------------------------------------------------------
+
 const evOf = (evs, stat) => Math.max(0, Math.trunc(evs?.[stat] ?? 0));
 export const evTotal = evs => STATS.reduce((sum, stat) => sum + evOf(evs, stat), 0);
-
+/** How much a stat can still rise: its 252 and the 510 in all */
 export const statRoom = (evs, stat) => Math.max(0, Math.min(EV_STAT_MAX - evOf(evs, stat), EV_TOTAL_MAX - evTotal(evs)));
 
 export const evGain = (evs, stat, amount) => (amount < 0 ? Math.max(amount, -evOf(evs, stat)) : Math.min(amount, statRoom(evs, stat)));
+
+export function effortFollows(now, end, from) {
+  const out = Object.fromEntries(STATS.map(s => [s, evOf(now, s)]));
+  for (const s of STATS) out[s] += Math.min(Math.max(0, evOf(end, s) - evOf(from, s)), statRoom(out, s));
+  return out;
+}
+
+export function addStatExp(mon, end, from) {
+  const now = statExpNow(mon.statExp, mon.set?.evs), was = statExpNow(from?.statExp, from?.set?.evs);
+  return Object.fromEntries(STATS.map(s => [s, Math.min(STAT_EXP_MAX, now[s] + Math.max(0, Math.trunc(end?.[s] ?? 0) - was[s]))]));
+}
+
+export function statExpVitamin(mon, stat) {
+  const evs = mon.set.evs ??= {};
+  for (const s of STATS) evs[s] ??= 0;
+  const before = evsWithStatExp(evs, mon.statExp), now = statExpOf(mon.statExp, before);
+  if (!vitaminWorks(now, stat)) return false;
+  const out = gainStatExp(now, before, vitaminGain(stat));
+  mon.statExp = out.statExp;
+  mon.set.evs = effortFollows(evs, out.evs, before);
+  return true;
+}
+
+export const statExpVitaminWorks = (mon, stat) => vitaminWorks(statExpNow(mon.statExp, mon.set?.evs), stat);
 
 export const FIND_ORDER = Object.freeze([...STATS.flatMap(stat => BAG_SIZES.map(size => `${stat}_${size}`)), ...EFFECT_BAGS, null, RESET_BAG, SOOTHING_BAG]);
 
@@ -51,15 +77,16 @@ export function findBag(evs, rng) {
   if (rng() * 100 >= (evTotal(evs) >= EV_TOTAL_MAX ? FIND_FULL : FIND_CHANCE)) return null;
   return FIND_ORDER[Math.floor(rng() * FIND_ORDER.length)];
 }
-
+/** A rare find (anything but an S stat bag) gives a second wind */
 export const isRareBag = id => { const bag = bagOf(id); return !!bag && !(bag.kind === 'stat' && bag.size === 's'); };
 
 export const WILD_EV_YIELD = 1.75;
 export const ENERGY_PER_MESSAGE = WILD_EV_YIELD / 2;
-
+/** Energy holds at most this many messages' worth */
 export const ENERGY_MESSAGES = 10;
 export const ENERGY_MAX = ENERGY_PER_MESSAGE * ENERGY_MESSAGES;
 
+/** A Pokemon's energy (no value stored = full) */
 export const energyOf = mon => mon?.energy ?? ENERGY_MAX;
 
 export function setEnergy(mon, value) {
@@ -82,7 +109,7 @@ export const SOOTHING_ENJOY = SOOTHING_FRIENDSHIP / FRIENDSHIP_PER_STEP * ENJOY_
 export const traineeOf = mon => ({
   evs: Object.fromEntries(STATS.map(stat => [stat, evOf(mon.set?.evs, stat)])), energy: energyOf(mon), enjoy: enjoymentOf(mon), effect: mon.trainEffect ?? null,
 });
-
+/** Writes a trainee back (mutates mon) */
 export function setTrainee(mon, { evs, energy, enjoy, effect }) {
   mon.set.evs = { ...evs };
   setEnergy(mon, energy);
@@ -152,13 +179,15 @@ export const METER_MAX = 52;
 const stepOf = (value, steps) => steps.find(([least]) => value >= least)[1];
 
 export const meterAxis = (base, ev) => ({ base: stepOf(base, BASE_STEPS), effort: stepOf(ev, EV_STEPS) });
-
+/** The meter's axes, clockwise from the top (the game's order) */
 export const METER_ORDER = Object.freeze(['hp', 'atk', 'def', 'spe', 'spd', 'spa']);
 
+// -- One visit ---------------------------------------------------------
+
 export const HIT_LOCK = 13 / 30;
-
+/** A second wind: each punch counts this many hits */
 export const SECOND_WIND = 2;
-
+/** Chance of a second wind for the next bag right after one is cleared */
 const SECOND_WIND_AFTER_BAG = 0.5;
 
 export const REST_BAGS = Object.freeze([3, 5]);
@@ -233,6 +262,8 @@ export function createCore({ trainee, hung = null, rng = Math.random }) {
     },
   };
 }
+
+// -- Who can train -----------------------------------------------------
 
 export const effortOn = (sim, format = DEFAULT_FORMAT) => formatRules(sim, format).effort;
 

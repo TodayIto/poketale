@@ -1,11 +1,11 @@
 // from pokerogue src/ui/battle-info/player-battle-info.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/battle-info/battle-info.ts (setLevelDisplay) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/ui/containers/party-exp-bar.ts @ 7d7da4a8 (AGPL-3.0-only)
 
 import Phaser from 'phaser';
 import { addTextObject } from './text.js';
-import { MAX_LEVEL } from '../../engine/mon.mjs';
+import { MAX_LEVEL } from '../../engine/mon.mjs'; // level cap (single source) instead of battle-scene.ts getMaxExpLevel
 import { tween, delay } from '../lifetime.js';
 
 export const EXP_IMAGES = {
@@ -14,7 +14,7 @@ export const EXP_IMAGES = {
 };
 export const EXP_SOUNDS = ['se/exp.wav', 'se/level_up.wav'];
 const EXP_BAR_WIDTH = 510;
-const EXP_GAINS_DURATION_BASE = 1650;
+const EXP_GAINS_DURATION_BASE = 1650; // BattleInfo.EXP_GAINS_DURATION_BASE
 const ease = name => Phaser.Tweens.Builders.GetEaseFunction(name);
 
 export function startSound(scene, path) {
@@ -22,12 +22,12 @@ export function startSound(scene, path) {
   let voice, stopped = false;
   const start = () => {
     if (stopped || audio.error || audio.readyState < 2 || scene.life.signal.aborted) return;
-    voice = scene.audio.adopt(audio.cloneNode(), 0.6, path);
+    voice = scene.audio.adopt(audio.cloneNode(), 0.6, path); // 0.6 x the sound effects' level (view/audio.js)
     scene.audio.active.add(voice);
     voice.onended = () => scene.audio.active.delete(voice);
     voice.play().catch(() => scene.audio.active.delete(voice));
   };
-  ready.then(() => (scene.audio.suspended ? scene.audio.awake().then(start) : start()));
+  ready.then(() => (scene.audio.suspended ? scene.audio.awake().then(start) : start())); // if collapsed while loading, start on expand (view/audio.js)
   return { stop() { stopped = true; if (voice) { voice.pause(); scene.audio.active.delete(voice); } } };
 }
 
@@ -51,7 +51,7 @@ export class ExpBar {
     this.bar.setMask(this.maskRect.createGeometryMask());
     info.container.add([this.label, this.bar]);
   }
-
+  /** Set instantly (updatePokemonExpDisplay skip) */
   set(level, ratio = 0) {
     this.scene.tweens.killTweensOf(this.maskRect);
     this.levelShown = level; this.ratio = ratio;

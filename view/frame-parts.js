@@ -3,7 +3,7 @@ import { pixelSvg } from './amie-art.js';
 import { ringSvg, ringDash, RING_COLOR, RING_ICON } from '../story/gauge-ring.mjs';
 
 export const NAVY = '#23435f';
-
+/** A press target's least size (CSS px) - the exits and the round arrows */
 export const TAP = 44;
 
 export const CLOSE_EVENT = 'pkb-close-window';
@@ -11,9 +11,9 @@ export const CLOSE_EVENT = 'pkb-close-window';
 export const esc = text => String(text).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 
 const svg = (body, box = 16) => `<svg viewBox="0 0 ${box} ${box}" aria-hidden="true">${body}</svg>`;
-
+/** A pixel icon in the button's colour ('o' = a pixel), 2 CSS px a pixel */
 const pixIcon = rows => pixelSvg(rows, { o: 'currentColor' }).replace('<svg ', `<svg width="${2 * Math.max(...rows.map(row => row.length))}" height="${2 * rows.length}" `);
-
+/** The panel's paper (the sheets, the buttons) */
 const PAPER = 'linear-gradient(135deg,#ffffff 0%,#f3f8fc 55%,#e2eef7 100%)';
 
 export const A1 = Object.freeze({ border: 2.5, radius: 10, paper: PAPER, drop: '0 2.5px 0 #1a3247', pressed: '0 .5px 0 #1a3247' });
@@ -27,6 +27,7 @@ export const PART_ICON = Object.freeze({
   chevron: svg('<path d="M6 3.2 10.8 8 6 12.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'),
 });
 
+/** The shared CSS, under root (the frame's own class, e.g. '.pkb-amie') */
 export function partsCss(root) {
   const ink = `var(--navy-dark, ${NAVY})`, R = root;
   return `
@@ -88,6 +89,7 @@ export const gaugeRingCss = (R, d) => `
 export const ringHtml = (kind, label) => `<div class="ring ${kind}" role="img" title="${esc(label)}" aria-label="${esc(label)}">${ringSvg(kind, 0)}`
   + `<span class="ic" style="background:${RING_COLOR[kind]}">${RING_ICON[kind]}</span></div>`;
 
+/** Draws a ring (its element) at share (0 - 1) of full */
 export const drawRing = (ring, share) => ring.querySelector('.arc').setAttribute('stroke-dasharray', ringDash(share));
 
 export const roundHtml = (name, icon, label) =>
@@ -104,6 +106,7 @@ export const segHtml = (label, options, chosen) => `<div class="seg" role="radio
   + options.map(([id, word]) => `<button type="button" role="radio" data-value="${esc(id)}" class="${id === chosen ? 'on' : ''}" aria-checked="${id === chosen}">${esc(word)}</button>`).join('')
   + '</div>';
 
+/** Marks value as the segment's pick (seg = its element) */
 export function pickSeg(seg, value) {
   for (const button of seg.querySelectorAll('button')) {
     const on = button.getAttribute('data-value') === value;
@@ -128,6 +131,7 @@ export function closeWindow(from) {
   return !from.dispatchEvent(event);
 }
 
+/** How long a press must be held to count as a long press (ms) */
 export const LONG_PRESS = 450;
 
 export function bindLongPress(element, { tap, long }) {

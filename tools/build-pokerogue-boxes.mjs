@@ -1,3 +1,5 @@
+// Build-only metadata from pokerogue @ 7d7da4a8 (AGPL-3.0-only).
+
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -225,13 +227,13 @@ export const STILL_TABLE = 'view/sprites/pokerogue-still.json';
 function firstFrame(path) {
   const atlas = JSON.parse(read(path));
   const frames = (atlas.textures ?? [{ frames: Object.values(atlas.frames) }]).flatMap(t => t.frames);
-  const f = frames.sort((a, b) => (a.filename < b.filename ? -1 : 1))[0];
+  const f = frames.sort((a, b) => (a.filename < b.filename ? -1 : 1))[0]; // the source plays frames in filename order
   return [f.frame.x, f.frame.y, f.frame.w, f.frame.h, f.spriteSourceSize.x, f.spriteSourceSize.y];
 }
 export function stillTable(boxes, mapping) {
   const table = {};
   for (const key of [...new Set(Object.values(mapping).flat().filter(Boolean))].sort()) for (const [d, folder] of [['f', ''], ['b', 'back/']]) {
-    if (!boxes[key]?.[d]) continue;
+    if (!boxes[key]?.[d]) continue; // pokerogueReference never picks a direction without a box
     const path = `vendor/pokerogue/assets/images/pokemon/${folder}`;
     const normal = firstFrame(`${path}${key}.json`);
     (table[key] ??= {})[d] = normal;

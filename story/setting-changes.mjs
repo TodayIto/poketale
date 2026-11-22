@@ -18,12 +18,14 @@ const FOLDED = Object.freeze({
   rule: { valid: value => RULE_IDS.includes(value), none: DEFAULT_RULE },
 });
 const FOLD_SETTINGS = Object.freeze(Object.keys(FOLDED));
-
+/** A rule's values (RULES): off before its point, on from it */
 const FROM_NOW = Object.freeze({ old: false, now: true });
 
 export const RULES = Object.freeze({ startFull: FROM_NOW, officialKo: FROM_NOW, aiFormNames: FROM_NOW, ...(ITEM_EFFECTS_READY ? { itemTags: FROM_NOW } : {}),
   boxHeal: FROM_NOW, foeLooks: FROM_NOW, trainerColors: FROM_NOW, mobStyles: FROM_NOW, duskLycanroc: FROM_NOW, blockEdges: FROM_NOW,
-  levelSpellings: FROM_NOW, friendshipSv: FROM_NOW, battleRegion: FROM_NOW, wildHiddenAbility: FROM_NOW, fishChain: FROM_NOW, formNames009: FROM_NOW, partnerLock: FROM_NOW, everstoneWaiting: FROM_NOW, ...Object.fromEntries(Object.keys(ITEM_NAMES_SINCE).map(name => [name, FROM_NOW])) });
+  levelSpellings: FROM_NOW, friendshipSv: FROM_NOW, battleRegion: FROM_NOW, wildHiddenAbility: FROM_NOW, fishChain: FROM_NOW, formNames009: FROM_NOW, partnerLock: FROM_NOW, everstoneWaiting: FROM_NOW,
+  keyStoneMega: FROM_NOW, zCrystalShare: FROM_NOW, zMoveWord: FROM_NOW, ultraBurstWord: FROM_NOW, namedTitles: FROM_NOW, namedJapanese: FROM_NOW, gmaxFactor: FROM_NOW, dynamaxWord: FROM_NOW, ...Object.fromEntries(Object.keys(ITEM_NAMES_SINCE).map(name => [name, FROM_NOW])),
+  regionMachines: FROM_NOW, genEvolve010: FROM_NOW, genStats010: FROM_NOW, metGen010: FROM_NOW, catchTera010: FROM_NOW, discTeach010: FROM_NOW, discStoryItem010: FROM_NOW, shopTown010: FROM_NOW, hatchOnScreen010: FROM_NOW });
 const RULE_NAMES = Object.freeze(Object.keys(RULES));
 
 export const ruleValues = ctx => Object.fromEntries(RULE_NAMES.map(name => [name, ctx?.[name] ?? RULES[name].now]));
@@ -37,7 +39,7 @@ const FIRST_RULES = Object.freeze(['startFull', 'officialKo']);
 
 const ruleShape = rules => isRecord(rules) && Object.entries(rules).every(([name, mark]) => !KNOWN.includes(name) || (isRecord(mark) && typeof mark.time === 'number'
   && (mark.at === null || isRecord(mark.at))));
-
+/** The names of a rules field this plugin does not know, as they are */
 const unknownOf = rules => Object.fromEntries(Object.entries(rules ?? {}).filter(([name]) => !KNOWN.includes(name)));
 
 const placeRules = (marks, value) => {
@@ -63,6 +65,7 @@ const readRecord = chat => readStored(chat?.scriptstate?.[SETTING_CHANGES_VAR], 
 
 export const foldSettings = settings => Object.fromEntries(FOLD_SETTINGS.map(name => [name, settings?.[name] ?? FOLDED[name].none]));
 
+/** A change placed after the chat's last message now */
 const changeAtEnd = (messages, before, time) => ({ time, at: anchorAtEnd(messages), before });
 
 const behindOf = (values, settings) => {
@@ -111,17 +114,18 @@ export function settingsAt(chat, ctx) {
 
   const behind = values && messages.length ? behindOf(values, ctx) : {};
   const changes = Object.keys(behind).length ? [...kept, changeAtEnd(messages, behind, 0)] : kept;
-  const places = changes.map(change => importPlace(messages, change));
-  for (let k = places.length - 2; k >= 0; k--) places[k] = Math.min(places[k], places[k + 1]);
   const ruleAt = rulesIn(messages, rules);
-  if (!changes.length) return (i, time) => ({ ...now, ...ruleAt(i, time) });
-  return (i, time) => ({ ...Object.fromEntries(FOLD_SETTINGS.map(name => {
-    const k = changes.findIndex((change, n) => places[n] >= i && Object.hasOwn(change.before, name));
-    return [name, k < 0 ? now[name] : changes[k].before[name]];
-  })), ...ruleAt(i, time) });
+  const valueAt = changedValuesAt(messages, changes, now);
+  return (i, time) => ({ ...valueAt(i), ...ruleAt(i, time) });
 }
 
-export function foldCtxAt(chat, ctx) {
-  const settingsOf = settingsAt(chat, ctx);
-  return (i, time) => ({ ...ctx, ...settingsOf(i, time) });
+export function changedValuesAt(messages, changes, now) {
+  const names = Object.keys(now);
+  if (!changes.length) return () => ({ ...now });
+  const places = changes.map(change => importPlace(messages, change));
+  for (let k = places.length - 2; k >= 0; k--) places[k] = Math.min(places[k], places[k + 1]);
+  return i => Object.fromEntries(names.map(name => {
+    const k = changes.findIndex((change, n) => places[n] >= i && Object.hasOwn(change.before, name));
+    return [name, k < 0 ? now[name] : changes[k].before[name]];
+  }));
 }

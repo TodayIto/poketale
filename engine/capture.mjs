@@ -1,37 +1,37 @@
-export const MAX_A = 1044480;
+export const MAX_A = 1044480; // 255 * 4096. At or above this the catch always succeeds
 const UB_MOD = 410;
 
 export const BALLS = {
 	pokeball: { name: 'Poke Ball', mod: 4096 },
-	greatball: { name: 'Great Ball', mod: 6144 },
-	ultraball: { name: 'Ultra Ball', mod: 8192 },
-	masterball: { name: 'Master Ball', master: true },
+	greatball: { name: 'Great Ball', mod: 6144 }, // 1.5x
+	ultraball: { name: 'Ultra Ball', mod: 8192 }, // 2x
+	masterball: { name: 'Master Ball', master: true }, // always catches, no formula
 	premierball: { name: 'Premier Ball', mod: 4096 },
 	luxuryball: { name: 'Luxury Ball', mod: 4096 },
 	healball: { name: 'Heal Ball', mod: 4096 },
 	friendball: { name: 'Friend Ball', mod: 4096 },
 	cherishball: { name: 'Cherish Ball', mod: 4096 },
-	sportball: { name: 'Sport Ball', mod: 4096 },
+	sportball: { name: 'Sport Ball', mod: 4096 }, // 1x Gen VIII+
 	safariball: { name: 'Safari Ball', mod: 4096 },
 
 	netball: { name: 'Net Ball', fn: ctx => ctx.target.types.some(t => t === 'Water' || t === 'Bug') ? 14336 : 4096 },
-
+	// 3.5x on or under water
 	diveball: { name: 'Dive Ball', fn: ctx => ctx.env.water ? 14336 : 4096 },
-
+	// 4x on or under water (same condition as Dive Ball)
 	lureball: { name: 'Lure Ball', fn: ctx => ctx.env.water ? 16384 : 4096 },
-
+	// level 1-29: floor((41 - level) * 4096 / 10) / 4096, otherwise 1x
 	nestball: { name: 'Nest Ball', fn: ctx => ctx.target.level >= 1 && ctx.target.level <= 29 ? Math.floor((41 - ctx.target.level) * 4096 / 10) : 4096 },
-
+	// 3.5x species already caught
 	repeatball: { name: 'Repeat Ball', fn: ctx => ctx.caught ? 14336 : 4096 },
 
 	timerball: { name: 'Timer Ball', fn: ctx => Math.min(4096 + (ctx.turn - 1) * 1229, 16384) },
-
+	// 5x on the first turn
 	quickball: { name: 'Quick Ball', fn: ctx => ctx.turn === 1 ? 20480 : 4096 },
-
+	// 3x at night or in a cave
 	duskball: { name: 'Dusk Ball', fn: ctx => ctx.env.night || ctx.env.cave ? 12288 : 4096 },
-
+	// 4x asleep
 	dreamball: { name: 'Dream Ball', fn: ctx => ctx.target.status === 'slp' ? 16384 : 4096 },
-
+	// 4x base Speed 100 or more
 	fastball: { name: 'Fast Ball', fn: ctx => ctx.target.species.baseStats.spe >= 100 ? 16384 : 4096 },
 
 	moonball: { name: 'Moon Ball', fn: ctx => evolvesByMoonStone(ctx) ? 16384 : 4096 },
@@ -40,12 +40,12 @@ export const BALLS = {
 		const mine = ctx.user.level, wild = ctx.target.level;
 		return mine >= wild * 4 ? 32768 : mine >= wild * 2 ? 16384 : mine > wild ? 8192 : 4096;
 	} },
-
+	// 8x same species, opposite gender
 	loveball: { name: 'Love Ball', fn: ctx => ctx.user.species.num === ctx.target.species.num &&
 		((ctx.user.gender === 'M' && ctx.target.gender === 'F') || (ctx.user.gender === 'F' && ctx.target.gender === 'M')) ? 32768 : 4096 },
 
 	heavyball: { name: 'Heavy Ball', mod: 4096, rateAdd: ctx => heavyBallRate(ctx.target.species.weighthg) },
-
+	// 5x Ultra Beast, otherwise 410/4096
 	beastball: { name: 'Beast Ball', fn: ctx => isUltraBeast(ctx.target.species) ? 20480 : UB_MOD },
 };
 

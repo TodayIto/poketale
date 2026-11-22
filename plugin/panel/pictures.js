@@ -37,7 +37,7 @@ export function createPanelPictures({ route, probe, fetchBytes, still, clean = n
   const kept = new Map();
   const pending = new Set();
   const listeners = new Set();
-  const cleaned = new Map();
+  const cleaned = new Map(); // badge address -> cleaned data: URL (any route - it is the same file)
   const cleaning = new Set(), unclean = new Set();
   const changed = () => { for (const listener of listeners) listener(); };
 
@@ -47,7 +47,7 @@ export function createPanelPictures({ route, probe, fetchBytes, still, clean = n
     cleaning.add(url);
     timeLimit(Promise.resolve().then(() => clean(drawn, panelPlan(id, url).viaHost)), STEP_TIMEOUT_MS, `clean ${STEP_TIMEOUT_MS / 1000}s: ${url}`).then(
       done => { cleaned.set(url, done); changed(); },
-      () => unclean.add(key),
+      () => unclean.add(key), // the original picture stays - no warning (the picture itself is there)
     ).finally(() => cleaning.delete(url));
   }
 
@@ -72,7 +72,7 @@ export function createPanelPictures({ route, probe, fetchBytes, still, clean = n
       startClean(id, url, hit);
       return hit;
     }
-    if (!steps.length) startClean(id, url, before);
+    if (!steps.length) startClean(id, url, before); // nothing to find (direct): the direct address is the answer
     if (steps.length && !pending.has(key)) {
       pending.add(key);
       answer(slot.url ? steps.filter(step => step !== 'pokerogue') : steps, slot, url).then(found => {

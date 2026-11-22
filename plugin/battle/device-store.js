@@ -1,6 +1,7 @@
-import { panelLift } from '../../story/panel-html.mjs';
+import { panelLift } from '../../story/panel-html.mjs'; // the widest a dragged height may go is the panel's
 import { panelOpenOf } from '../../story/panel.mjs';
 
+/** The browser storage key */
 export const DEVICE_KEY = 'pkb:device';
 
 const onOff = key => get => (typeof get(key) === 'boolean' ? get(key) : undefined);

@@ -1,5 +1,5 @@
-// Generated background timings from the Gen 8 / Gen 9 move animation project.
 // Credits: view/LICENSE-NOTE.md.
+
 export const BG_TIMINGS = {
   'mega-drain.json': [
     { n: 34, bg: [

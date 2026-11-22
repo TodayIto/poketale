@@ -4,7 +4,8 @@ import { DEFAULT_TRAINER, SHOWDOWN_TRAINER_URL, showdownTrainerId, trainerKey, i
 import { createImageRoute, audioType } from '../../view/image-route.js';
 import { LoadError } from '../../view/retry.js';
 import { clearEdges } from './my-picture.js';
-import { parseRecolorKey, recoloredCanvas, wholeFrame } from '../../view/sprites/recolor.js';
+import { createEntrySounds } from './entry-sound.js';
+import { parseRecolorKey, recoloredCanvas, wholeFrame } from '../../view/sprites/recolor.js'; // a recoloured opponent picture (view/encounter.js load)
 
 function loadImage(src) {
   return new Promise((resolve, reject) => {
@@ -99,21 +100,22 @@ export function entryLevel({ volume, sound } = {}) {
   return () => fixed;
 }
 
+const sounds = createEntrySounds();
+
 export function entrySound(path, { fetchBytes, pictureWays, level = () => 1 } = {}) {
-  const audio = new Audio();
-  audio.crossOrigin = 'anonymous'; audio.preload = 'auto';
-  const url = `${DEFAULT_ASSET_BASE}audio/${path}`, route = entryRoute({ fetchBytes, pictureWays }), left = route.order(url);
-  const next = () => {
-    const way = left.shift();
-    if (way === 'direct') audio.src = url;
-    else if (way === 'host') route.objectUrl(url, () => audioType(url)).then(src => { audio.src = src; }, next);
-  };
-  audio.onerror = next;
-  next();
+  const play = sounds.sound(path, (audio, fail) => {
+    const url = `${DEFAULT_ASSET_BASE}audio/${path}`, route = entryRoute({ fetchBytes, pictureWays }), left = route.order(url);
+    const next = () => {
+      const way = left.shift();
+      if (way === 'direct') audio.src = url;
+      else if (way === 'host') route.objectUrl(url, () => audioType(url)).then(src => { audio.src = src; }, next);
+      else fail(); // no way left: the next battle makes a new element
+    };
+    audio.onerror = next;
+    next();
+  });
   return () => {
     const now = Math.max(0, Math.min(1, level()));
-    if (!now) return;
-    audio.volume = 0.6 * now;
-    audio.play().catch(() => {});
+    if (now) play(0.6 * now);
   };
 }

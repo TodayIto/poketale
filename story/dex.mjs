@@ -66,7 +66,7 @@ export function dexHome(chat, compat) {
 }
 
 const numsCache = new WeakMap();
-
+/** National number -> the base species (sim.Dex species), once per Dex */
 function baseByNum(dex) {
   let map = numsCache.get(dex);
   if (!map) {
@@ -103,11 +103,17 @@ export function dexLooks(state, sim, num) {
   return [...plain.map(id => ({ id, shiny: false })), ...shiny.map(id => ({ id, shiny: true }))];
 }
 
+function eraTypes(sim, gen, species) {
+  if (!Number.isInteger(gen) || gen >= 9) return species.types;
+  const then = sim.Dex.forGen(gen).species.get(species.id);
+  return then.exists && then.types?.length ? then.types : species.types;
+}
+
 const UNKNOWN = '???';
 
 const measure = (value, unit) => (typeof value === 'number' ? `${value.toFixed(1)}${unit}` : String(value ?? ''));
 
-export function dexView({ state, sim, lang, names, ui, home = null, regions = [], mentions = [] }) {
+export function dexView({ state, sim, lang, names, ui, home = null, regions = [], mentions = [], gen = null }) {
   const key = BY_KEY.get(dexKey(ui?.dex?.key))?.key ?? BY_KEY.get(dexKey(home))?.key ?? REGIONAL[0].key;
   const national = ui?.dex ? !!ui.dex.national : home === null;
   const shown = national ? NATIONAL_LIST : dexList(key);
@@ -141,7 +147,7 @@ export function dexView({ state, sim, lang, names, ui, home = null, regions = []
 
       name: entry ? rows0[0]?.name ?? entry.name : displayName(sim.Dex, names, species.id),
       form: entry ? entry.form || (entry.name !== (rows0[0]?.name ?? entry.name) ? entry.name : '') : species.forme.replace(/-/g, ' '),
-      caught: got, types: got ? [...species.types] : [],
+      caught: got, types: got ? [...eraTypes(sim, gen, species)] : [],
 
       category: !entry ? '' : got ? entry.category ?? rows0[0]?.category ?? '' : say(lang, 'dex.categoryUnknown'),
       height: !got ? UNKNOWN : entry ? measure(entry.height, 'm') : measure(species.heightm, 'm'),
@@ -154,8 +160,9 @@ export function dexView({ state, sim, lang, names, ui, home = null, regions = []
   return view;
 }
 
+/** A national dex number (1..NATIONAL_LAST) */
 const isNum = num => Number.isInteger(num) && num >= 1 && num <= NATIONAL_LAST;
-
+/** The regional dex d steps from key in the switcher's order (round) */
 const stepKey = (key, d) => { const at = Math.max(0, REGIONAL.findIndex(x => x.key === dexKey(key))); return REGIONAL[(at + d + REGIONAL.length) % REGIONAL.length].key; };
 
 export function dexPress(ui, hit) {

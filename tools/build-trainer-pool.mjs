@@ -7,7 +7,7 @@ const OUTPUT = new URL('data/trainer-pool.json', ROOT);
 const TRAINERS = new URL('vendor/pokerogue/assets/images/trainer/', ROOT);
 
 export const STYLES = ['casual', 'formal', 'uniform', 'work', 'medical', 'sporty', 'outdoor', 'swimwear', 'winter', 'stage', 'punk', 'mystic'];
-
+/** Styles of the "no style" pool */
 export const DEFAULT_STYLES = ['casual', 'outdoor', 'sporty'];
 export const LOOKS = ['boy', 'girl', 'young_man', 'young_woman', 'middle_aged_man', 'middle_aged_woman', 'old_man', 'old_woman', 'toddler'];
 
@@ -160,6 +160,7 @@ function handTable() {
   return { styles: STYLES, defaultStyles: DEFAULT_STYLES, styleWords: STYLE_WORDS, pictures, keywords };
 }
 
+/** Problems with the hand table (empty = fine) */
 export function checkHand(table) {
   const problems = [];
   const sprites = Object.keys(table.pictures);
@@ -175,7 +176,7 @@ export function checkHand(table) {
   if (new Set(all).size !== all.length) problems.push('a picture is listed twice');
   if (sprites.length !== 111) problems.push(`${sprites.length} pictures, not 111`);
   if (all.length !== 133) problems.push(`${all.length} mob pictures, not 133`);
-
+  // a keyword-only picture is reached by its keyword
   for (const [sprite, p] of Object.entries(table.pictures)) {
     if (p.keywordOnly && !Object.values(table.keywords).some(k => k.M === sprite || k.F === sprite)) problems.push(`${sprite}: keyword only, no keyword`);
   }

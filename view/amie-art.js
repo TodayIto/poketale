@@ -80,21 +80,21 @@ export function foodTexture(scene, emoji) {
 const BUBBLE = [
   '..XXXXXXXXXXX..', '.XWWWWWWWWWWWX.', 'XWWWWWWWWWWWWWX', 'XWWWWWWWWWWWWWX', 'XWWWWWWWWWWWWWX', 'XWWWWWWWWWWWWWX', 'XWWWWWWWWWWWWWX',
   'XWWWWWWWWWWWWWX', 'XWWWWWWWWWWWWWX', 'XWWWWWWWWWWWWWX', '.XWWWWWWWWWWWX.', '..XXXXWWWXXXX..', '......XWX......', '.......X.......'];
-
+/** Each emote's picture (9 x 7, drawn into the bubble's middle) and colours */
 export const EMOTES = Object.freeze({
-
+  // played enough: "..."
   dots: { rows: ['.........', '.........', '.........', '.A..A..A.', '.........', '.........', '.........'], colors: { A: '#23435f' } },
-
+  // full: a sweat drop
   drop: { rows: ['....A....', '...ABA...', '..ABBBA..', '.ABBBBBA.', '.ABHBBBA.', '..ABBBA..', '...AAA...'], colors: { A: '#2a5aa0', B: '#7cc4f0', H: '#ffffff' } },
-
+  // will not eat: a cross
   cross: { rows: ['.A.....A.', 'AAA...AAA', '.AAA.AAA.', '..AAAAA..', '.AAA.AAA.', 'AAA...AAA', '.A.....A.'], colors: { A: '#d8434d' } },
-
+  // happier: a heart
   heart: { rows: ['.AA...AA.', 'ABBA.ABBA', 'ABBBABBBA', 'ABBBBBBBA', '.ABBBBBA.', '..ABBBA..', '...ABA...'], colors: { A: '#7a1f33', B: '#ee4f6a' } },
-
+  // resting: z's
   zzz: { rows: ['....AAAAA', '.......A.', 'AAAA..A..', '...A.AAAA', '..A......', '.A.......', 'AAAA.....'], colors: { A: '#23435f' } },
-
+  // up again: "!"
   bang: { rows: ['...AAA...', '...ABA...', '...ABA...', '...ABA...', '...AAA...', '.........', '...AAA...'], colors: { A: '#8e1c1c', B: '#ff5a4f' } },
-
+  // raring to go: sparkles
   sparkle: { rows: ['..A......', '.ABA...A.', '..A...ABA', '......ABA', '..A....A.', '.ABA.....', '..A......'], colors: { A: '#c98a1d', B: '#ffe27a' } },
 });
 
@@ -112,7 +112,7 @@ export function pixelSvg(rows, colors) {
   const w = Math.max(...rows.map(row => row.length)), h = rows.length;
   let rects = '';
   rows.forEach((row, y) => {
-
+    // runs of one colour in a row as one rect
     for (let x = 0; x < row.length;) {
       const c = row[x];
       let end = x + 1;
@@ -169,7 +169,7 @@ export function amieTextures(scene) {
   paint(scene, 'amie-ball-purple', BALL_ROWS, ballColors(PURPLE_BALL));
   paint(scene, 'amie-ball-giant', GIANT_ROWS, GIANT_COLORS);
   for (const [kind, { colors }] of Object.entries(EMOTES)) paint(scene, `amie-emote-${kind}`, emoteRows(kind), { X: '#23435f', W: '#ffffff', ...colors });
-
+  // the shadow under its feet: a soft dark ellipse
   if (!scene.textures.exists('amie-shadow')) {
     const canvas = scene.textures.createCanvas('amie-shadow', 64, 12);
     const ctx = canvas.getContext();

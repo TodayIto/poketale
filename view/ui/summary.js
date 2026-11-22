@@ -1,18 +1,19 @@
 // from pokerogue src/ui/handlers/summary-ui-handler.ts (SummaryUiMode.DEFAULT, Page.PROFILE/STATS/MOVES) @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/party-ui-handler.ts (processSummaryOption) @ 7d7da4a8 (AGPL-3.0-only)
 
+import { zTextures, dmaxLevelColor, DMAX_LEVEL_EMPTY } from './z-art.js'; // the G-Max mark, the Dynamax Level cells
 import { placeSprite } from '../sprites/placement.js';
-import { fixed } from '../game-speed.js';
+import { fixed } from '../game-speed.js'; // description scrolling ignores game speed (summary-ui-handler.ts fixedInt)
 import { ballFrame } from './bag.js';
 import { LEARN_MOVE_IMAGES, TEXT as SUMMARY_TEXT, fadeSwap, buildMoveEffect, buildMovesPage, MoveDetails } from './learn-move.js';
-import { styledText, addGenderMark, STATUS_FRAMES, STAT_ROWS, GENDER_COLORS } from './text.js';
+import { styledText, addGenderMark, fitName, STATUS_FRAMES, STAT_ROWS, GENDER_COLORS } from './text.js';
 import { nameShowsGender } from '../gender-mark.js';
-import { playSelect, playError } from './keys.js';
-import { openMenu } from './menu.js';
-import { RenameForm } from './rename-form.js';
-import { LoadError } from '../retry.js';
-import { artTexture } from '../amie-art.js';
+import { playSelect, playError } from './keys.js'; // menu sounds
+import { openMenu } from './menu.js'; // menu frame (keys, closing)
+import { RenameForm } from './rename-form.js'; // nickname change
+import { LoadError } from '../retry.js'; // load-failure kind
+import { artTexture } from '../amie-art.js'; // the friendship line's heart (the petting screen's pixel heart)
 
 const KO = 'images/ui/text_images/ko/summary/';
 
@@ -39,11 +40,18 @@ const LOCK_SHUT = ['.ooooo.', 'oo...oo', 'o.....o', 'ooooooo', 'owwwwwo', 'owwow
 const LOCK_OPEN = ['.ooooo.', 'oo...oo', 'o......', 'ooooooo', 'owwwwwo', 'owwowwo', 'owwowwo', 'ooooooo'];
 const LOCK_COLOR = { shut: { o: 0x484848, w: 0xf8c020 }, open: { o: 0x484848, w: 0xf8f8f8 } };
 const LOCK_X = 85, LOCK_Y = -26;
+
+const NAME_RIGHT = 104;
 export const PAGES = ['profile', 'stats', 'moves'];
 
 const MEMO_RIGHT = 7 + 1224 / 6, PAGE_BOTTOM = 159, BOND_HEART_W = 7, BOND_HEART_DY = 5, BOND_SIZES = [96, 80, 66];
 const [PROFILE, STATS_PAGE, MOVES] = [0, 1, 2];
-const SWIPE = 16 * 6;
+
+const DMAX_CELLS = { width: 5, gap: 2, slant: 2, height: 5, count: 10, right: 122, top: 152 };
+const DMAX_LABEL = { size: 44, gap: 3, left: 6, middle: 154.5 };
+
+const GMAX_GAP = 2;
+const SWIPE = 16 * 6; // swipe distance (16 units in screen coordinates)
 
 export function openSummary(menu) {
   const scene = menu.scene;
@@ -113,7 +121,7 @@ export class SummaryScreen {
     if (!this.finish || this.renaming) return null;
     return { prev: this.page > PROFILE, next: this.page < MOVES && !this.moveSelect };
   }
-
+  /** Only when the same press was not a swipe (object pointerup) */
   tap(fn) {
     return (pointer, localX) => {
       if (!this.armed || !this.finish) return;
@@ -166,7 +174,7 @@ export class SummaryScreen {
   showMon(asset, first) {
     const s = this.scene, mon = this.party[this.index], summary = mon.summary, layer = this.monLayer;
     layer.removeAll(true);
-
+    // shinyOverlay (6, -54) origin (0,1): gold "No" + left strip when shiny
     if (mon.shiny) layer.add(s.add.image(6, -54, 'summary_dexnb_label_overlay_shiny').setOrigin(0, 1));
 
     layer.add(styledText(s, 41, -149, String(summary.dexNumber ?? 0).padStart(4, '0'), mon.shiny ? 'SUMMARY_DEX_NUM_GOLD' : 'SUMMARY_DEX_NUM').setOrigin(1, 1));
@@ -176,31 +184,33 @@ export class SummaryScreen {
     const sprite = s.add.sprite(56, -106, asset.key, asset.frame)
       .setOrigin(place.originX, (body.top + body.bottom) / 2 / asset.height).setScale(place.scale);
     if (s.anims.exists(asset.key)) sprite.play(asset.key);
-    const name = styledText(s, 6, -53, mon.name, 'SUMMARY').setOrigin(0, 0);
+
+    const gmax = summary?.gigantamax ? this.drawGmaxMark(layer, 6, -53) : null;
+    const name = styledText(s, 6 + (gmax ? gmax.width + GMAX_GAP : 0), -53, '', 'SUMMARY').setOrigin(0, 0);
     layer.add([sprite, name]);
-
+    // tapping the name changes the nickname (outside battle, only with rename)
     if (this.rename) name.setInteractive({ useHandCursor: true }).on('pointerup', this.tap(() => this.startRename()));
-
-    const shiny = mon.shiny ? s.add.image(name.x + name.displayWidth + 1, name.y + 3, 'shiny_star').setOrigin(0, 0).setScale(0.75).setTint(0xf8c020) : null;
+    // shinyIcon: name right +1, y +3, scale 0.75, getVariantTint(0)
+    const shiny = mon.shiny ? s.add.image(0, name.y + 3, 'shiny_star').setOrigin(0, 0).setScale(0.75).setTint(0xf8c020) : null;
     if (shiny) layer.add(shiny);
 
     const quill = this.rename ? this.drawQuill(layer) : null;
 
-    const gender = GENDER_COLORS[mon.gender] ? addGenderMark(s, 96, -17, mon.gender, `GENDER_${mon.gender}`, { originY: 1 }).setVisible(!nameShowsGender(mon.name)) : null;
+    const gender = GENDER_COLORS[mon.gender] ? addGenderMark(s, 96, -17, mon.gender, `GENDER_${mon.gender}`, { originY: 1 }) : null;
 
     const evolveLock = this.lock && summary.lock && !summary.lock.held ? this.drawLock(layer, summary.lock.locked) : null;
-    this.nameRefs = { name, shiny, quill, gender, evolveLock };
-    this.placeQuill();
+    this.nameRefs = { name, shiny, quill, gender, evolveLock, gmax };
+    this.showName(mon.name);
     layer.add(s.add.sprite(6, -19, 'pb', ballFrame(summary.ball)).setOrigin(0, 1));
-
+    // friendship (source (13, -60) heart + n/255) is not drawn
     layer.add(styledText(s, 24, -17, String(mon.level), 'SUMMARY_ALT').setOrigin(0, 1));
     if (gender) layer.add(gender);
-
+    // showStatus / hideStatus: x 0 <-> -106, 250ms (instant on first open)
     const status = STATUS_FRAMES[mon.status];
     if (status) this.status.setFrame(status);
     if (!!status !== this.statusShown) {
       this.statusShown = !!status;
-      s.tweens.add({ targets: this.statusContainer, x: status ? 0 : -106, duration: first ? 0 : 250, ease: status ? 'Sine.easeOut' : 'Sine.easeIn' });
+      s.tweens.add({ targets: this.statusContainer, x: status ? 0 : -106, duration: first ? 0 : 250, ease: status ? 'Sine.easeOut' : 'Sine.easeIn' }); // not awaited
     }
     this.details.hideEffect(true);
     this.moveSelect = false;
@@ -210,6 +220,7 @@ export class SummaryScreen {
     if (!first) s.audio.cry(mon, false, 'appear').catch(() => {});
   }
 
+  // -- populatePageContainer --
   populate(container, page) {
     const s = this.scene, mon = this.party[this.index], summary = mon.summary;
     if (container === this.pageC) { this.details.clear(); this.statsRefs = null; this.movesRefs = null; }
@@ -227,7 +238,7 @@ export class SummaryScreen {
       const refs = buildMovesPage(s, content, { moves: summary.moves });
       container.cleanup.push(() => refs.maskShape.destroy());
       if (container === this.pageC) {
-        container.cleanup.pop();
+        container.cleanup.pop(); // the moves page mask is destroyed by MoveDetails.clear
         this.movesRefs = refs;
         this.details.attach(refs);
         this.moveHits(refs.list);
@@ -241,20 +252,21 @@ export class SummaryScreen {
 
     const ot = styledText(s, 7, 10, `${s.words(TEXT.ot)}/`, 'SUMMARY_ALT').setOrigin(0);
 
-    p.add([ot, styledText(s, 7 + ot.displayWidth, 10, summary.trainer ?? '', 'SUMMARY_BLUE').setOrigin(0)]);
+    const trainer = styledText(s, 7 + ot.displayWidth, 10, '', 'SUMMARY_BLUE').setOrigin(0);
+    p.add([ot, trainer]);
 
     const typeLabel = styledText(s, 7, 27, `${s.words(TEXT.type)}/`, 'WINDOW_ALT').setOrigin(0, 0);
     p.add(typeLabel);
     (summary.types ?? []).slice(0, 2).forEach((type, i) =>
       p.add(s.add.sprite(typeLabel.displayWidth + 9 + 34 * i, 41, 'types', type.toLowerCase()).setOrigin(0, 1)));
 
-    if (summary.teraType) {
-      const frame = summary.teraType.toLowerCase();
-      p.add(s.add.sprite(128, 26, 'button_tera', s.textures?.get?.('button_tera')?.has?.(frame) === false ? 'unknown' : frame));
-    }
+    const tera = summary.teraType ? s.add.sprite(128, 26, 'button_tera', s.textures?.get?.('button_tera')?.has?.(summary.teraType.toLowerCase()) === false ? 'unknown' : summary.teraType.toLowerCase()) : null;
+    if (tera) p.add(tera);
 
-    p.add([s.add.image(17, 47, 'summary_profile_ability').setOrigin(0, 0.5),
-      styledText(s, 7, 68, summary.ability?.name ?? '', 'SUMMARY_ALT').setOrigin(0, 1)]);
+    fitName(trainer, summary.trainer ?? '', (tera ? tera.x - tera.displayWidth * tera.originX - 1 : MEMO_RIGHT) - trainer.x);
+
+    if (summary.ability) p.add([s.add.image(17, 47, 'summary_profile_ability').setOrigin(0, 0.5),
+      styledText(s, 7, 68, summary.ability.name ?? '', 'SUMMARY_ALT').setOrigin(0, 1)]);
     const description = styledText(s, 7, 71, summary.ability?.description ?? '', 'WINDOW_ALT', { wordWrap: { width: 1224 } }).setOrigin(0, 0);
     const mask = s.make.graphics({ add: false }).setScale(6).fillStyle(0xffffff).fillRect(110, 90, 206, 31);
     description.setMask(mask.createGeometryMask());
@@ -310,22 +322,26 @@ export class SummaryScreen {
     const s = this.scene, p = s.add.container(0, -159);
     content.add(p);
     const perm = s.add.container(27, 64), ivs = s.add.container(27, 64).setVisible(false);
-    p.add([s.add.container(0, 0)                                                        , perm, ivs]);
+    p.add([s.add.container(0, 0) /* itemIconsContainer: held item icons are not added */, perm, ivs]);
     // Held item as one text line under the item title (in place of the icons)
     p.add(styledText(s, 8, 14, summary.item ?? s.words(TEXT.noItem), 'WINDOW_ALT').setOrigin(0, 0));
     p.add([s.add.image(7, 4, 'summary_stats_item_title').setOrigin(0, 0.5), s.add.image(16, 59, 'summary_stats_stats_title').setOrigin(0, 0.5),
       s.add.image(7, 115, 'summary_stats_exp_title').setOrigin(0, 0.5), s.add.image(126, 152, 'summary_stats_expbar_title').setOrigin(0, 0)]);
     const stats = summary.stats ?? {};
-    STAT_ROWS.forEach(([key, name], i) => {
+
+    const rows = summary.oneSpecial ? STAT_ROWS.filter(([key]) => key !== 'spd') : STAT_ROWS;
+    rows.forEach(([key, name], i) => { // PERMANENT_STATS order (HP, Atk, Def | SpA, SpD, Spe)
       const row = i % 3, col = Math.floor(i / 3), x = 116 * col + (col === 1 ? 5 : 0);
 
       const style = summary.nature?.plus === key ? 'SUMMARY_STATS_PINK' : summary.nature?.minus === key ? 'SUMMARY_STATS_BLUE' : 'SUMMARY_STATS';
-      const iv = summary.ivs?.[key], label = s.words(name);
+      const iv = summary.ivs?.[key], label = summary.oneSpecial && key === 'spa' ? summary.oneSpecial.label : s.words(name);
       perm.add([styledText(s, x, 16 * row, label, style).setOrigin(0.5, 0),
         styledText(s, 93 + 93 * col, 16 * row, key === 'hp' ? `${stats.hp ?? mon.hp}/${stats.maxhp ?? mon.maxhp}` : String(stats[key] ?? ''), 'WINDOW_ALT').setOrigin(1, 0)]);
       ivs.add([styledText(s, x, 16 * row, label, iv >= 31 ? 'SUMMARY_STATS_GOLD' : 'SUMMARY_STATS').setOrigin(0.5, 0),
         styledText(s, 93 + 93 * col, 16 * row, iv === undefined ? '' : `${iv}/31`, 'WINDOW_ALT').setOrigin(1, 0)]);
     });
+
+    if (Number.isInteger(summary.dynamaxLevel)) this.dynamaxLine(p, summary.dynamaxLevel);
 
     const exp = summary.exp;
     p.add([styledText(s, 6, 120, s.words(TEXT.expPoints), 'SUMMARY').setOrigin(0, 0), styledText(s, 6, 136, s.words(TEXT.nextLv), 'SUMMARY').setOrigin(0, 0),
@@ -338,11 +354,30 @@ export class SummaryScreen {
     container.cleanup.push(() => { bar.clearMask(true); mask.destroy(); });
 
     p.add([bar, s.add.image(8, 55, 'summary_profile_prompt_z').setOrigin(0, 0).setVisible(!!summary.ivs)]);
-
+    // Touch: tapping the stats area shows IVs like Z
     const hit = s.add.rectangle(0, 51, 214, 56, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
     hit.on('pointerup', this.tap(() => { if (this.page === STATS_PAGE && !this.moveSelect) this.input('ok'); }));
     p.add(hit);
     return { perm, ivs };
+  }
+
+  dynamaxLine(p, level) {
+    const s = this.scene;
+    const { width, gap, slant, height, count, right, top } = DMAX_CELLS, left = right - (count * width + (count - 1) * gap + slant);
+    const label = styledText(s, left - DMAX_LABEL.gap, DMAX_LABEL.middle, s.words('own.dynamaxLevel'), 'SUMMARY', { fontSize: DMAX_LABEL.size, padding: {} })
+      .setOrigin(1, 0.5).setShadow(2, 2, '#636363');
+    // a longer label (another language) is narrowed to the room left of the cells
+    const room = left - DMAX_LABEL.gap - DMAX_LABEL.left;
+    if (label.displayWidth > room) label.setScale(label.scaleX * room / label.displayWidth, label.scaleY);
+    p.add(label);
+    const g = s.add.graphics?.();
+    if (!g) return;
+
+    for (let i = 0; i < count; i++) {
+      const x = left + i * (width + gap), colour = i < level ? dmaxLevelColor(i, count) : DMAX_LEVEL_EMPTY;
+      g.fillStyle(parseInt(colour.slice(1), 16)).fillPoints([{ x: x + slant, y: top }, { x: x + slant + width, y: top }, { x: x + width, y: top + height }, { x, y: top + height }], true);
+    }
+    p.add(g);
   }
 
   moveHits(list) {
@@ -359,6 +394,7 @@ export class SummaryScreen {
     }
   }
 
+  // -- setCursor (page) --
   setPage(page) {
     const s = this.scene, forward = this.page < page, old = this.page;
     this.page = page;
@@ -378,7 +414,7 @@ export class SummaryScreen {
       this.transitioning = false;
     } });
   }
-
+  // -- Move selection (DEFAULT): cursor 0, fifth row (cancel) shown --
   showMoveSelect() {
     if (!this.movesRefs) return;
     this.moveSelect = true;
@@ -429,7 +465,7 @@ export class SummaryScreen {
   }
 
   input(action) {
-    if (this.noticing) { if (action === 'ok' || action === 'back') this.scene.messages.advance?.(); return; }
+    if (this.noticing) { if (action === 'ok' || action === 'back') this.scene.messages.advance?.(); return; } // notice message
     if (this.renaming) return this.renameForm?.input(action);
     if (!this.finish || this.transitioning) return;
     const s = this.scene;
@@ -446,7 +482,7 @@ export class SummaryScreen {
       return;
     }
     if (action === 'ok') {
-      if (this.page === PROFILE && this.rename) return void this.startRename();
+      if (this.page === PROFILE && this.rename) return void this.startRename(); // also via keys / pad
       if (this.page === MOVES) { playSelect(s); this.showMoveSelect(); }
       else if (this.page === STATS_PAGE && this.statsRefs && this.party[this.index].summary.ivs) {
         this.statsRefs.perm.setVisible(!this.statsRefs.perm.visible);
@@ -454,7 +490,7 @@ export class SummaryScreen {
       }
       return;
     }
-    if (action === 'back') { playSelect(s); return this.finish(null); }
+    if (action === 'back') { playSelect(s); return this.finish(null); } // the menu frame stops input (no input during the closing transition)
     if (action === 'up' || action === 'down') return void this.switchMember(action === 'down' ? 1 : -1);
     if (action === 'left' && this.page > PROFILE) { playSelect(s); return this.setPage(this.page - 1); }
     if (action === 'right' && this.page < MOVES) { playSelect(s); return this.setPage(this.page + 1); }
@@ -480,10 +516,11 @@ export class SummaryScreen {
   }
 
   showName(name) {
-    const { name: text, shiny, gender } = this.nameRefs ?? {};
+    const { name: text, shiny, quill, gender } = this.nameRefs ?? {};
     if (!text) return;
-    text.setText(name);
-    gender?.setVisible(!nameShowsGender(name));
+    const icons = (shiny ? 1 + shiny.width * shiny.scaleX : 0) + (quill ? 3 + QUILL[0].length : 0);
+    const shown = fitName(text, name, NAME_RIGHT - text.x - icons);
+    gender?.setVisible(!nameShowsGender(shown));
     shiny?.setPosition(text.x + text.displayWidth + 1, text.y + 3);
     this.placeQuill();
   }
@@ -495,6 +532,13 @@ export class SummaryScreen {
     hit.on('pointerup', this.tap(() => this.startRename()));
     layer.add([icon, hit]);
     return { icon, hit };
+  }
+
+  drawGmaxMark(layer, x, y) {
+    zTextures(this.scene);
+    const icon = this.scene.add.image(x, y + 4, 'gmax_mark').setOrigin(0, 0);
+    layer.add(icon);
+    return icon;
   }
 
   placeQuill() {

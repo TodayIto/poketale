@@ -1,7 +1,7 @@
 export const RETRY_DELAYS = Object.freeze([500, 1500]);
 
 export class LoadError extends Error { name = 'LoadError'; }
-
+/** Our own time limit passed - not retried */
 export class TimeoutError extends LoadError { name = 'TimeoutError'; }
 
 export function failureKind(error) {

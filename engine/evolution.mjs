@@ -3,7 +3,7 @@ import { toID } from './mon.mjs';
 export const REGIONAL_FORMES = Object.freeze(new Set(['Alola', 'Galar', 'Hisui', 'Paldea']));
 
 export const genderAllows = (gender, target) => !(target.gender === 'M' || target.gender === 'F') || gender === target.gender;
-
+/** Friendship evolution: level up at this much or more (generation 8) */
 export const EVOLVE_FRIENDSHIP = 160;
 
 export const isNight = timeOfDay => timeOfDay === 'dusk' || timeOfDay === 'night';
@@ -16,25 +16,38 @@ const EVERSTONE_IGNORED = new Set(['kadabra']);
 
 export const everstoneStops = (dex, mon) => holdsEverstone(mon.item) && !EVERSTONE_IGNORED.has(dex.species.get(mon.species).id);
 
+const GMAX_NO_EVOLVE = new Set(['pikachu', 'meowth', 'eevee']);
+
+const gmaxStops = (dex, mon) => mon.gigantamax === true && GMAX_NO_EVOLVE.has(dex.species.get(mon.species).id);
+
 export const EVOLUTION_WAYS = Object.freeze(['level', 'item', 'trade', 'battle', 'spin']);
 
 const EVOLUTION_GATES = Object.freeze([
 	{ id: 'locked', ways: EVOLUTION_WAYS, refuses: true, stops: (dex, mon) => mon.evolveLocked === true },
 	{ id: 'everstone', ways: Object.freeze(['level', 'trade', 'battle']), stops: everstoneStops },
+	{ id: 'gmax', ways: EVOLUTION_WAYS, stops: gmaxStops },
+	{ id: 'generation', ways: EVOLUTION_WAYS, into: (mon, target) => laterSpecies(mon, target) },
 ]);
+const MON_GATES = EVOLUTION_GATES.filter(g => g.stops), BRANCH_GATES = EVOLUTION_GATES.filter(g => g.into);
+
+const laterSpecies = (mon, target) => Number.isInteger(mon.evolveGen) && target.gen > mon.evolveGen;
+
+export const genMark = gen => (Number.isInteger(gen) ? { evolveGen: gen } : {});
+
+export const branchOpen = (mon, target) => !BRANCH_GATES.some(g => g.into(mon, target));
 
 export function evolutionGate(dex, mon, way) {
-	const gate = EVOLUTION_GATES.find(g => g.ways.includes(way) && g.stops(dex, mon));
+	const gate = MON_GATES.find(g => g.ways.includes(way) && g.stops(dex, mon));
 	return gate ? { id: gate.id, ...(gate.refuses ? { refuses: true } : {}) } : null;
 }
 
 export const lockMark = locked => (locked === true ? { evolveLocked: true } : {});
-
+/** Whether a gate stops mon evolving this way */
 export const evolutionStops = (dex, mon, way) => !!evolutionGate(dex, mon, way);
 
 export const willingMon = mon => ({ ...mon, evolveLocked: false });
 
-export const evolutionHeld = (dex, mon) => EVOLUTION_GATES.some(g => !g.refuses && g.ways.length === EVOLUTION_WAYS.length && g.stops(dex, mon));
+export const evolutionHeld = (dex, mon) => MON_GATES.some(g => !g.refuses && g.ways.length === EVOLUTION_WAYS.length && g.stops(dex, mon));
 
 export const TRADE_EVOLUTIONS = Object.freeze(['cord', 'level']);
 
@@ -43,7 +56,7 @@ export const ABSENT_TRADE_EVOLUTION = 'cord';
 export const DEFAULT_TRADE_EVOLUTION_SETTING = 'level';
 
 const COUNT_KINDS = Object.freeze(['damage', 'recoil', 'uses', 'kos', 'mentions', 'crits']);
-
+/** Counts that last one battle only */
 export const BATTLE_COUNTS = Object.freeze(new Set(['crits']));
 
 export function personalityOf(uid) {
@@ -52,6 +65,7 @@ export function personalityOf(uid) {
 	return h;
 }
 
+// Toxtricity's form by nature (Sword / Shield): Amped and Low Key
 const AMPED = new Set(['hardy', 'brave', 'adamant', 'naughty', 'docile', 'impish', 'lax', 'hasty', 'jolly', 'naive', 'rash', 'sassy', 'quirky']);
 const LOW_KEY = new Set(['lonely', 'bold', 'relaxed', 'timid', 'serious', 'modest', 'mild', 'quiet', 'bashful', 'calm', 'gentle', 'careful']);
 
@@ -72,7 +86,7 @@ const RULES = Object.freeze({
 	brambleghast: { level: true, count: { kind: 'mentions', at: 4 } },
 	rabsca: { level: true, count: { kind: 'mentions', at: 4 } },
 	gholdengo: { level: true, money: 9999 },
-	solgaleo: { time: 'daySky' }, lunala: { time: 'nightSky' },
+	solgaleo: { time: 'daySky' }, lunala: { time: 'nightSky' }, // by how the time looks (dusk = night), as the battle picture
 	urshifu: { level: true, friendship: true, choice: 'dark' }, urshifurapidstrike: { level: true, friendship: true, choice: 'water' },
 	malamar: { flip: true },
 	palafin: { partner: true },
@@ -85,7 +99,7 @@ const RULES = Object.freeze({
 	toxtricitylowkey: { natures: LOW_KEY }, toxtricity: { natures: AMPED },
 	lycanrocdusk: { ability: 'owntempo', time: 'dusk', first: true },
 	sylveon: { level: true, friendship: true, moveType: 'Fairy', first: true },
-	probopass: { item: 'Thunder Stone' },
+	probopass: { item: 'Thunder Stone' }, // generation 8 on: a Thunder Stone instead of the magnetic field
 	shedinja: { extra: 'ninjask' },
 	escavalier: { with: 'shelmet' }, accelgor: { with: 'karrablast' },
 
@@ -97,6 +111,7 @@ const ruleOf = target => RULES[target.id] ?? null;
 
 const EXTRA_EVOS = Object.freeze({ meltan: ['Melmetal'], rockruff: ['Lycanroc-Dusk'], rockruffdusk: ['Lycanroc', 'Lycanroc-Midnight'] });
 
+// Showdown evoCondition words a branch without a rule can have, as checks
 const CONDITIONS = Object.freeze({
 	'during the day': (dex, mon, now) => !isEvolutionNight(now.timeOfDay),
 	'at night': (dex, mon, now) => isEvolutionNight(now.timeOfDay),
@@ -131,6 +146,7 @@ function branchesOf(dex, species) {
 
 const allowed = (target, from, mon, now) => genderAllows(mon.gender, target) && (!regionOf(target, from) || regionOf(target, from) === now.region);
 
+/** Whether the rule's facts hold (the ones every way shares) */
 function ruleHolds(dex, rule, mon, now) {
 	if (!rule) return true;
 	if (rule.time && !TIMES[rule.time](now.timeOfDay ?? 'day', now)) return false;
@@ -171,7 +187,7 @@ function pick(ready, from, now) {
 
 function readyBranches(dex, mon, now, test) {
 	const from = dex.species.get(mon.species);
-	return { from, ready: branchesOf(dex, from).filter(t => allowed(t, from, mon, now) && test(t)) };
+	return { from, ready: branchesOf(dex, from).filter(t => branchOpen(mon, t) && allowed(t, from, mon, now) && test(t)) };
 }
 
 export function levelEvolution(dex, mon, now = {}) {
@@ -205,7 +221,7 @@ export function tradeEvolution(dex, mon, now = {}) {
 
 export function tradePair(dex, a, b) {
 	const branch = (mon, other) => branchesOf(dex, dex.species.get(mon.species))
-		.find(t => wayOf(t) === 'trade' && ruleOf(t)?.with === toID(dex.species.get(other.species).baseSpecies)) ?? null;
+		.find(t => branchOpen(mon, t) && wayOf(t) === 'trade' && ruleOf(t)?.with === toID(dex.species.get(other.species).baseSpecies)) ?? null;
 	const ab = branch(a, b), ba = branch(b, a);
 	if (!ab || !ba) return null;
 	const into = [evolutionStops(dex, a, 'trade') ? null : ab.name, evolutionStops(dex, b, 'trade') ? null : ba.name];
@@ -218,9 +234,11 @@ export function battleEvolution(dex, mon, now = {}) {
 	return pick(ready, from, now)?.name ?? null;
 }
 
+// Sweets Milcery holds to evolve (the decoration on its cream)
 const SWEETS = new Set(['strawberrysweet', 'berrysweet', 'lovesweet', 'starsweet', 'cloversweet', 'flowersweet', 'ribbonsweet']);
 
-export const canSpin = (dex, mon) => !evolutionStops(dex, mon, 'spin') && SWEETS.has(toID(mon.item)) && branchesOf(dex, dex.species.get(mon.species)).some(t => wayOf(t) === 'spin');
+export const canSpin = (dex, mon) => !evolutionStops(dex, mon, 'spin') && SWEETS.has(toID(mon.item))
+	&& branchesOf(dex, dex.species.get(mon.species)).some(t => branchOpen(mon, t) && wayOf(t) === 'spin');
 
 function creamOf({ clockwise, seconds }, timeOfDay) {
 	if (!clockwise && seconds > 10 && timeOfDay === 'dusk') return 'Alcremie-Rainbow-Swirl';

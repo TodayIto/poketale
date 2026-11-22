@@ -1,4 +1,4 @@
-import { SEND_MS, ICON_PLANE, noteRule } from '../../story/card.mjs';
+import { SEND_MS, ICON_PLANE, noteRule } from '../../story/card.mjs'; // send animation duration, paper plane and note line look (same as the card)
 import { say } from '../../story/screen-text.mjs';
 
 export const END_GUARD_MS = 500;
@@ -72,7 +72,7 @@ export async function flyAway(button, { hold = 900 } = {}) {
   await wait(hold);
   button.classList.remove('flying');
 }
-
+/** Only a slight shake when there is no new turn since last time */
 export async function shake(button) {
   restart(button, 'shaking');
   await animationsDone(button);
@@ -100,10 +100,10 @@ export function mountEndScreen(screen, { outcome = '', caught = '', lang, retry 
   screen.append(end);
   return {
     element: end,
-
+    /** e.g. when the result could not be written (red line) */
     note(text) { note.textContent = text ?? ''; },
     busy(on) { retryButton.disabled = sendButton.disabled = !!on; },
-    fly: () => flyAway(sendButton, { hold: 450 }),
+    fly: () => flyAway(sendButton, { hold: 450 }), // short check mark, since chat follows right away
     remove() { end.remove(); },
   };
 }

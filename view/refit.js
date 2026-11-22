@@ -1,3 +1,4 @@
+/** scale = Phaser ScaleManager. Returns: whether it refitted */
 export function refitScale(scale) {
   if (!scale?.canvas) return false;
   scale.getParentBounds();

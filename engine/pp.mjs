@@ -23,4 +23,5 @@ export function applyPpUps(battle, pokemon, ppUps) {
 	});
 }
 
+/** PP of a newly learned move slot (0 PP Ups) */
 export const newMovePp = (battle, move) => battle.calculatePP(move, 0);

@@ -17,7 +17,7 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
   const say = (key, values, options = {}) => view.message(bagText(key, values, lang), options);
 
   const itemName = id => bag?.itemName(id) ?? names.item(id);
-
+  // Bag item an effect line comes from: a BAG_ITEMS name, or a food of this bag
   const sourceItem = from => BY_NAME.get(String(from)) ?? bag?.foodOf(from);
 
   let using = null, captured = null;
@@ -89,7 +89,7 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
     }
     case '-heal': {
       const { hp, maxhp } = ledger.get(a[0]), item = sourceItem(kw.from), name = ledger.get(a[0]).name;
-      const log = hpLog(affix(name, positionOf(a[0])), event.before, hp, maxhp);
+      const log = hpLog(affix(name, positionOf(a[0])), event.before, hp, maxhp); // the screen log's HP line (never drawn)
       if (sideOf(a[0]) === 'enemy') {
 
         if (!ledger.onField(a[0])) return;
@@ -99,7 +99,7 @@ export function createBagSteps({ battle, view, names, ledger, bag, lang = DEFAUL
       }
 
       if (!ledger.onField(a[0])) { await say(BAG_ITEMS[item]?.revive ? 'own.revived' : 'battle.regainHealth', { pokemonName: name }); return; }
-
+      // PokemonHealPhase: CommonAnim.HEALTH_UP -> HP -> text
       await view.playCommon('health-up', positionOf(a[0]));
       await view.hpChange(positionOf(a[0]), hp, maxhp, { cause: 'other', effectiveness: 'normal', log });
       await say('battle.regainHealth', { pokemonName: name });

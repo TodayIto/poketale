@@ -54,12 +54,12 @@ export function colorMap(sprite, combo) {
   for (const [part, list] of [['hair', 'hair'], ['hat', 'hair'], ['top', 'outfit'], ['bottom', 'outfit']]) {
     const colors = entry.parts[part];
     if (!c[part] || !colors?.length) continue;
-    const target = TARGETS[list][c[part] - 1].ramp;
+    const target = TARGETS[list][c[part] - 1].ramp; // a hat: its own ramp onto the hair colour's (c.hat = c.hair)
     const at = rampIndexes(colors.length, target.length);
     byPart[part] = new Map(colors.map((hex, i) => [numOf(hex), numOf(target[at[i]])]));
     for (const [from, to] of byPart[part]) direct.set(from, to);
   }
-
+  // a split colour's new colour comes from the ramp of the part its band names
   const split = (entry.split ?? []).map(rule => ({ colors: new Set(rule.colors.map(numOf)), bands: rule.bands.map(([until, part]) => [until, byPart[part]]) }));
   for (const rule of split) for (const n of rule.colors) direct.delete(n);
   return { direct, split: split.filter(rule => rule.bands.some(([, map]) => map)) };
@@ -146,7 +146,7 @@ export function loadRecoloredAtlas(assets, key, path, json) {
 }
 
 const FACE_KEEP = 32;
-const faces = new Map();
+const faces = new Map(); // key -> Promise<string | null>
 
 export function recoloredFace(key, bytes) {
   if (faces.has(key)) { const hit = faces.get(key); faces.delete(key); faces.set(key, hit); return hit; }
@@ -168,4 +168,3 @@ export function recoloredFace(key, bytes) {
   while (faces.size > FACE_KEEP) faces.delete(faces.keys().next().value);
   return promise;
 }
-

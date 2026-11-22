@@ -1,12 +1,14 @@
 // from pokerogue src/system/game-speed.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/utils/common.ts (FixedInt, fixedInt) @ 7d7da4a8 (AGPL-3.0-only)
 
+/** Selectable speeds (the setting and the bar button cycle in this order) */
 export const GAME_SPEEDS = Object.freeze([1, 1.5, 2, 3]);
 export const DEFAULT_SPEED = 1;
-
+/** Bar button: next speed (wraps to the first after the last) */
 export const nextSpeed = speed => GAME_SPEEDS[(GAME_SPEEDS.indexOf(speed) + 1) % GAME_SPEEDS.length];
 
+/** Time unaffected by game speed (source FixedInt) */
 class FixedInt { constructor(value) { this.value = value; } }
 export const fixed = ms => new FixedInt(ms);
 
@@ -20,7 +22,7 @@ export function installGameSpeed(scene, speed = DEFAULT_SPEED) {
     if (!isConfig(config)) return config;
     const copy = { ...config };
     for (const key of TIME_PROPERTIES) if (key in copy) copy[key] = scaled(copy[key]);
-    if (Array.isArray(copy.tweens)) copy.tweens = copy.tweens.map(scale);
+    if (Array.isArray(copy.tweens)) copy.tweens = copy.tweens.map(scale); // tween chain
     return copy;
   };
   const { time, tweens } = scene;

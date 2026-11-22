@@ -30,7 +30,7 @@ async function readDevice(s) {
   const records = [], old = [];
   for (const key of keys) {
     const value = await s.getItem(key);
-    if (value === null || value === undefined) continue;
+    if (value === null || value === undefined) continue; // removed meanwhile
     const record = asRecord(key.slice(VOICE_ZIP_PREFIX.length), value);
     if (record) records.push(record); else old.push(key);
   }
@@ -41,7 +41,7 @@ async function readDevice(s) {
 }
 
 export function voicePackStore({ open = async () => null } = {}) {
-  let device;
+  let device; // Promise of the store or null
   const store = () => (device ??= Promise.resolve().then(open).then(s => {
     if (!s || typeof s.getItem !== 'function' || typeof s.setItem !== 'function') return null;
     if (typeof s.removeItem !== 'function' || typeof s.keys !== 'function') { console.warn('[poke-battle] 이 기기 저장 공간에서 목록을 읽을 수 없음 — 목소리 팩은 이 페이지에서만'); return null; }
@@ -49,9 +49,9 @@ export function voicePackStore({ open = async () => null } = {}) {
   }, error => { console.warn('[poke-battle] 이 기기 저장 공간을 열지 못함 — 목소리 팩은 이 페이지에서만', error); return null; }));
   let saved = null;
   let local = [];
-  const hidden = new Set();
-  const opened = new Map();
-  let reading = null, combined = null, queue = Promise.resolve(), lastAdded = 0, edits = 0;
+  const hidden = new Set(); // ids this page removed but could not delete from the device: not played here
+  const opened = new Map(); // id -> Promise<pack | null> (a record never changes under its id)
+  let reading = null, combined = null, queue = Promise.resolve(), lastAdded = 0, edits = 0; // edits: this page's own changes (a read begun before one is not used)
 
   const changed = () => { combined = null; };
   const enqueue = work => { const run = queue.then(work); queue = run.then(() => {}, () => {}); return run; };
@@ -91,7 +91,7 @@ export function voicePackStore({ open = async () => null } = {}) {
     if (!pack?.count) return { name, why: 'notPack' };
     let s = null;
     try { s = await read(); } catch (error) { console.warn('[poke-battle] 목소리 팩 목록을 읽지 못함 — 새 팩은 이 페이지에서만', error); }
-    lastAdded = Math.max(Date.now(), lastAdded + 1, ...view().map(entry => entry.info.added + 1));
+    lastAdded = Math.max(Date.now(), lastAdded + 1, ...view().map(entry => entry.info.added + 1)); // on top of every pack seen (a clock that is behind too)
     const info = { id: newId(), name, count: pack.count, bytes: file.size, added: lastAdded };
     const entry = { info, pack, saved: false };
     const older = view().filter(other => same(other.info, info));
@@ -103,7 +103,7 @@ export function voicePackStore({ open = async () => null } = {}) {
     };
     if (!s) return pageOnly('unsaved');
     try {
-      await s.setItem(packKey(info.id), { info, zip: file });
+      await s.setItem(packKey(info.id), { info, zip: file }); // the whole pack in one write
     } catch (error) {
       console.warn('[poke-battle] 목소리 팩을 저장하지 못함', name, error);
       return pageOnly(isQuotaError(error) ? 'full' : 'unsaved');
@@ -113,7 +113,7 @@ export function voicePackStore({ open = async () => null } = {}) {
     saved.set(info.id, entry);
     opened.set(info.id, Promise.resolve(pack));
     local = local.filter(other => !older.includes(other));
-
+    // only now that the new one is saved: the older copies of the same file
     for (const old of older.filter(other => other.saved)) {
       saved.delete(old.info.id);
       await Promise.resolve().then(() => s.removeItem(packKey(old.info.id))).catch(error => console.warn('[poke-battle] 옛 사본을 지우지 못함', name, error));
@@ -126,7 +126,7 @@ export function voicePackStore({ open = async () => null } = {}) {
     source() {
       return (combined ??= (saved ? Promise.resolve() : refresh()).then(() => {
         const pack = combineVoicePacks(view().map(entry => entry.pack));
-        if (!saved) combined = null;
+        if (!saved) combined = null; // not read: tried again by the next view
         return pack;
       }, () => { combined = null; return null; }));
     },
@@ -145,12 +145,12 @@ export function voicePackStore({ open = async () => null } = {}) {
         local = local.filter(entry => entry !== target);
         return { packs: view().map(shown), removed: true };
       }
-      hidden.add(id);
+      hidden.add(id); // stops playing here at once
       edits++;
       try {
         const s = await store();
         if (!s) throw new Error('No device store');
-        await s.removeItem(packKey(id));
+        await s.removeItem(packKey(id)); // that pack's key only
         saved.delete(id); hidden.delete(id); opened.delete(id);
         return { packs: view().map(shown), removed: true };
       } catch (error) {

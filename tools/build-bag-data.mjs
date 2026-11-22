@@ -1,5 +1,5 @@
 // from pokerogue locales/{ko,en}/*.json @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { withKoTerms } from './ko-terms.mjs';
@@ -26,7 +26,7 @@ for (const lang of LANGS) {
       text[`${file}.${key}`] = value;
     }
   }
-  await writeFile(new URL(`../director/text-bag-${lang}.json`, import.meta.url), JSON.stringify(withKoTerms(lang, text).table, null, 2) + '\n');
+  await writeFile(new URL(`../director/text-bag-${lang}.json`, import.meta.url), JSON.stringify(withKoTerms(lang, text).table, null, 2) + '\n'); // our Korean terms (tools/ko-terms.mjs)
   counts.push(`${Object.keys(text).length - 1}개 -> director/text-bag-${lang}.json`);
 }
 
@@ -53,6 +53,8 @@ const ITEM_FRAMES = {
   repel: 'repel', superrepel: 'super_repel', maxrepel: 'max_repel', nugget: 'nugget', bignugget: 'big_nugget', relicgold: 'relic_gold',
   bigmushroom: 'big_mushroom',
   teraorb: 'tera_orb', expshare: 'exp_share',
+
+  dynamaxband: 'dynamax_band', maxmushrooms: 'max_mushrooms',
 
   ...Object.fromEntries(['normal', 'fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug', 'rock', 'ghost',
     'dragon', 'dark', 'steel', 'fairy', 'stellar'].map(type => [`${type}terashard`, `${type}_tera_shard`])),

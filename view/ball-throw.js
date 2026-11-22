@@ -1,5 +1,5 @@
 // from pokerogue src/phases/attempt-capture-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
-// Modified for PokeTale on 2026-11-19. See view/LICENSE-NOTE.md.
+// Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/data/pokeball.ts (doPokeballBounceAnim, getPokeballTintColor) @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/animations.ts (addPokeballOpenParticles, addPokeballCaptureStars) @ 7d7da4a8 (AGPL-3.0-only)
 
@@ -12,10 +12,10 @@ export const BALL_SOUNDS = ['se/pb_throw.wav', 'se/crit_throw.wav', 'se/pb_rel.w
 const TINTS = { pb: 0xd52929, gb: 0x94b4de, ub: 0xe6cd31, rb: 0xd52929, mb: 0xa441bd, lb: 0xffde6a };
 
 export const ballTint = key => TINTS[key] ?? TINTS.pb;
-const FRAME_MS = 1000 / 60;
+const FRAME_MS = 1000 / 60; // utils/common.ts getFrameMs(1)
 const sin = (index, amplitude) => amplitude * Math.sin(index * (Math.PI / 128));
 const cos = (index, amplitude) => amplitude * Math.cos(index * (Math.PI / 128));
-const gauss = stdev => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random()) * stdev;
+const gauss = stdev => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random()) * stdev; // randGauss
 
 export function loadBallThrow(scene) {
   return Promise.all([
@@ -68,7 +68,7 @@ async function play(scene, ball, { shakes = 0, result, critical = false } = {}, 
 
   times.shrinkAt = globalThis.performance?.now?.() ?? null;
   await tween(scene, { targets: container, duration: 500, ease: 'Sine.easeIn', scale: 0.25 * scale, y: 20 });
-
+  // Close
   setFrame(`${key}_opening`, key);
   container.setVisible(false);
   sound('se/pb_catch.wav');
@@ -99,7 +99,7 @@ async function play(scene, ball, { shakes = 0, result, critical = false } = {}, 
     await Promise.all([
       pokemon.untint(250, 'Sine.easeOut'),
       tween(scene, { targets: container, duration: 250, ease: 'Sine.easeOut', scale }),
-      tween(scene, { targets: pb, duration: 250, delay: 250, ease: 'Sine.easeIn', alpha: 0 }),
+      tween(scene, { targets: pb, duration: 250, delay: 250, ease: 'Sine.easeIn', alpha: 0 }), // removePb
     ]);
     pb.destroy();
     return;
@@ -143,7 +143,7 @@ async function bounce(scene, pb, y1, y2, base, critical, sound) {
   }
 }
 
-export function openParticles(scene, x, y, key) {
+export function openParticles(scene, x, y, key) { // also used for sending out (scene.summon)
   if (key === 'pb' || key === 'gb') return defaultParticles(scene, x, y, key === 'pb' ? 48 : 96);
   if (key === 'ub') return fanParticles(scene, x, y, Array.from({ length: 10 }, (_, i) => [i * 25, 1, 1, 5, 8]));
   if (key === 'mb') {
@@ -161,7 +161,7 @@ function defaultParticles(scene, x, y, radius) {
     const particle = scene.add.sprite(x, y, 'pb_particles', '0.png');
     scene.field.add(particle);
     scene.tweens.add({ targets: particle, x: x + radius * Math.cos(angle * Math.PI / 180), y: y + radius * Math.sin(angle * Math.PI / 180), duration: 575 });
-    particle.play({ key: 'pb_open_particle', startFrame: (index + 3) % 4, frameRate: Math.floor(16 * scene.gameSpeed.speed) });
+    particle.play({ key: 'pb_open_particle', startFrame: (index + 3) % 4, frameRate: Math.floor(16 * scene.gameSpeed.speed) }); // game speed (animations.ts:411)
     scene.tweens.add({ targets: particle, delay: 500, duration: 75, alpha: 0, ease: 'Sine.easeIn', onComplete: () => particle.destroy() });
   } });
 }

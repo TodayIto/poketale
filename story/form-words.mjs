@@ -30,14 +30,14 @@ function formWord(word) {
     w = w.slice(0, -tail.length);
   }
 }
-
+/** Form words -> their set as one key (sorted, each once) */
 const setKey = list => [...new Set(list)].sort().join(' ');
 
 let bases;
 
 export const readsNamesSince = (since, reading) => !since || reading?.[since] !== false;
 const NEW_NAMES = 'formNames009';
-const formsOf = new Map();
+const formsOf = new Map(); // whether the rule's names are read -> base id -> forms
 function buildBases() {
   bases = new Map();
   const add = (k, id) => { if (k) bases.set(k, bases.has(k) && bases.get(k) !== id ? null : id); };
@@ -96,7 +96,7 @@ function buildForms(newNames) {
       if (!r) continue;
       const base = r.base ?? id, list = forms.get(base) ?? [];
       for (const name of names) {
-        const at = baseIn(wordsIn(name));
+        const at = baseIn(wordsIn(name)); // "Hoopa Confined": the words without the species' own name
         const key = setKey((at?.id === base ? at.rest : wordsIn(name)).map(formWord).filter(Boolean)) || null;
         if (key && !list.some(f => f.id === id && f.tier === 3 && f.key === key)) list.push({ id, tier: 3, key });
       }
@@ -167,7 +167,7 @@ function formOf(words, found, halves, shared, newNames) {
     const id = formRegions[`${found.id}${written[0]}`];
     if (id) return id;
   }
-
+  // only a region word missing
   const missing = f => { const words = f.key.split(' '); return words.length === written.length + 1 && written.every(w => words.includes(w)) && REGIONS.has(words.find(w => !written.includes(w))); };
   for (const tier of [1, 2]) {
     const got = pick(forms.filter(f => f.tier === tier && missing(f)).map(f => f.id), shared);
