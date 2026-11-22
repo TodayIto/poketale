@@ -21,7 +21,10 @@ export function toneMatrix([r, g, b, gray]) {
 }
 
 const PRIORITY = {
-  0: ({ front }) => ['moveBelow', front],
+  0: ({ scene }) => {
+    const front = (firstOnSide(scene, 'enemy') ?? firstOnSide(scene, 'player')).container;
+    return ['moveBelow', front];
+  },
   2: ({ bg, focus }) => (bg ? ['moveAbove', bg] : ['moveBelow', focus]),
   3: ({ focus }) => ['moveAbove', focus],
 };
@@ -258,8 +261,7 @@ export class AnimationPlayer {
     const visible = originals.map(s => s.visible);
     const priorities = []; // current priority per graphic slot (source spritePriorities)
     const setPriority = (sprite, frame) => {
-      const front = (firstOnSide(scene, 'enemy') ?? firstOnSide(scene, 'player')).container;
-      const [move, anchor] = PRIORITY[frame.priority]?.({ bg, front, focus: actors[FOCUS[frame.focus]] }) ?? [];
+      const [move, anchor] = PRIORITY[frame.priority]?.({ bg, scene, focus: actors[FOCUS[frame.focus]] }) ?? [];
 
       const field = scene.field;
       if (anchor && (field.exclusive ? anchor.parentContainer === field : field.exists(anchor))) field[move](sprite, anchor);
