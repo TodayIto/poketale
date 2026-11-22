@@ -208,11 +208,15 @@ export class AnimationPlayer {
       }
       scene.life.check();
       if (!anim.frames.length) return;
+      const counts = [0, 0, 0];
       framesAt = globalThis.performance?.now?.() ?? null;
       originals.forEach(s => s.setVisible(false));
       for (let f = 0; f < anim.frames.length; f++) {
         scene.life.check();
-        const counts = [0, 0, 0], cover = screenCover(anim.frames[f]);
+        counts[0] = 0;
+        counts[1] = 0;
+        counts[2] = 0;
+        const cover = screenCover(anim.frames[f]);
         for (const frame of anim.frames[f]) {
           const kind = frame.target;
           if (![0, 1, 2].includes(kind)) throw new Error(`Invalid frame target: ${kind}`);
