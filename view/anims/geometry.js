@@ -38,12 +38,18 @@ export function screenCover(frame) {
   let found = covers.get(frame);
   if (found) return found;
   found = new Set();
-  const tiles = frame.filter(s => s.target === 2 && s.focus === 4 && s.visible && (s.opacity ?? 0) > 0 && !((s.angle ?? 0) % 360));
-  const sizes = new Map();
-  for (const s of tiles) {
+  let sizes;
+  frame.forEach(s => {
+    if (!(s.target === 2 && s.focus === 4 && s.visible && (s.opacity ?? 0) > 0 && !((s.angle ?? 0) % 360))) return;
+    const groups = sizes ??= new Map();
     const key = `${s.zoomX},${s.zoomY}`;
-    if (!sizes.has(key)) sizes.set(key, []);
-    sizes.get(key).push(s);
+    const group = groups.get(key);
+    if (group) group.push(s);
+    else groups.set(key, [s]);
+  });
+  if (!sizes) {
+    covers.set(frame, found);
+    return found;
   }
   for (const same of sizes.values()) {
     const w = 96 * Math.abs(same[0].zoomX ?? 0) / 100, h = 96 * Math.abs(same[0].zoomY ?? 0) / 100;
