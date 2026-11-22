@@ -52,11 +52,23 @@ export function pathBox(d) {
   return box;
 }
 
-function nodesBox(nodes, tx = 0, ty = 0) {
-  let box = null;
-  const add = b => { if (b) box = box ? { x0: Math.min(box.x0, b.x0), y0: Math.min(box.y0, b.y0), x1: Math.max(box.x1, b.x1), y1: Math.max(box.y1, b.y1) } : b; };
-  for (const n of nodes) {
-    if (n.tag === 'path') { const b = pathBox(n.d); add(b && { x0: b.x0 + tx, y0: b.y0 + ty, x1: b.x1 + tx, y1: b.y1 + ty }); } else add(nodesBox(n.kids, tx + n.tx, ty + n.ty));
+function nodesBox(nodes, tx = 0, ty = 0, box = null) {
+  for (const node of nodes) {
+    if (node.tag !== 'path') {
+      box = nodesBox(node.kids, tx + node.tx, ty + node.ty, box);
+      continue;
+    }
+    const pathBounds = pathBox(node.d);
+    if (!pathBounds) continue;
+    const x0 = pathBounds.x0 + tx, y0 = pathBounds.y0 + ty, x1 = pathBounds.x1 + tx, y1 = pathBounds.y1 + ty;
+    if (!box) {
+      box = { x0, y0, x1, y1 };
+      continue;
+    }
+    box.x0 = Math.min(box.x0, x0);
+    box.y0 = Math.min(box.y0, y0);
+    box.x1 = Math.max(box.x1, x1);
+    box.y1 = Math.max(box.y1, y1);
   }
   return box;
 }
