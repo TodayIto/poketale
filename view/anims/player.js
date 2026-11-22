@@ -141,11 +141,13 @@ export class AnimationPlayer {
     };
 
     let bgKey;
+    let bgStartY, bgPhase;
     const showOriginal = state => {
       const key = state ? state.pic : undefined;
       if (key !== bgKey) {
         if (bg) { bg.destroy(); bg = undefined; }
         bgKey = key;
+        bgPhase = undefined;
         if (state) {
           const [x, y] = state.at;
           bgPlane = !key;
@@ -159,9 +161,15 @@ export class AnimationPlayer {
       bgTint = tintState(state.c);
       paint();
       if (!bgPlane) {
-
-        bg.tilePositionX = -state.sx * 0.5;
-        bg.tilePositionY = backgroundPhase(scene.textures.get?.(`anim-bg:${key}`)?.getSourceImage?.()?.height, state.at[1]) - state.sy * 0.5;
+        const startY = state.at[1];
+        if (bgPhase === undefined || !Object.is(bgStartY, startY)) {
+          bgStartY = startY;
+          bgPhase = backgroundPhase(scene.textures.get?.(`anim-bg:${key}`)?.getSourceImage?.()?.height, startY);
+        }
+        const x = -state.sx * 0.5;
+        const y = bgPhase - state.sy * 0.5;
+        if (!Object.is(bg.tilePositionX, x)) bg.tilePositionX = x;
+        if (!Object.is(bg.tilePositionY, y)) bg.tilePositionY = y;
       }
     };
     if (opposite) { [user, target] = [target, user]; shown.reverse(); }
