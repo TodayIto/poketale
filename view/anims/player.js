@@ -126,13 +126,25 @@ export class AnimationPlayer {
 
     const cache = [[], [], []], spareEffects = [], tweens = [];
 
-    let bg, bgTint, bgPlane;
-    const paint = () => {
-      if (bgPlane) bg.setFillStyle(((Math.round(bgTint.r) << 16) | (Math.round(bgTint.g) << 8) | Math.round(bgTint.b)) >>> 0);
-      else setColorMatrix(bg, bgTint.s > 0 ? tintMatrix(bgTint) : null);
+    let bg, bgPlane, bgColor;
+    const paint = color => {
+      const tint = tintState(color);
+      if (bgPlane) {
+        const fill = ((Math.round(tint.r) << 16) | (Math.round(tint.g) << 8) | Math.round(tint.b)) >>> 0;
+        if (fill === bgColor) return;
+        bg.setFillStyle(fill);
+        bgColor = fill;
+        return;
+      }
+      const next = tint.s > 0 ? tint : null;
+      if (next === bgColor || (next && bgColor && next.s === bgColor.s
+        && next.r === bgColor.r && next.g === bgColor.g && next.b === bgColor.b)) return;
+      setColorMatrix(bg, next ? tintMatrix(next) : null);
+      bgColor = next;
     };
     const putBackground = (event, plane) => {
       if (bg) { scene.tweens.killTweensOf(bg); bg.destroy(); }
+      bgColor = undefined;
       bgPlane = plane || !event.resourceName;
       bg = !bgPlane
         ? scene.add.tileSprite((event.bgX ?? 0) - 320, (event.bgY ?? 0) - 284, 896, 576, `anim-bg:${event.resourceName}`)
@@ -146,6 +158,7 @@ export class AnimationPlayer {
       if (key !== bgKey) {
         if (bg) { bg.destroy(); bg = undefined; }
         bgKey = key;
+        bgColor = undefined;
         if (state) {
           const [x, y] = state.at;
           bgPlane = !key;
@@ -156,8 +169,7 @@ export class AnimationPlayer {
       }
       if (!state) return;
       bg.setAlpha(state.o / 255);
-      bgTint = tintState(state.c);
-      paint();
+      paint(state.c);
       if (!bgPlane) {
 
         bg.tilePositionX = -state.sx * 0.5;
