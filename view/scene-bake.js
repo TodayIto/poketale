@@ -1,6 +1,14 @@
 import { DOT } from './amie-scenes.js';
 
-const attrsOf = text => Object.fromEntries([...String(text).matchAll(/([\w:-]+)="([^"]*)"/g)].map(m => [m[1], m[2]]));
+const attrsOf = text => {
+  const attrs = {};
+  for (const match of String(text).matchAll(/([\w:-]+)="([^"]*)"/g)) {
+    const key = match[1], value = match[2];
+    if (key === '__proto__') Object.defineProperty(attrs, key, { value, writable: true, enumerable: true, configurable: true });
+    else attrs[key] = value;
+  }
+  return attrs;
+};
 const styleOf = text => Object.fromEntries(String(text ?? '').split(';').map(s => s.split(':')).filter(p => p.length >= 2).map(([k, ...v]) => [k.trim(), v.join(':').trim()]));
 
 export function readAnimation(text) {
