@@ -22,8 +22,10 @@ export function framePosition(frame, user, target, stretch = false) {
   return { x, y, scaleX, scaleY: (frame.zoomY ?? 0) / 100, angle: -(frame.angle ?? 0) };
 }
 
-export function copyPosition(pos, mon) {
-  const sprite = mon.getSprite(), scale = mon.getSpriteScale(), focus = focusPoint(mon), { x, y } = mon.container;
+export function copyPosition(pos, mon, spriteScale) {
+  const sprite = mon.getSprite();
+  const scale = spriteScale === undefined ? mon.getSpriteScale() : spriteScale;
+  const focus = focusPoint(mon), { x, y } = mon.container;
   return {
     x: pos.x + x + (0.5 - sprite.originX) * sprite.width * scale - focus.x,
     y: pos.y + y + (0.5 - sprite.originY) * sprite.height * scale - focus.y,
