@@ -3,7 +3,7 @@
 
 import Phaser from 'phaser';
 import { animation, moveFile } from './data.js';
-import { framePosition, copyPosition, screenCover, backgroundPhase } from './geometry.js';
+import { focusPoint, framePosition, copyPosition, screenCover, backgroundPhase } from './geometry.js';
 import { backgroundEnd, hasBackground } from './background.js';
 import { tintState, tintMatrix } from './bg-engine.js';
 import { delay } from '../lifetime.js';
@@ -212,8 +212,11 @@ export class AnimationPlayer {
       originals.forEach(s => s.setVisible(false));
       for (let f = 0; f < anim.frames.length; f++) {
         scene.life.check();
-        const counts = [0, 0, 0], cover = screenCover(anim.frames[f]);
-        for (const frame of anim.frames[f]) {
+        const cells = anim.frames[f];
+        const counts = [0, 0, 0], cover = screenCover(cells);
+        const userFocus = cells.length ? focusPoint(user) : null;
+        const targetFocus = userFocus && user !== target ? focusPoint(target) : userFocus;
+        for (const frame of cells) {
           const kind = frame.target;
           if (![0, 1, 2].includes(kind)) throw new Error(`Invalid frame target: ${kind}`);
           if (kind === 0 && user === target) continue;
@@ -245,9 +248,9 @@ export class AnimationPlayer {
             const name = exists ? frame.graphicFrame : 0;
             if (sprite.frame.name !== name) sprite.setFrame(name);
           }
-          const pos = framePosition(frame, user, target, cover.has(frame));
+          const pos = framePosition(frame, userFocus, targetFocus, cover.has(frame));
           const scale = kind === 2 ? 1 : mon.getSpriteScale();
-          const { x, y } = kind === 2 ? pos : copyPosition(pos, mon);
+          const { x, y } = kind === 2 ? pos : copyPosition(pos, mon, kind === 0 ? userFocus : targetFocus);
           const scaleX = pos.scaleX * scale, scaleY = pos.scaleY * scale, alpha = (frame.opacity ?? 0) / 255;
           const visible = !!frame.visible && (kind === 2 || shown[kind]);
           const blend = frame.blendType === 1 ? Phaser.BlendModes.ADD : frame.blendType === 2 ? Phaser.BlendModes.DIFFERENCE : Phaser.BlendModes.NORMAL;
