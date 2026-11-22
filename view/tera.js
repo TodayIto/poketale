@@ -141,13 +141,19 @@ function teraPipelineClass() {
   const Base = Phaser?.Renderer?.WebGL?.Pipelines?.PostFXPipeline;
   if (!Base) return null;
   return TeraFX ??= class extends Base {
-    constructor(game) { super({ game, fragShader: FRAG }); this.teraColor = [0, 0, 0]; }
+    constructor(game) {
+      super({ game, fragShader: FRAG });
+      this.teraColor = [0, 0, 0];
+      this.worldMatrix = new Phaser.GameObjects.Components.TransformMatrix();
+      this.parentMatrix = new Phaser.GameObjects.Components.TransformMatrix();
+      this.worldOrigin = { x: 0, y: 0 };
+    }
     onDraw(renderTarget) {
       const object = this.gameObject, texture = this.game.textures.get('tera');
       if (!object || !texture?.source?.[0]?.glTexture) { this.bindAndDraw(renderTarget); return; }
 
-      const m = object.getWorldTransformMatrix();
-      const origin = m.transformPoint(-object.displayOriginX, -object.displayOriginY);
+      const m = object.getWorldTransformMatrix(this.worldMatrix, this.parentMatrix);
+      const origin = m.transformPoint(-object.displayOriginX, -object.displayOriginY, this.worldOrigin);
       const det = m.a * m.d - m.b * m.c || 1;
       this.bind();
       this.set1i('uMainSampler', 0);
@@ -158,7 +164,8 @@ function teraPipelineClass() {
       this.set2f('uAxisY', -m.b / det, m.a / det);
       this.set1f('fieldScale', 6);
       this.set1f('teraTime', (this.game.getTime() % 500000) / 500000);
-      this.set3f('teraColor', ...this.teraColor.map(c => c / 255));
+      const color = this.teraColor;
+      this.set3f('teraColor', color[0], color[1], color[2]);
       this.bindTexture(texture.source[0].glTexture, 1);
       this.bindAndDraw(renderTarget);
     }
@@ -181,7 +188,8 @@ export class TeraView {
     if (!type) return;
     object.setPostPipeline(PIPELINE);
     const instance = object.getPostPipeline(PIPELINE);
-    for (const fx of [instance].flat()) fx.teraColor = typeRgb(type);
+    const color = typeRgb(type).map(c => c / 255);
+    for (const fx of [instance].flat()) fx.teraColor = color;
   }
 
   applySprite(pokemon) { if (pokemon.mon?.tera) this.glow(pokemon.getSprite(), pokemon.mon.tera); }
