@@ -45,11 +45,35 @@ export function hueMatrix(deg) {
 
 let ColorMatrixPipeline;
 
+function sameColorMatrix(matrix, previous) {
+  if (matrix === previous) return true;
+  if (!previous || matrix.length !== previous.length) return false;
+  for (let i = 0; i < matrix.length; i++) {
+    if (!Object.is(matrix[i], previous[i])) return false;
+  }
+  return true;
+}
+
 function pipelineClass(Phaser) {
   return ColorMatrixPipeline ??= class extends Phaser.Renderer.WebGL.Pipelines.SinglePipeline {
     constructor(game) { super({ game, fragShader: FRAG }); }
 
-    onBind(gameObject) { super.onBind(); this.set1fv('uColorMatrix', gameObject.pipelineData.colorMatrix); }
+    onBind(gameObject) {
+      super.onBind();
+      const matrix = gameObject.pipelineData.colorMatrix;
+      const previous = this.uploadedColorMatrix, shader = this.currentShader;
+      if (shader !== this.colorMatrixShader || !sameColorMatrix(matrix, previous)) {
+        this.set1fv('uColorMatrix', matrix);
+      }
+      this.uploadedColorMatrix = matrix;
+      this.colorMatrixShader = shader;
+    }
+
+    restoreContext() {
+      super.restoreContext();
+      this.uploadedColorMatrix = null;
+    }
+
     onBatch(gameObject) { if (gameObject) this.flush(); }
   };
 }
