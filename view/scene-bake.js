@@ -38,14 +38,15 @@ export function pathBox(d) {
   let x = 0, y = 0, sx = 0, sy = 0, box = null;
   const see = () => { box = box ? { x0: Math.min(box.x0, x), y0: Math.min(box.y0, y), x1: Math.max(box.x1, x), y1: Math.max(box.y1, y) } : { x0: x, y0: y, x1: x, y1: y }; };
   for (const [, cmd, args] of String(d).matchAll(/([MmHhVvZzLl])([^MmHhVvZzLl]*)/g)) {
-    const n = args.trim() ? args.trim().split(/[\s,]+/).map(Number) : [];
+    const trimmed = args.trim();
+    const values = trimmed ? trimmed.split(/[\s,]+/) : [];
     switch (cmd) {
-      case 'M': case 'L': for (let i = 0; i + 1 < n.length; i += 2) { x = n[i]; y = n[i + 1]; if (i === 0 && cmd === 'M') { sx = x; sy = y; } see(); } break;
-      case 'm': case 'l': for (let i = 0; i + 1 < n.length; i += 2) { x += n[i]; y += n[i + 1]; if (i === 0 && cmd === 'm') { sx = x; sy = y; } see(); } break;
-      case 'H': for (const v of n) { x = v; see(); } break;
-      case 'h': for (const v of n) { x += v; see(); } break;
-      case 'V': for (const v of n) { y = v; see(); } break;
-      case 'v': for (const v of n) { y += v; see(); } break;
+      case 'M': case 'L': for (let index = 0; index + 1 < values.length; index += 2) { x = Number(values[index]); y = Number(values[index + 1]); if (index === 0 && cmd === 'M') { sx = x; sy = y; } see(); } break;
+      case 'm': case 'l': for (let index = 0; index + 1 < values.length; index += 2) { x += Number(values[index]); y += Number(values[index + 1]); if (index === 0 && cmd === 'm') { sx = x; sy = y; } see(); } break;
+      case 'H': for (const value of values) { x = Number(value); see(); } break;
+      case 'h': for (const value of values) { x += Number(value); see(); } break;
+      case 'V': for (const value of values) { y = Number(value); see(); } break;
+      case 'v': for (const value of values) { y += Number(value); see(); } break;
       default: x = sx; y = sy; break;
     }
   }
