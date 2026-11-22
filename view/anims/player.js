@@ -213,6 +213,7 @@ export class AnimationPlayer {
       for (let f = 0; f < anim.frames.length; f++) {
         scene.life.check();
         const counts = [0, 0, 0], cover = screenCover(anim.frames[f]);
+        const hasStretch = cover.size > 0;
         for (const frame of anim.frames[f]) {
           const kind = frame.target;
           if (![0, 1, 2].includes(kind)) throw new Error(`Invalid frame target: ${kind}`);
@@ -245,7 +246,7 @@ export class AnimationPlayer {
             const name = exists ? frame.graphicFrame : 0;
             if (sprite.frame.name !== name) sprite.setFrame(name);
           }
-          const pos = framePosition(frame, user, target, cover.has(frame));
+          const pos = framePosition(frame, user, target, hasStretch && cover.has(frame));
           const scale = kind === 2 ? 1 : mon.getSpriteScale();
           const { x, y } = kind === 2 ? pos : copyPosition(pos, mon);
           const scaleX = pos.scaleX * scale, scaleY = pos.scaleY * scale, alpha = (frame.opacity ?? 0) / 255;
