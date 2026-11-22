@@ -9,7 +9,7 @@ import { tintState, tintMatrix } from './bg-engine.js';
 import { delay } from '../lifetime.js';
 import { LoadError } from '../retry.js';
 import { isPlayerSide, firstOnSide } from '../positions.js';
-import { setColorMatrix } from '../color-matrix.js';
+import { matrixData, setColorMatrix, setColorMatrixData } from '../color-matrix.js';
 
 export function toneMatrix([r, g, b, gray]) {
   const q = gray / 255, a = 1 - q;
@@ -27,11 +27,20 @@ export const AFTER_ANIM_MS = 500;
 
 const appliedTones = new WeakMap();
 
-function applyTone(sprite, tone) {
+function applyTone(sprite, tone, matrices) {
   const active = !!tone?.some(Boolean), before = appliedTones.get(sprite);
   if (before && before.active === active && sprite.pipeline === before.pipeline && sprite.pipelineData === before.data
     && (!active || (tone.length === before.tone.length && tone.every((v, i) => v === before.tone[i])))) return;
-  setColorMatrix(sprite, active ? toneMatrix(tone) : null);
+  let matrix = null;
+  if (active) {
+    const key = tone.join(',');
+    matrix = matrices.get(key);
+    if (!matrix) {
+      matrix = matrixData(toneMatrix(tone));
+      matrices.set(key, matrix);
+    }
+  }
+  setColorMatrixData(sprite, matrix);
   appliedTones.set(sprite, { active, pipeline: sprite.pipeline, data: sprite.pipelineData, tone: active ? [...tone] : null });
 }
 
@@ -125,6 +134,7 @@ export class AnimationPlayer {
     this.running = true;
 
     const cache = [[], [], []], spareEffects = [], tweens = [];
+    const toneMatrices = new Map();
 
     let bg, bgTint, bgPlane;
     const paint = () => {
@@ -258,7 +268,7 @@ export class AnimationPlayer {
           if (sprite.visible !== visible) sprite.setVisible(visible);
           if (sprite.blendMode !== blend) sprite.setBlendMode(blend);
 
-          applyTone(sprite, frame.tone);
+          applyTone(sprite, frame.tone, toneMatrices);
           if (sprite.getData('locked') !== !!frame.locked) sprite.setData('locked', !!frame.locked);
           if (kind === 2 && priorities[i] !== frame.priority) { priorities[i] = frame.priority; setPriority(sprite, frame); }
         }

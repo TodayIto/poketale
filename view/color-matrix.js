@@ -60,7 +60,11 @@ export function rendererConfig(Phaser) {
 
 export const matrixData = matrix => Float32Array.from(matrix, (v, i) => (i % 5 === 4 ? v / 255 : v));
 
+export function setColorMatrixData(sprite, data) {
+  if (!data) { sprite.resetPipeline(true); return sprite; }
+  return sprite.setPipeline(COLOR_MATRIX_PIPELINE, { colorMatrix: data });
+}
+
 export function setColorMatrix(sprite, matrix) {
-  if (!matrix) { sprite.resetPipeline(true); return sprite; }
-  return sprite.setPipeline(COLOR_MATRIX_PIPELINE, { colorMatrix: matrixData(matrix) });
+  return setColorMatrixData(sprite, matrix ? matrixData(matrix) : null);
 }
