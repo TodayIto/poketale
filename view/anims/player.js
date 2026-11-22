@@ -26,6 +26,7 @@ const FOCUS = { 1: 'target', 2: 'user' };
 export const AFTER_ANIM_MS = 500;
 
 const appliedTones = new WeakMap();
+const FRAME_LOCKED = Symbol('moveFrameLocked');
 
 function applyTone(sprite, tone) {
   const active = !!tone?.some(Boolean), before = appliedTones.get(sprite);
@@ -259,13 +260,13 @@ export class AnimationPlayer {
           if (sprite.blendMode !== blend) sprite.setBlendMode(blend);
 
           applyTone(sprite, frame.tone);
-          if (sprite.getData('locked') !== !!frame.locked) sprite.setData('locked', !!frame.locked);
+          sprite[FRAME_LOCKED] = !!frame.locked;
           if (kind === 2 && priorities[i] !== frame.priority) { priorities[i] = frame.priority; setPriority(sprite, frame); }
         }
 
         for (let k = 0; k < 3; k++) for (let i = cache[k].length - 1; i >= counts[k]; i--) {
           const sprite = cache[k][i];
-          if (!sprite.getData('locked')) {
+          if (!sprite[FRAME_LOCKED]) {
             if (k === 2) { sprite.setVisible(false).setActive(false); spareEffects.push(sprite); }
             else sprite.destroy();
             cache[k].splice(i, 1); if (k === 2) priorities.splice(i, 1);
