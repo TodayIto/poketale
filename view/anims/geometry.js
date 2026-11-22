@@ -32,6 +32,9 @@ export function copyPosition(pos, mon) {
 
 const SCREEN = Object.freeze({ left: -64, right: 192, top: -112, bottom: 64 });
 const STRETCH = 320 / 256, NEAR = 4;
+const SAMPLE_STEP = 4, SAMPLE_OFFSET = SAMPLE_STEP / 2;
+const SAMPLE_COLUMNS = Math.ceil((SCREEN.right - SCREEN.left - SAMPLE_OFFSET) / SAMPLE_STEP);
+const SAMPLE_ROWS = Math.ceil((SCREEN.bottom - SCREEN.top - SAMPLE_OFFSET) / SAMPLE_STEP);
 const covers = new WeakMap();
 
 export function screenCover(frame) {
@@ -86,8 +89,19 @@ export function screenCover(frame) {
 }
 
 function painted(tiles, w, h) {
+  if (tiles.length === 1) {
+    const { x, y } = tiles[0];
+    let columns = 0, rows = 0;
+    for (let sample = SCREEN.left + SAMPLE_OFFSET; sample < SCREEN.right; sample += SAMPLE_STEP) {
+      if (Math.abs(sample - (x ?? 0)) <= w / 2) columns++;
+    }
+    for (let sample = SCREEN.top + SAMPLE_OFFSET; sample < SCREEN.bottom; sample += SAMPLE_STEP) {
+      if (Math.abs(sample - (y ?? 0)) <= h / 2) rows++;
+    }
+    return (columns * rows) / (SAMPLE_COLUMNS * SAMPLE_ROWS);
+  }
   let inside = 0, all = 0;
-  for (let y = SCREEN.top + 2; y < SCREEN.bottom; y += 4) for (let x = SCREEN.left + 2; x < SCREEN.right; x += 4) {
+  for (let y = SCREEN.top + SAMPLE_OFFSET; y < SCREEN.bottom; y += SAMPLE_STEP) for (let x = SCREEN.left + SAMPLE_OFFSET; x < SCREEN.right; x += SAMPLE_STEP) {
     all++;
     if (tiles.some(s => Math.abs(x - (s.x ?? 0)) <= w / 2 && Math.abs(y - (s.y ?? 0)) <= h / 2)) inside++;
   }
