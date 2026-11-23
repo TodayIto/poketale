@@ -309,7 +309,7 @@ export class AnimationPlayer {
         const counts = [0, 0, 0], cover = screenCover(anim.frames[f]);
         for (const frame of anim.frames[f]) {
           const kind = frame.target;
-          if (![0, 1, 2].includes(kind)) throw new Error(`Invalid frame target: ${kind}`);
+          if (kind !== 0 && kind !== 1 && kind !== 2) throw new Error(`Invalid frame target: ${kind}`);
           if (kind === 0 && user === target) continue;
           const i = counts[kind]++;
           let sprite = cache[kind][i];
