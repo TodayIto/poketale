@@ -14,6 +14,7 @@ import { EGG_SPRITE } from '../../engine/breeding.mjs';
 import { isCustomItem, customText, DEFAULT_EMOJI, CUSTOM_EFFECTS, ownerName } from '../../story/custom-items.mjs';
 import { ITEM_EFFECTS_READY } from '../../story/item-effects.mjs';
 import { learnableTms } from '../../story/item-info.mjs';
+import { DEFAULT_STANDARD } from '../../story/machine-standards.mjs';
 import { expShareHeldIn } from '../../story/battle-rule.mjs';
 import { STATS, MAX_LEVEL, MAX_MOVES, MAX_IV, PARTY_MAX, STATUS_IDS, displayName, toID, spriteIdOf } from '../../engine/mon.mjs';
 import { EV_STAT_MAX, EV_TOTAL_MAX } from '../../engine/rules.mjs';
@@ -140,7 +141,8 @@ export function matchesQuery(entry, query) {
   return [...initials].every(isChoseong) && choseongOf(squash(entry.label)).includes(initials);
 }
 
-export function moveGroups(sim, levelUp, speciesName, taken, lang) {
+// std: the disc standard whose TMs are listed (story/machine-standards.mjs; today's when unknown)
+export function moveGroups(sim, levelUp, speciesName, taken, lang, std = null) {
   const t = sayer(lang);
   const lists = choicesFor(sim, lang);
   const species = sim.Dex.species.get(speciesName);
@@ -149,7 +151,9 @@ export function moveGroups(sim, levelUp, speciesName, taken, lang) {
   const first = new Map();
   for (const [level, move] of table) if (!first.has(move) || level < first.get(move)) first.set(move, level);
   const byLevel = [...first].sort((a, b) => a[1] - b[1]).map(([move, level]) => entry(move, level === 0 ? t('import.onEvolve') : `Lv${level}`));
-  const tms = species.exists ? learnableTms(sim, species.name).filter(tm => !first.has(tm.move)).map(tm => entry(tm.move, t('import.tmNumber', { n: String(tm.n).padStart(3, '0') }))) : [];
+  // Numbered as the disc names are: three digits on Scarlet/Violet's TMs, at least two on every other game's (TM01, TM100)
+  const disc = std ?? DEFAULT_STANDARD;
+  const tms = species.exists ? learnableTms(sim, species.name, disc).filter(tm => !first.has(tm.move)).map(tm => entry(tm.move, t('import.tmNumber', { n: String(tm.n).padStart(disc === DEFAULT_STANDARD ? 3 : 2, '0') }))) : [];
   const known = new Set([...first.keys(), ...tms.map(e => e.key)]);
   const rest = lists.moves.options.filter(o => !known.has(o.key)).map(o => entry(o.key, ''));
   return [
@@ -451,7 +455,7 @@ function fromBadge(from, lang, text = FROM_LABEL(lang)[from], mode = 'import') {
 }
 
 export function mountImportScreen({ parent = document.body, mode: firstMode = 'import', draft: given = null, state = null, ctx, seed = () => [1, 2, 3, 4], lang, money = null,
-  readAi = null, manual = null, onApply = async () => {}, onClose = () => {}, gen = null }) {
+  readAi = null, manual = null, onApply = async () => {}, onClose = () => {}, gen = null, machineStandard = null }) {
   loadFont(SHEET_FONT).catch(error => console.warn('[poke-battle] 가져오기 화면 글꼴을 올리지 못함 — 대체 글꼴로', error));
   const { sim } = ctx;
   const t = sayer(lang);
@@ -675,7 +679,7 @@ export function mountImportScreen({ parent = document.body, mode: firstMode = 'i
       const put = value => { const next = [...moves]; next[i] = value; edit(m.key, 'moves', [...new Set(next.filter(Boolean))]); };
       grid.append(pickButton(move ? lists.moves.label(move) : '', { label: t('import.move', { n: i + 1 }), placeholder: t('import.moveEmpty', { n: i + 1 }), open: () => openPicker({
         title: t('import.pickMove', { n: i + 1 }), value: move, none: move ? t('import.emptySlot') : null, searchHint: t('import.otherMoves'),
-        groups: moveGroups(sim, ctx.levelUp, m.set.species, moves.filter((_, j) => j !== i), lang), pick: put,
+        groups: moveGroups(sim, ctx.levelUp, m.set.species, moves.filter((_, j) => j !== i), lang, machineStandard), pick: put,
       }) }));
     }
     return grid;

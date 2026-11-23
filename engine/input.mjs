@@ -26,6 +26,7 @@ export function engineMember(mon, customItems = null) {
 	if (mon.counts) member.counts = { ...mon.counts };
 
 	if (mon.statExp) member.statExp = { ...mon.statExp };
+	if (mon.abilitySlot) member.abilitySlot = mon.abilitySlot; // the slot a kept ability stands for (story/state.mjs), for a form the battle changes it to (heldItemForm)
 	return member;
 }
 

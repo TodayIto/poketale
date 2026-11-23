@@ -23,7 +23,7 @@ function keep(key, make) {
 }
 
 const outsideCtx = (ctx, state, lang, trainer, extra = {}) => ({ sim: ctx.sim, names: namesFor(lang, ctx.sim), lang, levelUp: ctx.levelUp, exp: ctx.exp, trainer,
-  battleFormat: stateFormat(state), customItems: state.customItems, ...extra });
+  battleFormat: stateFormat(state), customItems: state.customItems, ...(Number.isInteger(ctx.formGen) ? { battleGen: ctx.formGen } : {}), ...extra });
 const inputs = (kind, mon, lang, trainer, state, extra) => JSON.stringify([kind, mon, lang, trainer ?? null, stateFormat(state), state.customItems ?? null, extra ?? null]);
 
 const summaryOf = (mon, env) => {
@@ -121,7 +121,7 @@ function rememberView(screen, mon, env, t) {
   const { ctx, lang, state } = env;
   const names = namesFor(lang, ctx.sim);
   const moves = rememberableMoves(ctx, mon, state);
-  const list = keep(inputs('remember', mon, lang, null, state, moves), () => rememberModel(outsideCtx(ctx, state, lang, null), mon, moves));
+  const list = keep(inputs('remember', mon, lang, null, state, [moves, Number.isInteger(ctx.formGen) ? ctx.formGen : null]), () => rememberModel(outsideCtx(ctx, state, lang, null), mon, moves));
   const at = Math.min(screen.move ?? 0, list.length - 1);
   const chosen = list[at];
   return {
@@ -152,7 +152,7 @@ function learnView(screen, mon, env, t) {
   let list;
   if (asking) {
     // the new move first, then the four known (picked on 'pick')
-    const plan = keep(inputs('learn', mon, lang, null, state, screen.move), () => learnModel(outsideCtx(ctx, state, lang, null), mon, screen.move));
+    const plan = keep(inputs('learn', mon, lang, null, state, [screen.move, Number.isInteger(ctx.formGen) ? ctx.formGen : null]), () => learnModel(outsideCtx(ctx, state, lang, null), mon, screen.move));
     const rows = [moveRow(plan.newMove, { i: 0, mark: t('panel.sc.newMove'), fresh: true }), ...plan.moves.map((move, i) => moveRow(move, { i: i + 1, pick: choosing }))];
     const at = Math.min(screen.show ?? 0, rows.length - 1);
     list = { rows, selected: at, detail: moveDetail(at ? plan.moves[at - 1] : plan.newMove, t), picking: choosing };

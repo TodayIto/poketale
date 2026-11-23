@@ -1,4 +1,5 @@
 import { toID } from '../engine/mon.mjs';
+import { ABILITIES_FROM } from '../engine/era.mjs';
 import { nicknamed } from './ai-names.mjs';
 import { TOOL_TURNS } from './tools.mjs';
 import { BAG_ITEMS, onNoPokemon } from '../engine/bag.mjs';
@@ -31,6 +32,8 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
   const lines = log ?? [];
   const end = Math.min(to, lines.length);
   const illusion = new Set(lines.filter(l => l.startsWith('|replace|')).map(l => SIDE[/^(p\d)/.exec(l.split('|')[2] ?? '')?.[1]]).filter(Boolean));
+  // The battle's generation, from its log's last |gen| line, else the dex's
+  const gen = Number(lines.findLast(l => typeof l === 'string' && l.startsWith('|gen|'))?.split('|')[2]) || dex?.gen || undefined;
   const identOf = ident => /^(p\d)([a-z]?):\s*(.*)$/.exec(ident).slice(1); // [player, position letter or '', name]
   const meet = (player, name) => {
     const mon = { player, side: SIDE[player], ident: name, species: name, seat: null, hp: null, maxhp: null };
@@ -64,7 +67,7 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
     const [player, letter, name] = identOf(ident);
     return (letter && at.get(player + letter)) || named(player, name) || null;
   };
-  const types = typeWatch(dex, seen, () => [...at.values()]);
+  const types = typeWatch(dex, seen, () => [...at.values()], gen);
 
   const guardOf = mon => {
     if (!mon) return null;
@@ -411,7 +414,7 @@ export function readLog(log, { from = 0, to = log?.length ?? 0, dex = null } = {
       later.set(to, mover ?? null);
     } else if (cmd === 'replace') for (const guard of later.get(player + letter)?.guards ?? []) guard.state = 'disguised';
   }
-  return { turns: turns.filter(t => t.events.length), summary, players, illusion: [...illusion], mons: [...shown.values()] };
+  return { turns: turns.filter(t => t.events.length), summary, players, illusion: [...illusion], mons: [...shown.values()], ...(gen ? { gen } : {}) };
 }
 
 function causeOf(cmd, args, types) {
@@ -439,7 +442,7 @@ const NORMALIZE_KEEP = new Set([...ATE_KEEP, 'hiddenpower', 'struggle']);
 
 const UMBRELLA_WEATHER = new Set(['SunnyDay', 'DesolateLand', 'RainDance', 'PrimordialSea']);
 
-function typeWatch(dex, seen, field = () => []) {
+function typeWatch(dex, seen, field = () => [], gen = dex?.gen) {
   const none = { line() {}, cause: () => null };
   if (!dex) return none;
 
@@ -452,7 +455,9 @@ function typeWatch(dex, seen, field = () => []) {
   };
   const lost = (mon, ability = '?') => { if (mon) Object.assign(of(mon), { ability, changed: true }); };
   const speciesOf = mon => dex.species.get(of(mon).species ?? mon.species);
-  const mayHave = (mon, ids) => Object.values(speciesOf(mon).abilities ?? {}).some(name => ids.includes(toID(name)));
+  // Generations 1-2 battles have no abilities, though their species data still names them
+  const abilitiesOn = !(gen >= 1 && gen < ABILITIES_FROM);
+  const mayHave = (mon, ids) => abilitiesOn && Object.values(speciesOf(mon).abilities ?? {}).some(name => ids.includes(toID(name)));
   const typesOf = mon => {
     const s = of(mon);
     if (s.tera && s.tera !== 'Stellar') return [s.tera];
@@ -487,12 +492,14 @@ function typeWatch(dex, seen, field = () => []) {
     default: if (move.onModifyType) return null;
     }
 
-    if (s.ability === '?') return null;
-    const abilities = s.ability === null ? Object.values(species.abilities ?? {}).map(toID) : [s.ability].filter(Boolean);
-    for (const id of abilities) {
-      const ability = dex.abilities.get(id);
-      if (!ability.onModifyType) continue;
-      if (!ATE.has(id) || type === 'Normal') return null;
+    if (abilitiesOn) {
+      if (s.ability === '?') return null;
+      const abilities = s.ability === null ? Object.values(species.abilities ?? {}).map(toID) : [s.ability].filter(Boolean);
+      for (const id of abilities) {
+        const ability = dex.abilities.get(id);
+        if (!ability.onModifyType) continue;
+        if (!ATE.has(id) || type === 'Normal') return null;
+      }
     }
     if (s.electrify === turn || (deluge === turn && type === 'Normal')) type = 'Electric';
     return !type || type === 'Stellar' || type === '???' ? null : type;
@@ -507,7 +514,7 @@ function typeWatch(dex, seen, field = () => []) {
 
   const skinOf = (cmd, target) => {
     const move = dex.moves.get(moveId ?? '');
-    if (!moveUser || !move.exists || move.onModifyType || move.isZ || of(moveUser).dynamax || of(moveUser).electrify === turn || deluge === turn) return null;
+    if (!abilitiesOn || !moveUser || !move.exists || move.onModifyType || move.isZ || of(moveUser).dynamax || of(moveUser).electrify === turn || deluge === turn) return null;
     if (move.id === 'terablast' && of(moveUser).tera) return null;
     const list = typesOf(target);
     const options = [];
@@ -774,7 +781,8 @@ const ILLUSION_SPECIES = new Set(['zorua', 'zoroark', 'zoruahisui', 'zoroarkhisu
 function reasonCtx(read, battle, own = null) {
   const halves = { theirs: [...(battle?.team ?? []), ...(battle?.foePartner?.team ?? [])], mine: [...(battle?.partner?.team ?? [])] };
   const mine = Array.isArray(own) ? own : [];
-  const mayIllude = set => (set?.ability ? toID(set.ability) === 'illusion' : ILLUSION_SPECIES.has(toID(set?.species)));
+  // No Illusion in generations 1-2, which have no abilities
+  const mayIllude = set => !(read?.gen >= 1 && read?.gen < ABILITIES_FROM) && (set?.ability ? toID(set.ability) === 'illusion' : ILLUSION_SPECIES.has(toID(set?.species)));
   const broken = new Set(read?.illusion ?? []);
   const count = (side, known, team) => {
     const n = known ? team.filter(mayIllude).length : null;

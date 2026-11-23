@@ -6,7 +6,9 @@ import { dropOocs } from './chat.mjs';
 import { COMPAT_LINES, COMPAT_LINE_RE, COMPAT_FIELD_SEP, compatHead, compatFold, dropTaken } from './compat.mjs';
 import { readStored, isRecord, isUnreadable } from './stored.mjs';
 import { ruleNote, ruleError, refusal, failed } from './failure.mjs';
-import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty, friendshipOf, isEgg, tidyBreeding, stateFormat, dropStoppedEvolution } from './state.mjs';
+import { clone, fillSet, rngFor, newMon, uniqueUid, hpFromPercent, hpPercentOf, markDex, toID, maxHp, healParty, friendshipOf, isEgg, tidyBreeding, stateFormat, dropStoppedEvolution, abilityAs } from './state.mjs';
+import { ruleValues } from './setting-changes.mjs';
+import { abilityEraOf } from './battle-rule.mjs';
 import { FRIENDSHIP_MAX, friendshipLocked } from '../engine/friendship.mjs';
 import { STATS, STATUS_IDS, hasOneSpecial, autoTeraType } from '../engine/mon.mjs';
 import { evTotal } from './training.mjs';
@@ -147,6 +149,19 @@ function lineOf(sim, name) {
   }
 }
 const sameName = (a, b) => !!a && !!b && compatFold(a) === compatFold(b);
+const sameLine = (sim, a, b) => { const line = lineOf(sim, a); return !!line && line === lineOf(sim, b); };
+// Whether species `to` is a later stage of species `from` (its pre-evolutions, followed back; a form counts as its base
+// species, since the dex's prevo names the base: Wormadam-Sandy's is Burmy, not Burmy-Sandy)
+function laterStage(dex, from, to) {
+  const start = dex.species.get(from), names = new Set([toID(start.name), toID(start.baseSpecies)].filter(Boolean));
+  for (let species = dex.species.get(to), n = 0; species?.exists && species.prevo && n < 8; n++) {
+    species = dex.species.get(species.prevo);
+    if (names.has(toID(species.name)) || names.has(toID(species.baseSpecies))) return true;
+  }
+  return false;
+}
+// The ability an update saw, so the fold can tell an edit made behind the import (applyImport)
+const sawOf = mon => ({ ability: mon.set.ability ?? '' });
 
 export function readCompat(chat, ctx, { format = COMPAT_FORMAT } = {}) {
   const { sim } = ctx;
@@ -386,7 +401,7 @@ function rematch(draft, ctx) {
   }
   for (const mon of draft.mons) {
     const hit = pairs.get(mon.key);
-    const match = hit ? { uid: hit.uid, place: hit.place, label: labelOf(hit) } : null;
+    const match = hit ? { uid: hit.uid, place: hit.place, label: labelOf(hit), ...(hit.was ? { was: hit.was } : {}) } : null;
     if ((mon.match?.uid ?? null) === (match?.uid ?? null)) { mon.match = match; continue; }
     mon.match = match;
     if (mon.egg) mon.action = match ? 'update' : 'skip';
@@ -396,7 +411,7 @@ function rematch(draft, ctx) {
 }
 
 const poolOf = (state, ctx) => [...(state?.party ?? []).map(m => [m, 'party']), ...(state?.box ?? []).map(m => [m, 'box'])]
-  .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level, now: valuesOf(ctx, state, m), ...(isEgg(m) ? { egg: true } : {}) }));
+  .map(([m, place]) => ({ uid: m.uid, place, species: m.set.species, name: m.set.name ?? '', level: m.set.level, now: valuesOf(ctx, state, m), ...(isEgg(m) ? { egg: true } : {}), was: sawOf(m) }));
 
 export function makeDraft(chat, state, ctx, { seed = 0, format, found: given = null, gen = null } = {}) {
   const draftGen = genOfDraft(gen);
@@ -511,7 +526,7 @@ export function currentMonDraft(ctx, state, uid) {
   const debug = isEgg(found) ? { eggCycles: Math.ceil(found.egg.cycles) }
     : { friendship: friendshipOf(ctx, found), friendshipLocked: friendshipLocked(found), evolveLocked: found.evolveLocked === true };
   const mon = { key: 'e1', place, set, hpPercent, status, ...debug, from: Object.fromEntries([...MON_FIELDS, ...Object.keys(debug)].map(f => [f, 'current'])),
-    match: { uid, place, label: labelOf(set) }, action: 'update', problems: [], seed: `0:e1` };
+    match: { uid, place, label: labelOf(set), was: sawOf(found) }, action: 'update', problems: [], seed: `0:e1` };
   const gaps = missing(set);
   for (const f of gaps) mon.from[f] = 'auto';
   if (gaps.length) fillAuto(mon, ctx, gaps);
@@ -679,6 +694,7 @@ export function commitImport(chat, draft, ctx, { now = Date.now(), held = [], st
       ...(m.from.friendshipLocked === 'user' ? { friendshipLocked: m.friendshipLocked } : {}),
       ...(m.from.evolveLocked === 'user' ? { evolveLocked: m.evolveLocked } : {}),
       ...(m.from.eggCycles === 'user' ? { eggCycles: m.eggCycles } : {}), from: { ...m.from },
+      ...(m.action === 'update' && isRecord(m.match?.was) ? { was: clone(m.match.was) } : {}),
     }));
     const counts = Object.fromEntries(Object.entries(draft.bag).map(([itemId, e]) => [itemId, e.count]));
     const bag = Object.fromEntries([...new Set([...Object.keys(draft.base.bag), ...Object.keys(counts)])]
@@ -744,6 +760,12 @@ function updatedMon(ctx, old, set) {
   if (!STATS.every(s => old.set.ivs?.[s] === set.ivs[s])) delete mon.hyper;
 
   if (!STATS.every(s => (old.set.evs?.[s] ?? 0) === (set.evs?.[s] ?? 0))) delete mon.statExp;
+  // The kept ability slot (story/state.mjs crossEra and evolve) and a form's kept ability (changeForm) were the old
+  // species' and ability's
+  if (toID(old.set.species) !== toID(set.species) || toID(old.set.ability) !== toID(set.ability)) {
+    delete mon.abilitySlot;
+    if (ruleValues(ctx).editedImports) delete mon.formAbility;
+  }
   if (toID(old.set.species) === toID(set.species) && old.set.level === set.level) mon.pending = { ...old.pending, moves: old.pending.moves.filter(id => !set.moves.includes(id)) };
   else {
     const { exp, pending } = newMon(ctx, set, old.uid);
@@ -754,22 +776,75 @@ function updatedMon(ctx, old, set) {
 }
 
 export function applyImport(state, imp, ctx) {
-  if (imp.kind === HANDBACK_KIND) return clone(imp.state);
+  if (imp.kind === HANDBACK_KIND) {
+    // The whole state the story was handed back with, in the ability era it was saved in (story/state.mjs crossEra);
+    // one saved without it is in the fold's
+    const back = clone(imp.state);
+    if (back && back.abilityEra === undefined && state?.abilityEra !== undefined) back.abilityEra = state.abilityEra;
+    return back;
+  }
   const { sim } = ctx;
   const next = clone(state);
   const partyOrder = [];
+  // Under editedImports an update follows edits made behind it; under eraAbilities too it keeps the slot an evolution keeps
+  const fix = !!ruleValues(ctx).editedImports, slots = fix && !!ruleValues(ctx).eraAbilities;
+  // An ability set by hand where battles have none, or while Auto only guesses the generation, is a hand choice the
+  // generation rule leaves alone (owner's decision, 2026-11-23)
+  const choosing = abilityEraOf(ctx) !== true;
   for (const entry of imp.mons ?? []) {
     let mon;
     if (entry.action === 'update') {
       const list = [next.party, next.box].find(l => l.some(m => m.uid === entry.uid));
       if (!list) continue;
       const index = list.findIndex(m => m.uid === entry.uid);
-      mon = updatedMon(ctx, list[index], clone(entry.set));
+      const old = list[index], set = clone(entry.set);
+      // An ability the edit left as it found it ('current') is written as recorded, as release 0.1.0 does, unless an
+      // edit behind the import changed the ability the edit saw (`was`; the generation rule may have given or withheld
+      // the Hidden Ability). The fold's ability then stays by name, as the edit would have found and recorded it had the
+      // history been so from the start. An import saved before edits recorded what they saw (or with an unreadable
+      // record) counts only a Hidden Ability the generation rule gave. An import that left the species as found too, which
+      // the fold no longer has (an edit behind removed an evolution or a species edit), restores the species it recorded,
+      // with the ability it recorded. Where the generation rule gave the fold's Pokémon its Hidden Ability and it still
+      // holds it (perhaps only as a kept slot, which no name shows; not one chosen by hand, and only within its evolution
+      // line), the fold's ability is carried by its slot instead, as an evolution carries it (story/state.mjs evolve); so
+      // it is where the recorded species is a later stage of the fold's and the fold's Pokémon no longer matches what the
+      // edit saw, by name (a species edit keeps the name) or carried by its slot (an evolution's way). A fold ahead of the
+      // record (an older battle snapshot folded before the import, an evolution added behind) or on another branch keeps
+      // the recorded ability. Wherever the recorded ability is what the fold's carries to the recorded species by its slot,
+      // the slot that carry keeps stays too (a Metapod's Hidden Ability slot), so a later import or evolution reads the
+      // Pokémon as the edit saw it. A hand choice the fold has describes the restored ability only where that is the
+      // fold's, by name or carried. Before the rule editedImports the ability is written as recorded.
+      const kept = entry.from?.ability === 'current';
+      const moved = toID(old.set.species) !== toID(set.species);
+      const restored = moved && entry.from?.species === 'current';
+      const was = isRecord(entry.was) && typeof entry.was.ability === 'string' ? entry.was.ability : null;
+      const behind = fix && kept && !restored && !!old.set.ability && (was !== null ? toID(old.set.ability) !== toID(was)
+        : !!old.tookHidden && toID(old.set.ability) !== toID(set.ability));
+      let keptSlot = null, unchosen = false;
+      if (behind) set.ability = old.set.ability;
+      else if (restored && kept && !!old.set.ability && sim?.Dex?.species.get(set.species)?.exists) {
+        const dex = sim.Dex, now = abilityAs(dex, old.set.species, old.set.ability, old.abilitySlot, set.species);
+        const hidden = !!old.tookHidden && !old.chosenAbility && sameLine(sim, old.set.species, set.species)
+          && (old.abilitySlot === 'H' || toID(dex.species.get(old.set.species).abilities?.H) === toID(old.set.ability));
+        const later = laterStage(dex, old.set.species, set.species);
+        const changed = was !== null && later && toID(old.set.ability) !== toID(was) && toID(now.ability) !== toID(was);
+        if (fix && now.ability && (hidden || changed)) { set.ability = now.ability; keptSlot = now.slot; }
+        else if (toID(now.ability) === toID(set.ability)) keptSlot = now.slot;
+        else unchosen = toID(old.set.ability) !== toID(set.ability);
+      }
+      mon = updatedMon(ctx, old, set);
+      if (keptSlot && slots) mon.abilitySlot = keptSlot;
+      if (unchosen) delete mon.chosenAbility;
+      // An ability the edit sets itself, or a species outside the Pokémon's evolution line as the import screen pairs
+      // them (forms and branches included), is no longer one an Ability Capsule or Patch chose
+      if (kept ? moved && !sameLine(sim, old.set.species, set.species) : toID(old.set.ability) !== toID(set.ability) || moved) delete mon.chosenAbility;
+      if (choosing && entry.from?.ability === 'user') mon.chosenAbility = true;
       const target = entry.place === 'box' ? next.box : next.party;
       if (target === list) list[index] = mon;
       else { list.splice(index, 1); target.push(mon); }
     } else if (entry.action === 'add') {
       mon = newMon(ctx, clone(entry.set), uniqueUid(next, entry.uid));
+      if (choosing && entry.from?.ability === 'user') mon.chosenAbility = true;
       (entry.place === 'box' ? next.box : next.party).push(mon);
     } else continue;
     mon.hp = hpFromPercent(sim, mon.set, entry.hpPercent ?? 100, false, stateFormat(next));

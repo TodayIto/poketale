@@ -1,6 +1,7 @@
 import * as sim from '../../engine/browser-engine.mjs';
 import { findBlocks, findTags, findMarks, markText, parseBattle, parseAct, actBlock, actsIn, hashKey, messageId, battlesIn, battlesInText, blockAnchorIn, stripForPrompt, blockCuts, hasBlocks } from '../../story/blocks.mjs';
-import { readTable, writeTable, tableStatus, createFolds, applyBattles, toEngineSpec, pruneTable, stateVars, computeState, nextStageSpec, battlesBefore, stageOf, backToBack, battleRecord, hatchedParty, toolsIn, ownsExpShare } from '../../story/state.mjs';
+import { readTable, writeTable, tableStatus, createFolds, applyBattles, toEngineSpec, pruneTable, stateVars, computeState, nextStageSpec, battlesBefore, stageOf, backToBack, battleRecord, hatchedParty, toolsIn, ownsExpShare, abilityRecord, crossEra, inRule } from '../../story/state.mjs';
+import { formatGenOf } from '../../engine/generation.mjs';
 import { unreadableLine, isUnreadable } from '../../story/stored.mjs';
 import { withLocksOf } from '../../engine/input.mjs';
 import { withItemTags } from '../../story/custom-items.mjs';
@@ -34,7 +35,7 @@ import { applyCompat, compatLang, bagMoney, dropTaken, statusIn, battleScene, la
 import { victoryChoices } from '../../story/settlement.mjs';
 import { rerollSnapshot, restartSpec, snapshotResult } from '../../director/index.js';
 import { waitingTrainer } from '../../engine/core.mjs';
-import { ruleFormat } from '../../engine/rules.mjs';
+import { ruleFormat, DEFAULT_GEN, formatRule, DEFAULT_FORMAT } from '../../engine/rules.mjs';
 import { loadLevelUp, EXP_TABLE } from './level-tables.js';
 import { createFetchBytes } from './fetch-bytes.js';
 import { viewPictureWays } from './picture-route.js'; // the picture route the battle view takes (pictureWays option)
@@ -44,11 +45,11 @@ import { deviceStore, DEVICE_SETTINGS, deviceValue, withDevice, sharedPart, devi
 import { panelLift } from '../../story/panel-html.mjs'; // the widest a dragged panel may go
 import { DEFAULT_SETTINGS, DEFAULT_LOOK, settingsUnreadable, LANG_OPEN, hostLang, loadSettings, saveSettings, normalizeSettings, SEND_FORMATS, PANEL_OPEN_CHOICES, mountSettings, mountPreparing, botEnabled, botKey, botsSwitched, lookOf, chosenGender, adoptOldLook, commandsOn, auxOn, IMPORT_NAMES_SHOWN, volumeFeed } from './settings.js';
 import { mountImportScreen } from './import-screen.js';
-import { makeDraft, importOffer, importOfferAi, importTurn, handBack, commitImport, commitDebugHeal, commitDebugBadges, readImports, cancelImport, inForce, newMonDraft, currentMonDraft, friendshipLockDraft } from '../../story/import.mjs';
+import { makeDraft, importOffer, importOfferAi, importTurn, handBack, commitImport, commitDebugHeal, commitDebugBadges, readImports, cancelImport, inForce, importPlace, newMonDraft, currentMonDraft, friendshipLockDraft } from '../../story/import.mjs';
 import { importAiMessages, readAiParty, aiFailedFound } from '../../story/import-ai.mjs';
 import { readSettingChanges, recordSettingChange, settingsBehind, rulesAt } from '../../story/setting-changes.mjs';
 import { worldBehind, recordWorldChange } from '../../story/compat-world.mjs';
-import { readBattleRule, recordBattleRule, battleRuleNow, chatNowCtx, chatSettings, numbersRule, newChatStart, recordNewChatStart, optionsBehind, recordOptions } from '../../story/battle-rule.mjs';
+import { readBattleRule, recordBattleRule, battleRuleNow, chatNowCtx, ranCtx, abilityEraOf, chatSettings, numbersRule, newChatStart, recordNewChatStart, optionsBehind, recordOptions } from '../../story/battle-rule.mjs';
 import { readBattlesOff, battlesOff, setBattlesOff } from '../../story/battles-off.mjs';
 import { loadPicture, savePicture, adoptOldPicture, entryMe } from './my-picture.js';
 import { voicePackStore } from './voice-pack-store.js'; // the player's voice packs - this device's store (public PR #12)
@@ -949,7 +950,7 @@ async function askForge(press, pass) {
   if (forging.has(name)) return;
   const lang = currentLang(pass.chat);
   try {
-    const asked = forgeRequest({ chat: pass.chat, key: press.key, quiet: !quietIn(pass.id), state: await pass.state(), sim, naming: naming(lang) });
+    const asked = forgeRequest({ chat: pass.chat, key: press.key, quiet: !quietIn(pass.id), state: await pass.state(), sim, naming: naming(lang), abilities: abilitiesNow(pass.chat) });
     if (asked.why) throw failed(asked.why);
     if (forgeAsking.has(name)) forgeAsking.delete(name); else forgeAsking.set(name, pass.text);
     await refreshForge(pass);
@@ -963,14 +964,14 @@ async function forgeBattle(press, pass, kind) {
   const lang = currentLang(pass.chat);
   try {
     if (pass.unreadable) throw failed('unreadable'); // before the paid call: nothing could be written
-    const asked = forgeRequest({ chat: pass.chat, key: press.key, quiet: !quietIn(pass.id), state: await pass.state(), sim, naming: naming(lang), kind });
+    const asked = forgeRequest({ chat: pass.chat, key: press.key, quiet: !quietIn(pass.id), state: await pass.state(), sim, naming: naming(lang), abilities: abilitiesNow(pass.chat), kind });
     if (asked.why) throw failed(asked.why);
     await refreshForge(pass);
     const made = await runForge(askAux, asked.messages, asked.basis.reading);
     if (made.why) throw Object.assign(failed(made.why), { cause: made.error });
     const ctx = await storyCtx();
 
-    const wrote = await writeChat(pass.target, chat => appendBattle(chat, asked, made.block, { state: acts.pendingState(chat, ctx).state, sim, naming: naming(lang) }),
+    const wrote = await writeChat(pass.target, chat => appendBattle(chat, asked, made.block, { state: acts.pendingState(chat, ctx).state, sim, naming: naming(lang), abilities: abilitiesNow(chat) }),
       { vars: true, missing: true });
     if (wrote === HELD) throw failed('writeBlocked');
     if (wrote !== true) throw failed('sceneMoved');
@@ -1343,7 +1344,8 @@ async function nextStage(origin, { result, spec }) {
   const found = await locate(origin);
   if (!found) throw failed('blockGone');
   const ctx = await storyCtx();
-  return nextStageSpec(spec, result, encounterBase(structuredClone(found.chat), origin.key, ctx).state, ctx, { seed: freshSeed() });
+  const chat = structuredClone(found.chat);
+  return nextStageSpec(spec, result, inBattleEra(chat, ctx, spec)(encounterBase(chat, origin.key, ctx).state), ctx, { seed: freshSeed() });
 }
 
 async function finish(origin) {
@@ -1461,15 +1463,43 @@ async function writeResult(origin, { outcome, result, apply }) {
   return origin.phase === 'saved';
 }
 
+// The battle ran in its own generation, which a Battle Rules change since it began may have left behind: the states it
+// works on move to that ability era, and its saved result stays there until the next message moves it on
+// (story/state.mjs crossEra). A battle begun while Auto only guessed (spec abilityEra null) ran in no known era: the
+// states keep their abilities and only lose their own era, so its snapshot takes the fold's at its tag; one whose spec does not say (begun before the spec kept its era) moves only where its
+// generation differs from now, so that Auto's guess of 9 before any region stays one.
+function inBattleEra(chat, ctx, spec) {
+  const gen = Number.isInteger(spec?.formGen) ? spec.formGen : spec?.formatid ? formatGenOf(spec.formatid) : null;
+  const known = spec && Object.hasOwn(spec, 'abilityEra');
+  const moved = gen && (known ? spec.abilityEra !== null : gen !== (chatNowCtx(chat, ctx).formGen ?? DEFAULT_GEN));
+  if (known && spec.abilityEra === null) return state => (state?.abilityEra === undefined ? state : (({ abilityEra: _, ...rest }) => rest)(state)); // (and its snapshot no era of its own: the fold's at its tag)
+  return state => (moved && state ? crossEra(ctx?.sim, state, { ...ctx, formGen: gen, autoGuess: false }) : state);
+}
+
+function battleNumbers(format) {
+  try { return formatRule(format); } catch (error) { console.warn('[poke-battle] 배틀 형식의 수치 규칙을 찾지 못함', format, error); return null; }
+}
+
 function resultChange(chat, origin, { outcome, result, apply }, ctx) {
   const blockAt = findBlockMessage(chat, origin.key);
   if (surveyBattles(chat, readTable(chat)).battles.get(origin.key)?.phase === 'story') return null;
+  const time = Date.now();
 
-  const { state: before, table, added } = encounterBase(chat, origin.key, ctx);
+  const pending = encounterBase(chat, origin.key, ctx);
+  const { table, added } = pending;
+  const inBattle = inBattleEra(chat, ctx, origin.stage);
+  // (and its numbers rule, Mainline or Champions, which the snapshot keeps until the next message, story/state.mjs;
+  // a format the rules do not list keeps the state's own, so the result still saves)
+  const numbers = battleNumbers(origin.stage?.formatid ?? DEFAULT_FORMAT), shown = inBattle(pending.state);
+  const before = numbers ? inRule(ctx?.sim, shown, numbers) : shown, base = inBattle(pending.base ?? pending.state);
+  // Imports since the battle's block, all in the fold it starts from (the one this result is written over, also when
+  // Asset Maid's guard writes it again); those at its result's message are folded before the result rather than over it
+  // (story/state.mjs computeState)
+  const imported = readImports(chat).imports.filter(imp => inForce(imp) && importPlace(chat.message ?? [], imp) >= blockAt).map(imp => imp.id);
 
   const battles = [...battlesBefore(origin.stage), ...(apply ? [battleRecord(origin.stage, apply, outcome)] : [])];
 
-  const after = applyBattles(before, battles, { ...ctx, status: latestStatus(chat, blockAt) }, { battle: origin.battle });
+  const after = applyBattles(before, battles, { ...ranCtx(chat, ctx, origin.stage), status: latestStatus(chat, blockAt) }, { battle: origin.battle });
   const tag = hashKey(`${origin.key}:${Date.now()}`);
 
   const caughtMon = result.captured ? [...after.party, ...after.box].find(m => ![...before.party, ...before.box].some(b => b.uid === m.uid)) : null;
@@ -1489,6 +1519,12 @@ function resultChange(chat, origin, { outcome, result, apply }, ctx) {
   table.meta = { ...table.meta, [tag]: { blockKey: origin.key, ...anchor, outcome, turns: result.turn ?? 0,
     faceSpecies: result.captured?.species ?? origin.battle.team?.[0]?.species, title: battleTitle(origin.battle, battleLang(origin, chat), { level: false }),
     wild: !!origin.battle.wild, caught, evolved: evolutions,
+    // When it was saved; the party and box as the fold had them before the battle and its queued actions, moved to the
+    // battle's ability era; and the generation and Battle Rules the battle ran with, under which a Pokémon it caught is
+    // met when the snapshot gives it no met generation (story/state.mjs computeState and keepOrigins)
+    time, abilities: abilityRecord(base), formGen: Number.isInteger(origin.stage?.formGen) ? origin.stage.formGen : null,
+    ...(origin.stage?.battleRule != null ? { battleRule: origin.stage.battleRule } : {}),
+    ...(imported.length ? { imports: imported } : {}),
     ...(added.length ? { held: added.map(action => action.id) } : {}) } };
   writeTable(chat, table);
 
@@ -1568,15 +1604,18 @@ function statusAt(snapshot) {
 
 const naming = lang => ({ lang, en: dexName });
 
+// The era of the chat's end, not the state's: under Auto's guess the state keeps the era it last knew
+const abilitiesNow = chat => abilityEraOf(chatNowCtx(chat, settings)) !== false;
+
 const bagTools = battle => (battle ? battle.tools !== false : settings.effectItems === true);
-const varsOf = (state, where) => { const battle = battleForVars(where); return varTexts(state, { sim, battle, ...naming(currentLang(where.chat)), effectItems: bagTools(battle) }); };
+const varsOf = (state, where) => { const battle = battleForVars(where); return varTexts(state, { sim, battle, ...naming(currentLang(where.chat)), effectItems: bagTools(battle), abilities: abilitiesNow(where.chat) }); };
 
 const rematchEntries = (state, where) => (battlesOff(where.chat) ? [] : trainerLore(state, naming(currentLang(where.chat))));
 
 const writeStoryVars = (into, state, where) => [writeVars(into, varsOf(state, where)), writeTrainerLore(into, rematchEntries(state, where))].some(Boolean);
 
 const varsKey = where => JSON.stringify([where.id, where.text ?? textKey(where.chat), stateVars().map(name => where.chat?.scriptstate?.[name] ?? null),
-  battleForVars(where), currentLang(where.chat), settings.effectItems === true, battlesOff(where.chat)]);
+  battleForVars(where), currentLang(where.chat), settings.effectItems === true, battlesOff(where.chat), abilitiesNow(where.chat)]);
 
 async function setVars(where) {
   const { state, table, changed } = acts.pendingState(where.chat, await storyCtx());
@@ -1767,8 +1806,12 @@ function playedAt(snapshot, ctx) {
   try {
     const result = snapshotResult(sim, snapshot, { levelUp: ctx.levelUp, exp: ctx.exp });
 
-    const before = battlesBefore(snapshot.spec);
-    return { ...battleRecord(snapshot.spec, result), ...(before.length ? { before } : {}) };
+    const before = battlesBefore(snapshot.spec), spec = snapshot.spec;
+    // and the generation, Battle Rules and ability era the battle ran with, which the fold uses to apply it and to set
+    // the met generation and starting era of a Pokémon it caught (story/state.mjs computeState)
+    return { ...battleRecord(spec, result), ...(before.length ? { before } : {}),
+      formGen: Number.isInteger(spec?.formGen) ? spec.formGen : null, ...(spec?.battleRule != null ? { battleRule: spec.battleRule } : {}),
+      ...(spec && Object.hasOwn(spec, 'abilityEra') ? { abilityEra: spec.abilityEra } : {}) };
   } catch (error) {
     if (!error?.unresumable) throw error;
     console.warn('[poke-battle] 이야기로 끝난 배틀의 자동 저장을 다시 넣지 못함', error);
@@ -2384,7 +2427,8 @@ let windowChanges = Promise.resolve();
 function changeInWindow(target, next) {
   const change = async () => {
     if (target) {
-      try { await writeChat(target, chat => [recordOptions(chat, next), recordSettingChange(chat, chatSettings(chat, next))].some(Boolean), { vars: true }); } catch (error) { console.error(error); }
+      // The settings as they were first, where the chat has no record of them yet (changeBattleRule)
+      try { await writeChat(target, chat => [recordOptions(chat, settings), recordSettingChange(chat, chatSettings(chat, settings)), recordOptions(chat, next), recordSettingChange(chat, chatSettings(chat, next))].some(Boolean), { vars: true }); } catch (error) { console.error(error); }
     }
     return keepSettings(next);
   };
@@ -2397,6 +2441,9 @@ function changeBattleRule(target, value) {
   const change = async () => {
     let after = null;
     const wrote = await writeChat(target, (chat, found) => {
+      // The settings as they were first, where the chat has no record of them yet (its catch-up not run): an empty
+      // chat's first record is the settings it began with, which an import made before this change keeps
+      recordSettingChange(chat, chatSettings(chat, settings));
       const changed = recordBattleRule(chat, value, settings);
       recordSettingChange(chat, chatSettings(chat, settings));
       after = battleRuleOf({ ...found, chat });
@@ -2502,7 +2549,7 @@ async function openImport(target, applied) {
   if (importApp) return;
   const { found, ctx, state, holds } = await importStart(target);
   const draft = makeDraft(found.chat, state, ctx, { seed: freshSeed(), gen: draftGen(found.chat) });
-  importApp = mountImportScreen({ draft, ctx, seed: freshSeed, lang: currentLang(found.chat), gen: draftGen(found.chat),
+  importApp = mountImportScreen({ draft, ctx, seed: freshSeed, lang: currentLang(found.chat), gen: draftGen(found.chat), machineStandard: acts.machineStandardNow(found.chat, ctx),
     onApply: async edited => applied(await applyImportTo(target, edited, ctx, holds)),
     onClose: () => { importApp = undefined; } });
 }
@@ -2515,7 +2562,7 @@ async function debugScreen(target, screen) {
   await showWindow(owner, { full: true });
   try {
     await new Promise(resolve => {
-      importApp = mountImportScreen({ ctx, seed: freshSeed, lang: currentLang(found.chat), gen: draftGen(found.chat), ...options,
+      importApp = mountImportScreen({ ctx, seed: freshSeed, lang: currentLang(found.chat), gen: draftGen(found.chat), machineStandard: acts.machineStandardNow(found.chat, ctx), ...options,
         onApply: edited => applyImportTo(target, edited, ctx, holds), onClose: () => { importApp = undefined; resolve(); } });
     });
   } finally { await hideWindow(owner); }
@@ -2629,7 +2676,7 @@ export async function quickImport(target, { asked = false } = {}) {
   await showWindow(owner, { full: true });
   try {
     await new Promise(resolve => {
-      importApp = mountImportScreen({ ...options, ctx, seed: freshSeed, lang: currentLang(found.chat), gen: draftGen(found.chat),
+      importApp = mountImportScreen({ ...options, ctx, seed: freshSeed, lang: currentLang(found.chat), gen: draftGen(found.chat), machineStandard: acts.machineStandardNow(found.chat, ctx),
         onApply: edited => applyImportTo(target, edited, ctx, holds), onClose: () => { importApp = undefined; resolve(); } });
     });
   } finally { await hideWindow(owner); }

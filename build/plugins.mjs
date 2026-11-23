@@ -261,7 +261,7 @@ export const embeddedExpText = {
 			contents: `const TEXT = ${JSON.stringify(Object.fromEntries(LANGS.map(lang => [lang, expTextBase64(lang)])))};\n`
 				+ 'export function expTextBase64(lang) { return TEXT[lang]; }',
 			loader: 'js',
-			watchFiles: LANGS.map(lang => fileURLToPath(new URL(`../director/text-exp-${lang}.json`, import.meta.url))),
+			watchFiles: LANGS.flatMap(lang => [`text-exp-${lang}`, `text-move-gens-${lang}`].map(name => fileURLToPath(new URL(`../director/${name}.json`, import.meta.url)))),
 		}));
 	},
 };

@@ -321,7 +321,8 @@ export const leadItemLine = (id, namer) => `${namer.items(id)} held by the lead 
 
 const KIND_LABEL = { double: ['Double Battle'], tag: ['Tag Battle'] };
 
-export function varTexts(state, { sim, battle = null, lang = 'ko', en = null, effectItems = true } = {}) {
+// abilities: false in generations 1-2, which had none (battle-rule.mjs abilityEraOf)
+export function varTexts(state, { sim, battle = null, lang = 'ko', en = null, effectItems = true, abilities = true } = {}) {
   const namer = createNamer({ lang, en });
   const item = id => customText(state, id) ?? namer.items(id);
   const party = [];
@@ -347,7 +348,7 @@ export function varTexts(state, { sim, battle = null, lang = 'ko', en = null, ef
     const fields = [ownLabel(i + 1), `Species: ${namer.species(mon.set.species)}`];
     if (mon.set.name) fields.push(`Nickname: ${mon.set.name}`);
     fields.push(`Level: ${mon.set.level}`, `HP: ${hp}%`, `Status: ${status}`);
-    if (mon.set.ability) fields.push(`Ability: ${namer.abilities(mon.set.ability)}`);
+    if (abilities && mon.set.ability) fields.push(`Ability: ${namer.abilities(mon.set.ability)}`);
     fields.push(`Item: ${mon.set.item ? item(mon.set.item) : 'None'}`);
     fields.push(`Moves: ${(mon.set.moves ?? []).map(m => namer.moves(m)).join(', ') || 'None'}`);
 

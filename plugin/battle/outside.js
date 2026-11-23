@@ -14,16 +14,17 @@ export function createOutsideScreens({ sim, createView, fetchBytes, levelUp, exp
     const view = await createView({ ...viewOptions, parent, fetchBytes, lang, ...(theme !== undefined ? { theme } : {}) });
     try { return await work(view, ctx); } finally { view.destroy(); }
   }
+  const withGen = (ctx, battleGen) => (Number.isInteger(battleGen) ? { ...ctx, battleGen } : ctx);
   return {
 
     openSummary: ({ parent, mon, customItems, dynamaxShown = false, battleGen = null, theme, onRename, onEvolveLock }) => withView({ parent, theme }, (view, ctx) =>
-      showOutsideSummary({ view, ctx: { ...ctx, customItems, dynamaxShown, ...(Number.isInteger(battleGen) ? { battleGen } : {}) }, mon, onRename, onEvolveLock })),
+      showOutsideSummary({ view, ctx: { ...withGen(ctx, battleGen), customItems, dynamaxShown }, mon, onRename, onEvolveLock })),
 
-    openLearnMove: ({ parent, mon, move, party, theme }) => withView({ parent, theme }, (view, ctx) => learnMoveOutside({ view, ctx, mon, move, party })),
+    openLearnMove: ({ parent, mon, move, party, battleGen = null, theme }) => withView({ parent, theme }, (view, ctx) => learnMoveOutside({ view, ctx: withGen(ctx, battleGen), mon, move, party })),
 
-    openEvolution: ({ parent, mon, into, learn, theme }) => withView({ parent, theme }, (view, ctx) => evolveOutside({ view, ctx, mon, into, learn })),
+    openEvolution: ({ parent, mon, into, learn, battleGen = null, theme }) => withView({ parent, theme }, (view, ctx) => evolveOutside({ view, ctx: withGen(ctx, battleGen), mon, into, learn })),
 
-    openRememberMove: ({ parent, mon, moves, party, theme }) => withView({ parent, theme }, (view, ctx) => rememberMoveOutside({ view, ctx, mon, moves, party })),
+    openRememberMove: ({ parent, mon, moves, party, battleGen = null, theme }) => withView({ parent, theme }, (view, ctx) => rememberMoveOutside({ view, ctx: withGen(ctx, battleGen), mon, moves, party })),
 
     openAmie: ({ parent, mon, state, party, debug, awake, trainWhy, lock, scene, theme }) => withView({ parent, theme }, (view, ctx) => amieOutside({ view, ctx, mon, state, party, debug, awake, trainWhy, lock, scene })),
 
