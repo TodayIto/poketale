@@ -47,8 +47,13 @@ export class BattleMessage {
   async message(text, { wait = false, hold, promptDelay } = {}) {
     hold = checkMs('hold', hold); promptDelay = checkMs('promptDelay', promptDelay) ?? 0;
 
-    const coded = parseCodes(text), codes = coded.delays.size || coded.sounds.size ? coded : null;
-    if (coded.plain !== String(text ?? '')) text = coded.plain;
+    let codes = null;
+    // Every message code contains an opening brace. Leave other input to the existing parser.
+    if (typeof text !== 'string' || text.includes('{')) {
+      const coded = parseCodes(text);
+      if (coded.delays.size || coded.sounds.size) codes = coded;
+      if (coded.plain !== String(text ?? '')) text = coded.plain;
+    }
     let shown = 0;
     // Split paragraphs and wrap into two-line pages, so long messages cannot disappear below the window.
     const lines = this.text.getWrappedText(text);
