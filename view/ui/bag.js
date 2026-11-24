@@ -156,6 +156,18 @@ export class BagMenu {
       this.box.add([t, hit]);
       tabX += tabs[i] + 8;
     });
+    this.listLayout = { width, top, namesWidth, countsWidth, start: this.box.list.length };
+    this.top = top; this.listTop = top + 25; this.listBottom = top + 25 + 16 * ROWS; this.boxX = [x, x + width];
+    this.drawRows();
+  }
+
+  drawRows() {
+    const s = this.scene, { width, top, namesWidth, countsWidth, start } = this.listLayout;
+    const rowY = r => top + 9 + 16 * r;
+    // Keep the window and tabs in place, and replace only the children after them.
+    for (let i = this.box.list.length - 1; i >= start; i--) this.box.removeAt(i, true);
+    this.promptText.setText(this.prompt); // scrolling also dismisses a blocked-item reason
+
     // 6 list rows
     this.rows = [];
     for (let r = 0; r < ROWS; r++) {
@@ -198,7 +210,6 @@ export class BagMenu {
     };
     if (this.scroll > 0) arrow(rowY(1), '↑', -(ROWS - 1));
     if (this.scroll + ROWS < this.length) arrow(rowY(ROWS), '↓', ROWS - 1);
-    this.top = top; this.listTop = top + 25; this.listBottom = top + 25 + 16 * ROWS; this.boxX = [x, x + width];
     this.cursorObj = s.add.image(0, 0, 'cursor'); this.box.add(this.cursorObj);
     this.setCursor(this.cursor, true);
   }
@@ -209,7 +220,7 @@ export class BagMenu {
     if (scroll === this.scroll) return false;
     this.scroll = scroll;
     this.cursor = Math.min(scroll + ROWS - 1, Math.max(scroll, this.cursor));
-    this.draw(); playSelect(this.scene);
+    this.drawRows(); playSelect(this.scene);
     return true;
   }
 
@@ -242,7 +253,7 @@ export class BagMenu {
     this.cursor = index;
     // scroll if the cursor is outside the visible rows
     const scroll = Math.min(Math.max(this.scroll, index - ROWS + 1), index);
-    if (scroll !== this.scroll) { this.scroll = scroll; return this.draw(); }
+    if (scroll !== this.scroll) { this.scroll = scroll; return this.drawRows(); }
     // source setCursor: (12, 15 + (6 + cursor*96)/6) centred origin
     this.cursorObj.setPosition(12, this.top + 16 + 16 * (index - this.scroll + 1));
     this.wiggle(this.rows.find(row => row.index === index)?.icon);
@@ -301,7 +312,7 @@ export class BagMenu {
     if (input?.off) { input.off('wheel', this.onWheel); input.off('pointerdown', this.onDown); input.off('pointermove', this.onMove); input.off('pointerup', this.onUp); input.off('pointerupoutside', this.onUp); }
     this.drag = null;
     this.wiggle(null);
-    this.container?.destroy(); this.container = null; this.rows = []; this.sub = false;
+    this.container?.destroy(); this.container = null; this.listLayout = null; this.rows = []; this.sub = false;
   }
   destroy() { if (this.finish) this.abort(); }
 }
