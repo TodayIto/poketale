@@ -10,9 +10,25 @@ export function backTarget(scene) {
   return scene.openMenus?.at(-1)?.tapBack() ?? null;
 }
 
-export function screenButtons(scene) {
-  const top = scene.openMenus?.at(-1);
-  return { back: top ? top.canBack() : !!scene.levels?.evolution?.cancelable || (!!scene.amieScreen?.isOpen && scene.amieScreen.canBack()), pages: scene.summaryScreen?.pages() ?? null };
+// Keep an open page strip distinct from a closed one even if neither arrow is enabled.
+export const PAGE_PREV = 1, PAGE_NEXT = 2, PAGE_VISIBLE = 4;
+const BUTTON_BACK = 8;
+
+export function watchScreenButtons(scene, fn, isDestroyed) {
+  let previous = -1;
+  const check = () => {
+    if (isDestroyed()) return;
+    const top = scene.openMenus?.at(-1);
+    const back = top ? top.canBack() : !!scene.levels?.evolution?.cancelable || (!!scene.amieScreen?.isOpen && scene.amieScreen.canBack());
+    const pages = scene.summaryScreen?.pageButtons() ?? 0;
+    const state = pages | (back ? BUTTON_BACK : 0);
+    if (state === previous) return;
+    previous = state;
+    fn({ back: !!back, pages: pages & PAGE_VISIBLE ? { prev: !!(pages & PAGE_PREV), next: !!(pages & PAGE_NEXT) } : null });
+  };
+  check();
+  scene.events.on('postupdate', check);
+  return () => scene.events?.off('postupdate', check);
 }
 
 export function installTapBack(scene) {

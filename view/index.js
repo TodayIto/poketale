@@ -12,7 +12,7 @@ import { checkTheme } from './ui/theme.js';
 import { checkLang, DEFAULT_LANG } from '../director/lang.js'; // the frame's words and text images (view/words.js, view/assets.js langPath)
 import { prepareOutside, showSummary, startPartyScene, endPartyScene, chooseRememberMove, startAmie, startTraining } from './outside.js';
 import { refitScale } from './refit.js';
-import { screenButtons } from './ui/tap-back.js'; // what the window's back button and page arrows can do now
+import { watchScreenButtons } from './ui/tap-back.js'; // what the window's back button and page arrows can do now
 import { GAME_SPEEDS, DEFAULT_SPEED } from './game-speed.js'; // game speed
 import { QUALITIES, DEFAULT_QUALITY, CANVAS_SIZE } from './quality.js'; // render quality
 import { SPRITE_STYLES, DEFAULT_SPRITE_STYLE } from './sprites/styles.js'; // which Pokemon pictures are tried first
@@ -158,18 +158,7 @@ export async function createBattleView(options) {
     return true;
   };
 
-  const samePages = (a, b) => a === b || (!!a && !!b && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(k => a[k] === b[k]));
-  view.watchButtons = fn => {
-    let last = null;
-    const check = () => {
-      if (destroyed) return;
-      const now = screenButtons(scene);
-      if (!last || now.back !== last.back || !samePages(now.pages, last.pages)) { last = now; fn(now); }
-    };
-    check();
-    scene.events.on('postupdate', check);
-    return () => scene.events?.off('postupdate', check);
-  };
+  view.watchButtons = fn => watchScreenButtons(scene, fn, () => destroyed);
 
   view.suspend = () => {
     if (destroyed || suspended) return;
