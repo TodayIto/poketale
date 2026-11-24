@@ -94,9 +94,12 @@ export class BattleMessage {
 
   placePrompt() {
     const lines = String(this.text.text ?? '').split('\n');
-    const probe = addTextObject(this.scene, 0, 0, lines.at(-1) ?? '', 'message');
-    const width = probe.displayWidth; probe.destroy();
-    this.prompt.setPosition(this.text.x + width + 2, this.text.y + (lines.length - 1) * 18 + 2);
+    const { canvas, context, style, splitRegExp, scaleX } = this.text;
+    style.syncFont(canvas, context);
+    // Match the old unwrapped probe: round in canvas pixels, then apply the text scale.
+    let width = 0;
+    for (const line of lines.at(-1).split(splitRegExp)) width = Math.max(width, Math.ceil(context.measureText(line).width));
+    this.prompt.setPosition(this.text.x + width * scaleX + 2, this.text.y + (lines.length - 1) * 18 + 2);
   }
   /** Shows down-arrow only (presses are not taken - final text) */
   showPrompt() {
