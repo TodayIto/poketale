@@ -144,16 +144,30 @@ function blur(field, w, h, sigma) {
 
 function boltDistance(S) {
   const W = CELL_W * S, H = CELL_H * S, out = new Float32Array(W * H), n = BOLT_POLY.length;
-  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
-    const x = (px + 0.5) / S, y = (py + 0.5) / S;
-    let best = Infinity, inside = false;
-    for (let i = 0, j = n - 1; i < n; j = i++) {
-      const [ax, ay] = BOLT_POLY[j], [bx, by] = BOLT_POLY[i];
-      if ((by > y) !== (ay > y) && x < (ax - bx) * (y - by) / (ay - by) + bx) inside = !inside;
-      const vx = bx - ax, vy = by - ay, t = clamp01(((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy));
-      best = Math.min(best, Math.hypot(x - ax - vx * t, y - ay - vy * t));
+  const edges = BOLT_POLY.map(([bx, by], i) => {
+    const [ax, ay] = BOLT_POLY[(i + n - 1) % n], vx = bx - ax, vy = by - ay;
+    return { ax, ay, bx, by, vx, vy, len2: vx * vx + vy * vy };
+  });
+  const crossings = [];
+  for (let py = 0; py < H; py++) {
+    const y = (py + 0.5) / S;
+    crossings.length = 0;
+    for (const { ax, ay, bx, by } of edges) {
+      if ((by > y) !== (ay > y)) crossings.push((ax - bx) * (y - by) / (ay - by) + bx);
     }
-    out[py * W + px] = inside ? best : -best;
+    for (let px = 0; px < W; px++) {
+      const x = (px + 0.5) / S;
+      let best = Infinity, inside = false;
+      for (const crossing of crossings) if (x < crossing) inside = !inside;
+      for (const { ax, ay, vx, vy, len2 } of edges) {
+        const tx = x - ax, ty = y - ay, t = clamp01((tx * vx + ty * vy) / len2);
+        const dx = tx - vx * t, dy = ty - vy * t;
+        // Either component alone is a lower bound on the distance.
+        if (Math.abs(dx) > best || Math.abs(dy) > best) continue;
+        best = Math.min(best, Math.hypot(dx, dy));
+      }
+      out[py * W + px] = inside ? best : -best;
+    }
   }
   return out;
 }
@@ -251,15 +265,26 @@ function artLayer(art, info, flip, x0, y0, k, W, H) {
 /** Square max filter of radius r (Pillow MaxFilter(2r + 1)) on a W x H field */
 function dilate(field, W, H, r) {
   if (r < 1) return field;
-  const tmp = new Float32Array(field.length), out = new Float32Array(field.length);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    let m = 0; for (let i = Math.max(0, x - r), e = Math.min(W - 1, x + r); i <= e; i++) m = Math.max(m, field[y * W + i]);
-    tmp[y * W + x] = m;
-  }
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    let m = 0; for (let i = Math.max(0, y - r), e = Math.min(H - 1, y + r); i <= e; i++) m = Math.max(m, tmp[i * W + x]);
-    out[y * W + x] = m;
-  }
+  const tmp = new Float32Array(field.length), out = new Float32Array(field.length), queue = new Int32Array(Math.max(W, H));
+  const pass = (src, dst, lines, length, lineStep, step) => {
+    for (let line = 0, base = 0; line < lines; line++, base += lineStep) {
+      let head = 0, tail = 0, next = 0;
+      for (let i = 0, at = base; i < length; i++, at += step) {
+        const left = i - r, right = Math.min(length - 1, i + r);
+        while (head < tail && queue[head] < left) head++;
+        for (; next <= right; next++) {
+          const value = src[base + next * step];
+          // A newer pixel at least as bright outlasts the older one in the window.
+          while (head < tail && value >= src[base + queue[tail - 1] * step]) tail--;
+          queue[tail++] = next;
+        }
+        dst[at] = Math.max(0, src[base + queue[head] * step]);
+      }
+    }
+  };
+  // Each pixel enters and leaves the queue at most once per pass.
+  pass(field, tmp, H, W, W, 1);
+  pass(tmp, out, W, H, 1, W);
   return out;
 }
 
