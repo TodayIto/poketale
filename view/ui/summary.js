@@ -11,6 +11,7 @@ import { styledText, addGenderMark, fitName, STATUS_FRAMES, STAT_ROWS, GENDER_CO
 import { nameShowsGender } from '../gender-mark.js';
 import { playSelect, playError } from './keys.js'; // menu sounds
 import { openMenu } from './menu.js'; // menu frame (keys, closing)
+import { PAGE_PREV, PAGE_NEXT, PAGE_VISIBLE } from './tap-back.js';
 import { RenameForm } from './rename-form.js'; // nickname change
 import { LoadError } from '../retry.js'; // load-failure kind
 import { artTexture } from '../amie-art.js'; // the friendship line's heart (the petting screen's pixel heart)
@@ -117,9 +118,9 @@ export class SummaryScreen {
     if (this.pointerDown) { s.input.off('pointerdown', this.pointerDown); s.input.off('pointerup', this.pointerUp); this.pointerDown = this.pointerUp = null; }
   }
 
-  pages() {
-    if (!this.finish || this.renaming) return null;
-    return { prev: this.page > PROFILE, next: this.page < MOVES && !this.moveSelect };
+  pageButtons() {
+    if (!this.finish || this.renaming) return 0;
+    return PAGE_VISIBLE | (this.page > PROFILE ? PAGE_PREV : 0) | (this.page < MOVES && !this.moveSelect ? PAGE_NEXT : 0);
   }
   /** Only when the same press was not a swipe (object pointerup) */
   tap(fn) {
