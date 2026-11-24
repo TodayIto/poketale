@@ -11,7 +11,7 @@ export async function prepareOutside(scene, { mons = [] } = {}) {
     ...Object.entries(UI_IMAGES).map(([key, path]) => scene.assets.image(key, path)),
     loadFont(scene.assets.base), scene.audio.preload(mons), scene.levels.preload(),
     ...mons.map(mon => scene.assets.mon(mon, false)),
-  ]);
+  ]).finally(scene.assets.clearPrefetch);
   scene.life.check();
   scene.cameras?.main?.setBackgroundColor?.('#000000');
   if (!scene.messages) scene.messages = new BattleMessage(scene, scene.options.parent, scene.life);

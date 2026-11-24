@@ -7,7 +7,7 @@
 // from pokerogue src/phases/faint-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 // from pokerogue src/phases/damage-anim-phase.ts @ 7d7da4a8 (AGPL-3.0-only)
 import Phaser from 'phaser';
-import { Assets, prefetchImages } from './assets.js';
+import { Assets } from './assets.js';
 import { BattleAudio } from './audio.js';
 import { PokemonSprite } from './sprites/pokemon.js';
 import { BattleInfo } from './ui/battle-info.js';
@@ -48,7 +48,7 @@ export class BattleScene extends Phaser.Scene {
     this.words = viewWords(options.lang); // the frame's words (view/words.js)
     this.pokemon = {}; this.info = {}; this.biomeObjects = []; this.double = false; this.tag = false;
     this.summonCount = { player: 0, enemy: 0 };
-    this.prefetched = prefetchImages(options); // start fetching UI and biome images while Phaser boots (preload reuses them)
+    this.assets = new Assets(this, life, options); // start fetching UI and biome images while Phaser boots
   }
   create() {
     if (this.life.signal.aborted) return;
@@ -65,7 +65,6 @@ export class BattleScene extends Phaser.Scene {
     this.field = this.add.container(0, 0).setScale(6);
     this.fieldUI = this.add.container(0, 1080).setScale(6).setDepth(1);
     this.ui = this.add.container(0, 1080).setScale(6).setDepth(2);
-    this.assets = new Assets(this, this.life, this.options);
     this.assets.localUrl = animPackUrls(this.life.signal); // pictures and sounds of our own move anims (view/anims/pack-files.js)
     this.audio = new BattleAudio(this.assets, this.options.parent, this.options);
     this.audio.speed = () => this.gameSpeed.speed;
@@ -89,9 +88,9 @@ export class BattleScene extends Phaser.Scene {
     const props = chooseBiomeProps(arena, biomeProps);
     await Promise.all([this.assets.preload(mons, arena, this.double, props), loadFont(this.assets.base), this.audio.preload(mons), this.effects.preload(), this.tera.preload(), this.dynamax.preload(), this.levels.preload(),
       this.encounter.preload({ enemyTrainer, enemyBlack, playerTrainer, playerBlack, enemyTrainer2, enemyBlack2 }),
-      this.assets.image('pb_particles', 'images/effects/pb_particles.png', BAG_ICONS.pb_particles)]); // ball-open particles (loading-scene.ts also loads them up front)
+      this.assets.image('pb_particles', 'images/effects/pb_particles.png', BAG_ICONS.pb_particles)]) // ball-open particles (loading-scene.ts also loads them up front)
+      .finally(this.assets.clearPrefetch);
     this.life.check();
-    this.prefetched = null;
     this.audio.preloadMusic();
     this.mons = mons; this.moves = moves; // used by warmUp and end
     this.biomeObjects.forEach(object => object.destroy());
