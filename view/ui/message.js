@@ -47,8 +47,13 @@ export class BattleMessage {
   async message(text, { wait = false, hold, promptDelay } = {}) {
     hold = checkMs('hold', hold); promptDelay = checkMs('promptDelay', promptDelay) ?? 0;
 
-    const coded = parseCodes(text), codes = coded.delays.size || coded.sounds.size ? coded : null;
-    if (coded.plain !== String(text ?? '')) text = coded.plain;
+    let codes = null;
+    // Every message code contains an opening brace. Leave other input to the existing parser.
+    if (typeof text !== 'string' || text.includes('{')) {
+      const coded = parseCodes(text);
+      if (coded.delays.size || coded.sounds.size) codes = coded;
+      if (coded.plain !== String(text ?? '')) text = coded.plain;
+    }
     let shown = 0;
     // Split paragraphs and wrap into two-line pages, so long messages cannot disappear below the window.
     const lines = this.text.getWrappedText(text);
@@ -94,9 +99,12 @@ export class BattleMessage {
 
   placePrompt() {
     const lines = String(this.text.text ?? '').split('\n');
-    const probe = addTextObject(this.scene, 0, 0, lines.at(-1) ?? '', 'message');
-    const width = probe.displayWidth; probe.destroy();
-    this.prompt.setPosition(this.text.x + width + 2, this.text.y + (lines.length - 1) * 18 + 2);
+    const { canvas, context, style, splitRegExp, scaleX } = this.text;
+    style.syncFont(canvas, context);
+    // Match the old unwrapped probe: round in canvas pixels, then apply the text scale.
+    let width = 0;
+    for (const line of lines.at(-1).split(splitRegExp)) width = Math.max(width, Math.ceil(context.measureText(line).width));
+    this.prompt.setPosition(this.text.x + width * scaleX + 2, this.text.y + (lines.length - 1) * 18 + 2);
   }
   /** Shows down-arrow only (presses are not taken - final text) */
   showPrompt() {
