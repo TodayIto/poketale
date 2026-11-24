@@ -244,26 +244,28 @@ export class SummaryScreen {
       return refs;
     } else {
       const refs = buildMovesPage(s, content, { moves: summary.moves });
-      container.cleanup.push(() => refs.maskShape.destroy());
-      if (container === this.pageC) {
-        container.cleanup.pop(); // the moves page mask is destroyed by MoveDetails.clear
-        this.movesRefs = refs;
-        this.details.attach(refs);
-        this.moveHits(refs.list);
-      }
+      if (container === this.pageC) this.attachMoves(refs);
+      else container.cleanup.push(() => refs.maskShape.destroy());
+      return refs;
     }
   }
-  adoptStats(refs) {
+  attachMoves(refs) {
+    this.movesRefs = refs;
+    this.details.attach(refs);
+    this.moveHits(refs.list);
+  }
+  adoptPage(page, refs) {
     const { pageC, transC } = this;
     this.clearPage(pageC);
-    pageC.list[0].setTexture('summary_stats');
-    // The slide has reached the main page's position; keep the content, world-space mask and hit object together.
+    pageC.list[0].setTexture(`summary_${PAGES[page]}`);
+    // The slide has reached the main page's position; keep the content and world-space mask together.
     pageC.content = transC.content;
-    pageC.cleanup = transC.cleanup;
+    pageC.cleanup = page === MOVES ? [] : transC.cleanup; // MoveDetails owns the mask on the main page.
     pageC.add(pageC.content);
     transC.content = null;
     transC.cleanup = [];
-    this.statsRefs = refs;
+    if (page === MOVES) this.attachMoves(refs);
+    else this.statsRefs = refs;
   }
   profilePage(container, content, mon, summary) {
     const s = this.scene, p = s.add.container(0, -159);
@@ -442,15 +444,14 @@ export class SummaryScreen {
     this.page = page;
     this.tab.setTexture(`summary_tabs_${page + 1}`);
     this.transitioning = true;
-    const stats = this.populate(this.transC, forward ? page : old);
+    const refs = this.populate(this.transC, forward ? page : old);
     if (forward) this.transC.x += 214;
     else this.populate(this.pageC, page);
     this.transC.setVisible(true);
     s.tweens.add({ targets: this.transC, x: forward ? '-=214' : '+=214', duration: 250, onComplete: () => {
       if (!this.container) return;
       if (forward) {
-        if (page === STATS_PAGE) this.adoptStats(stats);
-        else this.populate(this.pageC, page);
+        this.adoptPage(page, refs);
         if (page === MOVES) this.showMoveSelect();
       } else this.transC.x -= 214;
       this.transC.setVisible(false);
