@@ -144,16 +144,30 @@ function blur(field, w, h, sigma) {
 
 function boltDistance(S) {
   const W = CELL_W * S, H = CELL_H * S, out = new Float32Array(W * H), n = BOLT_POLY.length;
-  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
-    const x = (px + 0.5) / S, y = (py + 0.5) / S;
-    let best = Infinity, inside = false;
-    for (let i = 0, j = n - 1; i < n; j = i++) {
-      const [ax, ay] = BOLT_POLY[j], [bx, by] = BOLT_POLY[i];
-      if ((by > y) !== (ay > y) && x < (ax - bx) * (y - by) / (ay - by) + bx) inside = !inside;
-      const vx = bx - ax, vy = by - ay, t = clamp01(((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy));
-      best = Math.min(best, Math.hypot(x - ax - vx * t, y - ay - vy * t));
+  const edges = BOLT_POLY.map(([bx, by], i) => {
+    const [ax, ay] = BOLT_POLY[(i + n - 1) % n], vx = bx - ax, vy = by - ay;
+    return { ax, ay, bx, by, vx, vy, len2: vx * vx + vy * vy };
+  });
+  const crossings = [];
+  for (let py = 0; py < H; py++) {
+    const y = (py + 0.5) / S;
+    crossings.length = 0;
+    for (const { ax, ay, bx, by } of edges) {
+      if ((by > y) !== (ay > y)) crossings.push((ax - bx) * (y - by) / (ay - by) + bx);
     }
-    out[py * W + px] = inside ? best : -best;
+    for (let px = 0; px < W; px++) {
+      const x = (px + 0.5) / S;
+      let best = Infinity, inside = false;
+      for (const crossing of crossings) if (x < crossing) inside = !inside;
+      for (const { ax, ay, vx, vy, len2 } of edges) {
+        const tx = x - ax, ty = y - ay, t = clamp01((tx * vx + ty * vy) / len2);
+        const dx = tx - vx * t, dy = ty - vy * t;
+        // Either component alone is a lower bound on the distance.
+        if (Math.abs(dx) > best || Math.abs(dy) > best) continue;
+        best = Math.min(best, Math.hypot(dx, dy));
+      }
+      out[py * W + px] = inside ? best : -best;
+    }
   }
   return out;
 }
