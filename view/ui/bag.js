@@ -170,9 +170,13 @@ export class BagMenu {
     const kept = new Set();
     for (let index = this.scroll; index < end; index++) {
       const row = previous[index - first];
-      if (row) { kept.add(row.name); if (row.count) kept.add(row.count); }
+      if (row) {
+        kept.add(row.name);
+        if (row.count) kept.add(row.count);
+        if (row.bundledIcon) kept.add(row.icon);
+      }
     }
-    // The kept labels are already in list order. Insert the new children around them.
+    // The kept children are already in list order. Insert the new children around them.
     for (let i = this.box.list.length - 1; i >= start; i--) {
       if (!kept.has(this.box.list[i])) this.box.removeAt(i, true);
     }
@@ -201,25 +205,30 @@ export class BagMenu {
       }
 
       const iconY = top + 15 + 16 * (r + 1);
-      const url = !item.emoji && item.target !== 'enemy' && !ATLAS_FRAMES.has(item.id) ? pokeapiItemUrl(item.id) : null;
+      const atlas = ATLAS_FRAMES.has(item.id);
+      // Only reuse icons that cannot change after an external picture finishes loading.
+      const bundledIcon = !item.emoji && (item.target === 'enemy' || atlas);
+      const reusedIcon = old?.bundledIcon ? old.icon : null;
+      const url = !item.emoji && !bundledIcon ? pokeapiItemUrl(item.id) : null;
       const picture = url && s.textures.exists(itemPictureKey(url)) ? itemPictureKey(url) : null;
 
-      const icon = item.emoji ? emojiIcon(s, 24, iconY, item.emoji)
+      const icon = reusedIcon ? reusedIcon.setY(iconY)
+        : item.emoji ? emojiIcon(s, 24, iconY, item.emoji)
         : item.target === 'enemy' ? s.add.image(24, iconY, 'pb', ballFrame(item.id))
-          : ATLAS_FRAMES.has(item.id) ? s.add.image(24, iconY, 'bag_items', item.id).setScale(0.5)
+          : atlas ? s.add.image(24, iconY, 'bag_items', item.id).setScale(0.5)
             : s.add.image(24, iconY, picture ?? itemDot(s)).setScale(0.5);
       if (url && !picture) loadItemPicture(s, url).then(key => { if (key && icon.scene) icon.setTexture(key); });
       const name = old ? old.name.setY(y) : windowText(s, 36, y, item.name);
       const count = old ? old.count.setY(y) : windowText(s, 36 + namesWidth + 4 + countsWidth, y, `×${item.count}`).setOrigin(1, 0);
       if (old) {
-        this.box.addAt(icon, child);
+        if (!reusedIcon) this.box.addAt(icon, child);
         this.box.addAt(hit, child + 3);
       } else {
         if (item.blocked) for (const t of [name, count]) t.setColor(GREY[0]).setShadow(3, 3, GREY[1]);
         this.box.addAt([icon, name, count, hit], child);
       }
       child += 4;
-      this.rows.push({ index, icon, name, count });
+      this.rows.push({ index, icon, bundledIcon, name, count });
     }
 
     const arrow = (y, label, rows) => {
