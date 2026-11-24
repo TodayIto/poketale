@@ -222,13 +222,18 @@ export class SummaryScreen {
     if (!first) s.audio.cry(mon, false, 'appear').catch(() => {});
   }
 
+  clearPage(container) {
+    if (container === this.pageC) { this.details.clear(); this.statsRefs = null; this.movesRefs = null; }
+    container.cleanup?.forEach(fn => fn());
+    container.content?.destroy();
+    this.descriptionScroll?.remove(); this.descriptionScroll = null;
+  }
+
   // -- populatePageContainer --
   populate(container, page) {
     const s = this.scene, mon = this.party[this.index], summary = mon.summary;
-    if (container === this.pageC) { this.details.clear(); this.statsRefs = null; this.movesRefs = null; }
-    container.cleanup?.forEach(fn => fn()); container.cleanup = [];
-    container.content?.destroy();
-    this.descriptionScroll?.remove(); this.descriptionScroll = null;
+    this.clearPage(container);
+    container.cleanup = [];
     container.list[0].setTexture(`summary_${PAGES[page]}`);
     const content = container.content = s.add.container(0, 0);
     container.add(content);
@@ -236,6 +241,7 @@ export class SummaryScreen {
     else if (page === STATS_PAGE) {
       const refs = this.statsPage(container, content, mon, summary);
       if (container === this.pageC) this.statsRefs = refs;
+      return refs;
     } else {
       const refs = buildMovesPage(s, content, { moves: summary.moves });
       container.cleanup.push(() => refs.maskShape.destroy());
@@ -246,6 +252,18 @@ export class SummaryScreen {
         this.moveHits(refs.list);
       }
     }
+  }
+  adoptStats(refs) {
+    const { pageC, transC } = this;
+    this.clearPage(pageC);
+    pageC.list[0].setTexture('summary_stats');
+    // The slide has reached the main page's position; keep the content, world-space mask and hit object together.
+    pageC.content = transC.content;
+    pageC.cleanup = transC.cleanup;
+    pageC.add(pageC.content);
+    transC.content = null;
+    transC.cleanup = [];
+    this.statsRefs = refs;
   }
   profilePage(container, content, mon, summary) {
     const s = this.scene, p = s.add.container(0, -159);
@@ -424,14 +442,15 @@ export class SummaryScreen {
     this.page = page;
     this.tab.setTexture(`summary_tabs_${page + 1}`);
     this.transitioning = true;
-    this.populate(this.transC, forward ? page : old);
+    const stats = this.populate(this.transC, forward ? page : old);
     if (forward) this.transC.x += 214;
     else this.populate(this.pageC, page);
     this.transC.setVisible(true);
     s.tweens.add({ targets: this.transC, x: forward ? '-=214' : '+=214', duration: 250, onComplete: () => {
       if (!this.container) return;
       if (forward) {
-        this.populate(this.pageC, page);
+        if (page === STATS_PAGE) this.adoptStats(stats);
+        else this.populate(this.pageC, page);
         if (page === MOVES) this.showMoveSelect();
       } else this.transC.x -= 214;
       this.transC.setVisible(false);
