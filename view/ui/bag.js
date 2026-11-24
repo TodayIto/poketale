@@ -135,6 +135,7 @@ export class BagMenu {
   draw() {
     const s = this.scene;
     this.container?.destroy();
+    this.rows = [];
     const c = this.container = s.add.container(0, 0); s.ui.add(c);
 
     this.promptText = windowText(s, 12, -39, this.prompt, { wordWrap: { width: 1110 }, maxLines: 2 }, 'WINDOW_WHITE');
@@ -164,15 +165,24 @@ export class BagMenu {
   drawRows() {
     const s = this.scene, { width, top, namesWidth, countsWidth, start } = this.listLayout;
     const rowY = r => top + 9 + 16 * r;
-    // Keep the window and tabs in place, and replace only the children after them.
-    for (let i = this.box.list.length - 1; i >= start; i--) this.box.removeAt(i, true);
+    const previous = this.rows, first = previous[0]?.index ?? this.scroll;
+    const end = Math.min(this.scroll + ROWS, this.length);
+    const kept = new Set();
+    for (let index = this.scroll; index < end; index++) {
+      const row = previous[index - first];
+      if (row) { kept.add(row.name); if (row.count) kept.add(row.count); }
+    }
+    // The kept labels are already in list order. Insert the new children around them.
+    for (let i = this.box.list.length - 1; i >= start; i--) {
+      if (!kept.has(this.box.list[i])) this.box.removeAt(i, true);
+    }
     this.promptText.setText(this.prompt); // scrolling also dismisses a blocked-item reason
 
     // 6 list rows
     this.rows = [];
-    for (let r = 0; r < ROWS; r++) {
-      const index = this.scroll + r;
-      if (index >= this.length) break;
+    let child = start;
+    for (let index = this.scroll; index < end; index++) {
+      const r = index - this.scroll, old = previous[index - first];
       const y = rowY(r + 1);
       const item = this.items[index];
       const hit = s.add.rectangle(4, y, width - 8, 16, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
@@ -182,8 +192,11 @@ export class BagMenu {
       hit.on('pointerup', () => { if (!this.drag?.moved && this.cursor === index) this.input('ok'); });
       if (!item) {
         // source cancelText (18, 9 + list height)
-        this.box.add([windowText(s, 18, y, s.words(CANCEL_TEXT)), hit]);
-        this.rows.push({ index });
+        const name = old ? old.name.setY(y) : windowText(s, 18, y, s.words(CANCEL_TEXT));
+        if (old) this.box.addAt(hit, child + 1);
+        else this.box.addAt([name, hit], child);
+        child += 2;
+        this.rows.push({ index, name });
         continue;
       }
 
@@ -196,11 +209,17 @@ export class BagMenu {
           : ATLAS_FRAMES.has(item.id) ? s.add.image(24, iconY, 'bag_items', item.id).setScale(0.5)
             : s.add.image(24, iconY, picture ?? itemDot(s)).setScale(0.5);
       if (url && !picture) loadItemPicture(s, url).then(key => { if (key && icon.scene) icon.setTexture(key); });
-      const name = windowText(s, 36, y, item.name);
-      const count = windowText(s, 36 + namesWidth + 4 + countsWidth, y, `×${item.count}`).setOrigin(1, 0);
-      if (item.blocked) for (const t of [name, count]) t.setColor(GREY[0]).setShadow(3, 3, GREY[1]);
-      this.box.add([icon, name, count, hit]);
-      this.rows.push({ index, icon });
+      const name = old ? old.name.setY(y) : windowText(s, 36, y, item.name);
+      const count = old ? old.count.setY(y) : windowText(s, 36 + namesWidth + 4 + countsWidth, y, `×${item.count}`).setOrigin(1, 0);
+      if (old) {
+        this.box.addAt(icon, child);
+        this.box.addAt(hit, child + 3);
+      } else {
+        if (item.blocked) for (const t of [name, count]) t.setColor(GREY[0]).setShadow(3, 3, GREY[1]);
+        this.box.addAt([icon, name, count, hit], child);
+      }
+      child += 4;
+      this.rows.push({ index, icon, name, count });
     }
 
     const arrow = (y, label, rows) => {
