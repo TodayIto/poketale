@@ -6,7 +6,7 @@ import { addWindow } from './window.js';
 import BAG_ICONS from '../../data/bag-icons.json' with { type: 'json' };
 import { playSelect, playError } from './keys.js'; // menu sounds
 import { openMenu } from './menu.js'; // menu frame (keys, closing, tapping empty space)
-import { styledText } from './text.js';
+import { styledText, unwrappedTextWidth } from './text.js';
 import { uiRect } from './tap-back.js';
 import { fixed } from '../game-speed.js'; // ball wiggle ignores game speed (ball-ui-handler.ts fixedInt)
 import { LoadError } from '../retry.js'; // image load failure
@@ -110,31 +110,32 @@ export class BagMenu {
 
   measureWidths() {
     const s = this.scene, widths = this.measuredWidths ??= new Map();
-    let probe;
+    const text = this.promptText;
+    let synced = false;
     const measure = str => {
       let width = widths.get(str);
       if (width === undefined) {
-        probe ??= windowText(s, 0, 0, '');
-        probe.setText(str);
-        width = probe.displayWidth;
+        if (!synced) { text.style.syncFont(text.canvas, text.context); synced = true; }
+        // The prompt uses the same font and scale as the rows, but would wrap and clip its own text.
+        const value = Array.isArray(str) ? str.join('\n') : String(str || str === 0 ? str : '');
+        width = unwrappedTextWidth(text, value, 0);
         widths.set(str, width);
       }
       return width;
     };
-    try {
-      const all = this.bag.pockets.flatMap(p => p.items);
-      const namesWidth = Math.max(0, ...all.map(i => measure(i.name)));
-      const countsWidth = Math.max(0, ...all.map(i => measure(`×${i.count}`)));
+    const all = this.bag.pockets.flatMap(p => p.items);
+    const namesWidth = Math.max(0, ...all.map(i => measure(i.name)));
+    const countsWidth = Math.max(0, ...all.map(i => measure(`×${i.count}`)));
 
-      const tabs = this.bag.pockets.map(p => measure(p.name));
-      const tabsWidth = tabs.reduce((a, b) => a + b, 0) + 8 * (tabs.length - 1);
-      const content = Math.max(64, namesWidth + 4 + countsWidth, measure(s.words(CANCEL_TEXT)), TAB_LEFT + tabsWidth + TAB_LEFT - 50);
-      return { namesWidth, countsWidth, tabs, content };
-    } finally { probe?.destroy(); }
+    const tabs = this.bag.pockets.map(p => measure(p.name));
+    const tabsWidth = tabs.reduce((a, b) => a + b, 0) + 8 * (tabs.length - 1);
+    const content = Math.max(64, namesWidth + 4 + countsWidth, measure(s.words(CANCEL_TEXT)), TAB_LEFT + tabsWidth + TAB_LEFT - 50);
+    return { namesWidth, countsWidth, tabs, content };
   }
   draw() {
     const s = this.scene;
     this.container?.destroy();
+    this.rows = [];
     const c = this.container = s.add.container(0, 0); s.ui.add(c);
 
     this.promptText = windowText(s, 12, -39, this.prompt, { wordWrap: { width: 1110 }, maxLines: 2 }, 'WINDOW_WHITE');
@@ -156,11 +157,36 @@ export class BagMenu {
       this.box.add([t, hit]);
       tabX += tabs[i] + 8;
     });
+    this.listLayout = { width, top, namesWidth, countsWidth, start: this.box.list.length };
+    this.top = top; this.listTop = top + 25; this.listBottom = top + 25 + 16 * ROWS; this.boxX = [x, x + width];
+    this.drawRows();
+  }
+
+  drawRows() {
+    const s = this.scene, { width, top, namesWidth, countsWidth, start } = this.listLayout;
+    const rowY = r => top + 9 + 16 * r;
+    const previous = this.rows, first = previous[0]?.index ?? this.scroll;
+    const end = Math.min(this.scroll + ROWS, this.length);
+    const kept = new Set();
+    for (let index = this.scroll; index < end; index++) {
+      const row = previous[index - first];
+      if (row) {
+        kept.add(row.name);
+        if (row.count) kept.add(row.count);
+        if (row.bundledIcon) kept.add(row.icon);
+      }
+    }
+    // The kept children are already in list order. Insert the new children around them.
+    for (let i = this.box.list.length - 1; i >= start; i--) {
+      if (!kept.has(this.box.list[i])) this.box.removeAt(i, true);
+    }
+    this.promptText.setText(this.prompt); // scrolling also dismisses a blocked-item reason
+
     // 6 list rows
     this.rows = [];
-    for (let r = 0; r < ROWS; r++) {
-      const index = this.scroll + r;
-      if (index >= this.length) break;
+    let child = start;
+    for (let index = this.scroll; index < end; index++) {
+      const r = index - this.scroll, old = previous[index - first];
       const y = rowY(r + 1);
       const item = this.items[index];
       const hit = s.add.rectangle(4, y, width - 8, 16, 0, 0).setOrigin(0).setInteractive({ useHandCursor: true });
@@ -170,25 +196,39 @@ export class BagMenu {
       hit.on('pointerup', () => { if (!this.drag?.moved && this.cursor === index) this.input('ok'); });
       if (!item) {
         // source cancelText (18, 9 + list height)
-        this.box.add([windowText(s, 18, y, s.words(CANCEL_TEXT)), hit]);
-        this.rows.push({ index });
+        const name = old ? old.name.setY(y) : windowText(s, 18, y, s.words(CANCEL_TEXT));
+        if (old) this.box.addAt(hit, child + 1);
+        else this.box.addAt([name, hit], child);
+        child += 2;
+        this.rows.push({ index, name });
         continue;
       }
 
       const iconY = top + 15 + 16 * (r + 1);
-      const url = !item.emoji && item.target !== 'enemy' && !ATLAS_FRAMES.has(item.id) ? pokeapiItemUrl(item.id) : null;
+      const atlas = ATLAS_FRAMES.has(item.id);
+      // Only reuse icons that cannot change after an external picture finishes loading.
+      const bundledIcon = !item.emoji && (item.target === 'enemy' || atlas);
+      const reusedIcon = old?.bundledIcon ? old.icon : null;
+      const url = !item.emoji && !bundledIcon ? pokeapiItemUrl(item.id) : null;
       const picture = url && s.textures.exists(itemPictureKey(url)) ? itemPictureKey(url) : null;
 
-      const icon = item.emoji ? emojiIcon(s, 24, iconY, item.emoji)
+      const icon = reusedIcon ? reusedIcon.setY(iconY)
+        : item.emoji ? emojiIcon(s, 24, iconY, item.emoji)
         : item.target === 'enemy' ? s.add.image(24, iconY, 'pb', ballFrame(item.id))
-          : ATLAS_FRAMES.has(item.id) ? s.add.image(24, iconY, 'bag_items', item.id).setScale(0.5)
+          : atlas ? s.add.image(24, iconY, 'bag_items', item.id).setScale(0.5)
             : s.add.image(24, iconY, picture ?? itemDot(s)).setScale(0.5);
       if (url && !picture) loadItemPicture(s, url).then(key => { if (key && icon.scene) icon.setTexture(key); });
-      const name = windowText(s, 36, y, item.name);
-      const count = windowText(s, 36 + namesWidth + 4 + countsWidth, y, `×${item.count}`).setOrigin(1, 0);
-      if (item.blocked) for (const t of [name, count]) t.setColor(GREY[0]).setShadow(3, 3, GREY[1]);
-      this.box.add([icon, name, count, hit]);
-      this.rows.push({ index, icon });
+      const name = old ? old.name.setY(y) : windowText(s, 36, y, item.name);
+      const count = old ? old.count.setY(y) : windowText(s, 36 + namesWidth + 4 + countsWidth, y, `×${item.count}`).setOrigin(1, 0);
+      if (old) {
+        if (!reusedIcon) this.box.addAt(icon, child);
+        this.box.addAt(hit, child + 3);
+      } else {
+        if (item.blocked) for (const t of [name, count]) t.setColor(GREY[0]).setShadow(3, 3, GREY[1]);
+        this.box.addAt([icon, name, count, hit], child);
+      }
+      child += 4;
+      this.rows.push({ index, icon, bundledIcon, name, count });
     }
 
     const arrow = (y, label, rows) => {
@@ -198,7 +238,6 @@ export class BagMenu {
     };
     if (this.scroll > 0) arrow(rowY(1), '↑', -(ROWS - 1));
     if (this.scroll + ROWS < this.length) arrow(rowY(ROWS), '↓', ROWS - 1);
-    this.top = top; this.listTop = top + 25; this.listBottom = top + 25 + 16 * ROWS; this.boxX = [x, x + width];
     this.cursorObj = s.add.image(0, 0, 'cursor'); this.box.add(this.cursorObj);
     this.setCursor(this.cursor, true);
   }
@@ -209,7 +248,7 @@ export class BagMenu {
     if (scroll === this.scroll) return false;
     this.scroll = scroll;
     this.cursor = Math.min(scroll + ROWS - 1, Math.max(scroll, this.cursor));
-    this.draw(); playSelect(this.scene);
+    this.drawRows(); playSelect(this.scene);
     return true;
   }
 
@@ -242,7 +281,7 @@ export class BagMenu {
     this.cursor = index;
     // scroll if the cursor is outside the visible rows
     const scroll = Math.min(Math.max(this.scroll, index - ROWS + 1), index);
-    if (scroll !== this.scroll) { this.scroll = scroll; return this.draw(); }
+    if (scroll !== this.scroll) { this.scroll = scroll; return this.drawRows(); }
     // source setCursor: (12, 15 + (6 + cursor*96)/6) centred origin
     this.cursorObj.setPosition(12, this.top + 16 + 16 * (index - this.scroll + 1));
     this.wiggle(this.rows.find(row => row.index === index)?.icon);
@@ -301,7 +340,7 @@ export class BagMenu {
     if (input?.off) { input.off('wheel', this.onWheel); input.off('pointerdown', this.onDown); input.off('pointermove', this.onMove); input.off('pointerup', this.onUp); input.off('pointerupoutside', this.onUp); }
     this.drag = null;
     this.wiggle(null);
-    this.container?.destroy(); this.container = null; this.rows = []; this.sub = false;
+    this.container?.destroy(); this.container = null; this.listLayout = null; this.rows = []; this.sub = false;
   }
   destroy() { if (this.finish) this.abort(); }
 }

@@ -55,13 +55,35 @@ export function styledText(scene, x, y, str, name, extra = {}) {
   return lineSpacing ? text.setLineSpacing(lineSpacing) : text;
 }
 
+// Width of unwrapped, unspaced text on an existing context with its font synced.
+export function unwrappedTextWidth(text, value, maxLines = text.style.maxLines) {
+  const { style, context, padding, scaleX, splitRegExp } = text;
+  if (style.fixedWidth !== 0) return style.fixedWidth * scaleX;
+  const lines = value.split(splitRegExp);
+  const drawn = maxLines > 0 ? Math.min(lines.length, maxLines) : lines.length;
+  let width = 0;
+  // Phaser rounds the unscaled line width before adding padding and applying scale.
+  for (let i = 0; i < drawn; i++) width = Math.max(width, Math.ceil(style.strokeThickness + context.measureText(lines[i]).width));
+  return (width + padding.left + padding.right) * scaleX;
+}
+
+const nameWidth = (text, value) => value === text.text ? text.displayWidth : unwrappedTextWidth(text, value);
+
 export function fitName(text, name, maxWidth) {
   let shown = String(name ?? '');
-  text.setText(shown);
-  while (text.displayWidth > maxWidth && [...shown].length > 1) {
-    shown = `${[...shown].slice(0, shown.endsWith('.') ? -2 : -1).join('').trimEnd()}.`;
-    text.setText(shown);
+  if (shown === text.text && !(text.displayWidth > maxWidth)) return shown;
+  const { style } = text;
+  // Name labels use unwrapped text. Leave any wrapped or letter-spaced labels to Phaser.
+  const redraw = style.wordWrap || style.wordWrapWidth || style.wordWrapCallback || text.letterSpacing;
+  if (redraw) text.setText(shown);
+  else style.syncFont(text.canvas, text.context);
+  while ((redraw ? text.displayWidth : nameWidth(text, shown)) > maxWidth) {
+    const chars = [...shown];
+    if (chars.length <= 1) break;
+    shown = `${chars.slice(0, shown.endsWith('.') ? -2 : -1).join('').trimEnd()}.`;
+    if (redraw) text.setText(shown);
   }
+  if (!redraw) text.setText(shown);
   return shown;
 }
 
