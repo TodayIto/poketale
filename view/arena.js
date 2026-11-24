@@ -33,32 +33,29 @@ export function biomeImages(biome, props) {
   return images;
 }
 
-/** For atlases, loops at 12fps like ArenaBase.setBiome (from 0001.png) */
-function playIfAnimated(scene, sprite, key) {
+/** Only animated layers need a Sprite and its per-frame update. */
+function arenaLayer(scene, key) {
   const frames = scene.textures.get(key).getFrameNames().filter(n => /^\d{4}\.png$/.test(n)).sort();
-  if (frames.length < 2) return;
+  if (frames.length < 2) return scene.add.image(0, 0, key).setOrigin(0);
+  const sprite = scene.add.sprite(0, 0, key).setOrigin(0);
+  // For atlases, loop at 12fps like ArenaBase.setBiome (from 0001.png).
   if (!scene.anims.exists(key)) scene.anims.create({ key, frames: frames.map(frame => ({ key, frame })), frameRate: 12, repeat: -1 });
-  sprite.play(key);
+  return sprite.play(key);
 }
 
 export const BASE_HOME = Object.freeze({ player: [0, 0], enemy: [20, 0] });
 
 export function createArena(scene, biome, props) {
   // launchBattle: arenaBg is outside field, scale 6 (depth -1 below)
-  const bg = scene.add.sprite(0, 0, `${biome}_bg`).setOrigin(0).setScale(6).setDepth(-1);
+  const bg = scene.add.image(0, 0, `${biome}_bg`).setOrigin(0).setScale(6).setDepth(-1);
   const base = (player) => {
     const container = scene.add.container(...BASE_HOME[player ? 'player' : 'enemy']);
     const key = `${biome}_${player ? 'a' : 'b'}`;
-    const sprite = scene.add.sprite(0, 0, key).setOrigin(0);
-    playIfAnimated(scene, sprite, key);
-    container.add(sprite);
+    container.add(arenaLayer(scene, key));
     if (!player && biomeHasProps(biome)) {
       for (let p = 0; p < 3; p++) {
         if (!(props & (1 << p))) continue;
-        const propKey = `${biome}_b_${p + 1}`;
-        const prop = scene.add.sprite(0, 0, propKey).setOrigin(0);
-        playIfAnimated(scene, prop, propKey);
-        container.add(prop);
+        container.add(arenaLayer(scene, `${biome}_b_${p + 1}`));
       }
       container.propValue = props;
     }
