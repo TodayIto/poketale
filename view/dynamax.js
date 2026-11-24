@@ -31,6 +31,7 @@ const CLOUD_SHEETS = {
 };
 
 const CLOUD_RAMP = [[40, 0, 12], [112, 4, 26], [170, 24, 44]];
+const CLOUD_CELL = 96;
 
 const HALO = { count: 5, lift: 0.06, rx: 0.36, ry: 0.09, size: 0.25, speed: 0.8, alpha: 0.95 };
 const PUFFS = { count: 7, duration: 900, spread: 0.7 };
@@ -52,7 +53,24 @@ function mapPlacement(home, t) {
   return { ...home, x, y, box: { left, top, right, bottom }, anchor: home.anchor && [home.anchor[0] * t.zoom, home.anchor[1] * t.zoom] };
 }
 
-function recolour(img, opaque = false) {
+function cloudTrim(px, stride, x, y) {
+  let left = CLOUD_CELL, top = CLOUD_CELL, right = 0, bottom = 0;
+  for (let row = 0; row < CLOUD_CELL; row++) {
+    for (let col = 0, a = ((y + row) * stride + x) * 4 + 3; col < CLOUD_CELL; col++, a += 4) {
+      if (!px[a]) continue;
+      left = Math.min(left, col); right = Math.max(right, col + 1);
+      top = Math.min(top, row); bottom = Math.max(bottom, row + 1);
+    }
+  }
+  if (right <= left) return null;
+  // Keep a transparent texel at any new edge for texture sampling.
+  left = Math.max(0, left - 1); top = Math.max(0, top - 1);
+  right = Math.min(CLOUD_CELL, right + 1); bottom = Math.min(CLOUD_CELL, bottom + 1);
+  if (!left && !top && right === CLOUD_CELL && bottom === CLOUD_CELL) return null;
+  return [left, top, right - left, bottom - top];
+}
+
+function recolour(img, opaque = false, trimFrames = null) {
   const canvas = document.createElement('canvas');
   canvas.width = img.width; canvas.height = img.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -68,7 +86,10 @@ function recolour(img, opaque = false) {
     if (opaque && px[i + 3] > 40) px[i + 3] = 255;
   }
   ctx.putImageData(data, 0, 0);
-  return canvas;
+  const cols = Math.floor(canvas.width / CLOUD_CELL), rows = Math.floor(canvas.height / CLOUD_CELL);
+  const trims = trimFrames && new Map(trimFrames.filter(i => i < cols * rows).map(i =>
+    [i, cloudTrim(px, canvas.width, (i % cols) * CLOUD_CELL, Math.floor(i / cols) * CLOUD_CELL)]));
+  return { canvas, trims, cols, rows };
 }
 
 const opaqueBoxes = new Map();
@@ -322,9 +343,15 @@ export class DynamaxView {
           if (s.textures.exists(key)) return;
           const img = await s.assets.loadImage(s.assets.url(`images/battle_anims/${encodeURIComponent(file)}.png`));
           if (s.textures.exists(key)) return;
-          const canvas = recolour(img, opaque), texture = s.textures.addCanvas(key, canvas);
-          const cols = Math.floor(canvas.width / 96), rows = Math.floor(canvas.height / 96);
-          for (let i = 0; i < cols * rows; i++) texture.add(i, 0, (i % cols) * 96, Math.floor(i / cols) * 96, 96, 96);
+          const { canvas, trims, cols, rows } = recolour(img, opaque, name === 'cloud' ? CLOUD_SHEETS.cloud.frames : null);
+          const texture = s.textures.addCanvas(key, canvas);
+          for (let i = 0; i < cols * rows; i++) {
+            const x = (i % cols) * CLOUD_CELL, y = Math.floor(i / cols) * CLOUD_CELL, trim = trims?.get(i);
+            if (trim) {
+              const [left, top, width, height] = trim;
+              texture.add(i, 0, x + left, y + top, width, height).setTrim(CLOUD_CELL, CLOUD_CELL, left, top, width, height);
+            } else texture.add(i, 0, x, y, CLOUD_CELL, CLOUD_CELL);
+          }
         })).then(() => true, error => { s.assets?.diagnostics?.push?.({ dynamaxClouds: String(error?.message ?? error) }); return false; });
     }
     return this.cloudsReady;
