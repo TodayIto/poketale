@@ -5,7 +5,7 @@
 import { addTextObject, addGenderMark, fitName, STATUS_FRAMES, GENDER_COLORS } from './text.js';
 import { nameShowsGender } from '../gender-mark.js';
 import { tween } from '../lifetime.js';
-import { ExpBar } from './exp-bar.js';
+import { ExpBar, setLevelDisplay } from './exp-bar.js';
 import { compactStyle } from '../dynamax-layout.js';
 import { compactPicture } from './compact-box.js';
 const RED_TINT = 0xff8c9c; // the Dynamaxed Pokemon's compact box (setRed)
@@ -122,19 +122,13 @@ export class BattleInfo {
   init(mon) {
     this.mon = { ...mon };
     const compact = this.compact;
-    this.level.removeAll(true);
-    this.level.add(this.scene.add.image(5.5, 0, 'overlay_lv').setOrigin(1, 0.5));
-
-    const digits = String(mon.level);
-    const numbers = this.scene.add.container(9.5, -0.5);
-    [...digits].forEach((char, i) => numbers.add(this.scene.add.image(i * 8, 0, 'numbers', char)));
-    this.level.add(numbers);
-    this.level.setX(this.levelX - 8 * Math.max(digits.length - 3, 0));
+    // The EXP bar sets the player's final level display, including the level-cap color.
+    if (this.exp) this.exp.set(mon.level, mon.exp ?? 0);
+    else setLevelDisplay(this, mon.level);
     this.hp.scaleX = this.hpScale(mon.hp, mon.maxhp);
     this.updateHpFrame(); this.setHpNumbers(mon.hp, mon.maxhp); this.setStatus(mon.status);
     this.scene.tera?.applyInfo(this, mon.tera); // tera icon (view/tera.js)
     this.layoutName();
-    this.exp?.set(mon.level, mon.exp ?? 0);
     if (compact) this.setCompact(compact); // the level's width may have changed
   }
 
