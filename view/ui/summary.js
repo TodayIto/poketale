@@ -2,12 +2,13 @@
 // Modified for PokeTale on 2026-11-22. See view/LICENSE-NOTE.md.
 // from pokerogue src/ui/handlers/party-ui-handler.ts (processSummaryOption) @ 7d7da4a8 (AGPL-3.0-only)
 
+import Phaser from 'phaser';
 import { zTextures, dmaxLevelColor, DMAX_LEVEL_EMPTY } from './z-art.js'; // the G-Max mark, the Dynamax Level cells
 import { placeSprite } from '../sprites/placement.js';
 import { fixed } from '../game-speed.js'; // description scrolling ignores game speed (summary-ui-handler.ts fixedInt)
 import { ballFrame } from './bag.js';
 import { LEARN_MOVE_IMAGES, TEXT as SUMMARY_TEXT, fadeSwap, buildMoveEffect, buildMovesPage, MoveDetails } from './learn-move.js';
-import { styledText, addGenderMark, fitName, STATUS_FRAMES, STAT_ROWS, GENDER_COLORS } from './text.js';
+import { styledText, addGenderMark, fitName, FONT_FAMILY, STATUS_FRAMES, STAT_ROWS, GENDER_COLORS } from './text.js';
 import { nameShowsGender } from '../gender-mark.js';
 import { playSelect, playError } from './keys.js'; // menu sounds
 import { openMenu } from './menu.js'; // menu frame (keys, closing)
@@ -45,6 +46,7 @@ const NAME_RIGHT = 104;
 export const PAGES = ['profile', 'stats', 'moves'];
 
 const MEMO_RIGHT = 7 + 1224 / 6, PAGE_BOTTOM = 159, BOND_HEART_W = 7, BOND_HEART_DY = 5, BOND_SIZES = [96, 80, 66];
+const BOND_PADDING = { bottom: 6 }, BOND_LINE_SPACING = 5;
 const [PROFILE, STATS_PAGE, MOVES] = [0, 1, 2];
 
 const DMAX_CELLS = { width: 5, gap: 2, slant: 2, height: 5, count: 10, right: 122, top: 152 };
@@ -292,24 +294,46 @@ export class SummaryScreen {
     }
 
     const lockText = summary.lock?.text;
-    if (summary.bond || lockText) this.bondLine(p, 113 + 14.83 * (summary.nature ? (summary.nature.mint ? 2 : 1) : 0), summary.bond, lockText);
+    if (summary.bond || lockText) this.bondLine(p, 113 + 14.83 * (summary.nature ? (summary.nature.mint ? 2 : 1) : 0), summary.bond, lockText, description);
   }
 
-  bondLine(p, y, bond, lockText) {
-    const s = this.scene, x = 7 + BOND_HEART_W + 3;
-    let lines = [];
-    for (const fontSize of bond && lockText ? [...BOND_SIZES, 56, 48] : BOND_SIZES) {
-      for (const line of lines) line.destroy();
-      lines = [];
-      let bottom = y;
-      for (const [left, text] of [[x, bond?.text], [7, lockText]]) {
-        if (!text) continue;
-        const line = styledText(s, left, bottom, text, 'WINDOW_ALT', { fontSize, wordWrap: { width: (MEMO_RIGHT - left) * 6 } }).setOrigin(0, 0);
-        lines.push(line);
-        bottom += line.displayHeight;
+  bondLine(p, y, bond, lockText, description) {
+    const s = this.scene, x = 7 + BOND_HEART_W + 3, { canvas, context } = description;
+    const texts = [[x, bond?.text], [7, lockText]].filter(([, value]) => value);
+    let layout = [], fontSize, metrics;
+    if (texts.length) {
+      // Use Phaser's own font metrics and basic wrapping without creating a Text texture.
+      context.save();
+      try {
+        for (const size of bond && lockText ? [...BOND_SIZES, 56, 48] : BOND_SIZES) {
+          fontSize = size;
+          const style = new Phaser.GameObjects.TextStyle(null, { fontFamily: FONT_FAMILY, fontSize });
+          metrics = style.metrics;
+          style.syncFont(canvas, context);
+          let bottom = y;
+          layout = texts.map(([left, value]) => {
+            const width = (MEMO_RIGHT - left) * 6;
+            const text = Array.isArray(value) ? value.join('\n') : String(value);
+            const wrapped = description.basicWordWrap(text, context, width);
+            const count = wrapped.split(description.splitRegExp).length;
+            const top = bottom;
+            bottom += (metrics.fontSize * count + BOND_LINE_SPACING * (count - 1) + BOND_PADDING.bottom) * (1 / 6);
+            return { left, top, value, width, wrapped };
+          });
+          if (bottom <= PAGE_BOTTOM) break;
+        }
+      } finally {
+        context.restore();
       }
-      if (bottom <= PAGE_BOTTOM) break;
     }
+    const lines = layout.map(({ left, top, value, width, wrapped }) => {
+      const line = styledText(s, left, top, value, 'WINDOW_ALT', {
+        fontSize, metrics, padding: BOND_PADDING, lineSpacing: BOND_LINE_SPACING,
+        wordWrap: { width, callback: () => wrapped },
+      }).setOrigin(0, 0);
+      line.style.wordWrapCallback = null; // the pre-wrapped value is only for the initial draws
+      return line;
+    });
     if (bond) {
 
       const heart = s.add.image(7, y, artTexture(s, bond.band === 'lowest' ? 'heartCold' : 'heart')).setOrigin(0, 0);
