@@ -28,6 +28,7 @@ const PRIORITY = {
 const FOCUS = { 1: 'target', 2: 'user' }; // AnimFocus TARGET/USER
 
 export const AFTER_ANIM_MS = 500;
+const CUTIN_PREFETCH_MOVES = new Set(['tectonicrage', 'breakneckblitz']);
 
 const appliedTones = new WeakMap();
 
@@ -66,16 +67,16 @@ export class AnimationPlayer {
 
   async zCutIn(side, id) {
     if (!this.enabled || !showsCutIn(id)) return;
-    const prefetch = id === 'tectonicrage' ? () => this.prefetchZMove(side) : undefined;
+    const prefetch = CUTIN_PREFETCH_MOVES.has(id) ? () => this.prefetchZMove(side, id) : undefined;
     await this.cutIn(entry('moves', id).type, side, prefetch);
   }
 
-  async prefetchZMove(side) {
+  async prefetchZMove(side, id) {
     try {
       const { life, audio } = this.scene;
       life.check();
       if (audio.level('sfx') === 0) return;
-      const source = await animation(moveFile('tectonicrage'));
+      const source = await animation(moveFile(id));
       life.check();
       const anim = Array.isArray(source) ? source[isPlayerSide(side) ? 0 : 1] : source;
       if (anim && audio.level('sfx') > 0) await this.resources(anim, { early: true });
