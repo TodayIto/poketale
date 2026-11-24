@@ -140,7 +140,7 @@ class Mist {
     this.w = b.right - b.left; this.h = b.bottom - b.top; this.cx = (b.left + b.right) / 2;
     const frames = CLOUD_SHEETS.cloud.frames;
     this.parts = Array.from({ length: HALO.count }, (_, i) => {
-      const sprite = scene.add.sprite(0, 0, 'dmax-cloud:cloud', frames[(i * 3) % frames.length]).setAlpha(0);
+      const sprite = scene.add.image(0, 0, 'dmax-cloud:cloud', frames[(i * 3) % frames.length]).setAlpha(0);
       pokemon.container.addAt(sprite, 0);
       return { sprite, angle: (i / HALO.count) * Math.PI * 2, flip: i % 2 ? -1 : 1, front: null };
     });
@@ -161,6 +161,7 @@ class Mist {
       p.sprite.setPosition(this.cx + Math.cos(angle) * this.w * HALO.rx, cy + sin * this.w * HALO.ry + Math.sin(this.time * 1.7 + i) * this.h * 0.01)
         .setScale(k * near * p.flip, k * near).setAlpha(this.level.value * HALO.alpha * (0.75 + 0.25 * near));
     });
+    if (!this.puffs.length) return;
     for (const puff of this.puffs) {
       puff.t += dt * 1000;
       const f = Math.min(1, Math.max(0, puff.t) / PUFFS.duration), frames = CLOUD_SHEETS.puff.frames;
@@ -347,33 +348,43 @@ export class DynamaxView {
 
   addAura(pokemon, fade = AURA_FADE) {
     const s = this.scene;
-    if (pokemon.aura || !s.add?.sprite) return;
+    if (pokemon.aura || !s.add?.image) return;
     const { sprite, asset } = pokemon, c = pokemon.container;
 
     const rings = AURA.rings.flatMap(([width, alpha], ring) => [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]]
       .map(([dx, dy]) => ({ dx: dx * width, dy: dy * width, alpha, ring })));
     const level = { value: 0, pulse: 0 };
     const copies = rings.map(r => {
-      const copy = s.add.sprite(0, 0, asset.key, sprite.frame?.name ?? asset.frame).setOrigin(sprite.originX, sprite.originY).setTintFill(DYNAMAX_RED).setAlpha(0);
+      // follow() sets the frame from the actor; the outline has no animation of its own.
+      const copy = s.add.image(0, 0, asset.key, sprite.frame?.name ?? asset.frame).setOrigin(sprite.originX, sprite.originY).setTintFill(DYNAMAX_RED).setAlpha(0);
       c.addAt(copy, c.getIndex(sprite));
       return { copy, ...r };
     });
+    // The inner ring does not pulse. Only refresh its position and opacity when their inputs change.
+    let innerX, innerY, innerK, innerKy, innerAlpha;
     const follow = () => {
       const name = sprite.frame?.name, k = Math.abs(c.scaleX) || 1;
 
       const copy = sprite.visible === false && pokemon.animCopy?.scene ? pokemon.animCopy : null;
       const shown = sprite.visible !== false || (copy?.visible ?? false);
       const ky = Math.abs(c.scaleY) || 1;
-      const at = copy ? { x: (copy.x - c.x) / k, y: (copy.y - c.y) / ky, sx: copy.scaleX / k, sy: copy.scaleY / ky, ox: 0.5, oy: 0.5, a: copy.alpha }
-        : { x: sprite.x, y: sprite.y, sx: sprite.scaleX, sy: sprite.scaleY, ox: sprite.originX, oy: sprite.originY, a: 1 };
+      const x = copy ? (copy.x - c.x) / k : sprite.x, y = copy ? (copy.y - c.y) / ky : sprite.y;
+      const sx = copy ? copy.scaleX / k : sprite.scaleX, sy = copy ? copy.scaleY / ky : sprite.scaleY;
+      const ox = copy ? 0.5 : sprite.originX, oy = copy ? 0.5 : sprite.originY;
+      const alpha = shown ? (copy ? copy.alpha : 1) * level.value : 0;
+      const moveInner = x !== innerX || y !== innerY || k !== innerK || ky !== innerKy;
+      const fadeInner = alpha !== innerAlpha;
       const frame = copy ? copy.frame?.name : name;
       for (const r of copies) {
         if (frame !== undefined && r.copy.frame?.name !== frame) r.copy.setFrame(frame);
-        if (r.copy.originX !== at.ox || r.copy.originY !== at.oy) r.copy.setOrigin(at.ox, at.oy);
-        if (r.copy.scaleX !== at.sx || r.copy.scaleY !== at.sy) r.copy.setScale(at.sx, at.sy);
+        if (r.copy.originX !== ox || r.copy.originY !== oy) r.copy.setOrigin(ox, oy);
+        if (r.copy.scaleX !== sx || r.copy.scaleY !== sy) r.copy.setScale(sx, sy);
         const w = r.ring ? 1 + 0.35 * level.pulse : 1;
-        r.copy.setPosition(at.x + r.dx * w / k, at.y + r.dy * w / ky).setAlpha(shown ? at.a * level.value * r.alpha * (r.ring ? 0.6 + 0.4 * level.pulse : 1) : 0);
+        if (r.ring || moveInner) r.copy.setPosition(x + r.dx * w / k, y + r.dy * w / ky);
+        if (r.ring || fadeInner) r.copy.setAlpha(alpha * r.alpha * (r.ring ? 0.6 + 0.4 * level.pulse : 1));
       }
+      if (moveInner) { innerX = x; innerY = y; innerK = k; innerKy = ky; }
+      if (fadeInner) innerAlpha = alpha;
     };
     s.events?.on?.('postupdate', follow);
     follow();
@@ -391,7 +402,7 @@ export class DynamaxView {
     this.scene.tweens.add({ targets: aura.level, value: 0, duration: fade, onComplete: () => aura.stop() });
   }
   addMist(pokemon) {
-    if (!pokemon.mist && this.scene.add?.sprite && this.scene.textures?.exists?.('dmax-cloud:puff')) pokemon.mist = new Mist(this.scene, pokemon);
+    if (!pokemon.mist && this.scene.add?.image && this.scene.add?.sprite && this.scene.textures?.exists?.('dmax-cloud:puff')) pokemon.mist = new Mist(this.scene, pokemon);
     return pokemon.mist;
   }
   removeMist(pokemon) { pokemon.mist?.destroy(); pokemon.mist = null; }
