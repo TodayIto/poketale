@@ -8,7 +8,7 @@ import { uiRect } from './tap-back.js';
 import { openSummary } from './summary.js';
 import { playSelect, playError } from './keys.js'; // menu sounds
 import { openMenu } from './menu.js'; // menu frame (keys, closing, tapping empty space)
-import { styledText, windowText, addGenderMark, fitName, STATUS_FRAMES, GENDER_COLORS } from './text.js';
+import { styledText, windowText, addGenderMark, fitName, unwrappedTextWidth, STATUS_FRAMES, GENDER_COLORS } from './text.js';
 import { nameShowsGender } from '../gender-mark.js';
 import { tween, delay } from '../lifetime.js'; // screen transition
 import { fixed } from '../game-speed.js'; // icon bobbing ignores game speed (pokemon-icon-anim-helper.ts fixedInt(200))
@@ -235,9 +235,11 @@ export class PartyMenu {
     this.showText(text);
     // MessageUiHandler.showPrompt: end of the last line +2, 18 per line
     const lines = text.split('\n');
-    const probe = windowText(this.scene, 0, 0, lines.at(-1));
-    const width = probe.displayWidth; probe.destroy();
-    this.prompt.setPosition(this.messageText.x + width + 2, this.messageText.y + (lines.length - 1) * 18 + 2).setVisible(true);
+    const label = this.messageText;
+    label.style.syncFont(label.canvas, label.context);
+    // The old probe had no line limit, even when the last segment contained CRs.
+    const width = unwrappedTextWidth(label, lines.at(-1), 0);
+    this.prompt.setPosition(label.x + width + 2, label.y + (lines.length - 1) * 18 + 2).setVisible(true);
     this.promptHit.setVisible(true);
   }
   setCursor(cursor, force = false) {
