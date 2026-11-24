@@ -315,6 +315,7 @@ export class ActionMenu {
     } else {
       c.add(addWindow(s,202,-48,118,48));
       this.promptWrap = PROMPT_WRAP; // the gimmick button (mega-tera.js draw) narrows it
+      this.laidOutPromptWrap = null;
       this.promptText = this.text(12,-39,'',96,4,5,{wordWrap:{width:PROMPT_WRAP},maxLines:PROMPT_LINES},'message');
     }
     const labels = fight ? this.moves.map(m=>m.name)
@@ -387,8 +388,11 @@ export class ActionMenu {
   }
 
   setPrompt(str) {
-    const wrap = this.promptWrap, maxLines = PROMPT_LINES;
-    const t = this.promptText.setScale(1 / 6).setWordWrapWidth(wrap).setText(str);
+    const t = this.promptText, wrap = this.promptWrap, maxLines = PROMPT_LINES;
+    // Compare the requested width: a fitted prompt can have a different canvas wrap width.
+    if (this.laidOutPromptWrap === wrap && t.text === str) return;
+    this.laidOutPromptWrap = wrap;
+    t.setScale(1 / 6).setWordWrapWidth(wrap).setText(str);
     if (t.displayWidth <= wrap / 6 && t.getWrappedText(str).length <= maxLines) return;
     if (String(str).split('\n').length > maxLines) return; // a text written longer than the box is left to the wrap as before
     t.setWordWrapWidth(null);
