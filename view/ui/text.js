@@ -100,11 +100,13 @@ function markTexture(scene, gender) {
 
 const tintOf = color => parseInt(String(color).replace('#', ''), 16);
 
-export function addGenderMark(scene, x, y, gender, name, { originY = 0, color, shadow } = {}) {
+export function addGenderMark(scene, x, y, gender, name, { originY = 0, color, shadow, reuse = null } = {}) {
   if (!GENDER_MARK_BATTLE[gender]) return null;
   const st = styleOf(scene, name);
   const top = st.padding.top ?? 0, height = st.size * FONT_LINE + top + (st.padding.bottom ?? 0); // the text's height (text pixels, 6 a game pixel)
   const baseline = Math.floor(y) + (top + st.size * FONT_ASCENT - originY * height) / 6;
+  // Callers only reuse a mark made for the same gender and style.
+  if (reuse) return reuse.setPosition(Math.floor(x), baseline - reuse.height);
   const pixel = st.size / FONT_PIXELS / 6; // game pixels a font pixel
   const { w, h } = markSize(gender, GENDER_MARK_BATTLE), key = markTexture(scene, gender);
   const layer = (dx, dy, tint) => scene.add.container(dx, dy).add(scene.add.image(0, 0, key).setOrigin(0).setScale(pixel).setTint(tintOf(tint)));

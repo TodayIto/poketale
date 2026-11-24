@@ -5,9 +5,10 @@
 import { addTextObject, addGenderMark, fitName, STATUS_FRAMES, GENDER_COLORS } from './text.js';
 import { nameShowsGender } from '../gender-mark.js';
 import { tween } from '../lifetime.js';
-import { ExpBar } from './exp-bar.js';
+import { ExpBar, setLevelDisplay } from './exp-bar.js';
 import { compactStyle } from '../dynamax-layout.js';
 import { compactPicture } from './compact-box.js';
+import { themeOf } from './theme.js';
 const RED_TINT = 0xff8c9c; // the Dynamaxed Pokemon's compact box (setRed)
 
 export class BattleInfo {
@@ -22,9 +23,9 @@ export class BattleInfo {
       : { nameX: -124, nameY: -11.2, levelX: -50, levelY: -5, hpX: -71, hpY: 4.5 };
     const c = this.container = scene.add.container(this.baseX, this.baseY).setVisible(false);
     scene.fieldUI.add(c);
-    this.box = scene.add.sprite(0, 0, mini ? 'pbinfo_player_mini' : player ? 'pbinfo_player' : 'pbinfo_enemy_mini').setOrigin(1, 0.5);
+    this.box = scene.add.image(0, 0, mini ? 'pbinfo_player_mini' : player ? 'pbinfo_player' : 'pbinfo_enemy_mini').setOrigin(1, 0.5);
     this.nameText = addTextObject(scene, p.nameX, p.nameY, '', 'info');
-    this.status = scene.add.sprite(p.nameX, p.nameY + 11.5, 'statuses', 'paralysis').setOrigin(0).setVisible(false);
+    this.status = scene.add.image(p.nameX, p.nameY + 11.5, 'statuses', 'paralysis').setOrigin(0).setVisible(false);
     this.levelX = p.levelX;
     this.level = scene.add.container(p.levelX, p.levelY);
     this.hp = scene.add.image(p.hpX, p.hpY, 'overlay_hp', 'high').setOrigin(0);
@@ -122,19 +123,13 @@ export class BattleInfo {
   init(mon) {
     this.mon = { ...mon };
     const compact = this.compact;
-    this.level.removeAll(true);
-    this.level.add(this.scene.add.image(5.5, 0, 'overlay_lv').setOrigin(1, 0.5));
-
-    const digits = String(mon.level);
-    const numbers = this.scene.add.container(9.5, -0.5);
-    [...digits].forEach((char, i) => numbers.add(this.scene.add.image(i * 8, 0, 'numbers', char)));
-    this.level.add(numbers);
-    this.level.setX(this.levelX - 8 * Math.max(digits.length - 3, 0));
+    // The EXP bar sets the player's final level display, including the level-cap color.
+    if (this.exp) this.exp.set(mon.level, mon.exp ?? 0);
+    else setLevelDisplay(this, mon.level);
     this.hp.scaleX = this.hpScale(mon.hp, mon.maxhp);
     this.updateHpFrame(); this.setHpNumbers(mon.hp, mon.maxhp); this.setStatus(mon.status);
     this.scene.tera?.applyInfo(this, mon.tera); // tera icon (view/tera.js)
     this.layoutName();
-    this.exp?.set(mon.level, mon.exp ?? 0);
     if (compact) this.setCompact(compact); // the level's width may have changed
   }
 
@@ -143,11 +138,14 @@ export class BattleInfo {
     const lv = this.level.list[0];
     const room = lv.x + this.level.x - lv.displayWidth * lv.originX - nameText.x; // name start -> "Lv" label
     const tera = this.teraIcon?.visible ? this.teraIcon.displayWidth : 0;
-    this.gender?.destroy();
-    const mark = addGenderMark(scene, 0, nameText.y + 2, mon.gender, 'info', { color: GENDER_COLORS[mon.gender]?.[0] });
+    const theme = themeOf(scene), previous = this.gender;
+    const reuse = previous?.scene && this.genderType === mon.gender && this.genderTheme === theme ? previous : null;
+    if (!reuse) previous?.destroy();
+    const mark = addGenderMark(scene, 0, nameText.y + 2, mon.gender, 'info', { color: GENDER_COLORS[mon.gender]?.[0], reuse });
 
     const k = this.textScale ?? 1;
     if (mark && k !== 1) { const bottom = mark.y + mark.height - nameText.y; mark.setScale(k); mark.y = nameText.y + bottom * k - mark.height * k; }
+    else if (reuse) reuse.setScale(1);
     const markWidth = (mark?.width ?? 0) * k;
     const fit = width => fitName(nameText, mon.name, room - tera - width - (width || tera ? 1 : 0));
 
@@ -156,7 +154,13 @@ export class BattleInfo {
     this.gender = mark && !nameShowsGender(shown) ? mark : null;
     if (mark && !this.gender) mark.destroy();
     const right = nameText.x + nameText.displayWidth;
-    if (this.gender) this.container.add(this.gender.setX(Math.floor(right + 1)));
+    if (this.gender) {
+      mark.setX(Math.floor(right + 1));
+      this.genderType = mon.gender; this.genderTheme = theme;
+      if (!reuse) this.container.add(mark);
+      // The old layout appended a new mark even when Tera had just added its icon.
+      else if (this.container.list.at(-1) !== mark) this.container.bringToTop(mark);
+    }
     this.teraIcon?.setPosition(right + (this.gender ? markWidth : 0) + 1, nameText.y + 2);
   }
 
@@ -167,7 +171,8 @@ export class BattleInfo {
 
   setHpNumbers(hp, maxhp) {
     const numbers = this.numbers;
-    if (!numbers) return;
+    // The bar can keep moving between changes to the displayed integer HP.
+    if (!numbers || (this.shownHp === hp && this.shownMaxHp === maxhp)) return;
     const text = `${hp}/${maxhp}`, list = numbers.list;
     for (let i = 0; i < text.length; i++) {
       const char = text[text.length - 1 - i], digit = list[i];
@@ -176,6 +181,8 @@ export class BattleInfo {
       if (digit.x !== -i * 8 || digit.y !== 0) digit.setPosition(-i * 8, 0);
     }
     while (list.length > text.length) numbers.remove(list[list.length - 1], true);
+    this.shownHp = hp;
+    this.shownMaxHp = maxhp;
   }
   updateHpFrame() {
     const frame = this.hp.scaleX > 0.5 ? 'high' : this.hp.scaleX > 0.25 ? 'medium' : 'low';
