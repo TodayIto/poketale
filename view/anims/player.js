@@ -67,11 +67,12 @@ export class AnimationPlayer {
 
   async zCutIn(side, id) {
     if (!this.enabled || !showsCutIn(id)) return;
-    const prefetch = CUTIN_PREFETCH_MOVES.has(id) ? () => this.prefetchZMove(side, id) : undefined;
+    const prefetch = CUTIN_PREFETCH_MOVES.has(id) ? () => this.prefetchMove(side, id) : undefined;
     await this.cutIn(entry('moves', id).type, side, prefetch);
   }
 
-  async prefetchZMove(side, id) {
+  async prefetchMove(side, id) {
+    if (!this.enabled) return;
     try {
       const { life, audio } = this.scene;
       life.check();

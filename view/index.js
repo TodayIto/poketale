@@ -97,6 +97,8 @@ export async function createBattleView(options) {
     return scene.zCutIn(side, moveId);
   });
 
+  view.prefetchMove = (id, side) => { if (!life.signal.aborted) void scene.animations.prefetchMove(side, id); };
+
   view.prefetchCutIn = side => { if (!life.signal.aborted) scene.animations?.prefetchCutIn(side); };
 
   view.warmUp = () => life.run(() => scene.warmUp());

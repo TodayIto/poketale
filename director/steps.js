@@ -169,7 +169,11 @@ export function createSteps({ battle, view, names, warn, bag, options, run, mode
       if (zMove) await view.moveBanner?.(positionOf(a[0]), moveName);
 
       const reflected = /^(ability:\s*)?magic\s*(coat|bounce)$/i.test(String(kw.from ?? ''));
-      await view.message(text(reflected ? 'battle.magicCoatActivated' : 'battle.useMove', { ...values(a[0]), moveName }), { hold: 500 });
+      // Only prepare the confirmed G-Max Hydrosnipe, during its existing message hold.
+      const onHold = id === 'gmaxhydrosnipe' && !kw.miss && !kw.still && view.prefetchMove
+        ? () => view.prefetchMove(id, positionOf(a[0])) : undefined;
+      await view.message(text(reflected ? 'battle.magicCoatActivated' : 'battle.useMove', { ...values(a[0]), moveName }),
+        { hold: 500, ...(onHold ? { onHold } : {}) });
 
       await reappear(event);
 
