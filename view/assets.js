@@ -48,11 +48,11 @@ export function themedPath(theme, path, legacy = LEGACY_UI) {
   return legacy.includes(rest) ? `images/ui/legacy/${rest}` : path;
 }
 
-export function prefetchImages({ assetBase = DEFAULT_ASSET_BASE, theme, biome, lang, pictureWays = DIRECT_ONLY }) {
+export function prefetchImages({ assetBase = DEFAULT_ASSET_BASE, theme, biome, biomeProps, lang, pictureWays = DIRECT_ONLY }) {
   const base = assetBase.endsWith('/') ? assetBase : assetBase + '/', themed = checkTheme(theme);
   const arena = biomeKey(biome) ?? DEFAULT_BIOME;
 
-  return [...Object.values(UI_IMAGES), ...biomeImages(arena).map(([key]) => `images/arenas/${key}.png`)].map(path => base + themedPath(themed, langPath(path, lang)))
+  return [...Object.values(UI_IMAGES), ...biomeImages(arena, biomeProps).map(([key]) => `images/arenas/${key}.png`)].map(path => base + themedPath(themed, langPath(path, lang)))
     .filter(src => (pictureWays(src) ?? ['direct'])[0] === 'direct').map(src => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -163,12 +163,12 @@ export class Assets {
     return { key, frame };
   }
 
-  async preload(mons, biome, double = false) {
+  async preload(mons, biome, double = false, biomeProps) {
     if (!/^[a-z0-9_]+$/.test(biome)) throw new Error(`Invalid biome: ${biome}`);
     await Promise.all([
       ...Object.entries({ ...UI_IMAGES, ...(double ? DOUBLE_IMAGES : {}) }).map(([key, path]) => this.image(key, path)),
 
-      ...biomeImages(biome).map(async ([key, animated]) => this.image(key, `images/arenas/${key}.png`, animated ? atlasJson((await fieldAtlases()).arenas[key]) : null)),
+      ...biomeImages(biome, biomeProps).map(async ([key, animated]) => this.image(key, `images/arenas/${key}.png`, animated ? atlasJson((await fieldAtlases()).arenas[key]) : null)),
       ...mons.flatMap(mon => [...(mon.side ? [isPlayerSide(mon.side)] : [true, false]).map(back => this.mon(mon, back)), this.icon(mon)]),
     ]);
     this.life.check();

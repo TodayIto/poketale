@@ -24,7 +24,7 @@ import { BattleEffects } from './effects.js';
 import { TeraView } from './tera.js';
 import { DynamaxView } from './dynamax.js'; // Dynamax grow / glow / shrink
 import { BattleLevel } from './level.js';
-import { createArena, biomeKey, DEFAULT_BIOME } from './arena.js'; // biomes
+import { createArena, biomeKey, chooseBiomeProps, DEFAULT_BIOME } from './arena.js'; // biomes
 import { BattleEncounter } from './encounter.js'; // trainer entrance, player's ball throw
 import { openParticles, ballTint, loadBallThrow } from './ball-throw.js'; // ball-open particles
 import { ballFrame, loadItemIcons } from './ui/bag.js'; // the ball the mon was caught in (Poke Ball when the ball has no image)
@@ -86,7 +86,8 @@ export class BattleScene extends Phaser.Scene {
 
     const arena = biomeKey(biome) ?? DEFAULT_BIOME;
     if (biome != null && !biomeKey(biome)) this.assets.diagnostics.push({ unknownBiome: String(biome) });
-    await Promise.all([this.assets.preload(mons, arena, this.double), loadFont(this.assets.base), this.audio.preload(mons), this.effects.preload(), this.tera.preload(), this.dynamax.preload(), this.levels.preload(),
+    const props = chooseBiomeProps(arena, biomeProps);
+    await Promise.all([this.assets.preload(mons, arena, this.double, props), loadFont(this.assets.base), this.audio.preload(mons), this.effects.preload(), this.tera.preload(), this.dynamax.preload(), this.levels.preload(),
       this.encounter.preload({ enemyTrainer, enemyBlack, playerTrainer, playerBlack, enemyTrainer2, enemyBlack2 }),
       this.assets.image('pb_particles', 'images/effects/pb_particles.png', BAG_ICONS.pb_particles)]); // ball-open particles (loading-scene.ts also loads them up front)
     this.life.check();
@@ -94,7 +95,7 @@ export class BattleScene extends Phaser.Scene {
     this.audio.preloadMusic();
     this.mons = mons; this.moves = moves; // used by warmUp and end
     this.biomeObjects.forEach(object => object.destroy());
-    this.biomeObjects = createArena(this, arena, biomeProps); // [background, player base, enemy base (+props)] - arena-base.ts
+    this.biomeObjects = createArena(this, arena, props); // [background, player base, enemy base (+props)] - arena-base.ts
     if (!this.messages) this.messages = new BattleMessage(this, this.options.parent, this.life);
   }
 

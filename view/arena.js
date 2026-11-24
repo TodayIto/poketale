@@ -20,10 +20,16 @@ export function biomeKey(name) {
 }
 export const biomeHasProps = biome => HAS_PROPS.has(biome);
 
-export function biomeImages(biome) {
+export function chooseBiomeProps(biome, props) {
+  return !biomeHasProps(biome) ? 0 : Number.isInteger(props) ? props & 7 : Math.floor(Math.random() * 8);
+}
+
+export function biomeImages(biome, props) {
   const animatedBase = biome === 'end';
   const images = [[`${biome}_bg`, false], [`${biome}_a`, animatedBase], [`${biome}_b`, animatedBase]];
-  if (biomeHasProps(biome)) for (let p = 1; p <= 3; p++) images.push([`${biome}_b_${p}`, p === 3 && ['power_plant', 'end'].includes(biome)]);
+  if (biomeHasProps(biome)) for (let p = 1; p <= 3; p++) {
+    if (props & (1 << (p - 1))) images.push([`${biome}_b_${p}`, p === 3 && ['power_plant', 'end'].includes(biome)]);
+  }
   return images;
 }
 
@@ -47,14 +53,14 @@ export function createArena(scene, biome, props) {
     playIfAnimated(scene, sprite, key);
     container.add(sprite);
     if (!player && biomeHasProps(biome)) {
-      const value = Number.isInteger(props) ? props & 7 : Math.floor(Math.random() * 8);
       for (let p = 0; p < 3; p++) {
+        if (!(props & (1 << p))) continue;
         const propKey = `${biome}_b_${p + 1}`;
-        const prop = scene.add.sprite(0, 0, propKey).setOrigin(0).setVisible(!!(value & (1 << p)));
+        const prop = scene.add.sprite(0, 0, propKey).setOrigin(0);
         playIfAnimated(scene, prop, propKey);
         container.add(prop);
       }
-      container.propValue = value;
+      container.propValue = props;
     }
     return container;
   };
