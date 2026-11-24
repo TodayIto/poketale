@@ -68,11 +68,11 @@ class PartySlot {
     const s = menu.scene, benched = index >= battlerCount(s), p = benched ? BENCH : MAIN;
     this.mon = mon; this.p = p; this.selected = false;
     const c = this.container = s.add.container(...slotPosition(doubleLayout(s), index));
-    this.bg = s.add.sprite(0, 0, p.key, this.frame()).setOrigin(0);
-    this.pb = s.add.sprite(p.pb[0], p.pb[1], 'party_pb', 'party_pb');
+    this.bg = s.add.image(0, 0, p.key, this.frame()).setOrigin(0);
+    this.pb = s.add.image(p.pb[0], p.pb[1], 'party_pb', 'party_pb');
 
     this.restY = p.pb[1] - 15;
-    this.icon = s.add.sprite(p.pb[0], this.restY, icon.key, icon.frame).setOrigin(0.5, 0);
+    this.icon = s.add.image(p.pb[0], this.restY, icon.key, icon.frame).setOrigin(0.5, 0);
     this.name = partyText(s, p.name[0], p.name[1], '').setOrigin(0);
     const name = fitName(this.name, mon.name, p.maxName); // a long name ends in "." (view/ui/text.js fitName)
     const [lx, ly] = p.lv;
@@ -85,7 +85,7 @@ class PartySlot {
 
       objects.push(addGenderMark(s, lx + p.gender[0], ly + p.gender[1], mon.gender, 'PARTY', { originY: 0.25, color, shadow }));
     }
-    if (STATUS_FRAMES[mon.status]) objects.push(s.add.sprite(lx + p.status[0], ly + p.status[1], 'statuses', STATUS_FRAMES[mon.status]).setOrigin(0));
+    if (STATUS_FRAMES[mon.status]) objects.push(s.add.image(lx + p.status[0], ly + p.status[1], 'statuses', STATUS_FRAMES[mon.status]).setOrigin(0));
     // getVariantTint(0)
     if (mon.shiny) objects.push(s.add.image(this.name.x - 9, this.name.y + 3, 'shiny_star_small').setOrigin(0).setTint(0xf8c020));
     const [hx, hy] = p.hp;
@@ -93,7 +93,7 @@ class PartySlot {
     objects.push(
       s.add.image(hx + 15, hy, 'party_slot_overlay_hp').setOrigin(1, 0),
       s.add.image(hx, hy, 'party_slot_hp_bar').setOrigin(0),
-      s.add.sprite(hx + 16, hy + 2, 'party_slot_hp_overlay', ratio > 0.5 ? 'high' : ratio > 0.25 ? 'medium' : 'low').setOrigin(0).setScale(ratio, 1),
+      s.add.image(hx + 16, hy + 2, 'party_slot_hp_overlay', ratio > 0.5 ? 'high' : ratio > 0.25 ? 'medium' : 'low').setOrigin(0).setScale(ratio, 1),
       // (-3, -2) from the bottom right of the HP bar (100x7)
       partyText(s, hx + 100 - 3, hy + 7 - 2, `${mon.hp}/${mon.maxhp}`).setOrigin(1, 0),
     );
