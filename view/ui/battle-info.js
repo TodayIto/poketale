@@ -22,9 +22,9 @@ export class BattleInfo {
       : { nameX: -124, nameY: -11.2, levelX: -50, levelY: -5, hpX: -71, hpY: 4.5 };
     const c = this.container = scene.add.container(this.baseX, this.baseY).setVisible(false);
     scene.fieldUI.add(c);
-    this.box = scene.add.sprite(0, 0, mini ? 'pbinfo_player_mini' : player ? 'pbinfo_player' : 'pbinfo_enemy_mini').setOrigin(1, 0.5);
+    this.box = scene.add.image(0, 0, mini ? 'pbinfo_player_mini' : player ? 'pbinfo_player' : 'pbinfo_enemy_mini').setOrigin(1, 0.5);
     this.nameText = addTextObject(scene, p.nameX, p.nameY, '', 'info');
-    this.status = scene.add.sprite(p.nameX, p.nameY + 11.5, 'statuses', 'paralysis').setOrigin(0).setVisible(false);
+    this.status = scene.add.image(p.nameX, p.nameY + 11.5, 'statuses', 'paralysis').setOrigin(0).setVisible(false);
     this.levelX = p.levelX;
     this.level = scene.add.container(p.levelX, p.levelY);
     this.hp = scene.add.image(p.hpX, p.hpY, 'overlay_hp', 'high').setOrigin(0);

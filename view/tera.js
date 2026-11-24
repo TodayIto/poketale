@@ -214,7 +214,7 @@ export class TeraView {
     const scene = this.scene;
     if (!type) { info.teraIcon?.setVisible(false); return; }
     if (!info.teraIcon) {
-      info.teraIcon = scene.add.sprite(0, 0, 'icon_tera').setOrigin(0).setScale(0.5);
+      info.teraIcon = scene.add.image(0, 0, 'icon_tera').setOrigin(0).setScale(0.5);
       info.container.add(info.teraIcon);
     }
     const [r, g, b] = typeRgb(type);
