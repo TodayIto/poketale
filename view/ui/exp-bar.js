@@ -55,8 +55,39 @@ export class ExpBar {
     this.bar = scene.add.image(-98, 18, 'overlay_exp').setOrigin(0);
 
     this.maskRect = scene.make.graphics({ add: false }).setScale(6).fillStyle(0xffffff).fillRect(127, 126, 85, 2);
-    this.bar.setMask(this.maskRect.createGeometryMask());
+    this.mask = this.maskRect.createGeometryMask();
+    this.bar.setMask(this.mask);
+    if (!info.mini && this.bar.width === 85 && this.bar.height === 2) {
+      const { bar } = this, willRender = bar.willRender;
+      // Phaser's Container reads the child's mask after willRender, including during position tweens.
+      bar.willRender = camera => willRender.call(bar, camera) && this.prepareBar(camera);
+    }
     info.container.add([this.label, this.bar]);
+  }
+
+  prepareBar(camera) {
+    const { bar, mask, maskRect, info } = this, { x, y } = info.container;
+    const zoom = camera.zoom, width = maskRect.x;
+    // The old mask is in world space: a sliding/bobbing box does not carry it along.
+    if (x === 310 && y === -72 && camera === this.scene.cameras.main && (zoom === 1 || zoom === 0.5)) {
+      if (width !== this.lastBarWidth || zoom !== this.lastBarZoom) {
+        this.lastBarWidth = width; this.lastBarZoom = zoom;
+        const edge = width * zoom, pixels = Math.round(edge);
+        // Away from a half pixel, snapping the cut keeps the same covered screen pixels.
+        // Leave ambiguous rasterization edges and out-of-range values to the original stencil.
+        this.barCrop = width >= 0 && width <= EXP_BAR_WIDTH && Math.abs(edge - pixels) <= 0.375 ? pixels / (6 * zoom) : null;
+      }
+      if (this.barCrop !== null) {
+        if (bar.mask) bar.clearMask();
+        if (this.appliedBarCrop !== this.barCrop) {
+          bar.setCrop(0, 0, this.barCrop, 2);
+          this.appliedBarCrop = this.barCrop;
+        }
+        return this.barCrop > 0;
+      }
+    }
+    if (!bar.mask) { bar.setCrop().setMask(mask); this.appliedBarCrop = undefined; }
+    return true;
   }
   /** Set instantly (updatePokemonExpDisplay skip) */
   set(level, ratio = 0) {
@@ -88,7 +119,7 @@ export class ExpBar {
     await delay(this.scene, 500 * levelDurationMultiplier);
     this.maskRect.x = 0; this.ratio = 0;
   }
-  destroy() { this.scene.tweens.killTweensOf(this.maskRect); this.bar.clearMask(true); this.maskRect.destroy(); }
+  destroy() { this.scene.tweens.killTweensOf(this.maskRect); this.bar.clearMask(); this.mask.destroy(); this.maskRect.destroy(); }
 }
 
 export class PartyExpBar {
