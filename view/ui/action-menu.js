@@ -361,7 +361,15 @@ export class ActionMenu {
         if (this.categoryIcon.visible) this.categoryIcon.setFrame(category);
         const [color, shadow] = ppStyle(this.scene, move);
 
-        this.ppText.setText(move.pp === undefined ? '--/--' : `${pad2(move.pp)}/${pad2(move.maxpp)}`).setColor(color).setShadow(3,3,shadow);
+        const pp = this.ppText, value = move.pp === undefined ? '--/--' : `${pad2(move.pp)}/${pad2(move.maxpp)}`;
+        const recolor = pp.style.color !== color || pp.style.shadowColor !== shadow;
+        if (recolor) {
+          // text() sets the shadow geometry. Change both colors before repainting once.
+          pp.style.color = color;
+          pp.style.shadowColor = shadow;
+        }
+        if (pp.text !== value) pp.setText(value);
+        else if (recolor) pp.updateText();
         this.powerText?.setText(shownValue(move.power)); this.accuracyText?.setText(shownValue(move.accuracy));
       }
       const reason = this.notice || this.blockedReason();
