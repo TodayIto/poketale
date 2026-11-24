@@ -55,17 +55,19 @@ export function styledText(scene, x, y, str, name, extra = {}) {
   return lineSpacing ? text.setLineSpacing(lineSpacing) : text;
 }
 
-function nameWidth(text, value) {
-  if (value === text.text) return text.displayWidth;
+// Width of unwrapped, unspaced text on an existing context with its font synced.
+export function unwrappedTextWidth(text, value, maxLines = text.style.maxLines) {
   const { style, context, padding, scaleX, splitRegExp } = text;
   if (style.fixedWidth !== 0) return style.fixedWidth * scaleX;
   const lines = value.split(splitRegExp);
-  const drawn = style.maxLines > 0 ? Math.min(lines.length, style.maxLines) : lines.length;
+  const drawn = maxLines > 0 ? Math.min(lines.length, maxLines) : lines.length;
   let width = 0;
   // Phaser rounds the unscaled line width before adding padding and applying scale.
   for (let i = 0; i < drawn; i++) width = Math.max(width, Math.ceil(style.strokeThickness + context.measureText(lines[i]).width));
   return (width + padding.left + padding.right) * scaleX;
 }
+
+const nameWidth = (text, value) => value === text.text ? text.displayWidth : unwrappedTextWidth(text, value);
 
 export function fitName(text, name, maxWidth) {
   let shown = String(name ?? '');

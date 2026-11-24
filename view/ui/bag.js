@@ -6,7 +6,7 @@ import { addWindow } from './window.js';
 import BAG_ICONS from '../../data/bag-icons.json' with { type: 'json' };
 import { playSelect, playError } from './keys.js'; // menu sounds
 import { openMenu } from './menu.js'; // menu frame (keys, closing, tapping empty space)
-import { styledText } from './text.js';
+import { styledText, unwrappedTextWidth } from './text.js';
 import { uiRect } from './tap-back.js';
 import { fixed } from '../game-speed.js'; // ball wiggle ignores game speed (ball-ui-handler.ts fixedInt)
 import { LoadError } from '../retry.js'; // image load failure
@@ -110,27 +110,27 @@ export class BagMenu {
 
   measureWidths() {
     const s = this.scene, widths = this.measuredWidths ??= new Map();
-    let probe;
+    const text = this.promptText;
+    let synced = false;
     const measure = str => {
       let width = widths.get(str);
       if (width === undefined) {
-        probe ??= windowText(s, 0, 0, '');
-        probe.setText(str);
-        width = probe.displayWidth;
+        if (!synced) { text.style.syncFont(text.canvas, text.context); synced = true; }
+        // The prompt uses the same font and scale as the rows, but would wrap and clip its own text.
+        const value = Array.isArray(str) ? str.join('\n') : String(str || str === 0 ? str : '');
+        width = unwrappedTextWidth(text, value, 0);
         widths.set(str, width);
       }
       return width;
     };
-    try {
-      const all = this.bag.pockets.flatMap(p => p.items);
-      const namesWidth = Math.max(0, ...all.map(i => measure(i.name)));
-      const countsWidth = Math.max(0, ...all.map(i => measure(`×${i.count}`)));
+    const all = this.bag.pockets.flatMap(p => p.items);
+    const namesWidth = Math.max(0, ...all.map(i => measure(i.name)));
+    const countsWidth = Math.max(0, ...all.map(i => measure(`×${i.count}`)));
 
-      const tabs = this.bag.pockets.map(p => measure(p.name));
-      const tabsWidth = tabs.reduce((a, b) => a + b, 0) + 8 * (tabs.length - 1);
-      const content = Math.max(64, namesWidth + 4 + countsWidth, measure(s.words(CANCEL_TEXT)), TAB_LEFT + tabsWidth + TAB_LEFT - 50);
-      return { namesWidth, countsWidth, tabs, content };
-    } finally { probe?.destroy(); }
+    const tabs = this.bag.pockets.map(p => measure(p.name));
+    const tabsWidth = tabs.reduce((a, b) => a + b, 0) + 8 * (tabs.length - 1);
+    const content = Math.max(64, namesWidth + 4 + countsWidth, measure(s.words(CANCEL_TEXT)), TAB_LEFT + tabsWidth + TAB_LEFT - 50);
+    return { namesWidth, countsWidth, tabs, content };
   }
   draw() {
     const s = this.scene;
