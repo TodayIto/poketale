@@ -167,7 +167,8 @@ export class BattleInfo {
 
   setHpNumbers(hp, maxhp) {
     const numbers = this.numbers;
-    if (!numbers) return;
+    // The bar can keep moving between changes to the displayed integer HP.
+    if (!numbers || (this.shownHp === hp && this.shownMaxHp === maxhp)) return;
     const text = `${hp}/${maxhp}`, list = numbers.list;
     for (let i = 0; i < text.length; i++) {
       const char = text[text.length - 1 - i], digit = list[i];
@@ -176,6 +177,8 @@ export class BattleInfo {
       if (digit.x !== -i * 8 || digit.y !== 0) digit.setPosition(-i * 8, 0);
     }
     while (list.length > text.length) numbers.remove(list[list.length - 1], true);
+    this.shownHp = hp;
+    this.shownMaxHp = maxhp;
   }
   updateHpFrame() {
     const frame = this.hp.scaleX > 0.5 ? 'high' : this.hp.scaleX > 0.25 ? 'medium' : 'low';
