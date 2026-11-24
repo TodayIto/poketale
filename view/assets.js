@@ -48,17 +48,20 @@ export function themedPath(theme, path, legacy = LEGACY_UI) {
   return legacy.includes(rest) ? `images/ui/legacy/${rest}` : path;
 }
 
-export function prefetchImages({ assetBase = DEFAULT_ASSET_BASE, theme, biome, lang, pictureWays = DIRECT_ONLY }) {
+function prefetchImages({ assetBase = DEFAULT_ASSET_BASE, theme, biome, biomeProps, lang, pictureWays = DIRECT_ONLY }) {
   const base = assetBase.endsWith('/') ? assetBase : assetBase + '/', themed = checkTheme(theme);
   const arena = biomeKey(biome) ?? DEFAULT_BIOME;
 
-  return [...Object.values(UI_IMAGES), ...biomeImages(arena).map(([key]) => `images/arenas/${key}.png`)].map(path => base + themedPath(themed, langPath(path, lang)))
-    .filter(src => (pictureWays(src) ?? ['direct'])[0] === 'direct').map(src => {
+  const images = new Map();
+  for (const path of [...Object.values(UI_IMAGES), ...biomeImages(arena, biomeProps).map(([key]) => `images/arenas/${key}.png`)]) {
+    const src = base + themedPath(themed, langPath(path, lang));
+    if (images.has(src) || (pictureWays(src) ?? ['direct'])[0] !== 'direct') continue;
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.src = src;
-    return img;
-  });
+    images.set(src, img);
+  }
+  return images;
 }
 
 function recolored(img, palette) {
@@ -73,7 +76,8 @@ function recolored(img, palette) {
 }
 
 export class Assets {
-  constructor(scene, life, { fetchBytes, assetBase = DEFAULT_ASSET_BASE, spriteSource = 'showdown-ani', spriteStyle = DEFAULT_SPRITE_STYLE, theme, lang, pictureWays = DIRECT_ONLY }) {
+  constructor(scene, life, options) {
+    const { fetchBytes, assetBase = DEFAULT_ASSET_BASE, spriteSource = 'showdown-ani', spriteStyle = DEFAULT_SPRITE_STYLE, theme, lang, pictureWays = DIRECT_ONLY } = options;
     if (!['showdown-ani', 'pokerogue'].includes(spriteSource)) throw new Error(`Unknown spriteSource: ${spriteSource}`);
     this.scene = scene; this.life = life;
     this.theme = checkTheme(theme);
@@ -88,7 +92,15 @@ export class Assets {
     this.base = assetBase.endsWith('/') ? assetBase : assetBase + '/';
     this.spriteStyle = spriteStyle;
     this.source = spriteSource; this.pending = new Map(); this.mons = new Map(); this.diagnostics = [];
+    this.prefetched = prefetchImages(options);
+    life.signal.addEventListener('abort', this.clearPrefetch, { once: true });
   }
+
+  clearPrefetch = () => {
+    for (const img of this.prefetched.values()) if (!img.complete) img.removeAttribute('src');
+    this.prefetched.clear();
+    this.life.signal.removeEventListener('abort', this.clearPrefetch);
+  };
 
   url(path) { return this.localUrl?.(path) ?? this.base + path; }
 
@@ -96,15 +108,20 @@ export class Assets {
   loadImageOnce(src) {
     return new Promise((resolve, reject) => {
       this.life.check();
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
+      const early = this.prefetched.get(src);
+      this.prefetched.delete(src);
+      if (early?.complete && early.naturalWidth) { resolve(early); return; }
+      // Adopt an in-flight direct request once. A failed prefetch isn't an attempt;
+      // a failure after adoption goes through the loader's usual retry and fallback.
+      const pending = early && !early.complete;
+      const img = pending ? early : new Image();
       const clean = () => { clearTimeout(timer); img.onload = img.onerror = null; this.life.signal.removeEventListener('abort', abort); };
       const abort = () => { clean(); img.src = ''; reject(this.life.signal.reason); };
       const timer = setTimeout(() => { clean(); img.src = ''; reject(new TimeoutError(`Image timeout: ${src}`)); }, 30000);
       img.onload = () => { clean(); resolve(img); };
       img.onerror = () => { clean(); reject(new LoadError(`Image load failed: ${src}`)); };
       this.life.signal.addEventListener('abort', abort, { once: true });
-      img.src = src;
+      if (!pending) { img.crossOrigin = 'anonymous'; img.src = src; }
     });
   }
   image(key, path, atlas = VIEW_ATLASES[langAtlasKey(key, this.lang)] ?? VIEW_ATLASES[key]) {
@@ -163,12 +180,12 @@ export class Assets {
     return { key, frame };
   }
 
-  async preload(mons, biome, double = false) {
+  async preload(mons, biome, double = false, biomeProps) {
     if (!/^[a-z0-9_]+$/.test(biome)) throw new Error(`Invalid biome: ${biome}`);
     await Promise.all([
       ...Object.entries({ ...UI_IMAGES, ...(double ? DOUBLE_IMAGES : {}) }).map(([key, path]) => this.image(key, path)),
 
-      ...biomeImages(biome).map(async ([key, animated]) => this.image(key, `images/arenas/${key}.png`, animated ? atlasJson((await fieldAtlases()).arenas[key]) : null)),
+      ...biomeImages(biome, biomeProps).map(async ([key, animated]) => this.image(key, `images/arenas/${key}.png`, animated ? atlasJson((await fieldAtlases()).arenas[key]) : null)),
       ...mons.flatMap(mon => [...(mon.side ? [isPlayerSide(mon.side)] : [true, false]).map(back => this.mon(mon, back)), this.icon(mon)]),
     ]);
     this.life.check();

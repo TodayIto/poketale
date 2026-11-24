@@ -7,6 +7,7 @@ import { DEFAULT_LANG } from '../../director/lang.js';
 import { screenLog, screenLine, recordingView } from '../../director/text.js';
 import { mark } from './marks.js';
 import { spriteIdOf } from '../../engine/mon.mjs';
+import { biomeKey, chooseBiomeProps, DEFAULT_BIOME } from '../../view/arena.js';
 
 export function previewBattle(sim, spec, options, names = battleNames) {
   const preview = createStoryBattle(sim, spec, options);
@@ -121,10 +122,13 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
       started = true;
       try {
 
-        let preview;
+        let preview, biomeProps;
+        const biome = battleSpec.biome ?? DEFAULT_BIOME;
         await wait(async () => {
 
-          const booting = createView({ ...viewOptions, speed, ...battleMusicOptions(sim, battleSpec, viewOptions), signal, lang }).then(created => {
+          // Choose once so the visible props can still start loading while Phaser boots.
+          biomeProps = chooseBiomeProps(biomeKey(biome) ?? DEFAULT_BIOME);
+          const booting = createView({ ...viewOptions, speed, ...battleMusicOptions(sim, battleSpec, viewOptions), biomeProps, signal, lang }).then(created => {
             // Don't leave a closed view behind even if Phaser creation finishes late.
             if (signal.aborted) { created.destroy(); signal.throwIfAborted(); }
             view = created;
@@ -136,7 +140,7 @@ export function createBattleSession({ sim, spec, options, createView, viewOption
         });
         mark('pb:phaser');
 
-        await wait(() => view.preload({ ...preview, biome: battleSpec.biome ?? 'plains',
+        await wait(() => view.preload({ ...preview, biome, biomeProps,
           enemyTrainer: battleSpec.p2?.trainerSprite, enemyBlack: !!battleSpec.p2?.trainerSilhouette,
           playerTrainer: battleSpec.p1?.trainerSprite, playerBlack: !!battleSpec.p1?.trainerSilhouette,
 
