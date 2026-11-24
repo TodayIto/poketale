@@ -15,7 +15,7 @@ export class BattleStats {
     const { xOffset, paddingX, statOverflow } = player ? { xOffset: 8, paddingX: 4, statOverflow: 1 } : { xOffset: 5, paddingX: 2, statOverflow: 0 };
     this.order = player ? PLAYER_ORDER : ENEMY_ORDER;
     const c = this.container = scene.add.container(0, 0).setAlpha(0);
-    this.box = scene.add.sprite(0, 0, info.mini ? 'pbinfo_player_mini_stats' : player ? 'pbinfo_player_stats' : 'pbinfo_enemy_mini_stats').setOrigin(1, 0.5);
+    this.box = scene.add.image(0, 0, info.mini ? 'pbinfo_player_mini_stats' : player ? 'pbinfo_player_stats' : 'pbinfo_enemy_mini_stats').setOrigin(1, 0.5);
     this.values = scene.add.container();
     c.add([this.box, this.values]);
     this.numbers = [];
@@ -26,8 +26,8 @@ export class BattleStats {
       let y = -this.box.height / 2 + 4;
       if (isHp || stat === 'spe') y += 5;
       else if (player === !!(i % 2)) y += 10;
-      const label = scene.add.sprite(x, y, 'pbinfo_stat', LABEL[stat]).setOrigin(0);
-      const number = scene.add.sprite(x + label.width, y, 'pbinfo_stat_numbers', isHp ? 'empty' : '0').setOrigin(0);
+      const label = scene.add.image(x, y, 'pbinfo_stat', LABEL[stat]).setOrigin(0);
+      const number = scene.add.image(x + label.width, y, 'pbinfo_stat_numbers', isHp ? 'empty' : '0').setOrigin(0);
       if (isHp) { label.setVisible(false); number.setVisible(false); }
       this.values.add([label, number]);
       this.numbers.push(number);

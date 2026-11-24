@@ -139,7 +139,7 @@ export class BattleEffects {
     const scene = this.scene, p = scene.requireMon(side), sub = this.subs[side];
     const [dx, dy] = SUB_OFFSET[teamOf(side)], home = p.placement, player = isPlayerSide(side);
     const doll = (x, y) => {
-      const s = scene.add.sprite(x, y, player ? 'sub_back' : 'sub').setOrigin(0.5, 1);
+      const s = scene.add.image(x, y, player ? 'sub_back' : 'sub').setOrigin(0.5, 1);
       scene.field.add(s); return s;
     };
     const subScale = player ? 0.5 : 1;
@@ -203,7 +203,7 @@ export class BattleEffects {
     const scene = this.scene, p = scene.requireMon(side);
     if (this.subs[side]) return;
     const [dx, dy] = SUB_OFFSET[teamOf(side)], home = p.placement, player = isPlayerSide(side), [x, y] = dollSpot(scene, side);
-    const sprite = scene.add.sprite(x, y, player ? 'sub_back' : 'sub').setOrigin(0.5, 1).setScale(player ? 0.5 : 1);
+    const sprite = scene.add.image(x, y, player ? 'sub_back' : 'sub').setOrigin(0.5, 1).setScale(player ? 0.5 : 1);
     scene.field.add(sprite);
     if (player) scene.field.bringToTop(p.container);
     this.subs[side] = { sprite };
