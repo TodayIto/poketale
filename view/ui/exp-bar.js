@@ -31,14 +31,21 @@ export function startSound(scene, path) {
   return { stop() { stopped = true; if (voice) { voice.pause(); scene.audio.active.delete(voice); } } };
 }
 
-export function setLevelDisplay(info, level, red = false) {
+export function setLevelDisplay(info, level, red = false, reuse = false) {
   const scene = info.scene, digits = String(level);
+  const key = red ? 'numbers_red' : 'numbers';
+  const x = info.levelX - 8 * Math.max(digits.length - 3, 0);
+  if (reuse && info.level.x === x) {
+    const [label, numbers] = info.level.list;
+    if (label?.texture?.key === 'overlay_lv' && numbers?.list?.length === digits.length &&
+        numbers.list.every((glyph, i) => glyph.texture.key === key && glyph.frame.name === digits[i])) return;
+  }
   info.level.removeAll(true);
   info.level.add(scene.add.image(5.5, 0, 'overlay_lv').setOrigin(1, 0.5));
   const numbers = scene.add.container(9.5, -0.5);
-  [...digits].forEach((char, i) => numbers.add(scene.add.image(i * 8, 0, red ? 'numbers_red' : 'numbers', char)));
+  [...digits].forEach((char, i) => numbers.add(scene.add.image(i * 8, 0, key, char)));
   info.level.add(numbers);
-  info.level.setX(info.levelX - 8 * Math.max(digits.length - 3, 0));
+  info.level.setX(x);
 }
 
 export class ExpBar {

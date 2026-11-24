@@ -56,7 +56,7 @@ export class BattleLevel {
 
   async updateLevel(side, { level, hp, maxhp }) {
     const info = this.playerInfo(side), p = this.scene.pokemon[side];
-    setLevelDisplay(info, level, level >= MAX_LEVEL);
+    setLevelDisplay(info, level, level >= MAX_LEVEL, true); // EXP may already have drawn this display.
     if (info.exp) info.exp.levelShown = Math.max(info.exp.levelShown, level);
     info.mon.level = p.mon.level = level;
     await this.scene.hpChange(side, hp, maxhp);
