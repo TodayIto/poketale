@@ -8,6 +8,7 @@ import { tween } from '../lifetime.js';
 import { ExpBar, setLevelDisplay } from './exp-bar.js';
 import { compactStyle } from '../dynamax-layout.js';
 import { compactPicture } from './compact-box.js';
+import { themeOf } from './theme.js';
 const RED_TINT = 0xff8c9c; // the Dynamaxed Pokemon's compact box (setRed)
 
 export class BattleInfo {
@@ -137,11 +138,14 @@ export class BattleInfo {
     const lv = this.level.list[0];
     const room = lv.x + this.level.x - lv.displayWidth * lv.originX - nameText.x; // name start -> "Lv" label
     const tera = this.teraIcon?.visible ? this.teraIcon.displayWidth : 0;
-    this.gender?.destroy();
-    const mark = addGenderMark(scene, 0, nameText.y + 2, mon.gender, 'info', { color: GENDER_COLORS[mon.gender]?.[0] });
+    const theme = themeOf(scene), previous = this.gender;
+    const reuse = previous?.scene && this.genderType === mon.gender && this.genderTheme === theme ? previous : null;
+    if (!reuse) previous?.destroy();
+    const mark = addGenderMark(scene, 0, nameText.y + 2, mon.gender, 'info', { color: GENDER_COLORS[mon.gender]?.[0], reuse });
 
     const k = this.textScale ?? 1;
     if (mark && k !== 1) { const bottom = mark.y + mark.height - nameText.y; mark.setScale(k); mark.y = nameText.y + bottom * k - mark.height * k; }
+    else if (reuse) reuse.setScale(1);
     const markWidth = (mark?.width ?? 0) * k;
     const fit = width => fitName(nameText, mon.name, room - tera - width - (width || tera ? 1 : 0));
 
@@ -150,7 +154,13 @@ export class BattleInfo {
     this.gender = mark && !nameShowsGender(shown) ? mark : null;
     if (mark && !this.gender) mark.destroy();
     const right = nameText.x + nameText.displayWidth;
-    if (this.gender) this.container.add(this.gender.setX(Math.floor(right + 1)));
+    if (this.gender) {
+      mark.setX(Math.floor(right + 1));
+      this.genderType = mon.gender; this.genderTheme = theme;
+      if (!reuse) this.container.add(mark);
+      // The old layout appended a new mark even when Tera had just added its icon.
+      else if (this.container.list.at(-1) !== mark) this.container.bringToTop(mark);
+    }
     this.teraIcon?.setPosition(right + (this.gender ? markWidth : 0) + 1, nameText.y + 2);
   }
 
