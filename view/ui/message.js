@@ -44,7 +44,7 @@ export class BattleMessage {
     scene.input.on('pointerdown', this.pointerHandler);
   }
 
-  async message(text, { wait = false, hold, promptDelay } = {}) {
+  async message(text, { wait = false, hold, promptDelay, onHold } = {}) {
     hold = checkMs('hold', hold); promptDelay = checkMs('promptDelay', promptDelay) ?? 0;
 
     const coded = parseCodes(text), codes = coded.delays.size || coded.sounds.size ? coded : null;
@@ -62,7 +62,11 @@ export class BattleMessage {
         if (hold) await delay(this.scene, hold);
       } else {
         const ms = hold ?? (String(text ?? '').trim() ? DEFAULT_HOLD : 0);
-        if (ms) await delay(this.scene, ms);
+        if (ms) {
+          const holding = delay(this.scene, ms);
+          onHold?.();
+          await holding;
+        }
       }
     }
   }
