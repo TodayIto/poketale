@@ -140,7 +140,7 @@ class Mist {
     this.w = b.right - b.left; this.h = b.bottom - b.top; this.cx = (b.left + b.right) / 2;
     const frames = CLOUD_SHEETS.cloud.frames;
     this.parts = Array.from({ length: HALO.count }, (_, i) => {
-      const sprite = scene.add.sprite(0, 0, 'dmax-cloud:cloud', frames[(i * 3) % frames.length]).setAlpha(0);
+      const sprite = scene.add.image(0, 0, 'dmax-cloud:cloud', frames[(i * 3) % frames.length]).setAlpha(0);
       pokemon.container.addAt(sprite, 0);
       return { sprite, angle: (i / HALO.count) * Math.PI * 2, flip: i % 2 ? -1 : 1, front: null };
     });
@@ -348,14 +348,15 @@ export class DynamaxView {
 
   addAura(pokemon, fade = AURA_FADE) {
     const s = this.scene;
-    if (pokemon.aura || !s.add?.sprite) return;
+    if (pokemon.aura || !s.add?.image) return;
     const { sprite, asset } = pokemon, c = pokemon.container;
 
     const rings = AURA.rings.flatMap(([width, alpha], ring) => [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]]
       .map(([dx, dy]) => ({ dx: dx * width, dy: dy * width, alpha, ring })));
     const level = { value: 0, pulse: 0 };
     const copies = rings.map(r => {
-      const copy = s.add.sprite(0, 0, asset.key, sprite.frame?.name ?? asset.frame).setOrigin(sprite.originX, sprite.originY).setTintFill(DYNAMAX_RED).setAlpha(0);
+      // follow() sets the frame from the actor; the outline has no animation of its own.
+      const copy = s.add.image(0, 0, asset.key, sprite.frame?.name ?? asset.frame).setOrigin(sprite.originX, sprite.originY).setTintFill(DYNAMAX_RED).setAlpha(0);
       c.addAt(copy, c.getIndex(sprite));
       return { copy, ...r };
     });
@@ -401,7 +402,7 @@ export class DynamaxView {
     this.scene.tweens.add({ targets: aura.level, value: 0, duration: fade, onComplete: () => aura.stop() });
   }
   addMist(pokemon) {
-    if (!pokemon.mist && this.scene.add?.sprite && this.scene.textures?.exists?.('dmax-cloud:puff')) pokemon.mist = new Mist(this.scene, pokemon);
+    if (!pokemon.mist && this.scene.add?.image && this.scene.add?.sprite && this.scene.textures?.exists?.('dmax-cloud:puff')) pokemon.mist = new Mist(this.scene, pokemon);
     return pokemon.mist;
   }
   removeMist(pokemon) { pokemon.mist?.destroy(); pokemon.mist = null; }
