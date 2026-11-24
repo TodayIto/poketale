@@ -1,5 +1,5 @@
 import { tween, delay } from './lifetime.js';
-import { fieldPositions } from './positions.js';
+import { fieldPositions, isPlayerSide } from './positions.js';
 import { fieldLayout, mapPoint, compactSpots, HORIZON } from './dynamax-layout.js';
 import { BASE_HOME } from './arena.js';
 import { zTextures } from './ui/z-art.js'; // the Dynamax emblem pictures (button, cursor, G-Max mark)
@@ -403,11 +403,25 @@ export class DynamaxView {
     const base = { speciesId: pokemon.mon.speciesId, spriteId: pokemon.mon.spriteId };
     const clouded = await this.loadClouds();
     const sound = s.audio.play(SOUND.grow);
-    await pokemon.tintIn(DYNAMAX_RED, TIMES.flash, 'Sine.easeIn');
+    const tint = pokemon.tintIn(DYNAMAX_RED, TIMES.flash, 'Sine.easeIn');
     if (gmax && form?.spriteId) {
-
+      // Prepare the confirmed form after the red tint is on screen, without creating its actor.
+      const overlay = pokemon.getTintSprite(), events = s.game.events;
+      let early;
+      const prepare = () => {
+        if (!overlay.visible || overlay.alpha <= 0) return;
+        events.off('postrender', prepare);
+        if (s.life.signal.aborted) return;
+        const next = { ...pokemon.mon, speciesId: form.speciesId, spriteId: form.spriteId };
+        early = s.assets.mon(next, isPlayerSide(side)).catch(() => {});
+      };
+      events.on('postrender', prepare);
+      try { await tint; } finally { events.off('postrender', prepare); }
+      // The normal swap still owns actor creation and retries if the early request failed.
+      if (early) await early;
+      s.life.check();
       pokemon = await this.crossChange(side, form);
-    }
+    } else await tint;
     pokemon.mon.dynamax = { kind: gmax ? 'gmax' : 'dynamax', base };
     await delay(s, TIMES.still);
     this.addAura(pokemon, TIMES.grow * GROW_STEPS[1][0]);
