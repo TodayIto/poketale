@@ -66,10 +66,25 @@ export class AnimationPlayer {
 
   async zCutIn(side, id) {
     if (!this.enabled || !showsCutIn(id)) return;
-    await this.cutIn(entry('moves', id).type, side);
+    const prefetch = id === 'tectonicrage' ? () => this.prefetchZMove(side) : undefined;
+    await this.cutIn(entry('moves', id).type, side, prefetch);
   }
 
-  async cutIn(type, side) {
+  async prefetchZMove(side) {
+    try {
+      const { life, audio } = this.scene;
+      life.check();
+      if (audio.level('sfx') === 0) return;
+      const source = await animation(moveFile('tectonicrage'));
+      life.check();
+      const anim = Array.isArray(source) ? source[isPlayerSide(side) ? 0 : 1] : source;
+      if (anim && audio.level('sfx') > 0) await this.resources(anim, { early: true });
+    } catch {
+      // Best effort: playFile still owns loading, errors and cleanup.
+    }
+  }
+
+  async cutIn(type, side, prefetch) {
     const scene = this.scene;
 
     const S = scene.options?.quality === 'low' ? 3 : 6;
@@ -77,13 +92,25 @@ export class AnimationPlayer {
     const sound = () => scene.audio.play(CUTIN_SOUND, 1, 1).catch(error => {
       if (error?.name !== 'AbortError') this.diagnostics.add(`Sound failed: ${CUTIN_SOUND}: ${error?.message ?? error}`);
     });
+    const wait = ms => {
+      const frame = delay(scene, ms);
+      if (prefetch) {
+        // Let the first cut-in frame show before preparing the confirmed move.
+        const start = prefetch;
+        prefetch = undefined;
+        void frame.then(start, () => {});
+      }
+      return frame;
+    };
     try {
-      await playCutIn(scene, side, type, isPlayerSide(side), { S, sound, delay: ms => delay(scene, ms),
+      await playCutIn(scene, side, type, isPlayerSide(side), { S, sound, delay: wait,
         timeLimit: (promise, ms) => timeLimit(promise, ms, `Cut-in art timeout ${ms / 1000}s`, scene.life.signal) });
     } catch (error) {
       if (scene.life.signal.aborted) throw error; // the battle closed
       this.diagnostics.add(`Skipped cut-in: ${error?.message ?? error}`);
     }
+    // If there was no picture, the concurrent battle message can still overlap loading.
+    void prefetch?.();
   }
 
   prefetchCutIn(side) {
@@ -98,7 +125,7 @@ export class AnimationPlayer {
     if (!/^[a-z0-9-]+$/.test(name)) throw new Error(`Invalid common animation: ${name}`);
     return this.playFile(`common-${name}.json`, side, targetSide);
   }
-  async resources(anim) {
+  async resources(anim, { early = false } = {}) {
     const { assets, audio } = this.scene;
 
     if (this.resourcesReady.get(anim)?.every(key => assets.scene.textures.exists(key))) return;
@@ -129,6 +156,7 @@ export class AnimationPlayer {
         work.push(assets.image(`anim-bg:${name}`, `images/battle_anims/${encodeURIComponent(name)}.png`, null));
       }
     }
+    let earlySoundFailed = false;
     if (anim.frameTimedEvents) {
       let previousSound;
       for (const events of Object.values(anim.frameTimedEvents)) {
@@ -139,7 +167,17 @@ export class AnimationPlayer {
           }
           if (event.eventType === 'AnimTimedSoundEvent' && event.resourceName && event.resourceName !== previousSound) {
             previousSound = event.resourceName;
-            work.push(audio.load(`battle_anims/${event.resourceName}`).ready);
+            const path = `battle_anims/${event.resourceName}`;
+            const cached = early && audio.sounds.has(path);
+            const sound = audio.load(path);
+            work.push(early ? sound.ready.then(media => {
+              if (media.readyState >= 2 && !media.error) return;
+              earlySoundFailed = true;
+              // A terminal failure from an early request should get the usual on-use attempt.
+              if (!cached && !media.onerror && !audio.destroyed && audio.sounds.get(path)?.audio === media) {
+                audio.sounds.delete(path);
+              }
+            }) : sound.ready);
           }
         }
       }
@@ -150,7 +188,7 @@ export class AnimationPlayer {
       work.push(assets.image(`anim-bg:${name}`, `images/battle_anims/${encodeURIComponent(name)}.png`, null));
     }
     await Promise.all(work);
-    this.resourcesReady.set(anim, textures);
+    if (!earlySoundFailed) this.resourcesReady.set(anim, textures);
   }
   async playFile(file, side, targetSide, { variant, frameMs = 50, sound = true, onSubstitute = false } = {}) {
     if (!this.enabled) return; // move animations off
