@@ -124,8 +124,8 @@ export function formGimmickMissing(dex, species, gen = null) {
 
 const engineMade = species => species.isPrimal || species.forme === 'Crowned';
 
-export function heldItemForm(dex, set, { own = true, gen = null, status = '', writtenForms = true } = {}) {
-	if (!writtenForms) return itemNeededForm(dex, set);
+export function heldItemForm(dex, set, { own = true, gen = null, status = '', writtenForms = true, slot = null } = {}) {
+	if (!writtenForms) return itemNeededForm(dex, set, slot);
 	const item = toID(set.item);
 	const holds = form => formItems(dex, form, gen).some(name => toID(name) === item);
 	const written = dex.species.get(set.species);
@@ -136,22 +136,22 @@ export function heldItemForm(dex, set, { own = true, gen = null, status = '', wr
 	if (species.battleOnly) {
 		const needs = requiredItems(species);
 		if (needs.length && !holds(species) && !own) out.item = needs[0];
-		return asForm(out, written, engineMade(species) && (holds(species) || !own) ? battleOnlyBase(dex, species) : species);
+		return asForm(out, written, engineMade(species) && (holds(species) || !own) ? battleOnlyBase(dex, species) : species, slot);
 	}
 	const base = dex.species.get(species.baseSpecies);
 	const forms = [base, ...(base.otherFormes ?? []).map(name => dex.species.get(name))].filter(form => !form.battleOnly);
 	const byMove = forms.find(form => form.requiredMove);
-	if (byMove) return asForm(out, written, (set.moves ?? []).some(move => toID(move) === toID(byMove.requiredMove)) ? byMove : base);
+	if (byMove) return asForm(out, written, (set.moves ?? []).some(move => toID(move) === toID(byMove.requiredMove)) ? byMove : base, slot);
 	const byItem = item && forms.find(holds);
-	if (byItem) return asForm(out, written, byItem);
-	if (!requiredItems(species).length) return asForm(out, written, species);
+	if (byItem) return asForm(out, written, byItem, slot);
+	if (!requiredItems(species).length) return asForm(out, written, species, slot);
 	const made = formItems(dex, species, gen);
-	if (!made.length) return asForm(out, written, base);
+	if (!made.length) return asForm(out, written, base, slot);
 	if (!own) out.item = made[0];
-	return asForm(out, written, species);
+	return asForm(out, written, species, slot);
 }
 
-function itemNeededForm(dex, set) {
+function itemNeededForm(dex, set, slot = null) {
 	const item = toID(set.item);
 	const holds = form => requiredItems(form).some(name => toID(name) === item);
 	const written = dex.species.get(set.species);
@@ -159,13 +159,14 @@ function itemNeededForm(dex, set) {
 	const species = written.battleOnly ? battleOnlyBase(dex, written) : written;
 	const base = dex.species.get(species.baseSpecies);
 	const forms = [base, ...(base.otherFormes ?? []).map(name => dex.species.get(name))].filter(form => !form.battleOnly);
-	return asForm({ ...set }, written, (item && forms.find(holds)) || (requiredItems(species).length ? base : species));
+	return asForm({ ...set }, written, (item && forms.find(holds)) || (requiredItems(species).length ? base : species), slot);
 }
 
-function asForm(out, written, form) {
+// kept: a slot the written form lacks that its ability stands for (a Hidden Ability kept through it, story/state.mjs)
+function asForm(out, written, form, kept = null) {
 	if (form.name !== written.name) {
 		out.species = form.name;
-		const slot = Object.keys(written.abilities).find(key => toID(written.abilities[key]) === toID(out.ability));
+		const slot = kept && !written.abilities[kept] && form.abilities[kept] ? kept : Object.keys(written.abilities).find(key => toID(written.abilities[key]) === toID(out.ability));
 		if (slot) out.ability = form.abilities[slot] ?? form.abilities[0];
 	}
 	if (form.requiredTeraType) out.teraType = form.requiredTeraType;

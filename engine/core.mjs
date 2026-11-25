@@ -44,7 +44,7 @@ export function createStoryBattle(sim, given, options = {}) {
 		context.sets[key] = seat.team.map(m => complete(m, key));
 
 		const team = context.sets[key].map((set, i) => heldItemForm(sim.Dex, gmax(withDynamaxLevel(set, key === 'p1')),
-			{ own: key === 'p1', status: seat.team[i].status, gen: generationOf(ruleGen(given)), writtenForms: !!given.writtenForms }));
+			{ own: key === 'p1', status: seat.team[i].status, gen: generationOf(ruleGen(given)), writtenForms: !!given.writtenForms, slot: seat.team[i].abilitySlot ?? null }));
 
 		const era = team.map(set => eraSet(gen, set));
 		if (era.some((set, i) => set !== team[i])) context.whole[key] = team;

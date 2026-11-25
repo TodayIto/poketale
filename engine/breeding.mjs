@@ -119,7 +119,10 @@ function inheritNature(a, b, rng) {
 
 function inheritAbility(dex, line, species, rng) {
 	const from = dex.species.get(line.set.species);
-	const slot = Object.keys(from.abilities).find(k => toID(from.abilities[k]) === toID(line.set.ability)) ?? '0';
+	// A parent keeping an ability slot (the Hidden Ability's, the second or S) through a species without it
+	// (story/state.mjs abilitySlot)
+	const kept = line.abilitySlot && !from.abilities[line.abilitySlot] ? line.abilitySlot : null;
+	const slot = kept ?? Object.keys(from.abilities).find(k => toID(from.abilities[k]) === toID(line.set.ability)) ?? '0';
 	const normal = ['0', '1'].filter(k => species.abilities[k]);
 	if (slot === 'H' && species.abilities.H && rng.random(100) < HIDDEN_ABILITY_PERCENT) return species.abilities.H;
 	if (slot === 'H') return species.abilities[normal[rng.random(normal.length)]];

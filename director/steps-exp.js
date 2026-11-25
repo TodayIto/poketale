@@ -11,6 +11,7 @@ import { evolutionChoices, evolutionFlips } from '../engine/evolution.mjs';
 import { levelUpAt, evolutionLevelMoves } from '../engine/levelup.mjs';
 import { moveCategory } from '../engine/later-moves.mjs';
 import { say as screenSay } from '../story/screen-text.mjs'; // the evolution screen's own question and choices
+import { moveDescription, championsBattle } from './move-text.js';
 
 /** Lines this module handles (steps.js dispatch table) */
 export const EXP_KINDS = ['-story-exp', '-story-levelup', '-story-learnmove', '-story-movequeue', '-story-replacemove', '-story-skipmove'];
@@ -49,7 +50,7 @@ export function learnMoveOption(battle, names, id, pp, maxpp, lang = DEFAULT_LAN
 
     power: move.category !== 'Status' && move.basePower > 0 ? move.basePower : null,
     accuracy: move.accuracy === true ? null : move.accuracy,
-    description: phrases[`move.${move.id}`] ?? '',
+    description: moveDescription(phrases, move.id, battle.gen, championsBattle(battle)),
   };
 }
 

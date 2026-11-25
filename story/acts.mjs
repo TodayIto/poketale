@@ -1,6 +1,8 @@
 import { findBlocks, findTags, parseChange, hashKey, stripForPrompt, messageId, hasBlocks, readsBlockEdges } from './blocks.mjs';
 import { readTable, writeTable, computeState, isReflected, heldChanges, changeAt, applyOps, findMon, hpPercentOf, movePp, toID, hatchedParty, storyTick, isEgg, stateFormat, liveActions,
-  labSet, rngFor } from './state.mjs';
+  labSet, rngFor, storyMention } from './state.mjs';
+import { afterMessage } from './amie.mjs';
+import { refillEnergy } from './training.mjs';
 import { revivalOf, labOf } from './fossil.mjs';
 import { readStored } from './stored.mjs';
 import { rulesAt } from './setting-changes.mjs';
@@ -540,7 +542,7 @@ export function changesIn(text, chat, ctx, lang) {
   const blocks = findBlocks(text, index >= 0 ? readAt(index) : undefined).filter(b => b.kind === 'change');
   if (!blocks.length) return null;
   let state = null, table = null, status = null;
-  if (index >= 0 && ctx) ({ state, table, status } = computeState(chat, ctx, { uptoIndex: index - 1 }));
+  if (index >= 0 && ctx) ({ state, table, status } = computeState(chat, ctx, { uptoIndex: index - 1, open: true }));
 
   const own = index >= 0 ? null : statusIn({ role: 'char', data: text });
   const ctxAt = foldCtxAt(chat, ctx, { next: own });
@@ -552,6 +554,8 @@ export function changesIn(text, chat, ctx, lang) {
 
   const place = index >= 0 ? index : messages.length, here = ctxAt(place);
   const machineReading = withMachineStandard(reading ?? readAt(place), region, discWorld(worldAt(chat)(place), here.formGen, here.battleRule));
+  // A bot message's own time passes before its blocks, as in the fold (mentions, hatching, energy)
+  if (state && messages[index]?.role === 'char') state = refillEnergy(afterMessage(storyTick(storyMention(state, text, at), messageId(messages[index], index), at).state));
   const chatId = index >= 0 ? messageId(messages[index], index) : null;
   const held = index >= 0 ? heldChanges(chat, table ?? readTable(chat)) : new Set();
   const events = [], errors = [];
@@ -574,10 +578,17 @@ export function changesIn(text, chat, ctx, lang) {
   return { events, errors };
 }
 
+// The disc standard a reply after the last message reads machine numbers with (changesIn), for the import move picker
+export function machineStandardNow(chat, ctx) {
+  const messages = chat?.message ?? [];
+  const here = foldCtxAt(chat, ctx)(messages.length);
+  return withMachineStandard(rulesAt(chat)(messages.length), latestStatus(chat)?.region ?? null, discWorld(worldAt(chat)(messages.length), here.formGen, here.battleRule)).machineStd;
+}
+
 export function passingIn(chat, ctx, index) {
   const message = chat?.message?.[index];
   if (!ctx || message?.role !== 'char') return [];
-  const { state } = computeState(chat, ctx, { uptoIndex: index - 1 });
+  const { state } = computeState(chat, ctx, { uptoIndex: index - 1, open: true });
   return storyTick(state, messageId(message, index), foldCtxAt(chat, ctx)(index)).events;
 }
 

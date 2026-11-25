@@ -608,7 +608,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
           const done = [];
           try {
             await screens.session(async open => {
-              for (const { step, mon } of steps) done.push({ step, mon, result: await open.evolution(mon, step.into, species => evolutionMoves(ctx, mon, species)) });
+              for (const { step, mon } of steps) done.push({ step, mon, result: await open.evolution(mon, step.into, species => evolutionMoves(ctx, mon, species), ctx?.formGen ?? null) });
             });
           } finally {
             const action = evolveAction(effect, done);
@@ -622,7 +622,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
           const mon = findMon(effect.uid);
           if (!mon) return;
           const party = now.state.party;
-          const result = await screens.session(open => open.learnMove(mon, effect.move, party));
+          const result = await screens.session(open => open.learnMove(mon, effect.move, party, now?.ctx?.formGen ?? null));
           const action = teachAction(mon, effect.item, effect.move, result, effect.disc);
           if (action) await queue(action, undefined, target, lang);
           else await refresh({ force: true });
@@ -632,10 +632,10 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
 
           const mon = findMon(effect.uid);
           if (!mon) return;
-          const party = now.state.party, moves = rememberableMoves(now.ctx, mon, now.state);
+          const party = now.state.party, moves = rememberableMoves(now.ctx, mon, now.state), battleGen = now?.ctx?.formGen ?? null;
           const result = await screens.session(async open => {
-            const move = await open.rememberMove(mon, moves, party);
-            return move ? { move, ...await open.learnMove(mon, move, party) } : null;
+            const move = await open.rememberMove(mon, moves, party, battleGen);
+            return move ? { move, ...await open.learnMove(mon, move, party, battleGen) } : null;
           });
           const action = rememberAction(mon, result);
           if (action) await queue(action, undefined, target, lang);
@@ -656,7 +656,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
               const lock = now.debug ? locked => debugLock(effect.uid, locked, target) : null; // debug mode: the friendship lock after the screen's numbers
               const pet = await open.amie(mon, { debug: now.debug, state: now.state, party: now.state.party, awake, trainWhy: trainBlock(mon, ctx), lock, scene });
               const into = pet.spin ? spinInto(ctx, mon, pet.spin) : null;
-              const result = into ? { ...pet, evolution: { into, ...await open.evolution(mon, into, species => evolutionMoves(ctx, mon, species)) } } : pet;
+              const result = into ? { ...pet, evolution: { into, ...await open.evolution(mon, into, species => evolutionMoves(ctx, mon, species), ctx?.formGen ?? null) } } : pet;
 
               const record = recordAction(result);
               if (record) await queue(record, undefined, target, lang);
@@ -784,7 +784,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
     let evolution = null;
     try {
       await screens.session(async open => {
-        evolution = { into: plan.evolve, ...await open.evolution(mon, plan.evolve, species => evolutionMoves(ctx, mon, species)) };
+        evolution = { into: plan.evolve, ...await open.evolution(mon, plan.evolve, species => evolutionMoves(ctx, mon, species), ctx?.formGen ?? null) };
       });
     } finally {
       const action = evolution && levelUpAction(mon, { evolution });
@@ -808,7 +808,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
           if (!done.hatched) return;
         }
         for (const move of plan.moves) {
-          const result = await open.learnMove(mon, move, party.map(m => (m.uid === mon.uid ? mon : m)));
+          const result = await open.learnMove(mon, move, party.map(m => (m.uid === mon.uid ? mon : m)), ctx?.formGen ?? null);
           done.moves.push({ move, result });
           if (result.learned) {
             mon = clone(mon);
@@ -816,7 +816,7 @@ export async function startPanel({ doc, read, queueAction, screens, changes = ()
           }
         }
         if (plan.evolve) {
-          const result = await open.evolution(mon, plan.evolve, species => evolutionMoves(ctx, mon, species));
+          const result = await open.evolution(mon, plan.evolve, species => evolutionMoves(ctx, mon, species), ctx?.formGen ?? null);
           done.evolution = { into: plan.evolve, ...result };
         }
       });

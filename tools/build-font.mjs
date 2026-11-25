@@ -22,7 +22,7 @@ const NAME_JSON = [
 ];
 
 const TEXT_JSON = [
-	...LANGS.flatMap(lang => ['text', 'text-bag', 'text-effects', 'text-exp', 'text-summary'].map(name => `director/${name}-${lang}.json`)),
+	...LANGS.flatMap(lang => ['text', 'text-bag', 'text-effects', 'text-exp', 'text-move-gens', 'text-summary', 'text-ability-gens'].map(name => `director/${name}-${lang}.json`)),
 	...LANGS.map(lang => `view/text-${lang}.json`), // the battle view frame's phrases (view/words.js)
 	...NAME_JSON,
 ];
@@ -49,8 +49,10 @@ function collect(json, code, extra = '') {
 }
 /** Characters the battle font subset must contain (code points, ascending) */
 export const fontText = () => collect(TEXT_JSON, textCode(), phaserTestString());
+// The panel shows move and ability descriptions too (story/panel-screens.mjs)
+const PANEL_TEXT_JSON = LANGS.flatMap(lang => ['text-exp', 'text-move-gens', 'text-summary', 'text-ability-gens'].map(name => `director/${name}-${lang}.json`));
 /** Characters the Galmuri11 subset must contain (code points, ascending) */
-export const galmuriText = () => collect(NAME_JSON, galmuriCode());
+export const galmuriText = () => collect([...NAME_JSON, ...PANEL_TEXT_JSON], galmuriCode());
 
 function phaserTestString() {
 	const source = readFileSync('node_modules/phaser/src/gameobjects/text/TextStyle.js', 'utf8');

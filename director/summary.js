@@ -1,5 +1,8 @@
 import ko from './text-summary-ko.json' with { type: 'json' };
 import en from './text-summary-en.json' with { type: 'json' };
+import koGens from './text-ability-gens-ko.json' with { type: 'json' };
+import enGens from './text-ability-gens-en.json' with { type: 'json' };
+import { rangedText, championsBattle } from './move-text.js';
 import { learnMoveOption } from './steps-exp.js';
 import { ownText } from './text.js';
 import { checkLang, DEFAULT_LANG } from './lang.js';
@@ -8,6 +11,7 @@ import { dvIvs } from '../engine/rules.mjs';
 import { say as screenSay } from '../story/screen-text.mjs';
 
 const PHRASES = { ko, en };
+const GENS = { ko: koGens, en: enGens };
 import { expForLevel } from '../engine/exp.mjs';
 import { MAX_LEVEL, NON_HP_STATS, hasOneSpecial } from '../engine/mon.mjs';
 
@@ -22,7 +26,7 @@ export function summaryView(battle, names, entry, pokemon, options = {}, lang = 
     ball: entry.pokeball || pokemon.pokeball || 'pokeball',
     trainer: pokemon.m?.ot || pokemon.side.name,
 
-    ability: hasOneSpecial(battle.gen) ? null : { name: names.ability(ability.id), description: phrases[`ability.${ability.id}`] ?? '' },
+    ability: hasOneSpecial(battle.gen) ? null : { name: names.ability(ability.id), description: rangedText(GENS[checkLang(lang)][ability.id], battle.gen, championsBattle(battle)) ?? phrases[`ability.${ability.id}`] ?? '' },
 
     item: pokemon.item ? names.item(pokemon.item) : pokemon.m?.heldCustom ?? null,
 

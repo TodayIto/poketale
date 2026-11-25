@@ -48,17 +48,17 @@ function forgeMessages({ scene, party, past = [] }, kind) {
   return [{ role: 'system', content: system }, { role: 'user', content: `## Recent Scene (oldest first)\n\n${sceneLines(scene)}\n\n${FORGE_ASK[kind]}` }];
 }
 
-function forgeBasis(chat, at, { state, sim, naming = {} }) {
+function forgeBasis(chat, at, { state, sim, naming = {}, abilities = true }) {
   const scene = sceneOf(chat, at);
-  return { scene, party: varTexts(state, { sim, ...naming }).party, past: pastIn(trainerLore(state, naming), scene.map(s => s.text)), reading: rulesAt(chat)(at) };
+  return { scene, party: varTexts(state, { sim, ...naming, abilities }).party, past: pastIn(trainerLore(state, naming), scene.map(s => s.text)), reading: rulesAt(chat)(at) };
 }
 
-export function forgeRequest({ chat, key, quiet, state, sim, naming, kind }) {
+export function forgeRequest({ chat, key, quiet, state, sim, naming, abilities, kind }) {
   if (!quiet) return { why: 'replying' };
   const at = forgeAt(chat);
   const message = chat?.message?.[at];
   if (!message || forgeKey(messageId(message, at)) !== key) return { why: 'sceneMoved' };
-  const basis = forgeBasis(chat, at, { state, sim, naming });
+  const basis = forgeBasis(chat, at, { state, sim, naming, abilities });
   return { id: messageId(message, at), basis, ...(Object.hasOwn(FORGE_ASK, kind ?? '') ? { messages: forgeMessages(basis, kind) } : {}) };
 }
 

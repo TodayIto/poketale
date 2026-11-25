@@ -25,7 +25,8 @@ export const RULES = Object.freeze({ startFull: FROM_NOW, officialKo: FROM_NOW, 
   boxHeal: FROM_NOW, foeLooks: FROM_NOW, trainerColors: FROM_NOW, mobStyles: FROM_NOW, duskLycanroc: FROM_NOW, blockEdges: FROM_NOW,
   levelSpellings: FROM_NOW, friendshipSv: FROM_NOW, battleRegion: FROM_NOW, wildHiddenAbility: FROM_NOW, fishChain: FROM_NOW, formNames009: FROM_NOW, partnerLock: FROM_NOW, everstoneWaiting: FROM_NOW,
   keyStoneMega: FROM_NOW, zCrystalShare: FROM_NOW, zMoveWord: FROM_NOW, ultraBurstWord: FROM_NOW, namedTitles: FROM_NOW, namedJapanese: FROM_NOW, gmaxFactor: FROM_NOW, dynamaxWord: FROM_NOW, ...Object.fromEntries(Object.keys(ITEM_NAMES_SINCE).map(name => [name, FROM_NOW])),
-  regionMachines: FROM_NOW, genEvolve010: FROM_NOW, genStats010: FROM_NOW, metGen010: FROM_NOW, catchTera010: FROM_NOW, discTeach010: FROM_NOW, discStoryItem010: FROM_NOW, shopTown010: FROM_NOW, hatchOnScreen010: FROM_NOW });
+  regionMachines: FROM_NOW, genEvolve010: FROM_NOW, genStats010: FROM_NOW, metGen010: FROM_NOW, catchTera010: FROM_NOW, discTeach010: FROM_NOW, discStoryItem010: FROM_NOW, shopTown010: FROM_NOW, hatchOnScreen010: FROM_NOW,
+  eraAbilities: FROM_NOW, editedImports: FROM_NOW });
 const RULE_NAMES = Object.freeze(Object.keys(RULES));
 
 export const ruleValues = ctx => Object.fromEntries(RULE_NAMES.map(name => [name, ctx?.[name] ?? RULES[name].now]));
@@ -85,7 +86,10 @@ export function recordSettingChange(chat, settings, { now = Date.now() } = {}) {
 
   const marks = { ...rules, ...Object.fromEntries(missing.map(name => [name, { time: now, at: messages.length ? anchorAtEnd(messages) : null }])) };
   chat.scriptstate ??= {};
-  chat.scriptstate[SETTING_CHANGES_VAR] = JSON.stringify({ v: 1, changes: [...changes, ...(messages.length && Object.keys(before).length ? [changeAtEnd(messages, before, now)] : [])],
+  // In an empty chat too, once it has a record (an import made there earlier reads the settings of its time); its first
+  // record holds the settings it began with, no change from the defaults (as in 0.1.0)
+  const change = Object.keys(before).length && (messages.length || status === 'ok');
+  chat.scriptstate[SETTING_CHANGES_VAR] = JSON.stringify({ v: 1, changes: [...changes, ...(change ? [changeAtEnd(messages, before, now)] : [])],
     ...(Object.keys(stored).length ? { values: stored } : {}), ...placeRules(marks, value) });
   return true;
 }
@@ -110,22 +114,47 @@ function rulesIn(messages, rules) {
 export function settingsAt(chat, ctx) {
   const messages = chat?.message ?? [];
   const now = foldSettings(ctx);
-  const { changes: kept, values, rules } = readSettingChanges(chat);
+  const { status, changes: kept, values, rules } = readSettingChanges(chat);
 
-  const behind = values && messages.length ? behindOf(values, ctx) : {};
-  const changes = Object.keys(behind).length ? [...kept, changeAtEnd(messages, behind, 0)] : kept;
+  // A change found only by the settings being ahead of the record counts after every import at the last message
+  const behind = values && (messages.length || status === 'ok') ? behindOf(values, ctx) : {};
+  const changes = Object.keys(behind).length ? [...kept, changeAtEnd(messages, behind, Infinity)] : kept;
   const ruleAt = rulesIn(messages, rules);
   const valueAt = changedValuesAt(messages, changes, now);
-  return (i, time) => ({ ...valueAt(i), ...ruleAt(i, time) });
+  return (i, time) => { const marks = ruleAt(i, time); return { ...valueAt(i, time, !!marks.editedImports), ...marks }; };
+}
+
+// A change made in an empty chat (no anchor, or one taken with no message) is placed before every message; any other
+// keeps importPlace's: a surviving earlier anchor or its index (at most the last message) when its message is gone, and
+// -1 once no message is left (then, as in 0.1.0, not yet made before the first message)
+export const changePlace = (messages, change) => (change.at === null || (change.at?.index === -1 && change.at.chatId == null) ? -Infinity : importPlace(messages, change));
+
+// The places of a record's changes, each no later than the next one placed at a message. A change made in an emptied
+// chat (-Infinity) is left out of that ordering: 0.1.0's settings, world and options records have no such change, so
+// the earlier ones keep 0.1.0's places, -1 while the chat stays empty and their own once messages are written again
+export function orderedPlaces(messages, changes) {
+  const places = changes.map(change => changePlace(messages, change));
+  let later = Infinity;
+  for (let k = places.length - 1; k >= 0; k--) if (places[k] > -Infinity) later = places[k] = Math.min(places[k], later);
+  return places;
+}
+
+// Whether a change placed at message `place` (at the end of it) has been made by message i: a change counts from the
+// message after its own; under the rule editedImports (timed), also for an import at its own message made after it.
+// One made in an empty chat (-Infinity) counts for every message, and for an import before the first message only if
+// made before it.
+export function madeBy(place, changeTime, i, time, timed) {
+  const timing = timed && typeof time === 'number' && typeof changeTime === 'number';
+  if (place === -Infinity) return timing && i === -1 ? time >= changeTime : true;
+  return timing && i === place ? time >= changeTime : i > place;
 }
 
 export function changedValuesAt(messages, changes, now) {
   const names = Object.keys(now);
   if (!changes.length) return () => ({ ...now });
-  const places = changes.map(change => importPlace(messages, change));
-  for (let k = places.length - 2; k >= 0; k--) places[k] = Math.min(places[k], places[k + 1]);
-  return i => Object.fromEntries(names.map(name => {
-    const k = changes.findIndex((change, n) => places[n] >= i && Object.hasOwn(change.before, name));
+  const places = orderedPlaces(messages, changes);
+  return (i, time, timed = false) => Object.fromEntries(names.map(name => {
+    const k = changes.findIndex((change, n) => !madeBy(places[n], change.time, i, time, timed) && Object.hasOwn(change.before, name));
     return [name, k < 0 ? now[name] : changes[k].before[name]];
   }));
 }

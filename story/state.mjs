@@ -21,7 +21,7 @@ import { opponentPicture, foePartnerPicture } from './trainer-look.mjs';
 import { readStored, isRecord } from './stored.mjs';
 import { ruleError, ruleNote } from './failure.mjs';
 import { surveyBattles, dropOocs } from './chat.mjs';
-import { statusIn, battleScene, battleRegion, COMPAT_LINE_RE, FIELD_WEATHERS, compatPartnerStart, COMPAT_PARTNER_VARS } from './compat.mjs';
+import { statusIn, latestStatus, battleScene, battleRegion, COMPAT_LINE_RE, FIELD_WEATHERS, compatPartnerStart, COMPAT_PARTNER_VARS } from './compat.mjs';
 import { badgeCount, earnedBadges, readLeague, leaguePlaces, leagueAt, leagueDate, keepRecords, LEAGUE_VAR, UNOVA_ERA_VAR } from './badges.mjs';
 import { changeFriendship, moveFriendship, friendshipStep, baseFriendship, friendshipLocked, FRIEND_BALL_FRIENDSHIP, FRIENDSHIP_STEPS, FRIENDSHIP_STEPS_SV, FOND_FRIENDSHIP } from '../engine/friendship.mjs';
 import { entry as nameEntry, koSpellings } from '../names/index.js';
@@ -30,7 +30,7 @@ import { boxOf } from './diary.mjs';
 import { QUEUE_VAR, runAction } from './acts.mjs';
 import { IMPORT_VAR, readImports, applyImport, importPlace, inForce } from './import.mjs';
 import { SETTING_CHANGES_VAR, foldValues, ruleValues, rulesAt } from './setting-changes.mjs';
-import { BATTLE_RULE_VAR, foldCtxAt, genOption, genRuleOn, evolveGenOf, oneSpecialAt } from './battle-rule.mjs';
+import { BATTLE_RULE_VAR, foldCtxAt, genOption, genRuleOn, evolveGenOf, oneSpecialAt, abilityEraOf } from './battle-rule.mjs';
 import { learnGenOf, metGenAt } from './learning.mjs';
 import { levelUpAt, evolutionLevelMoves } from '../engine/levelup.mjs';
 import { withMachineStandard, machineUsedUp, isMachineId } from './machine-standards.mjs';
@@ -178,7 +178,7 @@ export function liveActions(chat, { uptoIndex, survey } = {}) {
   return live;
 }
 
-export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
+export function computeState(chat, ctx, { uptoIndex, survey: given, open = false } = {}) {
   const table = readTable(chat);
   const messages = chat?.message ?? [];
   const last = Math.min(uptoIndex ?? messages.length - 1, messages.length - 1);
@@ -200,7 +200,56 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
 
   const ctxAt = foldCtxAt(chat, ctx);
 
-  const settingsOf = i => { const at = ctxAt(i); return { ...foldValues(at), formGen: at.formGen ?? null, ...(at.learnFrom ? { learnFrom: at.learnFrom } : {}) }; };
+  const settingsOf = (i, time) => { const at = ctxAt(i, time); return { ...foldValues(at), formGen: at.formGen ?? null, ...(at.learnFrom ? { learnFrom: at.learnFrom } : {}), era: String(abilityEraOf(at)) }; };
+  // The message where a battle the story ends at message i would have its result saved, at the latest moment possible:
+  // i itself (before the next message) if its block is in that message, else i - 1 (below)
+  const savedAtFor = (i, blockKey) => (survey.battles.get(blockKey)?.index === i ? i : i - 1);
+  // That latest moment of message j (its ctx, numbers rule and ability era), matching the state pendingState reaches
+  // through this function's tail before running queued actions
+  const toLatest = j => { const at = ctxAt(j, Infinity); return { ctx: at, rule: settingsOf(j, Infinity).rule, to: abilityEraOf(at), give: !!ruleValues(at).eraAbilities }; };
+  // The ctx a battle ran with: its record's generation and Battle Rules over a ctx of the time its result is saved
+  const battleOf = (engine, ctxThen) => ({ ...(({ formGen: _now, ...rest }) => rest)(ctxThen),
+    ...(Number.isInteger(engine.formGen) ? { formGen: engine.formGen } : {}), ...(engine.battleRule != null ? { battleRule: engine.battleRule } : {}) });
+  // Runs a story-ended battle's queued actions before its record is applied, as a saved result's tag folds its snapshot.
+  // The fold brought to end.latest runs the record's queued actions (pendingState), crosses into the battle's ability era
+  // (end.to), and is merged by keepOrigins onto the fold crossed into that era (`before`), with the abilityRecord of the
+  // fold at end.latest before the actions, crossed into that era, so Pokémon keep their own marks and what the actions
+  // did not change. The
+  // result then takes the battle's numbers rule (end.format), as in resultChange, until the message moves it on (an
+  // unlisted format keeps end.latest's rule). An action that fails here because a target Pokémon is not in the fold yet
+  // waits for the battle's tag, and the later actions of the record wait in order behind it, since they were queued after
+  // that Pokémon joined (`done` lists the earlier actions, which ran or failed as in that saved result). When no action
+  // runs (none to run, or the first one waits), the fold just crosses into the battle's era
+  const virtualTag = (start, end, actions, status) => {
+    const before = crossTo(ctx?.sim, start, end.to, end.give);
+    const tail = crossTo(ctx?.sim, inRule(ctx?.sim, start, end.latest.rule), end.latest.to, end.latest.give);
+    const done = [];
+    let acted = tail;
+    for (const action of actions) {
+      const run = runAction(acted, action, { ...end.latest.ctx, status });
+      if (run.errors?.length && !hasTargets(acted, action)) break;
+      done.push(action);
+      acted = run.state;
+    }
+    if (!done.length) return { state: before, done };
+    const snap = clone(crossTo(ctx?.sim, acted, end.to, end.give));
+    const state = keepOrigins(before, snap, { ...end.met, status },
+      { baseline: abilityRecord(crossTo(ctx?.sim, tail, end.to, end.give)), dex: ctx?.sim?.Dex, carry: true, slots: end.give });
+    return { state: inRule(ctx?.sim, state, numbersOf(end.format ?? DEFAULT_FORMAT, state)), done };
+  };
+  // The settings a battle's tag folds with, from the time its result was saved (below). For a battle the story ends whose
+  // record has the generation it ran with, these are the Battle Rules, settings and world of the latest moment its result
+  // could be saved (as for a saved result's time), plus this message's world (read when the record is applied as in
+  // 0.1.0, without editedImports at that moment)
+  const tagKey = i => findTags(parts[i]).filter(t => used(t.key)).map(t => {
+    const meta = table.meta?.[t.key];
+    if (typeof meta?.time === 'number') { const at = ctxAt(i, meta.time); return [t.key, at.battleRule, worldKey(discWorld(at.world, at.formGen, at.battleRule)), worldKey(at.world ?? {}), ...Object.values(settingsOf(i, meta.time))].join(':'); }
+    const engine = meta?.storyEnd?.engine;
+    if (!engine || !Object.hasOwn(engine, 'formGen')) return null;
+    const j = savedAtFor(i, meta.blockKey), then = ctxAt(j, Infinity);
+    return [t.key, worldKey(ctxAt(i).world ?? {}), then.battleRule, worldKey(discWorld(then.world, then.formGen, then.battleRule)), worldKey(then.world ?? {}),
+      ...Object.values(settingsOf(j, Infinity))].join(':');
+  }).filter(Boolean).join(',');
 
   const worldOf = worldAt(chat);
 
@@ -215,16 +264,30 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
 
   const partnerKey = i => (partner ? `${partner}:${!firstBattle || i < firstBattle.index ? 'b' : i === firstBattle.index ? firstBattle.start : 'a'}` : '');
 
-  const applyImportsAt = (i, start, at, reflected, seen) => importsAt(i).reduce((cur, imp) => {
-    const here = { ...at, ...ruleValues(ctxAt(i, imp.time)) };
-    let next = cur;
+  // Imports a battle's snapshot holds already, folded at its tag (below) and not again with their message's others
+  const absorbed = new Set();
+  const listedImports = key => (Array.isArray(table.meta?.[key]?.imports) ? table.meta[key].imports : []);
+  // (before: called on the fold as each import begins, after its crossing and in its ctx, like its held actions; used
+  // by computeState to run the waiting actions that come before the import)
+  const applyImportsAt = (i, start, at, reflected, seen, list = importsAt(i).filter(imp => !absorbed.has(imp.id)), crossings = null, before = null) => list.reduce((cur, imp) => {
+    const timed = ctxAt(i, imp.time);
+    // Under the rule editedImports an import made after a change of a setting at the same message joins under the new one
+    const fixed = !!ruleValues(timed).editedImports;
+    const here = fixed ? { ...timed, ...(at.status !== undefined ? { status: at.status } : {}) } : { ...at, ...ruleValues(timed) };
+    if (fixed) crossings?.push({ to: abilityEraOf(here), give: !!ruleValues(here).eraAbilities });
+    let next = fixed ? crossEra(ctx?.sim, inRule(ctx?.sim, cur, here.rule), here) : cur;
+    if (before) next = before(next, imp, here);
     for (const action of heldActions(imp)) {
       if (!isReflected(action, reflected, seen)) next = runAction(next, action, here).state;
       reflected.add(action.id);
     }
     return partnerLock(next, applyImport(next, imp, here), partnerAt(i, Infinity, imp.time), here, importOrder(imp));
   }, start);
-  const importKeysAt = i => importsAt(i).map(imp => `${hashKey(JSON.stringify(imp))}:${Object.values(ruleValues(ctxAt(i, imp.time))).join(':')}`);
+  const importKeysAt = i => importsAt(i).map(imp => {
+    const timed = ctxAt(i, imp.time), rules = ruleValues(timed);
+    const more = rules.editedImports ? [...Object.values(foldValues(timed)), timed.battleRule, timed.formGen ?? '', timed.learnFrom ?? '', worldKey(discWorld(timed.world, timed.formGen, timed.battleRule)), String(abilityEraOf(timed))] : [];
+    return `${hashKey(JSON.stringify(imp))}:${[...Object.values(rules), ...more].join(':')}`;
+  });
   const importKey = i => [...(i === 0 ? importKeysAt(-1) : []), ...importKeysAt(i)].join(',');
 
   const league = readLeague(chat);
@@ -258,7 +321,7 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
     return { index: i, date: status?.date ?? null, party: hatchedParty(now).map(mon => ({ species: mon.set.species, ...(mon.set.name ? { name: mon.set.name } : {}) })),
       opponents: [spec.name, spec.foePartner?.name].filter(Boolean) };
   };
-  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}\u0001${partnerKey(i)}\u0001${worldKey(discOf(i))}`;
+  const keyOf = i => `${messageId(messages[i], i)}\u0001${messages[i]?.role}\u0001${parts[i]}\u0001${findTags(parts[i]).map(t => used(t.key)).filter(Boolean).join(',')}\u0001${heldIn(i)}\u0001${importKey(i)}\u0001${Object.values(settingsOf(i)).join('\u0001')}\u0001${leagueKey(i)}\u0001${partnerKey(i)}\u0001${worldKey(discOf(i))}\u0001${tagKey(i)}`;
   let from = 0;
   while (from <= last && from < folds.length && folds[from].key === keyOf(from)) from++;
   if (from <= last) folds.length = from; // later ones are stale
@@ -274,13 +337,79 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
   const reflected = new Set([...seen].flatMap(key => reflectedBy(table, key)));
   const importedUpto = n => [...imports].filter(([at]) => at <= n).flatMap(([, list]) => list.flatMap(imp => heldActions(imp).map(action => action.id)));
   if (from) for (const id of importedUpto(from - 1)) reflected.add(id);
-  let state = from ? folds[from - 1].after : applyImportsAt(-1, inRule(ctx?.sim, emptyState(), settingsOf(-1).rule), ctxAt(-1), reflected, seen);
+  let state = from ? folds[from - 1].after : applyImportsAt(-1, crossEra(ctx?.sim, inRule(ctx?.sim, emptyState(), settingsOf(-1).rule), ctxAt(-1)), ctxAt(-1), reflected, seen);
   if (!from) state = book(state, -1);
+
+  const tagsAt = i => findTags(parts[i]).filter(t => used(t.key)).map(t => {
+    const { storyEnd, blockKey } = table.meta[t.key] ?? {}, ended = storyEnd && survey.battles.get(blockKey)?.ended;
+    return { ...t, type: 'tag', start: ended?.index === i ? ended.start : t.start, written: t.start };
+  });
+  // A battle from an earlier block that the story ends at message i counts as having its result saved just before message
+  // i, at the latest moment it could be (savedAtFor). In the order the story ends these battles, virtualTag crosses the fold into
+  // each battle's ability era (for one begun while Auto only guessed, the era of that moment; in the loop below, its catch
+  // joins in that crossed era), and the first of them runs the queued actions its record holds (and those of an acts tag
+  // at this message). These results count as saved before anything at message i, so an action counts as reflected only by
+  // tags and imports before message i; once run here (`early`, by id), every tag at message i that holds
+  // it skips it. An action on a Pokémon this message brings (from a change block, an import or a battle) waits
+  // for its record's tag, along with the later actions of that record. Every action of a later story end's record (after
+  // any earlier story end here, a 0.1.0 record included) waits for its tag too: no earlier end's record holds it, so it
+  // was queued after those battles, which apply at their tags
+  const opening = (i, start) => {
+    let state = start;
+    const ends = [], early = new Set(), joinedAt = new Map();
+    if (ruleValues(ctxAt(i)).editedImports) {
+      const counted = new Set(seen), held = new Set(reflected);
+      let after = false;
+      for (const t of tagsAt(i).sort((a, b) => a.start - b.start)) {
+        const meta = table.meta?.[t.key], engine = meta?.storyEnd?.engine;
+        const ended = !!engine && table.acts?.[t.key]?.v !== 2 && savedAtFor(i, meta.blockKey) !== i;
+        if (!ended || !Object.hasOwn(engine, 'formGen') || !Object.hasOwn(engine, 'abilityEra')) { after ||= ended; continue; }
+        counted.add(t.key);
+        const latest = toLatest(i - 1);
+        ends.push({ key: t.key, to: typeof engine.abilityEra === 'boolean' ? engine.abilityEra : latest.to, give: latest.give, latest, first: !after,
+          met: battleOf(engine, latest.ctx), format: engine.format, actions: meta.storyEnd.actions ?? [], counted: new Set(counted), held: new Set(held) });
+        for (const id of reflectedBy(table, t.key)) held.add(id);
+        after = true;
+      }
+    }
+    // (an acts tag at this message holds actions queued before this message, so the first of these battles takes them too,
+    // except those queued after its result would have been saved: actions held by another story end's record here and not
+    // by the first's, or actions in an acts tag after a result saved at this message that are not listed by that result's
+    // record, since that record lists what was pending then)
+    const queued = [];
+    if (ends[0]?.first) {
+      const first = new Set(ends[0].actions.map(action => action.id)), saved = [];
+      const later = new Set(tagsAt(i).filter(t => t.key !== ends[0].key && table.acts?.[t.key]?.v !== 2)
+        .flatMap(t => (table.meta?.[t.key]?.storyEnd?.actions ?? []).map(action => action.id)).filter(id => !first.has(id)));
+      for (const t of tagsAt(i).sort((a, b) => a.start - b.start)) {
+        const acts = table.acts?.[t.key];
+        if (acts?.v === 2) queued.push(...(acts.actions ?? []).filter(action => !later.has(action.id) && saved.every(held => held.has(action.id))));
+        else if (table.snaps?.[t.key] && !table.meta?.[t.key]?.storyEnd) saved.push(new Set(table.meta?.[t.key]?.held ?? []));
+      }
+    }
+    ends.forEach((end, k) => {
+      const ids = new Set(), actions = end.first ? [...queued, ...end.actions] : end.actions;
+      const runs = actions.filter(action => !ids.has(action.id) && !!ids.add(action.id) && !early.has(action.id) && !isReflected(action, end.held, end.counted));
+      const tagged = virtualTag(state, end, end.first ? runs : [], status);
+      for (const action of tagged.done) early.add(action.id);
+      state = tagged.state;
+      joinedAt.set(end.key, { era: state.abilityEra, then: ends.slice(k + 1) });
+    });
+    return { state, early, joinedAt };
+  };
+
   for (let i = from; i <= last; i++) {
     const name = messageId(messages[i], i);
     const here = ctxAt(i);
+    const tags = tagsAt(i);
+    const { state: opened, early, joinedAt } = opening(i, state);
+    state = opened;
 
-    state = inRule(ctx?.sim, state, here.rule);
+    // (the Status Window before this message and the era crossings this message makes: used for a battle the story ends,
+    // below)
+    const statusBefore = status;
+    state = crossEra(ctx?.sim, inRule(ctx?.sim, state, here.rule), here);
+    const crossings = [{ to: abilityEraOf(here), give: !!ruleValues(here).eraAbilities }];
 
     state = teraKept(state, { ...here, sim: ctx?.sim });
     if (league) state = { ...state, badges: leagueAt(league, places, i) };
@@ -293,23 +422,165 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
     }
     const at = { ...here, status };
 
-    const placed = t => { const { storyEnd, blockKey } = table.meta[t.key] ?? {}; const ended = storyEnd && survey.battles.get(blockKey)?.ended; return ended?.index === i ? ended.start : t.start; };
-    const tags = findTags(parts[i]).filter(t => used(t.key)).map(t => ({ ...t, type: 'tag', start: placed(t) }));
     const changes = findBlocks(parts[i], here).filter(b => b.kind === 'change').map((b, n) => ({ ...b, type: 'change', n }));
     const fills = {};
+    // (a story end's queued action that fails at its tag because its target Pokémon has not joined yet waits through the
+    // rest of the message for anything that brings that Pokémon, another waiting action included. The later actions of
+    // its record wait behind it in order: the panel offers only Pokémon that are there, so they were queued after that
+    // Pokémon joined, and they run once it is there, as they would after that battle's result was saved. They do not run
+    // before a result saved at this message before they were queued, nor before an import here that does not come after
+    // them (queuedBefore, below), which would fold over them. At the last try, an action still missing its Pokémon fails,
+    // and those behind it run)
+    let waiting = [];
+    const retry = (last = false, only = null, now = at) => {
+      for (let moved = true; moved;) {
+        moved = false;
+        const stuck = new Set();
+        waiting = waiting.filter(entry => {
+          if (stuck.has(entry.key)) return true;
+          if ((only && !only(entry)) || !hasTargets(state, entry.action)) { stuck.add(entry.key); return true; }
+          state = runAction(state, entry.action, now).state;
+          moved = true;
+          return false;
+        });
+        if (moved || !last) continue;
+        // (a record's first action is the one still without its Pokémon, unless `only` leaves the record for later)
+        const first = new Set();
+        waiting = waiting.filter(entry => {
+          if (first.has(entry.key)) return true;
+          first.add(entry.key);
+          if (only && !only(entry)) return true;
+          moved = true;
+          return false;
+        });
+      }
+    };
+    const savedAhead = new Map(tags.filter(t => table.snaps?.[t.key] && !table.meta?.[t.key]?.storyEnd && table.acts?.[t.key]?.v !== 2)
+      .map(t => [t.key, table.meta?.[t.key]?.time]));
+    // (an import comes after the actions it holds, which were pending when it was made, and after an action queued before
+    // it, which a story end's record had taken by then and so ran in the fold the import's draft came from; Debug Heal and
+    // Badges records hold no pending actions, so an action they do not hold runs after them, as pendingState runs the
+    // queue after the fold's imports)
+    const queuedBefore = imp => entry => heldActions(imp).some(action => action.id === entry.action.id)
+      || (imp.heal === undefined && imp.badges === undefined && typeof imp.time === 'number' && typeof entry.action.at === 'number' && entry.action.at < imp.time);
+    const ready = entry => (typeof entry.action.at !== 'number' || ![...savedAhead.values()].some(time => typeof time === 'number' && time < entry.action.at))
+      && importsAt(i).every(imp => absorbed.has(imp.id) || queuedBefore(imp)(entry));
     for (const event of [...tags, ...changes].sort((a, b) => a.start - b.start)) {
+      retry(false, ready);
       if (event.type === 'tag') {
-        const { storyEnd, blockKey } = table.meta?.[event.key] ?? {};
+        const meta = table.meta?.[event.key] ?? {};
+        const { storyEnd, blockKey } = meta;
         const acted = table.acts?.[event.key];
         seen.add(event.key);
+        // The settings and rules of the time the battle's result was saved (story-link resultChange), which may have
+        // changed at this message before it
+        const tagAt = typeof meta.time === 'number' ? { ...ctxAt(i, meta.time), status } : at;
+        const fixed = !!ruleValues(tagAt).editedImports;
+        // A battle the story ends in its own block's message runs its record's queued actions here (virtualTag), as one
+        // from an earlier block does at the start of its end message; the story-end branch below then finds the fold in its
+        // era
+        const inBlock = !!storyEnd?.engine && acted?.v !== 2 && survey.battles.get(blockKey)?.index === i && Object.hasOwn(storyEnd.engine, 'formGen')
+          && Object.hasOwn(storyEnd.engine, 'abilityEra') && !!ruleValues(ctxAt(i, Infinity)).editedImports;
+        const runs = inBlock ? (storyEnd.actions ?? []).filter(action => !early.has(action.id) && !isReflected(action, reflected, seen)) : [];
+        let done = [];
+        if (runs.length) {
+          const latest = toLatest(i), engine = storyEnd.engine;
+          const tagged = virtualTag(state, { to: typeof engine.abilityEra === 'boolean' ? engine.abilityEra : latest.to, give: latest.give, latest,
+            met: battleOf(engine, latest.ctx), format: engine.format }, runs, status);
+          state = tagged.state;
+          done = tagged.done;
+        }
 
-        for (const action of (acted?.v === 2 ? acted.actions : storyEnd?.actions) ?? []) if (!isReflected(action, reflected, seen)) state = runAction(state, action, at).state;
-        for (const id of reflectedBy(table, event.key)) reflected.add(id);
+        // (a record without the battle's generation and era, as 0.1.0 wrote it, runs its actions as in 0.1.0)
+        const parks = !!storyEnd?.engine && Object.hasOwn(storyEnd.engine, 'formGen') && Object.hasOwn(storyEnd.engine, 'abilityEra')
+          && !!ruleValues(ctxAt(savedAtFor(i, blockKey), Infinity)).editedImports;
+        let parked = false;
+        for (const action of (acted?.v === 2 ? acted.actions : storyEnd?.actions) ?? []) {
+          if (done.includes(action) || early.has(action.id) || isReflected(action, reflected, seen)) continue;
+          if (parked) { waiting.push({ action, key: event.key, written: event.written }); continue; }
+          const run = runAction(state, action, at);
+          if (run.errors?.length && parks && !hasTargets(state, action)) { waiting.push({ action, key: event.key, written: event.written }); parked = true; }
+          else state = run.state;
+        }
+        // Imports made at this message before its result was saved are in the snapshot: the fold takes them here, as the battle saw
+        // them, rather than over its result (one a result moved back by restoreResult left at a later message is applied
+        // there as before: the snapshot takes its badges and other book fields from the fold, withBook)
+        const holds = fixed && acted?.v !== 2 && !storyEnd ? listedImports(event.key) : [];
+        const prior = importsAt(i).filter(imp => holds.includes(imp.id) && !absorbed.has(imp.id));
+        const holding = new Set(reflectedBy(table, event.key));
+        // A waiting action queued before this result was saved and not held by it (meta.held: what was pending then) had
+        // already been taken by a story end's record, so the fold this result was saved from settled it before the battle
+        // (if either has no time, or both have the same: the story end's tag comes before this result's)
+        const settled = entry => !holding.has(entry.action.id) && (typeof meta.time === 'number' && typeof entry.action.at === 'number' && entry.action.at !== meta.time
+          ? entry.action.at < meta.time : entry.written < event.written);
+        if (prior.length) {
+          for (const imp of prior) absorbed.add(imp.id);
+          state = applyImportsAt(i, state, at, reflected, seen, prior, crossings, (was, imp, there) => {
+            state = was;
+            retry(false, entry => settled(entry) && queuedBefore(imp)(entry), there);
+            return state;
+          });
+        }
+        for (const id of holding) reflected.add(id);
         if (acted?.v === 2) continue;
 
-        if (!storyEnd) state = teraKept(inRule(ctx?.sim, keepStoryDiscs(state, keepOrigins(state, withBook(clone(table.snaps[event.key]), state), at)), here.rule), { ...at, sim: ctx?.sim }, state);
+        if (!storyEnd) {
+          savedAhead.delete(event.key);
+          // A waiting action is already in the snapshot when this result's record lists it; one settled in the fold the
+          // result was saved from (above) is settled here, after the imports the result absorbs, as at that fold's last try
+          // (one still without its Pokémon fails, and those behind it run)
+          waiting = waiting.filter(entry => !holding.has(entry.action.id));
+          retry(true, settled);
+          // The snapshot stays in the ability era and, under editedImports, the rules its battle ran with until the next
+          // message moves it on; the fold is held up to it in that era, as its record was made there
+          // (a snapshot saved with a record but no era was saved while Auto only guessed: the era of the battle's time)
+          const snap = withBook(clone(table.snaps[event.key]), state), sim = ctx?.sim, eras = !!ruleValues(tagAt).eraAbilities;
+          const target = snap.abilityEra !== undefined ? snap.abilityEra : meta.abilities ? abilityEraOf(tagAt) : state.abilityEra;
+          const before = crossTo(sim, state, target, eras);
+          if (snap.abilityEra !== undefined || meta.abilities) crossings.push({ to: target, give: eras });
+          // A Pokémon the fold lacks (one the battle caught) and that its result left without a met generation (resultChange
+          // gives one unless the battle had no generation of its own, no Status Window region has a game, and no anime
+          // world counts under its Battle Rules) was met under the generation and Battle Rules the battle ran with, even
+          // when they changed while it was played (a record without them: the result's time)
+          const { formGen: _now, ...ranIn } = tagAt;
+          const met = Object.hasOwn(meta, 'formGen')
+            ? { ...ranIn, ...(Number.isInteger(meta.formGen) ? { formGen: meta.formGen } : {}), ...(meta.battleRule != null ? { battleRule: meta.battleRule } : {}) }
+            : tagAt;
+          const kept = keepStoryDiscs(state, keepOrigins(before, snap, fixed ? met : at, { baseline: meta.abilities, dex: sim?.Dex, carry: fixed, slots: fixed && eras }));
+          state = teraKept(fixed ? kept : inRule(sim, kept, here.rule), { ...at, sim }, state);
+        }
         else {
-          if (storyEnd.engine) state = applyBattles(state, [...storyEnd.engine.before ?? [], storyEnd.engine], at);
+          // A battle the story ends counts as having its result saved at the latest moment it could be (savedAtFor). It is
+          // applied with that moment's settings, rules and world, the generation and Battle Rules it ran with, and its
+          // block's Status Window, as resultChange applies a saved result. A Pokémon it brought without a met generation gets
+          // one from that moment and the battle's generation and Battle Rules, as a saved result's tag fills one via
+          // keepOrigins (a record without them uses the end message's ctx)
+          const { engine } = storyEnd, block = survey.battles.get(blockKey)?.index;
+          const j = savedAtFor(i, blockKey), latest = engine && Object.hasOwn(engine, 'formGen') ? ctxAt(j, Infinity) : null;
+          const own = !!latest && !!ruleValues(latest).editedImports;
+          const ran = own ? battleOf(engine, { ...latest, status: Number.isInteger(block) ? latestStatus(chat, block) : status }) : at;
+          const metAt = own && battleOf(engine, { ...latest, status: j === i ? status : statusBefore });
+          const eraKnown = own && Object.hasOwn(engine, 'abilityEra');
+          if (engine && eraKnown && block === i) {
+            // ...ended in its own block's message: like a result saved there, the fold moves into the battle's ability era
+            // here (one begun while Auto only guessed: the era of that moment) and stays in it until the next message
+            const to = typeof engine.abilityEra === 'boolean' ? engine.abilityEra : abilityEraOf(latest), give = !!ruleValues(latest).eraAbilities;
+            const crossed = crossTo(ctx?.sim, state, to, give);
+            state = metNewcomers(crossed, applyBattles(crossed, [...engine.before ?? [], engine], ran), metAt);
+            crossings.push({ to, give });
+          } else if (engine) {
+            const caught = new Set();
+            const applied = applyBattles(state, [...engine.before ?? [], engine], ran, { caught });
+            state = metAt ? metNewcomers(state, applied, metAt) : applied;
+            // ...and a Pokémon it caught joins in the era the fold was crossed into for it at the start of this message
+            // (above), then follows the crossings since: those for the battles the story ends after it here, and every
+            // one this message has made so far, each under its own eraAbilities
+            const joined = eraKnown && caught.size ? joinedAt.get(event.key) : null;
+            if (joined) {
+              let era = joined.era;
+              for (const step of [...joined.then, ...crossings]) ({ state, era } = joinedIn(ctx?.sim, state, caught, era, step.to, step.give));
+            }
+          }
           if (storyEnd.who) {
             const outcome = survey.battles.get(blockKey).ended.outcome;
             state = { ...state, trainers: { ...trainersOf(state), [storyEnd.who]: { ...clone(storyEnd.trainer), outcome } } };
@@ -327,13 +598,23 @@ export function computeState(chat, ctx, { uptoIndex, survey: given } = {}) {
       if (Object.keys(table.fills).length !== before) changed = true;
       ops.forEach((_, j) => { const key = `${name}:${event.key}:${j}`; if (Object.hasOwn(table.fills, key)) fills[key] = table.fills[key]; });
     }
-    state = book(applyImportsAt(i, state, at, reflected, seen), i);
+    retry(false, ready);
+    state = applyImportsAt(i, state, at, reflected, seen, undefined, null, (was, imp, there) => {
+      state = was;
+      retry(false, queuedBefore(imp), there);
+      return state;
+    });
+    retry(true);
+    state = book(state, i);
 
     state = storyDiscs(state, withMachineStandard({ ...here, ...ruleValues(null) }, status?.region, discOf(i)));
     if (keep) folds.push({ key: keyOf(i), after: state, fills, status, win });
   }
 
-  const after = teraKept(inRule(ctx?.sim, state, settingsOf(last + 1).rule), { ...ctxAt(last + 1), sim: ctx?.sim });
+  // (open: the state as message last + 1 opens, with the battles the story ends there taken as saved just before it, for
+  // the previews of that message's own changes and passing time, acts.changesIn and passingIn)
+  const opened = open && last + 1 < messages.length ? opening(last + 1, state).state : state;
+  const after = teraKept(crossEra(ctx?.sim, inRule(ctx?.sim, opened, settingsOf(last + 1).rule), ctxAt(last + 1)), { ...ctxAt(last + 1), sim: ctx?.sim });
   const counted = new Set(parts.slice(0, last + 1).flatMap(text => findTags(text).map(t => t.key)).filter(used));
   return { state: keep && after === state ? clone(state) : after, table, changed, counted, reflected: new Set([...counted].flatMap(key => reflectedBy(table, key))),
     imported: new Set(importedUpto(last)), status };
@@ -494,7 +775,8 @@ export function storyTick(state, name, ctx) {
   if (!state.party.some(isEgg) && !breeding?.chance && !labOf(state).length) return { state, events: [] };
   const { sim } = ctx;
   const next = clone(state), events = [];
-  const speed = hatchSpeed(hatchedParty(next).map(m => m.set.ability)) * (ctx.hatchRate ?? 1);
+  const abilities = ruleValues(ctx).eraAbilities && abilityEraOf(ctx) === false ? [] : hatchedParty(next).map(m => m.set.ability);
+  const speed = hatchSpeed(abilities) * (ctx.hatchRate ?? 1);
   for (const [i, mon] of next.party.entries()) {
     if (!isEgg(mon) || mon.egg.ready) continue;
     mon.egg.cycles = Math.max(0, Math.round((mon.egg.cycles - speed) * 1000) / 1000);
@@ -510,14 +792,17 @@ export function storyTick(state, name, ctx) {
   }
   const rng = rngFor(sim, `${name}:egg`);
   if (breeding?.chance && rng.random(100) < breeding.chance) {
-    const [a, b] = [breeding.a, breeding.b].map(m => next.party.find(p => p.uid === m.uid));
+    // A parent's kept ability slot (evolve keepSlot) passes on only under the rule eraAbilities
+    const slotted = !!ruleValues(ctx).eraAbilities;
+    const parents = [breeding.a, breeding.b].map(m => next.party.find(p => p.uid === m.uid));
+    const [a, b] = parents.map(p => (slotted || !p?.abilitySlot ? p : (({ abilitySlot: _, ...rest }) => rest)(p)));
     const { set, ball } = breedEgg(sim.Dex, a, b, rng, { levelUp: joiningLevelUp(ctx), oneSpecial: oneSpecialAt(ctx) }); // one Special IV in generations 1-2 (0.1.0 G4b)
     const egg = newEgg(ctx, set, uniqueUid(next, `e${hashKey(name)}`), ball);
     const list = next.party.length < PARTY_MAX ? next.party : next.box;
     list.push(egg);
     const inBox = list === next.box;
     events.push({ kind: 'egg', box: inBox ? boxOf(next, next.box.length - 1) : false, slot: inBox ? null : next.party.length,
-      parents: [a, b].map(m => next.party.indexOf(m) + 1).sort((x, y) => x - y) });
+      parents: parents.map(m => next.party.indexOf(m) + 1).sort((x, y) => x - y) });
   }
   events.push(...labTick(next, ctx));
   return { state: next, events };
@@ -946,6 +1231,9 @@ function applyOp(state, op, ctx, fillKey, fill) {
       if (!ability) fail('abilityNot', { mon: monLabel(mon), ability: op.ability });
       if (toID(ability) === toID(mon.set.ability)) fail('abilitySame', { mon: monLabel(mon), ability });
       mon.set.ability = ability;
+      delete mon.abilitySlot;
+      // An ability given by hand (Ability Capsule, Patch, Zygarde Cube) stays through the generation rule (crossEra, keepOrigins)
+      mon.chosenAbility = true;
       return;
     }
     case 'nature': {
@@ -1404,7 +1692,11 @@ function changeForm(state, ctx, mon, op, format) {
   const slot = Object.keys(from.abilities).find(k => toID(from.abilities[k]) === toID(mon.set.ability));
   if (kept) delete mon.formAbility;
   else if (slot && !to.abilities[slot]) mon.formAbility = mon.set.ability;
-  mon.set.ability = kept || sameSlotAbility(from, mon.set.ability, to);
+  // A slot kept on a form without it (by the generation rule, crossEra, as on Tornadus-Therian, or by an evolution,
+  // keepSlot) is taken where the form has it
+  const carried = !kept && ruleValues(ctx).eraAbilities && mon.abilitySlot ? to.abilities[mon.abilitySlot] : null;
+  mon.set.ability = kept || carried || sameSlotAbility(from, mon.set.ability, to);
+  if (carried) delete mon.abilitySlot;
   mon.set.species = to.name;
   for (const [old, now] of op.moves ?? []) {
     const at = mon.set.moves.indexOf(toID(old));
@@ -1433,9 +1725,18 @@ function changeForm(state, ctx, mon, op, format) {
   markDex(state, sim, to.name, true);
 }
 
-function sameSlotAbility(from, ability, to) {
-  const slot = Object.keys(from.abilities).find(k => toID(from.abilities[k]) === toID(ability)) ?? '0';
+// The ability slot a Pokémon holds: `kept` (abilitySlot) while its species lacks that slot, else its ability's
+const heldSlot = (species, ability, kept = null) => (kept && !species.abilities[kept] ? kept : Object.keys(species.abilities).find(k => toID(species.abilities[k]) === toID(ability)) ?? '0');
+
+function sameSlotAbility(from, ability, to, kept = null) {
+  const slot = heldSlot(from, ability, kept);
   return to.abilities[slot] ?? to.abilities['0'];
+}
+
+// After an evolution the slot is kept while the species lacks it (a Hidden Ability through Metapod), under the rule eraAbilities
+function keepSlot(from, mon, to) {
+  const slot = heldSlot(from, mon.set.ability, mon.abilitySlot);
+  if (to.abilities[slot]) delete mon.abilitySlot; else if (slot !== '0') mon.abilitySlot = slot;
 }
 
 function evolve(state, ctx, mon, target, { decoration, taught = false } = {}) {
@@ -1444,7 +1745,10 @@ function evolve(state, ctx, mon, target, { decoration, taught = false } = {}) {
   const to = sim.Dex.species.get(target);
   if (!to.exists) fail('unknownSpecies', { species: target });
   const before = clone(mon);
-  mon.set.ability = sameSlotAbility(from, mon.set.ability, to);
+  const slotted = !!ruleValues(ctx).eraAbilities;
+  const ability = sameSlotAbility(from, mon.set.ability, to, slotted ? mon.abilitySlot : null);
+  if (slotted) keepSlot(from, mon, to);
+  mon.set.ability = ability;
   mon.set.species = to.name;
   if (usesHeldItem(sim.Dex, to.name, mon.set.item)) mon.set.item = '';
   if (decoration) mon.decoration = itemId(decoration);
@@ -1460,10 +1764,14 @@ function evolve(state, ctx, mon, target, { decoration, taught = false } = {}) {
   for (const name of extraEvolutions(sim.Dex, from.name, to.name)) {
     if (state.party.length >= PARTY_MAX || !(state.bag.pokeball > 0)) break;
     const extra = sim.Dex.species.get(name);
-    const set = { ...clone(before.set), species: extra.name, ability: extra.abilities['0'], item: '', name: '', gender: extra.gender === 'N' ? '' : before.set.gender };
+    // and the slot of the Pokémon it comes from, kept when the new species lacks that slot, as an evolution keeps it (a
+    // Shedinja from a Nincada that took its Hidden Ability keeps slot H, as the Ninjask keeps its Hidden Ability)
+    const slot = slotted ? heldSlot(from, before.set.ability, before.abilitySlot) : '0', has = !!extra.abilities[slot];
+    const set = { ...clone(before.set), species: extra.name, ability: has ? extra.abilities[slot] : extra.abilities['0'], item: '', name: '', gender: extra.gender === 'N' ? '' : before.set.gender };
     const { metGen: _, ...made } = newMon(ctx, set, uniqueUid(state, `${mon.uid}-${extra.id}`)); // met where the Pokemon it comes from was
-    const born = { ...made, ball: 'pokeball', ...(before.exp === undefined ? {} : { exp: before.exp }), ...(before.ot ? { ot: before.ot } : {}),
-      ...(Number.isInteger(before.metGen) ? { metGen: before.metGen } : {}) };
+    const born = { ...made, ball: 'pokeball', ...(!has && slot !== '0' ? { abilitySlot: slot } : {}), ...(before.exp === undefined ? {} : { exp: before.exp }), ...(before.ot ? { ot: before.ot } : {}),
+      ...(Number.isInteger(before.metGen) ? { metGen: before.metGen } : {}), ...(before.hadAbility ? { hadAbility: true } : {}), ...(before.tookHidden ? { tookHidden: true } : {}),
+      ...(before.chosenAbility ? { chosenAbility: true } : {}) };
     state.bag.pokeball -= 1;
     if (!state.bag.pokeball) delete state.bag.pokeball;
     state.party.push(born);
@@ -1473,7 +1781,8 @@ function evolve(state, ctx, mon, target, { decoration, taught = false } = {}) {
 
 // -- Battle result ---------------------------------------------
 
-export function applyBattleResult(before, result, ctx, { battle = null, outcome = outcomeOf(result), start = null, format = null } = {}) {
+// caught: a Set that receives the uid of any Pokémon the battle caught (computeState's story-end branch)
+export function applyBattleResult(before, result, ctx, { battle = null, outcome = outcomeOf(result), start = null, format = null, caught: catches = null } = {}) {
   const { sim } = ctx;
   const state = clone(before);
 
@@ -1563,6 +1872,7 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
       ...(foe.gigantamax === true ? { gigantamax: true } : {}), ...(Number.isInteger(foe.dynamaxLevel) ? { dynamaxLevel: foe.dynamaxLevel } : {}),
     };
     const uid = uniqueUid(state, `c${hashKey(JSON.stringify([set, caught.turn, result.turn]))}`);
+    catches?.add(uid);
 
     if (!set.teraType && ruleValues(ctx).catchTera010) set.teraType = autoTeraType(sim.Dex.species.get(set.species), uid) || undefined;
     const mon = newMon(ctx, set, uid);
@@ -1580,8 +1890,8 @@ export function applyBattleResult(before, result, ctx, { battle = null, outcome 
   return state;
 }
 
-export function applyBattles(before, battles, ctx, { battle = null } = {}) {
-  return battles.reduce((state, { start, result, outcome, format }, i) => applyBattleResult(state, result, ctx, { battle: i ? null : battle, outcome, start, format }), before);
+export function applyBattles(before, battles, ctx, { battle = null, caught = null } = {}) {
+  return battles.reduce((state, { start, result, outcome, format }, i) => applyBattleResult(state, result, ctx, { battle: i ? null : battle, outcome, start, format, caught }), before);
 }
 
 function gainLevel(ctx, mon, end, from) {
@@ -1626,12 +1936,16 @@ export const stageOf = spec => battlesBefore(spec).length + 1;
 
 export const backToBack = spec => battlesBefore(spec).length > 0 || !!waitingTrainer(spec);
 
+// The numbers rule of a battle's format; one the rules do not list keeps the state's own (story-link.js battleNumbers)
+const numbersOf = (format, state) => { try { return formatRule(format); } catch { return ruleOf(state); } };
+
 export function nextStageSpec(spec, result, state, ctx, { seed }) {
   const waiting = waitingTrainer(spec);
   if (!waiting || outcomeOf(result) !== 'win') return null;
   const { log, screen, ...ended } = result;
   const before = [...battlesBefore(spec), battleRecord(spec, ended)];
-  const now = inRule(ctx.sim, applyBattles(state, before, ctx), formatRule(spec.formatid));
+  const applied = applyBattles(state, before, ctx);
+  const now = inRule(ctx.sim, applied, numbersOf(spec.formatid, applied));
   const { foePartner, double, partner, ...same } = spec;
 
   const learned = new Map(spec.p1.team.map(member => [member.uid, member.learnGen]));
@@ -1780,6 +2094,11 @@ export function toEngineSpec(state, battle, ctx, { seed, formatid, picture, play
     dynamaxHere: dynamaxHere(battle, region),
     writtenForms: true,
     ...(ctx.formGen ? { formGen: ctx.formGen } : {}),
+    // the Battle Rules it began under, for the met game of any Pokémon it catches (battle-rule.mjs ranCtx, story-link.js
+    // playedAt, computeState's tag)
+    ...(ctx.battleRule != null ? { battleRule: ctx.battleRule } : {}),
+    // the ability era the battle began in, null while Battle Rules Auto only guessed (plugin/battle/story-link.js inBattleEra)
+    abilityEra: abilityEraOf(ctx),
 
     dynamaxShown: dynamaxLevelShown(state, region),
     ...(gimmicks.foeGimmick ? { foeGimmick: gimmicks.foeGimmick } : {}), // the foes' gimmick by region (ai/index.js gimmickRules) - none: as before
@@ -1932,13 +2251,161 @@ function shareOf(hp, was, max) {
   return Math.max(1, Math.min(max - 1, Math.round(hp * max / was)));
 }
 
-function keepOrigins(before, after, ctx) {
+// Generations 1-2 have no abilities: Pokémon that lived only there take their Hidden Ability when the story's battles
+// reach generation 3 or later, as Pokémon moved up from the Virtual Console games do (owner's decision, 2026-11-22; rule
+// eraAbilities). The state keeps the era its Pokémon were last brought to (abilityEra: true from generation 3, Mainline
+// and Champions included, false in 1-2, absent while unknown). Every Pokémon present when it changes, either way, is
+// marked hadAbility, so one that knew abilities (a chat taken from 9 down to 1 and back) keeps its own; one whose
+// ability was chosen by hand (chosenAbility) keeps it too. Eggs and fossils in the lab are not born yet.
+const presentMons = state => {
+  const out = [];
+  const visit = mon => { if (!mon?.set) return; if (!isEgg(mon)) out.push(mon); visit(mon.fused); };
+  for (const mon of [...state?.party ?? [], ...state?.box ?? []]) visit(mon);
+  return out;
+};
+
+function takeHiddenAbility(sim, mon) {
+  const abilities = sim.Dex.species.get(mon.set.species).abilities ?? {};
+  // A special one given by name (Own Tempo Rockruff, Battle Bond Greninja) is kept
+  if (abilities.S && toID(abilities.S) === toID(mon.set.ability)) return;
+  if (abilities.H) { mon.set.ability = abilities.H; delete mon.abilitySlot; } else mon.abilitySlot = 'H';
+  delete mon.formAbility;
+  mon.tookHidden = true;
+}
+
+export const crossEra = (sim, state, ctx) => crossTo(sim, state, abilityEraOf(ctx), !!ruleValues(ctx).eraAbilities);
+
+function crossTo(sim, state, era, give) {
+  const had = state?.abilityEra;
+  if (era === null) {
+    // Battle Rules Auto guessing generation 9 before any region: not an era. After one with abilities the Pokémon
+    // there knew them, and the ones that join now take their origin from the first known era.
+    if (had !== true) return state;
+    const next = clone(state);
+    for (const mon of presentMons(next)) mon.hadAbility = true;
+    delete next.abilityEra;
+    return next;
+  }
+  if (had === era) return state;
+  const next = clone(state);
+  if (had !== undefined) {
+    for (const mon of presentMons(next)) {
+      if (era && give && !mon.hadAbility && !mon.chosenAbility) takeHiddenAbility(sim, mon);
+      mon.hadAbility = true;
+    }
+  }
+  next.abilityEra = era;
+  return next;
+}
+
+// The era a state starting in `from` ends up in after crossTo brings it to `to`
+const crossedEra = (from, to) => (to === null ? (from === true ? undefined : from) : to);
+
+// Gives a met generation under `ctx` to the Pokémon of `after` that `before` lacks and that have none, as keepOrigins
+// does at a saved result's tag (a battle the story ends, computeState)
+function metNewcomers(before, after, ctx) {
+  const met = metGenAt(ctx);
+  const known = new Set([...before.party, ...before.box].map(mon => mon.uid));
+  const lacks = mon => !known.has(mon.uid) && !Number.isInteger(mon.metGen);
+  if (!Number.isInteger(met) || ![...after.party, ...after.box].some(lacks)) return after;
+  const next = clone(after);
+  for (const mon of [...next.party, ...next.box]) if (lacks(mon)) mon.metGen = met;
+  return next;
+}
+
+// Brings the Pokémon of `state` whose uids are in `uids` from ability era `from` (undefined: none) to era `to`, as crossTo
+// brings a state's Pokémon (for Pokémon caught in a battle the story ends, computeState); `era` is the era a state in
+// `from` would be in after crossTo
+function joinedIn(sim, state, uids, from, to, give) {
+  const era = crossedEra(from, to);
+  const step = from === undefined || from === to || (to === null && from !== true) ? null : to ? 'hidden' : 'mark';
+  if (!step) return { state, era };
+  const next = clone(state);
+  for (const mon of presentMons(next)) {
+    if (!uids.has(mon.uid)) continue;
+    if (step === 'hidden' && give && !mon.hadAbility && !mon.chosenAbility) takeHiddenAbility(sim, mon);
+    mon.hadAbility = true;
+  }
+  return { state: next, era };
+}
+
+// Each Pokémon's ability, kept slot, species, whether the generation rule gave it its Hidden Ability (tookHidden) and
+// whether its ability was chosen by hand (chosenAbility), saved with a battle's snapshot (table.meta[tag].abilities: the
+// fold before the battle, moved to the battle's ability era; records saved before the last field have four)
+export const abilityRecord = state => Object.fromEntries(presentMons(state).map(mon => [mon.uid, [mon.set.ability, mon.abilitySlot ?? null, mon.set.species, mon.tookHidden ? 1 : 0, mon.chosenAbility ? 1 : 0]]));
+
+// The ability and kept slot that species `from` with this ability and slot has as species `to`, as an evolution carries it
+export function abilityAs(dex, from, ability, slot, to) {
+  if (toID(from) === toID(to)) return { ability, slot: slot ?? null };
+  const target = dex.species.get(to), held = heldSlot(dex.species.get(from), ability, slot);
+  return { ability: target.abilities?.[held] ?? target.abilities?.['0'], slot: !target.abilities?.[held] && held !== '0' ? held : null };
+}
+
+// Whether every Pokémon an action points at by uid (a fusion's partner included) is in the party or box
+const hasTargets = (state, action) => {
+  const here = new Set([...state?.party ?? [], ...state?.box ?? []].map(mon => mon.uid));
+  return (action?.ops ?? []).every(op => ['ref', 'a', 'b', 'with'].every(field => typeof op?.[field]?.uid !== 'string' || here.has(op[field].uid)));
+};
+
+// Every Pokémon of a state, eggs and fused partners included
+const allMons = state => {
+  const out = [];
+  const visit = mon => { if (!mon?.set) return; out.push(mon); visit(mon.fused); };
+  for (const mon of [...state?.party ?? [], ...state?.box ?? []]) visit(mon);
+  return out;
+};
+
+// A battle snapshot keeps everything as its battle left it. The fold up to it (`before`, moved to the snapshot's ability
+// era) gives the origins it lacks, and the abilities' marks. baseline: abilityRecord of the fold as the snapshot was made
+// (story-link resultChange); dex: for the slots; carry: the rule editedImports at the battle.
+// An edit made later behind the battle (a Status Window moved between Kanto and Hoenn, a deleted message, a cancelled
+// import) reaches its abilities only through the generation rule: where the fold now takes a Pokémon's Hidden Ability on
+// entering generation 3, or no longer does, against the record (tookHidden), and the battle left the record's ability as
+// it was (carried to the species it evolved into there, as an evolution carries it), the fold's ability is carried over,
+// unless it was chosen by hand (chosenAbility). The rule's marks, tookHidden and hadAbility (crossEra), are the history's,
+// so with a record that knows the decision they follow the fold: a Pokémon the fold still has as an egg knew no
+// abilities. A hand choice the fold has is added where the snapshot has that ability. One the fold lacks (joined in the
+// battle, or its uid changed behind it) comes as the snapshot has it. A snapshot saved without such a record keeps its
+// abilities and takes the fold's hadAbility.
+function keepOrigins(before, after, ctx, { baseline = null, dex = null, carry = false, slots = false } = {}) {
   const had = new Map([...before.party, ...before.box].map(mon => [mon.uid, mon.metGen]));
   const met = metGenAt(ctx);
   for (const mon of [...after.party ?? [], ...after.box ?? []]) {
     if (Number.isInteger(mon.metGen)) continue;
     const gen = had.has(mon.uid) ? had.get(mon.uid) : met;
     if (Number.isInteger(gen)) mon.metGen = gen;
+  }
+  if (after.abilityEra === undefined && before.abilityEra !== undefined) after.abilityEra = before.abilityEra;
+  const marks = new Map(allMons(before).map(mon => [mon.uid, mon]));
+  const differs = (x, mon) => toID(x.ability) !== toID(mon.set.ability) || x.slot !== (mon.abilitySlot ?? null);
+  for (const mon of allMons(after)) {
+    const was = marks.get(mon.uid);
+    if (!was || isEgg(mon)) continue;
+    const base = Array.isArray(baseline?.[mon.uid]) ? baseline[mon.uid] : null;
+    const knows = !!dex && base?.length > 3, pokemon = !isEgg(was);
+    // A snapshot saved before Pokémon kept the slot takes the fold's
+    if (slots && !base && was.abilitySlot && !mon.abilitySlot && toID(was.set?.species) === toID(mon.set?.species) && toID(was.set?.ability) === toID(mon.set?.ability)) mon.abilitySlot = was.abilitySlot;
+    // own: the battle changed the ability itself (an ability op it held)
+    const own = knows && differs(abilityAs(dex, base[2] ?? mon.set.species, base[0], base[1], mon.set.species), mon);
+    // A hand choice the snapshot has from before its battle came from the fold, and one cancelled or moved behind the
+    // battle goes with it: one the record has (a record without that field: any), unless the battle changed the ability
+    // itself, which makes the choice the battle's (one it changed and changed back counts as the record's)
+    const inherited = !own && (base?.length > 4 ? !!base[4] : true);
+    if (knows && inherited && mon.chosenAbility && !was.chosenAbility) delete mon.chosenAbility;
+    if (carry && knows && !own && !mon.chosenAbility && !!was.tookHidden !== !!base[3]) {
+      const now = abilityAs(dex, was.set.species, was.set.ability, was.abilitySlot, mon.set.species);
+      if (now.ability) {
+        mon.set.ability = now.ability;
+        if (now.slot && slots) mon.abilitySlot = now.slot; else delete mon.abilitySlot;
+      }
+      // and a form's kept ability (taking the Hidden Ability ends it, changeForm keeps one)
+      if (toID(was.set.species) === toID(mon.set.species)) { if (was.formAbility) mon.formAbility = was.formAbility; else delete mon.formAbility; }
+    }
+    if (knows) {
+      if (pokemon && was.tookHidden) mon.tookHidden = true; else delete mon.tookHidden;
+      if (pokemon && was.hadAbility) mon.hadAbility = true; else delete mon.hadAbility;
+    } else if (pokemon && was.hadAbility) mon.hadAbility = true; // (not tookHidden: the snapshot's ability may not be that Hidden Ability)
+    if (was.chosenAbility && (!dex || !differs(abilityAs(dex, was.set.species, was.set.ability, was.abilitySlot, mon.set.species), mon))) mon.chosenAbility = true;
   }
   return after;
 }

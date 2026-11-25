@@ -1,7 +1,7 @@
 import { readStored, isRecord, isUnreadable } from './stored.mjs';
 import { failed } from './failure.mjs';
-import { importPlace, anchorAtEnd } from './import.mjs';
-import { rulesAt } from './setting-changes.mjs';
+import { anchorAtEnd } from './import.mjs';
+import { rulesAt, madeBy, orderedPlaces } from './setting-changes.mjs';
 import { readsRegionMachines } from './blocks.mjs';
 import { regionStandard, DEFAULT_STANDARD } from './machine-standards.mjs';
 import { isGen } from '../engine/rules.mjs';
@@ -29,35 +29,38 @@ function readWorld(chat) {
   return { status, values: valuesOf(value?.values), changes: status === 'ok' ? value.changes.map(c => ({ ...c, before: valuesOf(c.before) })) : [] };
 }
 
+// An empty chat without a record is behind too: its start is recorded as soon as the chat is caught up (an import may
+// come first), so that a later change keeps its time (recordWorldChange)
 export function worldBehind(chat) {
-  const { values } = readWorld(chat);
-  return values !== null && !same(values, liveWorld(chat));
+  const { status, values } = readWorld(chat);
+  return values !== null && (!same(values, liveWorld(chat)) || (status === 'none' && !(chat?.message ?? []).length));
 }
 
 export function recordWorldChange(chat, { now = Date.now() } = {}) {
   const { status, values, changes } = readWorld(chat);
   if (isUnreadable(status)) throw failed('unreadable');
-  const live = liveWorld(chat);
-  if (same(values, live)) return false;
-  const messages = chat?.message ?? [];
+  const live = liveWorld(chat), messages = chat?.message ?? [];
+  if (same(values, live) && !(status === 'none' && !messages.length)) return false;
   chat.scriptstate ??= {};
+  // an empty chat's too once it has a record (setting-changes.mjs recordSettingChange)
   chat.scriptstate[WORLD_VAR] = JSON.stringify({ v: 1, values: live,
-    changes: [...changes, ...(messages.length ? [{ time: now, at: anchorAtEnd(messages), before: values }] : [])] });
+    changes: [...changes, ...(messages.length || status === 'ok' ? [{ time: now, at: anchorAtEnd(messages), before: values }] : [])] });
   return true;
 }
 
 export function worldAt(chat) {
   const messages = chat?.message ?? [];
   const live = liveWorld(chat);
-  const { values, changes: kept } = readWorld(chat);
+  const { status, values, changes: kept } = readWorld(chat);
   if (values === null) return () => worldOf(NONE);
-  const changes = !same(values, live) && messages.length ? [...kept, { time: 0, at: anchorAtEnd(messages), before: values }] : kept;
+  // A change found only by the variables being ahead of the record counts after every import at the last message
+  const changes = !same(values, live) && (messages.length || status === 'ok') ? [...kept, { time: Infinity, at: anchorAtEnd(messages), before: values }] : kept;
   const now = worldOf(live);
   if (!changes.length) return () => now;
-  const places = changes.map(change => importPlace(messages, change));
-  for (let k = places.length - 2; k >= 0; k--) places[k] = Math.min(places[k], places[k + 1]);
+  const places = orderedPlaces(messages, changes);
   const worlds = changes.map(change => worldOf(change.before));
-  return i => { const k = places.findIndex(place => place >= i); return k < 0 ? now : worlds[k]; };
+  // time, timed: an import's, under the rule editedImports (setting-changes.mjs madeBy)
+  return (i, time, timed = false) => { const k = places.findIndex((place, n) => !madeBy(place, changes[n].time, i, time, timed)); return k < 0 ? now : worlds[k]; };
 }
 
 const START_REGIONS = new Map(Array.from({ length: 9 }, (_, i) => [String(i + 1), i + 1]));

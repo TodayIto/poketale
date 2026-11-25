@@ -3,7 +3,7 @@ import { BALLS } from '../engine/capture.mjs';
 import { expForLevel, growthOf } from '../engine/exp.mjs';
 import { STATS, displayName, heldItemForm, spriteIdOf, fixedTeraType, gmaxOf, takesMaxSoup, DYNAMAX_LEVEL_MAX } from '../engine/mon.mjs';
 import { itemEvolution, tradeEvolution, tradePair, evolutionItems, spinEvolution, evolutionHeld, willingMon, ABSENT_TRADE_EVOLUTION, lockMark, genMark } from '../engine/evolution.mjs';
-import { evolveGenOf, oneSpecialAt, expShareHeldIn } from './battle-rule.mjs';
+import { evolveGenOf, oneSpecialAt, expShareHeldIn, abilityEraOf } from './battle-rule.mjs';
 import { applyOps, emptyState, maxHp, movePp, toID, clone, healParty, rememberableMoves, levelUpMoves, friendshipOf, evolutionCheck, isEgg, hatched, hatchDue, hatchedParty, breedingOf, stateFormat,
   restsLeft, restHelps, SHORT_RESTS } from './state.mjs';
 import { EGG_SPRITE, compatHearts } from '../engine/breeding.mjs';
@@ -240,6 +240,8 @@ export const ITEM_CHANGES = Object.freeze({
   // Ability Capsule / Patch: "change it?" asked once (abilityChange)
   ability: {
     check: (mon, item, c) => {
+      // Generations 1-2 have no abilities: the item has no effect there
+      if (abilityEraOf(c.ctx) === false) return c.no;
       const to = abilityChange(c.ctx.sim, mon, c.id);
       return to ? { ok: true, confirm: say(c.lang, 'panel.abilityAsk', { mon: monName(mon, c.ctx.sim, c.names), ability: c.p(c.names.ability(to), '으로/로') }) } : c.no;
     },
@@ -1103,10 +1105,22 @@ function reduceRaw(ui, hit, env) {
         if (locked || !ask.items.every(id => state.bag?.[id] > 0)) return { ui: calm(ui), effect: null };
         return { ui: calm(ui), effect: { kind: 'queue', action: actions.lab(ask.items, labWhere(labHere).lab?.id), after: w.t('panel.lab.sent', { item: w.p(labName(ask.items, w), '을/를') }) } };
       }
-      const mon = findIn(box, ask.uid) ?? findIn(party, ask.uid);
+      const mon = ask.kind === 'use' ? findIn(party, ask.uid) : findIn(box, ask.uid) ?? findIn(party, ask.uid);
       if (!mon) return { ui: { ...ui, ask: null }, effect: null };
-            // Ability Capsule / Patch: "change it?" -> yes
-      if (ask.kind === 'use') return { ui: calm(ui), effect: useEffect(mon, ask.item, ctx, w) };
+            // A use question (Ability Capsule or Patch, Tera Shard, Gigantamax, a fusion item's split) -> yes
+      if (ask.kind === 'use') {
+        // The question stays while the panel is folded, and the Pokémon, the bag, the generation or the rules may change meanwhile
+        if (locked || !(state.bag?.[ask.item] > 0)) return { ui: calm(ui), effect: null };
+        const item = storyDisc(state, ask.item) ?? ask.item;
+        const check = useCheck(mon, item, ctx, w.lang, state.party, stateFormat(state), state.bag, state.box);
+        if (!check.ok) return { ui: { ...calm(ui), message: { text: check.reason } }, effect: null };
+        // The item now asks something else (a partner to fuse with, a menu): this question no longer stands
+        if (!check.confirm) return { ui: calm(ui), effect: null };
+        // Asked now, the question would differ (another ability, Gigantamax the other way): that one is asked instead
+        const to = abilityChange(sim, mon, item), { to: _asked, ...asked } = ask;
+        if (check.confirm !== ask.text || (ask.to && toID(to) !== toID(ask.to))) return { ui: { ...calm(ui), ask: { ...asked, text: check.confirm, ...(to ? { to } : {}) } }, effect: null };
+        return { ui: calm(ui), effect: useEffect(mon, ask.item, ctx, w) };
+      }
       if (ask.kind !== 'release') return { ui: { ...ui, ask: null }, effect: null };
       return { ui: { ...ui, ask: null }, effect: { kind: 'queue', action: actions.release(mon), after: w.t('panel.bye', { mon: w.mon(mon) }) } };
     }
@@ -1275,7 +1289,10 @@ function slotPress(ui, hit, { state, ctx, locked, debug, panel, w }) {
         if (check.partners) return { ui: { ...calm(ui), select: { mode: 'fuse', uid: mon.uid, item: select.item, list: check.partners, text: check.prompt } }, effect: null };
 
         if (check.choices) return { ui: chooseMenu(calm(ui), mon, select.item, check, t), effect: null };
-        if (check.confirm) return { ui: { ...calm(ui), ask: { kind: 'use', uid: mon.uid, item: select.item, text: check.confirm } }, effect: null };
+        if (check.confirm) {
+          const to = abilityChange(sim, mon, disc ?? select.item);
+          return { ui: { ...calm(ui), ask: { kind: 'use', uid: mon.uid, item: select.item, text: check.confirm, ...(to ? { to } : {}) } }, effect: null };
+        }
         return { ui: calm(ui), effect: useEffect(mon, select.item, ctx, w) };
       }
 
@@ -1411,6 +1428,12 @@ export function liveScreen(screen, { state, ctx, locked = false }) {
   if (screen.kind !== 'learn' || !ASKING.has(screen.step)) return screen;
   if (screen.source.kind === 'levelup') return mon.pending?.moves?.includes(screen.move) ? screen : null;
   if (mon.set.moves.includes(screen.move)) return null;
+  // A move the reminder no longer offers (the Level-Up Moves setting or the place changed): back to its list, or closed
+  // when it offers none
+  if (screen.source.kind === 'remember') {
+    const list = rememberableMoves(ctx, mon, state);
+    if (!list.some(m => m.move === screen.move)) return list.length ? rememberScreen(mon) : null;
+  }
   return screen.source.kind !== 'tm' || state.bag?.[screen.source.item] > 0 ? screen : null;
 }
 
@@ -1479,7 +1502,9 @@ function screenPress(ui, hit, { state, ctx }) {
   if (screen.kind === 'remember') {
     const list = rememberableMoves(ctx, mon, state);
     if (hit.t === 'scMove' && list[hit.i]) return set({ move: hit.i });
-    if (hit.t === 'scRemember' && list[screen.move]) return learnOpen(ui, mon, list[screen.move].move, { kind: 'remember' });
+    // The row the screen shows (story/panel-screens.mjs rememberView keeps the selection inside a list that shrank)
+    const shown = list[Math.min(screen.move ?? 0, list.length - 1)];
+    if (hit.t === 'scRemember' && shown) return learnOpen(ui, mon, shown.move, { kind: 'remember' });
     return same;
   }
   // the learn screen

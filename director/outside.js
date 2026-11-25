@@ -7,6 +7,7 @@ import { createLearnSteps, learnMoveOption, loadExpText } from './steps-exp.js';
 import { PLAYER_NAME, EV_TOTAL_MAX, sameNickname } from '../story/rules.mjs';
 import { DEFAULT_LANG } from './lang.js';
 import { DEFAULT_FORMAT, DEFAULT_GEN, genFormat, formatRules } from '../engine/rules.mjs';
+import { isChampions } from '../engine/generation.mjs';
 import { enjoymentOf, fullnessOf, gameCandidates } from '../story/amie.mjs';
 import { GAMES, LEVELS } from '../story/amie-games.mjs';
 import { FIND_ORDER, BAG_IDS, BAG_SIZES, EFFECT_BAGS, SOOTHING_BAG, bagOf, traineeOf, hungBagOf, ENERGY_MAX, effortOn } from '../story/training.mjs';
@@ -26,20 +27,25 @@ function readOutside(ctx, mon, read) {
   const { sim } = ctx;
   if (!mon?.set?.species) throw new TypeError('Story mon with set is required');
   const fainted = mon.hp === 0 || mon.status === 'fnt';
-  const format = ctx.battleFormat || DEFAULT_FORMAT;
+  const baseFormat = ctx.battleFormat || DEFAULT_FORMAT;
+  const gen = ctx.battleGen;
+  const byGen = !isChampions(baseFormat) && Number.isInteger(gen);
+  const format = byGen && gen < DEFAULT_GEN ? genFormat(gen) : baseFormat;
 
   const member = { ...engineMember(mon, ctx.customItems), uid: mon.uid ?? 'outside' };
   if (fainted) Object.assign(member, { hp: 1, status: '' });
   const foe = { uid: 'outside-foe', set: structuredClone(mon.set) };
   const spec = {
     seed: OUTSIDE_SEED, formatid: format, writtenForms: true,
-    ...(ctx.formGen ? { formGen: ctx.formGen } : {}), // the battle generation (summaryCtx - the summary only)
+    ...(byGen ? { formGen: gen } : {}),
     p1: { name: ctx.trainer || PLAYER_NAME, team: [member] }, p2: { name: '-', team: [foe] },
   };
   const options = ctx.exp && ctx.levelUp ? { exp: ctx.exp, levelUp: ctx.levelUp } : {};
   const battle = createStoryBattle(sim, spec, options);
   try {
-    return read({ battle, pokemon: battle.sides[0].pokemon[0], fainted, options, format });
+    const pokemon = battle.sides[0].pokemon[0];
+    if (format !== baseFormat && !fainted && mon.hp > 0) pokemon.hp = shareHp(mon.hp, formatRules(sim, baseFormat).maxHp(mon.set), pokemon.maxhp);
+    return read({ battle, pokemon, fainted, options, format });
   } finally {
     battle.destroy();
   }
@@ -65,11 +71,8 @@ function newMoveOption(ctx, battle, move) {
 }
 
 export function outsideSummarySlot(ctx, mon) {
-  const shown = summaryCtx(ctx);
-  return readOutside(shown, mon, made => {
+  return readOutside(ctx, mon, made => {
     const { battle, pokemon, fainted, options, format } = made;
-
-    if (shown !== ctx && !fainted && mon.hp > 0) pokemon.hp = shareHp(mon.hp, formatRules(ctx.sim, ctx.battleFormat || DEFAULT_FORMAT).maxHp(mon.set), pokemon.maxhp);
     const entry = battle.sides[0].getRequestData().pokemon[0];
     const summary = summaryView(battle, ctx.names, entry, pokemon, ctx.dynamaxShown ? { ...options, dynamaxShown: true } : options, langOf(ctx));
     if (fainted) summary.stats = { ...summary.stats, hp: 0 };
@@ -86,12 +89,6 @@ export function outsideSummarySlot(ctx, mon) {
     if (!isEgg(mon)) summary.lock = lockView(ctx, mon);
     return { ...monViewOf(ctx, made, mon), active: false, fainted, summary };
   });
-}
-
-function summaryCtx(ctx) {
-  const gen = ctx.battleGen;
-  if (!Number.isInteger(gen)) return ctx;
-  return { ...ctx, battleFormat: gen < DEFAULT_GEN ? genFormat(gen) : ctx.battleFormat, formGen: gen };
 }
 
 const shareHp = (hp, was, max) => (hp >= was ? max : was === max ? hp : Math.max(1, Math.min(max - 1, Math.round(hp * max / was))));
