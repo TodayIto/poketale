@@ -595,15 +595,44 @@ export function passingTold(chat, ctx, index) {
   }
 }
 
-export function passingLog(chat, ctx, { names = null, lang = 'ko' } = {}) {
-  const latest = (chat?.message ?? []).findLastIndex(m => m?.role === 'user');
-  return pkbLog(passingTold(chat, ctx, latest), { lang, en: names });
-}
-
 export function isLatestOwn(chat, text) {
   const messages = chat?.message ?? [];
   const latest = messages.findLastIndex(m => m?.role === 'user');
   return latest >= 0 && String(messages[latest].data ?? '') === String(text ?? '');
+}
+
+// A process handler is given the text alone. An act tag that only the latest message carries names it;
+// equal text names it only when no other message has that text.
+export function latestTagIn(chat, text, table) {
+  const messages = chat?.message ?? [];
+  const latest = messages.findLastIndex(m => m?.role === 'user');
+  if (latest < 0) return false;
+  return findTags(String(text ?? '')).some(t => table?.acts?.[t.key]
+    && messages.every((m, i) => String(m?.data ?? '').includes(tagText(t.key)) === (i === latest)));
+}
+
+export function isLatestOnly(chat, text) {
+  if (!isLatestOwn(chat, text)) return false;
+  const all = String(text ?? '');
+  return (chat?.message ?? []).filter(m => String(m?.data ?? '') === all).length === 1;
+}
+
+// What only the latest user message carries: the line about its commands and its <pkb-log>
+export function latestPieces(chat, table, { names = null, lang = 'ko', commands: taking = false, ctx = null } = {}) {
+  const messages = chat?.message ?? [];
+  const latest = messages.findLastIndex(m => m?.role === 'user');
+  if (latest < 0) return { latest, line: null, log: '' };
+  const commands = taking ? commandsIn(messages[latest], latest, rulesAt(chat)(latest)) : [];
+  const line = commands.length ? answeredLine(commands.every(block => block.own)) : null;
+  const own = findTags(String(messages[latest].data ?? '')).filter(t => table?.acts?.[t.key]);
+  let events = [];
+  if (own.length) events = own.flatMap(t => table.acts[t.key].events ?? []);
+  else if (nextOwnMessage(chat, readQueue(chat), table) === latest) events = readQueue(chat).actions.flatMap(a => a.events ?? []);
+  if (ctx) events = [...passingTold(chat, ctx, latest), ...events];
+  const shop = events.filter(e => e?.kind === 'shop');
+  const after = shop.length ? shopBalance(chat, { upto: latest }) : null;
+  const money = after === null ? null : after - shop.reduce((sum, e) => sum + (e.got ?? 0) - (e.spent ?? 0), 0);
+  return { latest, line, log: pkbLog(events, { lang, en: names, money }) };
 }
 
 // -- Text sent to the AI -----------------------------
@@ -645,16 +674,20 @@ function guided(ooc, guide) {
 const END_SLOT = '\uE000';
 const oocEnd = text => text.replace(/\)(\s*(?:<\/pkb-story\s*>)?\s*)$/, `${END_SLOT})$1`);
 
-export function promptText(text, chat, table, { names = null, lang = 'ko', guide = null, commands: taking = false, moved = false, ctx = null } = {}) {
+const HOLD = String.fromCharCode(0xE001);
+
+export const heldIn = messages => Array.isArray(messages) && messages.some(m => typeof m?.content === 'string' && m.content.includes(HOLD));
+
+// latest: 'attach' puts the latest message's pieces on this text (the caller has made sure it is that message).
+// 'request' leaves them to placeLatest: END_SLOT where a command line would go (any text with a command, so a
+// stale view of the chat does not matter), and, with hold, HOLD for a text nothing is left of, which RisuAI
+// would otherwise drop before the request (hold: the caller has made sure it is the latest message, with pieces).
+export function promptText(text, chat, table, { names = null, lang = 'ko', guide = null, commands: taking = false, moved = false, ctx = null, latest: mode = null, hold = false } = {}) {
   const messages = chat?.message ?? [];
   let out = String(text ?? '');
-  const latest = messages.findLastIndex(m => m?.role === 'user');
-  const latestText = latest >= 0 ? String(messages[latest].data ?? '') : null;
-  const mine = isLatestOwn(chat, text);
-
-  const commands = taking && mine ? commandsIn(messages[latest], latest, rulesAt(chat)(latest)) : [];
-  const line = commands.length ? answeredLine(commands.every(block => block.own)) : null;
-  let slot = !!line;
+  const pieces = mode === 'attach' ? latestPieces(chat, table, { names, lang, commands: taking, ctx }) : null;
+  const line = pieces?.line ?? null;
+  let slot = mode === 'request' ? taking && /<\s*pkb-act\b/i.test(out) : !!line;
   const covered = coveredIn(chat);
   for (const ooc of findOocs(out).reverse()) {
     if (covered.has(ooc.info.mark)) { out = out.slice(0, ooc.start) + out.slice(ooc.end); continue; }
@@ -667,22 +700,63 @@ export function promptText(text, chat, table, { names = null, lang = 'ko', guide
     slot = false;
   }
   out = unwrapOocs(out); // remaining OOCs of ours: strip the tag, keep the OOC
-  let events = [];
-  const own = findTags(out).filter(t => table?.acts?.[t.key]);
-  if (own.length && own.some(t => latestText?.includes(tagText(t.key)))) events = own.flatMap(t => table.acts[t.key].events ?? []);
-  else if (!own.length && mine && nextOwnMessage(chat, readQueue(chat), table) === latest) {
-    events = readQueue(chat).actions.flatMap(a => a.events ?? []);
-  }
-
-  if (ctx && mine) events = [...passingTold(chat, ctx, latest), ...events];
   out = stripForPrompt(moved ? dropTaken(out) : out);
-  if (line) out = out.includes(END_SLOT) ? out.replace(END_SLOT, `\n${line}`) : `${out}\n(OOC: ${line})`;
-
-  const shop = events.filter(e => e?.kind === 'shop');
-  const after = shop.length ? shopBalance(chat, { upto: latest }) : null;
-  const money = after === null ? null : after - shop.reduce((sum, e) => sum + (e.got ?? 0) - (e.spent ?? 0), 0);
-  const log = pkbLog(events, { lang, en: names, money });
-  return log ? `${out}\n${log}` : out;
+  if (mode === 'request') return out.trim() || !hold ? out : HOLD;
+  if (mode !== 'attach') return out;
+  if (line) out = out.includes(END_SLOT) ? out.replace(END_SLOT, () => `\n${line}`) : `${out}\n(OOC: ${line})`;
+  return pieces.log ? `${out}\n${pieces.log}` : out;
 }
+
+const MARKS = new RegExp(`[${END_SLOT}${HOLD}]`, 'g');
+const joined = (text, more) => (text.trim() ? `${text}\n${more}` : more);
+const count = (text, part) => text.split(part).length - 1;
+
+function withPieces(text, line, log, raw) {
+  // held: nothing else was left of the text, so the pieces take its place
+  if (text.includes(HOLD)) return text.replace(HOLD, () => [line ? `(OOC: ${line})` : '', log].filter(Boolean).join('\n'));
+  let out = text;
+  if (line && !out.includes(line)) out = out.includes(END_SLOT) ? out.replace(END_SLOT, () => `\n${line}`) : joined(out, `(OOC: ${line})`);
+  // More logs than the stored text has: one came from an earlier run (a retried request, or the process stage just before the replacer was set up)
+  if (log && !out.includes(log) && count(out, '<pkb-log>') <= count(raw, '<pkb-log>')) out = joined(out, log);
+  return out;
+}
+
+// The latest message's element: RisuAI sends each chat message with memo = its chatId, so it can be told apart
+// from others with the same text. Where the memo was taken off (sendChatAsSystem), the one element holding HOLD
+// (one still carrying a memo is some other message, and an assistant one is the greeting).
+export function latestTarget(messages, chat, latest = (chat?.message ?? []).findLastIndex(m => m?.role === 'user')) {
+  if (!Array.isArray(messages)) return -1;
+  const id = chat?.message?.[latest]?.chatId;
+  const at = typeof id === 'string' ? messages.findLastIndex(m => m?.memo === id) : -1;
+  if (at >= 0) return at;
+  const held = messages.flatMap((m, i) => (typeof m?.content === 'string' && m.content.includes(HOLD) && typeof m?.memo !== 'string' && m?.role !== 'assistant' ? [i] : []));
+  return held.length === 1 ? held[0] : -1;
+}
+
+// The request-stage half of the latest message's pieces (beforeRequest). Replacers run again on the same messages
+// when a request is retried, so nothing is added twice. Markers are removed everywhere.
+export function placeLatest(messages, { chat = null, latest = -1, line = null, log = '' } = {}) {
+  if (!Array.isArray(messages)) return messages;
+  const at = chat && latest >= 0 ? latestTarget(messages, chat, latest) : -1;
+  const raw = String(chat?.message?.[latest]?.data ?? '');
+  let changed = false;
+  const out = [];
+  messages.forEach((m, i) => {
+    if (typeof m?.content !== 'string') { out.push(m); return; }
+    let content = i === at ? withPieces(m.content, line, log, raw) : m.content;
+    content = content.replace(MARKS, '');
+    if (content === m.content) { out.push(m); return; }
+    changed = true;
+    // HOLD kept a text nothing was left of; with nothing added it goes, as RisuAI would have dropped it
+    if (m.content.includes(HOLD) && !content.trim() && !m.multimodals?.length) return;
+    out.push({ ...m, content });
+  });
+  return changed ? out : messages;
+}
+
+// RisuAI turns these back into text just before the replacers run (risuUnescape, request.ts), so CBS run on
+// the pieces afterwards ({{bo}}, {{decbo}}) would leave them as they are
+const UNESCAPED = ['{', '}', '(', ')', '&lt;', '&gt;', ':', ';'];
+export const unescapedCbs = text => String(text ?? '').replace(/[\uE9B8-\uE9BF]/g, c => UNESCAPED[c.charCodeAt(0) - 0xE9B8]);
 
 export { tagText };
