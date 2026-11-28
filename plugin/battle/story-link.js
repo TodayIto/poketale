@@ -104,6 +104,15 @@ async function characterAt(charIndex, chat, { fresh = false } = {}) {
   botNames.set(info.chaId, info.name);
   return info;
 }
+// The greeting RisuAI sends first (index.svelte.ts: none for a group; fmIndex -1 is firstMessage) goes through the
+// process handler too, though it is not in chat.message, so a text equal to it is not the latest message's own.
+// Read when asked: empty input, reroll and continue send without onInput, so nothing earlier has the greeting as it is now.
+async function isGreeting(pass, text) {
+  const character = await risuai.getCharacterFromIndex(pass.charIndex).catch(() => null);
+  if (!character || character.type === 'group') return false;
+  const at = pass.chat?.fmIndex;
+  return (at === -1 ? character.firstMessage : character.alternateGreetings?.[at]) === text;
+}
 
 const isOn = x => !!x && botEnabled(settings, x.bot);
 
@@ -1607,33 +1616,52 @@ async function freshVars(pass) {
 
 let freshMemo = null;
 
+async function fixVars(messages, pass) {
+  if (!mayHold(messages) || !isOn(pass) || pass.unreadable) return messages;
+  const stored = varsIn(pass.chat);
+  const key = varsKey(pass);
+  if (key === varsAt && holds(messages, stored)) return messages;
+  const fresh = freshMemo?.key === key ? freshMemo.fresh : await freshVars(pass);
+  freshMemo = { key, fresh };
+  const fixed = fixPrompt(messages, { stale: [...(varsSeen.get(pass.id) ?? []), stored], fresh });
+  if (fixed !== messages) watchSoon();
+  return fixed;
+}
+
+async function withLatest(messages, pass) {
+  if (!isOn(pass) || acts.latestTarget(messages, pass.chat) < 0) return messages;
+  const ctx = await storyCtx().catch(() => null);
+  const { latest, line, log } = acts.latestPieces(pass.chat, pass.table, { names: dexName, lang: currentLang(pass.chat), commands: commandsOn(settings), ctx });
+  // CBS has already run on the messages, so the pieces get it here ({{user}}, <char>, a nickname's CBS), as when the process stage added them
+  const parsed = async text => {
+    if (!text) return text;
+    const got = await Promise.resolve().then(() => risuai.parseRisuChat(text)).catch(() => null);
+    return typeof got === 'string' ? acts.unescapedCbs(got) : withUserName([{ content: text }], null)[0].content;
+  };
+  return acts.placeLatest(messages, { chat: pass.chat, latest, line: await parsed(line), log: await parsed(log) });
+}
+
 async function fixRequest(messages) {
-  try {
-    if (!mayHold(messages)) return messages;
-    const pass = await readPass();
-    if (!isOn(pass) || pass.unreadable) return messages;
-    const stored = varsIn(pass.chat);
-    const key = varsKey(pass);
-    if (key === varsAt && holds(messages, stored)) return messages;
-    const fresh = freshMemo?.key === key ? freshMemo.fresh : await freshVars(pass);
-    freshMemo = { key, fresh };
-    const fixed = fixPrompt(messages, { stale: [...(varsSeen.get(pass.id) ?? []), stored], fresh });
-    if (fixed !== messages) watchSoon();
-    return fixed;
-  } catch (error) {
-    console.warn('[poke-battle] 보내는 글의 파티·가방을 바로잡지 못함', error);
-    return messages;
-  }
+  if (!Array.isArray(messages)) return messages;
+  const pass = mayHold(messages) || messages.some(m => typeof m?.memo === 'string') || acts.heldIn(messages) ? await readPass() : null;
+  let out = messages;
+  try { out = await fixVars(out, pass); } catch (error) { console.warn('[poke-battle] 보내는 글의 파티·가방을 바로잡지 못함', error); }
+  try { out = await withLatest(out, pass); } catch (error) { console.warn('[poke-battle] 마지막 글에 붙일 것을 붙이지 못함', error); }
+  return acts.placeLatest(out); // whatever happened above, no marker goes out
 }
 
 const PROMPT_UP_MS = 400;
+
+let replacerReady = false; // fixRequest is registered: the latest message's pieces go in at the request (onPrompt)
 
 async function startReplacer() {
   if (typeof risuai.addRisuReplacer !== 'function') return;
   await askPermission('replacer', async () => {
     const tip = setTimeout(() => { openLang().then(lang => showToast(doc, { text: say(lang, 'notice.replacerAsk'), kind: 'info' })).catch(() => {}); }, PROMPT_UP_MS);
     try { await risuai.addRisuReplacer('beforeRequest', fixRequest); } finally { clearTimeout(tip); }
-    return risuai.requestPluginPermission('replacer');
+    const granted = await risuai.requestPluginPermission('replacer');
+    replacerReady = granted === true;
+    return granted;
   });
 }
 
@@ -2281,15 +2309,38 @@ async function onPrompt(text) {
   const pass = await sharedPass(text);
   if (!isOn(pass)) return undefined;
 
-  const latest = acts.isLatestOwn(pass.chat, text);
-  const naming = { names: dexName, lang: currentLang(pass.chat) };
+  const plain = !/<\s*pkb/i.test(text) && !(pass.moved && dropTaken(text) !== text);
+  const naming = where => ({ names: dexName, lang: currentLang(where.chat), commands: commandsOn(settings) });
+  const prompt = (where, latest, ctx = null, hold = false) => acts.promptText(text, where.chat, where.table, { ...naming(where),
+    guide: settings.oocTrial ? withGuide : null, moved: where.moved, ctx, latest, hold });
+  // The latest message, named by a tag only it carries or by a text no other message (nor the greeting) has. The
+  // shared pass may be from before this message was added, which can only make an earlier message look like it, so a
+  // yes is read again; anyway: read even on a no (the pass may also be from before messages were taken off).
+  const only = async where => acts.latestTagIn(where.chat, text, where.table) || (acts.isLatestOnly(where.chat, text) && !(await isGreeting(where, text)));
+  const latestFresh = async ({ anyway = false } = {}) => {
+    if (!anyway && !(acts.isLatestOwn(pass.chat, text) || acts.latestTagIn(pass.chat, text, pass.table))) return null;
+    const fresh = await readPass();
+    return isOn(fresh) && await only(fresh) ? fresh : null;
+  };
 
-  if (!text.includes('<pkb') && !acts.readQueue(pass.chat).actions.length && !(pass.moved && dropTaken(text) !== text)) {
-    const log = latest ? acts.passingLog(pass.chat, await storyCtx(), naming) : '';
+  // The latest user message's pieces must reach that message alone, but this handler is given only the text.
+  // With the replacer they go in at the request (fixRequest); without it, only on the latest message as named above.
+  if (replacerReady) {
+    if (plain && text.trim()) return undefined;
+    const out = plain ? '' : prompt(pass, 'request');
+    if (out.trim()) return out;
+    const fresh = await latestFresh({ anyway: true }); // nothing is left of the text (rare): keep it only if it is the latest and has pieces
+    const pieces = fresh ? acts.latestPieces(fresh.chat, fresh.table, { ...naming(fresh), ctx: await storyCtx().catch(() => null) }) : null;
+    return pieces?.line || pieces?.log ? prompt(fresh, 'request', null, true) : plain ? undefined : out;
+  }
+  const fresh = await latestFresh();
+  if (fresh) {
+    const ctx = await storyCtx().catch(() => null);
+    if (!plain || acts.readQueue(fresh.chat).actions.length) return prompt(fresh, 'attach', ctx);
+    const { log } = acts.latestPieces(fresh.chat, fresh.table, { names: dexName, lang: currentLang(fresh.chat), ctx });
     return log ? `${text.replace(/\s+$/, '')}\n${log}` : undefined;
   }
-  return acts.promptText(text, pass.chat, pass.table, { ...naming, guide: settings.oocTrial ? withGuide : null, commands: commandsOn(settings), moved: pass.moved,
-    ctx: latest ? await storyCtx() : null });
+  return plain ? undefined : prompt(pass, null);
 }
 
 let deviceBox = null, deviceReady = null;
